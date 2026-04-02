@@ -38,9 +38,10 @@ public:
                 return llvm::Type::getVoidTy(Context);
             case TypeKind::Complex:
                 // Complex numbers are represented as { double, double } structs
-                return llvm::StructType::get(Context,
-                    llvm::Type::getDoubleTy(Context),
-                    llvm::Type::getDoubleTy(Context));
+                {
+                    llvm::Type* DoubleTy = llvm::Type::getDoubleTy(Context);
+                    return llvm::StructType::get(Context, {DoubleTy, DoubleTy});
+                }
             case TypeKind::String:
                 // Strings are represented as i8* (pointer to char)
                 return llvm::PointerType::get(llvm::Type::getInt8Ty(Context), 0);
@@ -48,6 +49,16 @@ public:
             default:
                 return llvm::Type::getDoubleTy(Context);
         }
+    }
+    
+    static FluxType fromLLVMType(llvm::Type* T) {
+        if (T->isDoubleTy()) return FluxType(TypeKind::Double);
+        if (T->isFloatTy()) return FluxType(TypeKind::Float);
+        if (T->isIntegerTy(32)) return FluxType(TypeKind::Int);
+        if (T->isVoidTy()) return FluxType(TypeKind::Void);
+        if (T->isStructTy()) return FluxType(TypeKind::Complex);
+        if (T->isPointerTy()) return FluxType(TypeKind::String);
+        return FluxType(TypeKind::Double);
     }
     
     static FluxType fromToken(int token) {
@@ -60,6 +71,8 @@ public:
                 return FluxType(TypeKind::Void);
             case static_cast<int>(TokenType::tok_type_complex):
                 return FluxType(TypeKind::Complex);
+            case static_cast<int>(TokenType::tok_type_string):
+                return FluxType(TypeKind::String);
             case static_cast<int>(TokenType::tok_type_double):
             default:
                 return FluxType(TypeKind::Double);
@@ -77,17 +90,27 @@ public:
     CodegenContext() : Builder(TheContext) {}
 };
 
+struct TypedValue {
+    llvm::Value* Val;
+    FluxType Type;
+
+    TypedValue(llvm::Value* V = nullptr, FluxType T = TypeKind::Double)
+        : Val(V), Type(T) {}
+    
+    operator llvm::Value*() const { return Val; }
+};
+
 class ExprAST {
 public:
     virtual ~ExprAST() = default;
-    virtual llvm::Value* codegen(CodegenContext& context) = 0;
+    virtual TypedValue codegen(CodegenContext& context) = 0;
 };
 
 class NumberExprAST : public ExprAST {
     double Val;
 public:
     NumberExprAST(double Val) : Val(Val) {}
-    llvm::Value* codegen(CodegenContext& context) override;
+    TypedValue codegen(CodegenContext& context) override;
 };
 
 class ComplexExprAST : public ExprAST {
@@ -95,21 +118,21 @@ class ComplexExprAST : public ExprAST {
     double Imag;
 public:
     ComplexExprAST(double Real, double Imag) : Real(Real), Imag(Imag) {}
-    llvm::Value* codegen(CodegenContext& context) override;
+    TypedValue codegen(CodegenContext& context) override;
 };
 
 class StringExprAST : public ExprAST {
     std::string Val;
 public:
     StringExprAST(const std::string& Val) : Val(Val) {}
-    llvm::Value* codegen(CodegenContext& context) override;
+    TypedValue codegen(CodegenContext& context) override;
 };
 
 class VariableExprAST : public ExprAST {
     std::string Name;
 public:
     VariableExprAST(const std::string& Name) : Name(Name) {}
-    llvm::Value* codegen(CodegenContext& context) override;
+    TypedValue codegen(CodegenContext& context) override;
     const std::string& getName() const { return Name; }
 };
 
@@ -119,7 +142,7 @@ class BinaryExprAST : public ExprAST {
 public:
     BinaryExprAST(int Op, std::unique_ptr<ExprAST> LHS, std::unique_ptr<ExprAST> RHS)
         : Op(Op), LHS(std::move(LHS)), RHS(std::move(RHS)) {}
-    llvm::Value* codegen(CodegenContext& context) override;
+    TypedValue codegen(CodegenContext& context) override;
 };
 
 class UnaryExprAST : public ExprAST {
@@ -128,7 +151,15 @@ class UnaryExprAST : public ExprAST {
 public:
     UnaryExprAST(int Op, std::unique_ptr<ExprAST> Operand)
         : Op(Op), Operand(std::move(Operand)) {}
-    llvm::Value* codegen(CodegenContext& context) override;
+    TypedValue codegen(CodegenContext& context) override;
+};
+
+class TransposeExprAST : public ExprAST {
+    std::unique_ptr<ExprAST> Operand;
+public:
+    TransposeExprAST(std::unique_ptr<ExprAST> Operand)
+        : Operand(std::move(Operand)) {}
+    TypedValue codegen(CodegenContext& context) override;
 };
 
 class CallExprAST : public ExprAST {
@@ -137,16 +168,17 @@ class CallExprAST : public ExprAST {
 public:
     CallExprAST(const std::string& Callee, std::vector<std::unique_ptr<ExprAST>> Args)
         : Callee(Callee), Args(std::move(Args)) {}
-    llvm::Value* codegen(CodegenContext& context) override;
+    TypedValue codegen(CodegenContext& context) override;
 };
 
 class AssignExprAST : public ExprAST {
     std::string Name;
     std::unique_ptr<ExprAST> Val;
+    int Op;  // 0 for simple assignment, otherwise the compound operator
 public:
-    AssignExprAST(const std::string& Name, std::unique_ptr<ExprAST> Val)
-        : Name(Name), Val(std::move(Val)) {}
-    llvm::Value* codegen(CodegenContext& context) override;
+    AssignExprAST(const std::string& Name, std::unique_ptr<ExprAST> Val, int Op = 0)
+        : Name(Name), Val(std::move(Val)), Op(Op) {}
+    TypedValue codegen(CodegenContext& context) override;
 };
 
 class IfExprAST : public ExprAST {
@@ -155,7 +187,7 @@ public:
     IfExprAST(std::unique_ptr<ExprAST> Cond, std::unique_ptr<ExprAST> Then,
               std::unique_ptr<ExprAST> Else)
         : Cond(std::move(Cond)), Then(std::move(Then)), Else(std::move(Else)) {}
-    llvm::Value* codegen(CodegenContext& context) override;
+    TypedValue codegen(CodegenContext& context) override;
 };
 
 class ForExprAST : public ExprAST {
@@ -163,12 +195,21 @@ class ForExprAST : public ExprAST {
     std::unique_ptr<ExprAST> Start, End, Step;
     std::unique_ptr<ExprAST> Body;
 public:
-    ForExprAST(const std::string& VarName, std::unique_ptr<ExprAST> Start,
+    ForExprAST(const std::string& VarName, std::unique_ptr<ExprAST> Start, 
                std::unique_ptr<ExprAST> End, std::unique_ptr<ExprAST> Step,
                std::unique_ptr<ExprAST> Body)
-        : VarName(VarName), Start(std::move(Start)), End(std::move(End)),
+        : VarName(VarName), Start(std::move(Start)), End(std::move(End)), 
           Step(std::move(Step)), Body(std::move(Body)) {}
-    llvm::Value* codegen(CodegenContext& context) override;
+    TypedValue codegen(CodegenContext& context) override;
+};
+
+class ArrayExprAST : public ExprAST {
+    std::vector<std::unique_ptr<ExprAST>> Elements;
+public:
+    ArrayExprAST(std::vector<std::unique_ptr<ExprAST>> Elements)
+        : Elements(std::move(Elements)) {}
+    TypedValue codegen(CodegenContext& context) override;
+    const std::vector<std::unique_ptr<ExprAST>>& getElements() const { return Elements; }
 };
 
 class WhileExprAST : public ExprAST {
@@ -176,7 +217,7 @@ class WhileExprAST : public ExprAST {
 public:
     WhileExprAST(std::unique_ptr<ExprAST> Cond, std::unique_ptr<ExprAST> Body)
         : Cond(std::move(Cond)), Body(std::move(Body)) {}
-    llvm::Value* codegen(CodegenContext& context) override;
+    TypedValue codegen(CodegenContext& context) override;
 };
 
 class LetExprAST : public ExprAST {
@@ -187,7 +228,16 @@ class LetExprAST : public ExprAST {
 public:
     LetExprAST(const std::string& VarName, FluxType Type, std::unique_ptr<ExprAST> Init, std::unique_ptr<ExprAST> Body)
         : VarName(VarName), Type(Type), Init(std::move(Init)), Body(std::move(Body)) {}
-    llvm::Value* codegen(CodegenContext& context) override;
+    TypedValue codegen(CodegenContext& context) override;
+};
+
+class LambdaExprAST : public ExprAST {
+    std::vector<std::string> Args;
+    std::unique_ptr<ExprAST> Body;
+public:
+    LambdaExprAST(std::vector<std::string> Args, std::unique_ptr<ExprAST> Body)
+        : Args(std::move(Args)), Body(std::move(Body)) {}
+    TypedValue codegen(CodegenContext& context) override;
 };
 
 class VectorExprAST : public ExprAST {
@@ -195,15 +245,67 @@ class VectorExprAST : public ExprAST {
 public:
     VectorExprAST(std::vector<std::unique_ptr<ExprAST>> Elements)
         : Elements(std::move(Elements)) {}
-    llvm::Value* codegen(CodegenContext& context) override;
+    TypedValue codegen(CodegenContext& context) override;
+};
+
+class MatrixExprAST : public ExprAST {
+    std::vector<std::vector<std::unique_ptr<ExprAST>>> Rows;
+    int NumRows;
+    int NumCols;
+public:
+    MatrixExprAST(std::vector<std::vector<std::unique_ptr<ExprAST>>> Rows, int rows, int cols)
+        : Rows(std::move(Rows)), NumRows(rows), NumCols(cols) {}
+    TypedValue codegen(CodegenContext& context) override;
+    int getNumRows() const { return NumRows; }
+    int getNumCols() const { return NumCols; }
+};
+
+class VoltageExprAST : public ExprAST {
+    std::string NodeName;
+public:
+    VoltageExprAST(const std::string& NodeName) : NodeName(NodeName) {}
+    TypedValue codegen(CodegenContext& context) override;
+    const std::string& getNodeName() const { return NodeName; }
+};
+
+class CurrentExprAST : public ExprAST {
+    std::string BranchName;
+public:
+    CurrentExprAST(const std::string& BranchName) : BranchName(BranchName) {}
+    TypedValue codegen(CodegenContext& context) override;
+    const std::string& getBranchName() const { return BranchName; }
 };
 
 class IndexExprAST : public ExprAST {
-    std::unique_ptr<ExprAST> Array, Index;
+    std::unique_ptr<ExprAST> Array;
+    std::unique_ptr<ExprAST> RowIndex;  // Can be a RangeExprAST for slicing
+    std::unique_ptr<ExprAST> ColIndex;  // Optional, for matrix column indexing
+    bool IsMatrixIndex;                 // True if accessing m(row, col)
 public:
-    IndexExprAST(std::unique_ptr<ExprAST> Array, std::unique_ptr<ExprAST> Index)
-        : Array(std::move(Array)), Index(std::move(Index)) {}
-    llvm::Value* codegen(CodegenContext& context) override;
+    IndexExprAST(std::unique_ptr<ExprAST> Array, std::unique_ptr<ExprAST> RowIdx)
+        : Array(std::move(Array)), RowIndex(std::move(RowIdx)), ColIndex(nullptr), IsMatrixIndex(false) {}
+
+    IndexExprAST(std::unique_ptr<ExprAST> Array, std::unique_ptr<ExprAST> RowIndex,
+                 std::unique_ptr<ExprAST> ColIndex)
+        : Array(std::move(Array)), RowIndex(std::move(RowIndex)), ColIndex(std::move(ColIndex)),
+          IsMatrixIndex(true) {}
+
+    TypedValue codegen(CodegenContext& context) override;
+};
+
+// Range expression for slicing: start:end or start:step:end
+class RangeExprAST : public ExprAST {
+    std::unique_ptr<ExprAST> Start;
+    std::unique_ptr<ExprAST> Step;   // Optional (defaults to 1)
+    std::unique_ptr<ExprAST> End;
+public:
+    RangeExprAST(std::unique_ptr<ExprAST> Start, std::unique_ptr<ExprAST> End)
+        : Start(std::move(Start)), Step(nullptr), End(std::move(End)) {}
+    
+    RangeExprAST(std::unique_ptr<ExprAST> Start, std::unique_ptr<ExprAST> Step, std::unique_ptr<ExprAST> End)
+        : Start(std::move(Start)), Step(std::move(Step)), End(std::move(End)) {}
+    
+    TypedValue codegen(CodegenContext& context) override;
 };
 
 class BlockExprAST : public ExprAST {
@@ -211,7 +313,7 @@ class BlockExprAST : public ExprAST {
 public:
     BlockExprAST(std::vector<std::unique_ptr<ExprAST>> Statements)
         : Statements(std::move(Statements)) {}
-    llvm::Value* codegen(CodegenContext& context) override;
+    TypedValue codegen(CodegenContext& context) override;
 };
 
 class PrototypeAST {

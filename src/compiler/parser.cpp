@@ -3,15 +3,18 @@
 
 namespace Flux {
 
-Parser::Parser(const std::string& input) : m_lexer(input) {
-    // Operator precedence (higher binds tighter)
+Parser::Parser(const std::string& input) : m_lexer(input), m_hasError(false) {
     m_binopPrecedence['='] = 2;
+    m_binopPrecedence[static_cast<int>(TokenType::tok_plus_equal)] = 2;
+    m_binopPrecedence[static_cast<int>(TokenType::tok_minus_equal)] = 2;
+    m_binopPrecedence[static_cast<int>(TokenType::tok_star_equal)] = 2;
+    m_binopPrecedence[static_cast<int>(TokenType::tok_slash_equal)] = 2;
     m_binopPrecedence[static_cast<int>(TokenType::tok_logical_or)] = 5;
     m_binopPrecedence[static_cast<int>(TokenType::tok_logical_and)] = 10;
-    m_binopPrecedence['|'] = 11;  // bitwise OR (character)
+    m_binopPrecedence['|'] = 11;
     m_binopPrecedence[static_cast<int>(TokenType::tok_bitwise_or)] = 11;
     m_binopPrecedence[static_cast<int>(TokenType::tok_bitwise_xor)] = 12;
-    m_binopPrecedence['&'] = 13;  // bitwise AND (character)
+    m_binopPrecedence['&'] = 13;
     m_binopPrecedence[static_cast<int>(TokenType::tok_bitwise_and)] = 13;
     m_binopPrecedence[static_cast<int>(TokenType::tok_equal)] = 15;
     m_binopPrecedence[static_cast<int>(TokenType::tok_not_equal)] = 15;
@@ -25,18 +28,14 @@ Parser::Parser(const std::string& input) : m_lexer(input) {
     m_binopPrecedence['-'] = 30;
     m_binopPrecedence['*'] = 40;
     m_binopPrecedence['/'] = 40;
-    // Element-wise operators have same precedence as their scalar counterparts
     m_binopPrecedence[static_cast<int>(TokenType::tok_ew_mul)] = 40;
     m_binopPrecedence[static_cast<int>(TokenType::tok_ew_div)] = 40;
     m_binopPrecedence[static_cast<int>(TokenType::tok_ew_power)] = 50;
     m_binopPrecedence[static_cast<int>(TokenType::tok_power)] = 50;
-
-    getNextToken(); // prime the lexer
+    getNextToken();
 }
 
-int Parser::getNextToken() {
-    return CurTok = m_lexer.getNextToken();
-}
+int Parser::getNextToken() { return CurTok = m_lexer.getNextToken(); }
 
 int Parser::GetTokPrecedence() {
     int tokPrec = m_binopPrecedence[CurTok];
@@ -44,463 +43,355 @@ int Parser::GetTokPrecedence() {
     return tokPrec;
 }
 
+void Parser::ReportError(const std::string& message) {
+    std::cerr << "Error: " << message << " at line " << m_lexer.getCurrentLine() << ", col " << m_lexer.getCurrentColumn() << std::endl;
+    m_hasError = true;
+}
+
+void Parser::SkipToSynchronizationPoint() {
+    while (CurTok != static_cast<int>(TokenType::tok_eof) && !IsSynchronizationToken(CurTok)) getNextToken();
+}
+
+bool Parser::IsSynchronizationToken(int token) {
+    switch (static_cast<TokenType>(token)) {
+    case TokenType::tok_def:
+    case TokenType::tok_extern:
+    case TokenType::tok_var:
+    case TokenType::tok_let:
+    case TokenType::tok_return:
+    case TokenType::tok_if:
+    case TokenType::tok_for:
+    case TokenType::tok_while:
+    case TokenType::tok_rbrace:
+    case TokenType::tok_semicolon: return true;
+    default: return token == static_cast<int>(TokenType::tok_semicolon);
+    }
+}
+
 std::unique_ptr<ExprAST> Parser::ParseNumberExpr() {
     auto Result = std::make_unique<NumberExprAST>(m_lexer.NumVal);
     getNextToken();
-    return std::move(Result);
+    return Result;
 }
 
 std::unique_ptr<ExprAST> Parser::ParseImaginaryExpr() {
     auto Result = std::make_unique<ComplexExprAST>(0.0, m_lexer.NumVal);
     getNextToken();
-    return std::move(Result);
+    return Result;
 }
 
 std::unique_ptr<ExprAST> Parser::ParseStringExpr() {
     auto Result = std::make_unique<StringExprAST>(m_lexer.StringVal);
     getNextToken();
-    return std::move(Result);
+    return Result;
 }
 
 std::unique_ptr<ExprAST> Parser::ParseParenExpr() {
-    getNextToken(); // eat (.
+    getNextToken();
     auto V = ParseExpression();
     if (!V) return nullptr;
-
-    if (CurTok != ')') {
-        std::cerr << "expected ')'" << std::endl;
-        return nullptr;
-    }
-    getNextToken(); // eat ).
+    if (CurTok != ')') { ReportError("expected ')'"); return nullptr; }
+    getNextToken();
     return V;
 }
 
 std::unique_ptr<ExprAST> Parser::ParseIdentifierExpr() {
     std::string IdName = m_lexer.IdentifierStr;
-    getNextToken(); // eat identifier.
+    getNextToken();
+    
+    // Handle V(node) and I(branch) as special expressions for SPICE support
+    if (CurTok == '(' && (IdName == "V" || IdName == "I")) {
+        getNextToken(); // eat (
+        if (CurTok != static_cast<int>(TokenType::tok_identifier) && 
+            CurTok != static_cast<int>(TokenType::tok_number)) {
+            ReportError("expected node or branch name in V() / I()");
+            return nullptr;
+        }
 
-    // TODO: Check for array indexing: identifier[expr]
-    // Currently disabled - IndexExprAST not implemented
-    // if (CurTok == '[') {
-    //     getNextToken(); // eat [
-    //     auto Index = ParseExpression();
-    //     if (!Index) return nullptr;
-    //     if (CurTok != ']') {
-    //         std::cerr << "expected ']' in array indexing" << std::endl;
-    //         return nullptr;
-    //     }
-    //     getNextToken(); // eat ]
-    //     return std::make_unique<IndexExprAST>(std::make_unique<VariableExprAST>(IdName), std::move(Index));
-    // }
+        std::string name;
+        if (CurTok == static_cast<int>(TokenType::tok_identifier)) {
+            name = m_lexer.IdentifierStr;
+        } else {
+            name = std::to_string(static_cast<int>(m_lexer.NumVal));
+        }
+        getNextToken(); // eat name
 
-    if (CurTok != '(') // Simple variable ref.
-        return std::make_unique<VariableExprAST>(IdName);
+        if (CurTok != ')') {
+            ReportError("expected ')' after node or branch name");
+            return nullptr;
+        }
+        getNextToken(); // eat )
 
-    // Call.
-    getNextToken(); // eat (
-    std::vector<std::unique_ptr<ExprAST>> Args;
-    if (CurTok != ')') {
-        while (true) {
-            if (auto Arg = ParseExpression())
-                Args.push_back(std::move(Arg));
-            else
-                return nullptr;
-
-            if (CurTok == ')') break;
-
-            if (CurTok != ',') {
-                std::cerr << "Expected ')' or ',' in argument list" << std::endl;
-                return nullptr;
-            }
-            getNextToken();
+        if (IdName == "V") {
+            return std::make_unique<VoltageExprAST>(name);
+        } else {
+            return std::make_unique<CurrentExprAST>(name);
         }
     }
 
-    getNextToken(); // Eat the ')'.
-    return std::make_unique<CallExprAST>(IdName, std::move(Args));
+    if (CurTok == '(') {
+        getNextToken();
+        std::vector<std::unique_ptr<ExprAST>> Args;
+        if (CurTok != ')') {
+            while (true) {
+                if (auto Arg = ParseExpression()) Args.push_back(std::move(Arg));
+                else return nullptr;
+                if (CurTok == ')') break;
+                if (CurTok != ',') { ReportError("expected ')' or ',' in argument list"); return nullptr; }
+                getNextToken();
+            }
+        }
+        getNextToken();
+        return std::make_unique<CallExprAST>(IdName, std::move(Args));
+    }
+    return std::make_unique<VariableExprAST>(IdName);
 }
 
 std::unique_ptr<ExprAST> Parser::ParseIfExpr() {
-    getNextToken(); // eat the if.
-
-    // condition.
+    getNextToken();
     auto Cond = ParseExpression();
     if (!Cond) return nullptr;
-
-    if (CurTok != static_cast<int>(TokenType::tok_then)) {
-        std::cerr << "expected then at " << CurTok << std::endl;
-        return nullptr;
-    }
-    getNextToken(); // eat the then
-
+    if (CurTok != static_cast<int>(TokenType::tok_then)) { ReportError("expected then"); return nullptr; }
+    getNextToken();
     auto Then = ParseExpression();
     if (!Then) return nullptr;
-
-    if (CurTok != static_cast<int>(TokenType::tok_else)) {
-        std::cerr << "expected else at " << CurTok << std::endl;
-        return nullptr;
-    }
-
-    getNextToken(); // eat else
-
+    if (CurTok != static_cast<int>(TokenType::tok_else)) { ReportError("expected else"); return nullptr; }
+    getNextToken();
     auto Else = ParseExpression();
     if (!Else) return nullptr;
-
     return std::make_unique<IfExprAST>(std::move(Cond), std::move(Then), std::move(Else));
 }
 
 std::unique_ptr<ExprAST> Parser::ParseForExpr() {
-    getNextToken(); // eat the for.
-
-    if (CurTok != static_cast<int>(TokenType::tok_identifier)) {
-        std::cerr << "expected identifier after for" << std::endl;
-        return nullptr;
-    }
-
+    getNextToken();
+    if (CurTok != static_cast<int>(TokenType::tok_identifier)) { ReportError("expected identifier after for"); return nullptr; }
     std::string IdName = m_lexer.IdentifierStr;
     getNextToken();
-
-    if (CurTok != static_cast<int>(TokenType::tok_in)) {
-        std::cerr << "expected 'in' after for variable" << std::endl;
-        return nullptr;
-    }
-    getNextToken(); // eat 'in'
-
+    if (CurTok != static_cast<int>(TokenType::tok_in)) { ReportError("expected 'in' after for"); return nullptr; }
+    getNextToken();
     auto Start = ParseExpression();
     if (!Start) return nullptr;
-
-    if (CurTok != ',') {
-        std::cerr << "expected ',' after start expression in for loop" << std::endl;
-        return nullptr;
-    }
-    getNextToken(); // eat ','
-
+    if (CurTok != ',') { ReportError("expected ',' after for start value"); return nullptr; }
+    getNextToken();
     auto End = ParseExpression();
     if (!End) return nullptr;
-
-    // Optional step
     std::unique_ptr<ExprAST> Step;
-    if (CurTok == ',') {
-        getNextToken(); // eat ','
-        Step = ParseExpression();
-        if (!Step) return nullptr;
-    }
-
-    if (CurTok != static_cast<int>(TokenType::tok_do)) {
-        std::cerr << "expected 'do' after for loop range" << std::endl;
-        return nullptr;
-    }
-    getNextToken(); // eat 'do'
-
+    if (CurTok == ',') { getNextToken(); Step = ParseExpression(); if (!Step) return nullptr; }
+    if (CurTok != static_cast<int>(TokenType::tok_do)) { ReportError("expected 'do' after for"); return nullptr; }
+    getNextToken();
     auto Body = ParseExpression();
     if (!Body) return nullptr;
-
-    return std::make_unique<ForExprAST>(IdName, std::move(Start), std::move(End),
-                                         std::move(Step), std::move(Body));
+    return std::make_unique<ForExprAST>(IdName, std::move(Start), std::move(End), std::move(Step), std::move(Body));
 }
 
 std::unique_ptr<ExprAST> Parser::ParseWhileExpr() {
-    getNextToken(); // eat the while.
-
-    // condition.
+    getNextToken();
     auto Cond = ParseExpression();
     if (!Cond) return nullptr;
-
-    if (CurTok != static_cast<int>(TokenType::tok_do)) {
-        std::cerr << "expected 'do' after while condition" << std::endl;
-        return nullptr;
-    }
-    getNextToken(); // eat 'do'
-
+    if (CurTok != static_cast<int>(TokenType::tok_do)) { ReportError("expected 'do' after while"); return nullptr; }
+    getNextToken();
     auto Body = ParseExpression();
     if (!Body) return nullptr;
-
     return std::make_unique<WhileExprAST>(std::move(Cond), std::move(Body));
 }
 
 std::unique_ptr<ExprAST> Parser::ParseLetExpr() {
-    bool isVar = (CurTok == static_cast<int>(TokenType::tok_var));
-    getNextToken(); // eat the let/var.
-
-    if (CurTok != static_cast<int>(TokenType::tok_identifier)) {
-        std::cerr << "expected identifier after " << (isVar ? "var" : "let") << std::endl;
-        return nullptr;
-    }
-
-    std::string VarName = m_lexer.IdentifierStr;
+    bool isLet = (CurTok == static_cast<int>(TokenType::tok_let));
     getNextToken();
-
-    FluxType VarType(TypeKind::Double);
-    if (CurTok == ':') {
-        getNextToken();
-        if (CurTok == static_cast<int>(TokenType::tok_type_float) ||
-            CurTok == static_cast<int>(TokenType::tok_type_double) ||
-            CurTok == static_cast<int>(TokenType::tok_type_int)) {
-            VarType = FluxType::fromToken(CurTok);
-            getNextToken();
-        } else {
-            std::cerr << "Expected type after ':' in variable declaration" << std::endl;
-            return nullptr;
-        }
-    }
-
-    if (CurTok != '=') {
-        std::cerr << "expected '=' after " << (isVar ? "var" : "let") << " identifier" << std::endl;
-        return nullptr;
-    }
-    getNextToken(); // eat '='
-
+    if (CurTok != static_cast<int>(TokenType::tok_identifier)) { ReportError("expected identifier after let/var"); return nullptr; }
+    std::string IdName = m_lexer.IdentifierStr;
+    getNextToken();
+    FluxType Type(TypeKind::Double);
+    if (CurTok == static_cast<int>(TokenType::tok_colon)) { getNextToken(); Type = FluxType::fromToken(CurTok); getNextToken(); }
+    if (CurTok != '=') { ReportError("expected '=' after let/var"); return nullptr; }
+    getNextToken();
     auto Init = ParseExpression();
     if (!Init) return nullptr;
-
-    if (CurTok == static_cast<int>(TokenType::tok_in)) {
-        getNextToken(); // eat 'in'
-        auto Body = ParseExpression();
-        if (!Body) return nullptr;
-        return std::make_unique<LetExprAST>(VarName, FluxType(TypeKind::Double), std::move(Init), std::move(Body));
-    } else {
-        return Init;
-    }
+    if (CurTok != static_cast<int>(TokenType::tok_in)) { ReportError("expected 'in' after let/var"); return nullptr; }
+    getNextToken();
+    auto Body = ParseExpression();
+    if (!Body) return nullptr;
+    return std::make_unique<LetExprAST>(IdName, Type, std::move(Init), std::move(Body));
 }
 
-std::unique_ptr<ExprAST> Parser::ParseVectorExpr() {
-    getNextToken(); // eat [
-    
-    std::vector<std::unique_ptr<ExprAST>> Elements;
-    
-    // Empty vector case: []
-    if (CurTok == ']') {
-        getNextToken();
-        return std::make_unique<VectorExprAST>(std::move(Elements));
-    }
-    
-    // Parse elements
-    while (true) {
-        auto Elem = ParseExpression();
-        if (!Elem) return nullptr;
-        Elements.push_back(std::move(Elem));
-        
-        if (CurTok == ']') {
+std::unique_ptr<ExprAST> Parser::ParseLambdaExpr() {
+    getNextToken();
+    if (CurTok != '(') { ReportError("expected '(' in lambda"); return nullptr; }
+    getNextToken();
+    std::vector<std::string> Args;
+    if (CurTok != ')') {
+        while (true) {
+            if (CurTok != static_cast<int>(TokenType::tok_identifier)) { ReportError("expected identifier in lambda args"); return nullptr; }
+            Args.push_back(m_lexer.IdentifierStr);
             getNextToken();
-            break;
+            if (CurTok == ')') break;
+            if (CurTok != ',') { ReportError("expected ')' or ',' in lambda args"); return nullptr; }
+            getNextToken();
         }
-        if (CurTok != ',') {
-            std::cerr << "expected ',' or ']' in vector literal" << std::endl;
-            return nullptr;
-        }
-        getNextToken(); // eat ,
     }
-    
-    return std::make_unique<VectorExprAST>(std::move(Elements));
-}
-
-std::unique_ptr<ExprAST> Parser::ParseBlockExpr() {
-    getNextToken(); // eat {
-    
-    std::vector<std::unique_ptr<ExprAST>> Statements;
-    
-    while (CurTok != static_cast<int>(TokenType::tok_rbrace) && 
-           CurTok != static_cast<int>(TokenType::tok_eof)) {
-        auto Stmt = ParseExpression();
-        if (!Stmt) return nullptr;
-        Statements.push_back(std::move(Stmt));
-    }
-    
-    if (CurTok != static_cast<int>(TokenType::tok_rbrace)) {
-        std::cerr << "expected '}' to close block" << std::endl;
-        return nullptr;
-    }
-    getNextToken(); // eat }
-    
-    return std::make_unique<BlockExprAST>(std::move(Statements));
+    getNextToken();
+    auto Body = ParseExpression();
+    if (!Body) return nullptr;
+    return std::make_unique<LambdaExprAST>(std::move(Args), std::move(Body));
 }
 
 std::unique_ptr<ExprAST> Parser::ParseUnaryExpr() {
-    if (CurTok == '!' ||
-        CurTok == static_cast<int>(TokenType::tok_logical_not) ||
-        CurTok == '~' ||
-        CurTok == static_cast<int>(TokenType::tok_bitwise_not)) {
-        int Op = CurTok;
-        getNextToken();
-        auto Operand = ParseUnaryExpr();
-        if (!Operand) return nullptr;
-        return std::make_unique<UnaryExprAST>(Op, std::move(Operand));
+    bool isUnary = false;
+    if (isascii(CurTok)) {
+        if (CurTok == '-' || CurTok == '+' || CurTok == '!' || CurTok == '~') isUnary = true;
+    } else {
+        if (CurTok == static_cast<int>(TokenType::tok_bitwise_not) ||
+            CurTok == static_cast<int>(TokenType::tok_logical_not)) isUnary = true;
     }
 
-    if (CurTok == '-' || CurTok == '+') {
-        int Op = CurTok;
-        getNextToken();
-        auto Operand = ParseUnaryExpr();
-        if (!Operand) return nullptr;
-        return std::make_unique<UnaryExprAST>(Op, std::move(Operand));
-    }
+    if (!isUnary || CurTok == '(' || CurTok == ',' || CurTok == '[' || CurTok == '{') return ParsePrimary();
+    int Opc = CurTok;
+    getNextToken();
+    if (auto Operand = ParseUnaryExpr()) return std::make_unique<UnaryExprAST>(Opc, std::move(Operand));
+    return nullptr;
+}
 
-    return ParsePrimary();
+std::unique_ptr<ExprAST> Parser::ParseMatrixExpr() {
+    getNextToken();
+    std::vector<std::vector<std::unique_ptr<ExprAST>>> Rows;
+    if (CurTok == ']') { getNextToken(); return std::make_unique<MatrixExprAST>(std::move(Rows), 0, 0); }
+    int maxCols = 0;
+    while (true) {
+        std::vector<std::unique_ptr<ExprAST>> CurrentRow;
+        while (true) {
+            auto Elem = ParseExpression();
+            if (!Elem) return nullptr;
+            CurrentRow.push_back(std::move(Elem));
+            if (CurTok == ']' || CurTok == static_cast<int>(TokenType::tok_semicolon)) break;
+            if (CurTok == ',') getNextToken();
+            else { ReportError("expected ',', ';', or ']' in matrix"); return nullptr; }
+        }
+        if ((int)CurrentRow.size() > maxCols) maxCols = CurrentRow.size();
+        Rows.push_back(std::move(CurrentRow));
+        if (CurTok == ']') { getNextToken(); break; }
+        getNextToken();
+    }
+    for (auto& row : Rows) while (row.size() < (size_t)maxCols) row.push_back(std::make_unique<NumberExprAST>(0.0));
+    return std::make_unique<MatrixExprAST>(std::move(Rows), Rows.size(), maxCols);
+}
+
+std::unique_ptr<ExprAST> Parser::ParseRangeExpr() {
+    auto Start = ParseExpression();
+    if (!Start) return nullptr;
+    if (CurTok != static_cast<int>(TokenType::tok_colon)) return Start;
+    getNextToken();
+    auto End = ParseExpression();
+    if (!End) return nullptr;
+    return std::make_unique<RangeExprAST>(std::move(Start), std::move(End));
+}
+
+std::unique_ptr<ExprAST> Parser::ParseBlockExpr() {
+    getNextToken();
+    std::vector<std::unique_ptr<ExprAST>> Stmts;
+    while (CurTok != static_cast<int>(TokenType::tok_rbrace) && CurTok != static_cast<int>(TokenType::tok_eof)) {
+        if (auto Expr = ParseExpression()) Stmts.push_back(std::move(Expr));
+        else return nullptr;
+        if (CurTok == static_cast<int>(TokenType::tok_semicolon) || CurTok == static_cast<int>(TokenType::tok_semicolon)) getNextToken();
+    }
+    if (CurTok != static_cast<int>(TokenType::tok_rbrace)) { ReportError("expected '}'"); return nullptr; }
+    getNextToken();
+    return std::make_unique<BlockExprAST>(std::move(Stmts));
 }
 
 std::unique_ptr<ExprAST> Parser::ParsePrimary() {
+    std::unique_ptr<ExprAST> Res;
     switch (CurTok) {
-    default:
-        std::cerr << "unknown token " << CurTok << " when expecting an expression" << std::endl;
-        return nullptr;
-    case static_cast<int>(TokenType::tok_identifier):
-        return ParseIdentifierExpr();
-    case static_cast<int>(TokenType::tok_number):
-        return ParseNumberExpr();
-    case static_cast<int>(TokenType::tok_imaginary):
-        return ParseImaginaryExpr();
-    case static_cast<int>(TokenType::tok_string):
-        return ParseStringExpr();
-    case '(':
-        return ParseParenExpr();
-    case '[':
-        return ParseVectorExpr();
-    case '{':
-        return ParseBlockExpr();
-    case static_cast<int>(TokenType::tok_if):
-        return ParseIfExpr();
-    case static_cast<int>(TokenType::tok_for):
-        return ParseForExpr();
-    case static_cast<int>(TokenType::tok_while):
-        return ParseWhileExpr();
+    case static_cast<int>(TokenType::tok_identifier): Res = ParseIdentifierExpr(); break;
+    case static_cast<int>(TokenType::tok_number): Res = ParseNumberExpr(); break;
+    case static_cast<int>(TokenType::tok_imaginary): Res = ParseImaginaryExpr(); break;
+    case static_cast<int>(TokenType::tok_string): Res = ParseStringExpr(); break;
+    case '(': Res = ParseParenExpr(); break;
+    case '[': Res = ParseMatrixExpr(); break;
+    case static_cast<int>(TokenType::tok_lbrace): Res = ParseBlockExpr(); break;
+    case static_cast<int>(TokenType::tok_if): Res = ParseIfExpr(); break;
+    case static_cast<int>(TokenType::tok_for): Res = ParseForExpr(); break;
+    case static_cast<int>(TokenType::tok_while): Res = ParseWhileExpr(); break;
     case static_cast<int>(TokenType::tok_let):
-    case static_cast<int>(TokenType::tok_var):
-        return ParseLetExpr();
+    case static_cast<int>(TokenType::tok_var): Res = ParseLetExpr(); break;
+    case static_cast<int>(TokenType::tok_fn): Res = ParseLambdaExpr(); break;
+    default: {
+        std::string msg = "unknown token in expression: ";
+        if (CurTok > 0 && CurTok < 128) msg += (char)CurTok;
+        else msg += std::to_string(CurTok);
+        ReportError(msg);
+        return nullptr;
+    }
+    }
+    if (!Res) return nullptr;
+    while (CurTok == static_cast<int>(TokenType::tok_transpose)) { Res = std::make_unique<TransposeExprAST>(std::move(Res)); getNextToken(); }
+    return Res;
+}
+
+std::unique_ptr<ExprAST> Parser::ParseBinOpRHS(int ExprPrec, std::unique_ptr<ExprAST> LHS) {
+    while (true) {
+        int TokPrec = GetTokPrecedence();
+        if (TokPrec < ExprPrec) return LHS;
+        int BinOp = CurTok;
+        getNextToken();
+        auto RHS = ParseUnaryExpr();
+        if (!RHS) return nullptr;
+        int NextPrec = GetTokPrecedence();
+        if (TokPrec < NextPrec) { RHS = ParseBinOpRHS(TokPrec + 1, std::move(RHS)); if (!RHS) return nullptr; }
+        if (BinOp == '=') {
+            if (auto* LHSE = dynamic_cast<VariableExprAST*>(LHS.get())) LHS = std::make_unique<AssignExprAST>(LHSE->getName(), std::move(RHS));
+            else return nullptr;
+        } else LHS = std::make_unique<BinaryExprAST>(BinOp, std::move(LHS), std::move(RHS));
     }
 }
 
 std::unique_ptr<ExprAST> Parser::ParseExpression() {
     auto LHS = ParseUnaryExpr();
     if (!LHS) return nullptr;
-
     return ParseBinOpRHS(0, std::move(LHS));
 }
 
-std::unique_ptr<ExprAST> Parser::ParseBinOpRHS(int ExprPrec, std::unique_ptr<ExprAST> LHS) {
-    while (true) {
-        int TokPrec = GetTokPrecedence();
-
-        if (TokPrec < ExprPrec)
-            return LHS;
-
-        int BinOp = CurTok;
-        
-        // Handle right-associative operators (power)
-        bool isRightAssociative = (BinOp == static_cast<int>(TokenType::tok_power));
-        
-        getNextToken(); // eat binop
-
-        auto RHS = ParseUnaryExpr();
-        if (!RHS) return nullptr;
-
-        int NextPrec = GetTokPrecedence();
-        if (isRightAssociative && TokPrec <= NextPrec) {
-            RHS = ParseBinOpRHS(TokPrec + 1, std::move(RHS));
-            if (!RHS) return nullptr;
-        } else if (!isRightAssociative && TokPrec < NextPrec) {
-            RHS = ParseBinOpRHS(TokPrec + 1, std::move(RHS));
-            if (!RHS) return nullptr;
-        }
-
-        // Handle assignment separately
-        if (BinOp == '=') {
-            VariableExprAST* LHSE = dynamic_cast<VariableExprAST*>(LHS.get());
-            if (!LHSE) {
-                std::cerr << "destination of '=' must be a variable" << std::endl;
-                return nullptr;
-            }
-            LHS = std::make_unique<AssignExprAST>(LHSE->getName(), std::move(RHS));
-        } else {
-            LHS = std::make_unique<BinaryExprAST>(BinOp, std::move(LHS), std::move(RHS));
-        }
-    }
-}
-
 std::unique_ptr<PrototypeAST> Parser::ParsePrototype() {
-    if (CurTok != static_cast<int>(TokenType::tok_identifier)) {
-        std::cerr << "Expected function name in prototype, got " << CurTok << std::endl;
-        return nullptr;
-    }
-
+    if (CurTok != static_cast<int>(TokenType::tok_identifier)) return nullptr;
     std::string FnName = m_lexer.IdentifierStr;
     getNextToken();
-
-    // Optional argument list with types
+    if (CurTok != '(') return nullptr;
+    getNextToken();
     std::vector<std::pair<std::string, FluxType>> Args;
-    if (CurTok == '(') {
-        getNextToken(); // eat '('
-        while (CurTok == static_cast<int>(TokenType::tok_identifier)) {
-            std::string ArgName = m_lexer.IdentifierStr;
-            getNextToken();
-            
-            // Optional type annotation
-            FluxType ArgType(TypeKind::Double); // Default to double
-            if (CurTok == ':') {
-                getNextToken(); // eat ':'
-                if (CurTok == static_cast<int>(TokenType::tok_type_float) ||
-                    CurTok == static_cast<int>(TokenType::tok_type_double) ||
-                    CurTok == static_cast<int>(TokenType::tok_type_int)) {
-                    ArgType = FluxType::fromToken(CurTok);
-                    getNextToken();
-                } else {
-                    std::cerr << "Expected type after ':' in parameter" << std::endl;
-                    return nullptr;
-                }
-            }
-            
-            Args.push_back({ArgName, ArgType});
-            
-            if (CurTok == ',') {
-                getNextToken(); // eat ','
-            }
-        }
-        if (CurTok != ')') {
-            std::cerr << "Expected ')' in prototype, got " << (char)CurTok << " (" << CurTok << ")" << std::endl;
-            return nullptr;
-        }
-        getNextToken(); // eat ')'.
+    while (CurTok == static_cast<int>(TokenType::tok_identifier)) {
+        std::string Name = m_lexer.IdentifierStr;
+        getNextToken();
+        FluxType Type(TypeKind::Double);
+        if (CurTok == static_cast<int>(TokenType::tok_colon)) { getNextToken(); Type = FluxType::fromToken(CurTok); getNextToken(); }
+        Args.push_back({Name, Type});
+        if (CurTok == ')') break;
+        if (CurTok != ',') return nullptr;
+        getNextToken();
     }
-
-    // Optional return type
-    FluxType ReturnType(TypeKind::Double); // Default to double
-    if (CurTok == static_cast<int>(TokenType::tok_arrow)) {
-        getNextToken(); // eat '->'
-        if (CurTok == static_cast<int>(TokenType::tok_type_float) ||
-            CurTok == static_cast<int>(TokenType::tok_type_double) ||
-            CurTok == static_cast<int>(TokenType::tok_type_int) ||
-            CurTok == static_cast<int>(TokenType::tok_type_void)) {
-            ReturnType = FluxType::fromToken(CurTok);
-            getNextToken();
-        } else {
-            std::cerr << "Expected return type after '->'" << std::endl;
-            return nullptr;
-        }
-    }
-
-    return std::make_unique<PrototypeAST>(FnName, std::move(Args), ReturnType);
+    if (CurTok != ')') return nullptr;
+    getNextToken();
+    FluxType RetType(TypeKind::Double);
+    if (CurTok == static_cast<int>(TokenType::tok_arrow)) { getNextToken(); RetType = FluxType::fromToken(CurTok); getNextToken(); }
+    return std::make_unique<PrototypeAST>(FnName, std::move(Args), RetType);
 }
 
+std::unique_ptr<PrototypeAST> Parser::ParseExtern() { getNextToken(); return ParsePrototype(); }
+
 std::unique_ptr<FunctionAST> Parser::ParseDefinition() {
-    getNextToken(); // eat def.
+    getNextToken();
     auto Proto = ParsePrototype();
     if (!Proto) return nullptr;
-
-    if (auto E = ParseExpression())
-        return std::make_unique<FunctionAST>(std::move(Proto), std::move(E));
+    if (auto Body = ParseExpression()) return std::make_unique<FunctionAST>(std::move(Proto), std::move(Body));
     return nullptr;
 }
 
 std::unique_ptr<FunctionAST> Parser::ParseTopLevelExpr() {
-    if (auto E = ParseExpression()) {
-        auto Proto = std::make_unique<PrototypeAST>("__anon_expr", std::vector<std::pair<std::string, FluxType>>());
-        return std::make_unique<FunctionAST>(std::move(Proto), std::move(E));
+    if (auto Body = ParseExpression()) {
+        // Default to Complex return type for top-level expressions to ensure we capture
+        // the full result if it happens to be complex. Scalar results will be returned as {val, 0}.
+        FluxType RetType(TypeKind::Complex);
+        return std::make_unique<FunctionAST>(std::make_unique<PrototypeAST>("__anon_expr", std::vector<std::pair<std::string, FluxType>>(), RetType), std::move(Body));
     }
     return nullptr;
-}
-
-std::unique_ptr<PrototypeAST> Parser::ParseExtern() {
-    getNextToken(); // eat extern.
-    return ParsePrototype();
 }
 
 } // namespace Flux

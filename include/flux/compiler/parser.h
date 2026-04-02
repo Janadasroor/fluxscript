@@ -19,6 +19,13 @@ public:
 
     int CurTok;
     int getNextToken();
+    
+    // Error recovery (public for use by JIT engine)
+    void SkipToSynchronizationPoint();
+    bool IsSynchronizationToken(int token);
+    void ReportError(const std::string& message);
+    bool hasError() const { return m_hasError; }
+    void clearError() { m_hasError = false; }
 
 private:
     std::unique_ptr<ExprAST> ParseNumberExpr();
@@ -30,8 +37,11 @@ private:
     std::unique_ptr<ExprAST> ParseForExpr();
     std::unique_ptr<ExprAST> ParseWhileExpr();
     std::unique_ptr<ExprAST> ParseLetExpr();
+    std::unique_ptr<ExprAST> ParseLambdaExpr();
     std::unique_ptr<ExprAST> ParseUnaryExpr();
     std::unique_ptr<ExprAST> ParseVectorExpr();
+    std::unique_ptr<ExprAST> ParseRangeExpr();
+    std::unique_ptr<ExprAST> ParseMatrixExpr();
     std::unique_ptr<ExprAST> ParseBlockExpr();
     std::unique_ptr<ExprAST> ParsePrimary();
     std::unique_ptr<ExprAST> ParseBinOpRHS(int ExprPrec, std::unique_ptr<ExprAST> LHS);
@@ -41,6 +51,7 @@ private:
 
     Lexer m_lexer;
     std::map<int, int> m_binopPrecedence;
+    bool m_hasError;
 };
 
 } // namespace Flux

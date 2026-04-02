@@ -1,0 +1,9 @@
+/home/jnd/qt_projects/fluxscript/gui-simple/build/CMakeFiles/intrinsics_gen.dir
+/home/jnd/qt_projects/fluxscript/gui-simple/build/CMakeFiles/omp_gen.dir
+/home/jnd/qt_projects/fluxscript/gui-simple/build/CMakeFiles/acc_gen.dir
+/home/jnd/qt_projects/fluxscript/gui-simple/build/CMakeFiles/RISCVTargetParserTableGen.dir
+/home/jnd/qt_projects/fluxscript/gui-simple/build/CMakeFiles/flux-editor.dir
+/home/jnd/qt_projects/fluxscript/gui-simple/build/CMakeFiles/edit_cache.dir
+/home/jnd/qt_projects/fluxscript/gui-simple/build/CMakeFiles/rebuild_cache.dir
+/home/jnd/qt_projects/fluxscript/gui-simple/build/CMakeFiles/flux-editor_autogen_timestamp_deps.dir
+/home/jnd/qt_projects/fluxscript/gui-simple/build/CMakeFiles/flux-editor_autogen.dir

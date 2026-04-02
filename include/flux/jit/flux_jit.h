@@ -17,6 +17,19 @@ enum class OptimizationLevel {
     O3   // Aggressive optimizations
 };
 
+struct SIMDOptions {
+    bool enableLoopVectorization = true;   // Enable loop vectorizer
+    bool enableSLPVectorization = true;    // Enable SLP (Superword-Level Parallelism) vectorizer
+    bool enableInterleavedAccess = true;   // Enable interleaved memory access optimization
+    int vectorizationFactor = 0;           // 0 = auto, otherwise specify factor (2, 4, 8, etc.)
+};
+
+struct TCOOptions {
+    bool enableTailCallElimination = true;  // Enable tail call optimization
+    bool enableTailCallMerging = true;      // Enable tail call merging for mutual recursion
+    int maxRecursionDepth = 0;              // 0 = unlimited (with TCO), otherwise limit depth
+};
+
 class FluxJIT {
 public:
     FluxJIT(OptimizationLevel optLevel = OptimizationLevel::O2);
@@ -29,6 +42,12 @@ public:
     void setOptimizationLevel(OptimizationLevel level);
     OptimizationLevel getOptimizationLevel() const { return m_optLevel; }
 
+    void setSIMDOptions(const SIMDOptions& options);
+    SIMDOptions getSIMDOptions() const;
+
+    void setTCOOptions(const TCOOptions& options);
+    TCOOptions getTCOOptions() const;
+
 private:
     void registerNativeFunctions();
     void registerComplexHelpers();
@@ -37,6 +56,8 @@ private:
     std::unique_ptr<llvm::orc::LLJIT> m_lljit;
     std::unique_ptr<llvm::PassBuilder> m_passBuilder;
     OptimizationLevel m_optLevel;
+    SIMDOptions m_simdOptions;
+    TCOOptions m_tcoOptions;
 };
 
 } // namespace Flux
