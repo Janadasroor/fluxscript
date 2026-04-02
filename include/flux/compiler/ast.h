@@ -14,12 +14,15 @@ namespace Flux {
 
 // Type system for explicit typing
 enum class TypeKind {
+    Auto,     // Inferred type
     Double,   // Default type (double precision float)
     Float,    // Single precision float
     Int,      // Integer
     Void,     // Void (for return types)
     Complex,  // Complex number (double complex)
-    String    // String (i8*)
+    String,   // String (i8*)
+    Matrix,   // Matrix { double*, i32, i32 }
+    Vector    // Vector { double*, i32 }
 };
 
 class FluxType {
@@ -42,6 +45,19 @@ public:
                     llvm::Type* DoubleTy = llvm::Type::getDoubleTy(Context);
                     return llvm::StructType::get(Context, {DoubleTy, DoubleTy});
                 }
+            case TypeKind::Matrix:
+                // Matrix represented as { double*, i32, i32 }
+                return llvm::StructType::get(Context, {
+                    llvm::PointerType::get(Context, 0),
+                    llvm::Type::getInt32Ty(Context),
+                    llvm::Type::getInt32Ty(Context)
+                });
+            case TypeKind::Vector:
+                // Vector represented as { double*, i32 }
+                return llvm::StructType::get(Context, {
+                    llvm::PointerType::get(Context, 0),
+                    llvm::Type::getInt32Ty(Context)
+                });
             case TypeKind::String:
                 // Strings are represented as i8* (pointer to char)
                 return llvm::PointerType::get(llvm::Type::getInt8Ty(Context), 0);
@@ -56,7 +72,16 @@ public:
         if (T->isFloatTy()) return FluxType(TypeKind::Float);
         if (T->isIntegerTy(32)) return FluxType(TypeKind::Int);
         if (T->isVoidTy()) return FluxType(TypeKind::Void);
-        if (T->isStructTy()) return FluxType(TypeKind::Complex);
+        if (T->isStructTy()) {
+            if (T->getStructNumElements() == 3) return FluxType(TypeKind::Matrix);
+            if (T->getStructNumElements() == 2) {
+                // Could be Vector or Complex. For now, distinguish by field type if possible,
+                // or default to Complex if both are double.
+                // Vector is { double*, i32 }, Complex is { double, double }.
+                if (T->getStructElementType(0)->isPointerTy()) return FluxType(TypeKind::Vector);
+                return FluxType(TypeKind::Complex);
+            }
+        }
         if (T->isPointerTy()) return FluxType(TypeKind::String);
         return FluxType(TypeKind::Double);
     }
@@ -73,6 +98,10 @@ public:
                 return FluxType(TypeKind::Complex);
             case static_cast<int>(TokenType::tok_type_string):
                 return FluxType(TypeKind::String);
+            case static_cast<int>(TokenType::tok_type_matrix):
+                return FluxType(TypeKind::Matrix);
+            case static_cast<int>(TokenType::tok_type_vector):
+                return FluxType(TypeKind::Vector);
             case static_cast<int>(TokenType::tok_type_double):
             default:
                 return FluxType(TypeKind::Double);
@@ -274,6 +303,14 @@ public:
     CurrentExprAST(const std::string& BranchName) : BranchName(BranchName) {}
     TypedValue codegen(CodegenContext& context) override;
     const std::string& getBranchName() const { return BranchName; }
+};
+
+class ParameterExprAST : public ExprAST {
+    std::string ParamName;
+public:
+    ParameterExprAST(const std::string& ParamName) : ParamName(ParamName) {}
+    TypedValue codegen(CodegenContext& context) override;
+    const std::string& getParamName() const { return ParamName; }
 };
 
 class IndexExprAST : public ExprAST {

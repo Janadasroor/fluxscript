@@ -99,12 +99,12 @@ std::unique_ptr<ExprAST> Parser::ParseIdentifierExpr() {
     std::string IdName = m_lexer.IdentifierStr;
     getNextToken();
     
-    // Handle V(node) and I(branch) as special expressions for SPICE support
-    if (CurTok == '(' && (IdName == "V" || IdName == "I")) {
+    // Handle V(node), I(branch), and P(param) as special expressions for SPICE support
+    if (CurTok == '(' && (IdName == "V" || IdName == "I" || IdName == "P")) {
         getNextToken(); // eat (
         if (CurTok != static_cast<int>(TokenType::tok_identifier) && 
             CurTok != static_cast<int>(TokenType::tok_number)) {
-            ReportError("expected node or branch name in V() / I()");
+            ReportError("expected name in V() / I() / P()");
             return nullptr;
         }
 
@@ -117,15 +117,17 @@ std::unique_ptr<ExprAST> Parser::ParseIdentifierExpr() {
         getNextToken(); // eat name
 
         if (CurTok != ')') {
-            ReportError("expected ')' after node or branch name");
+            ReportError("expected ')' after name");
             return nullptr;
         }
         getNextToken(); // eat )
 
         if (IdName == "V") {
             return std::make_unique<VoltageExprAST>(name);
-        } else {
+        } else if (IdName == "I") {
             return std::make_unique<CurrentExprAST>(name);
+        } else {
+            return std::make_unique<ParameterExprAST>(name);
         }
     }
 
@@ -201,7 +203,7 @@ std::unique_ptr<ExprAST> Parser::ParseLetExpr() {
     if (CurTok != static_cast<int>(TokenType::tok_identifier)) { ReportError("expected identifier after let/var"); return nullptr; }
     std::string IdName = m_lexer.IdentifierStr;
     getNextToken();
-    FluxType Type(TypeKind::Double);
+    FluxType Type(TypeKind::Auto);
     if (CurTok == static_cast<int>(TokenType::tok_colon)) { getNextToken(); Type = FluxType::fromToken(CurTok); getNextToken(); }
     if (CurTok != '=') { ReportError("expected '=' after let/var"); return nullptr; }
     getNextToken();
@@ -386,9 +388,12 @@ std::unique_ptr<FunctionAST> Parser::ParseDefinition() {
 
 std::unique_ptr<FunctionAST> Parser::ParseTopLevelExpr() {
     if (auto Body = ParseExpression()) {
-        // Default to Complex return type for top-level expressions to ensure we capture
-        // the full result if it happens to be complex. Scalar results will be returned as {val, 0}.
-        FluxType RetType(TypeKind::Complex);
+        FluxType RetType(TypeKind::Double);
+        if (dynamic_cast<ComplexExprAST*>(Body.get())) {
+            RetType = FluxType(TypeKind::Complex);
+        } else if (dynamic_cast<MatrixExprAST*>(Body.get())) {
+            RetType = FluxType(TypeKind::Matrix);
+        }
         return std::make_unique<FunctionAST>(std::make_unique<PrototypeAST>("__anon_expr", std::vector<std::pair<std::string, FluxType>>(), RetType), std::move(Body));
     }
     return nullptr;

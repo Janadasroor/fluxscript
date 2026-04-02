@@ -15,26 +15,48 @@
 
 namespace Flux {
 
-// External C function for printing strings (declared in scripts for extern use)
+// External C function for printing strings
 extern "C" double flux_print_string(const char* str) {
     printf("%s", str);
     fflush(stdout);
     return 0.0;
 }
 
-// SPICE-style node access (Dummies for standalone use)
+// SPICE-style node access
 extern "C" double flux_get_voltage(const char* node) {
-    // In a real VioSpice integration, this would look up node voltage in the solver state
     if (std::string(node) == "0") return 0.0;
-    return 5.0; // Return a default value for testing
+    return 5.0; 
 }
 
 extern "C" double flux_get_current(const char* branch) {
-    // In a real VioSpice integration, this would look up branch current
-    return 0.001; // Return 1mA default
+    return 0.001; 
 }
 
-// Mathematical library functions (extern "C" for JIT binding)
+extern "C" double flux_get_parameter(const char* name) {
+    if (std::string(name) == "TEMP") return 27.0;
+    return 1.0;
+}
+
+// Behavioral Modeling Functions
+extern "C" double flux_uramp(double x) {
+    return x > 0.0 ? x : 0.0;
+}
+
+extern "C" double flux_limit(double x, double low, double high) {
+    if (x < low) return low;
+    if (x > high) return high;
+    return x;
+}
+
+extern "C" double flux_buf(double x) {
+    return x > 0.5 ? 1.0 : 0.0;
+}
+
+extern "C" double flux_inv(double x) {
+    return x > 0.5 ? 0.0 : 1.0;
+}
+
+// Mathematical library functions
 extern "C" double flux_sin(double x) { return std::sin(x); }
 extern "C" double flux_cos(double x) { return std::cos(x); }
 extern "C" double flux_tan(double x) { return std::tan(x); }
@@ -59,26 +81,77 @@ extern "C" double flux_tanh(double x) { return std::tanh(x); }
 extern "C" double flux_pi() { return 3.14159265358979323846; }
 extern "C" double flux_e() { return 2.71828182845904523536; }
 
-// Matrix and Vector JIT Implementations
-// Note: We use (double)(uintptr_t) to pass pointers as doubles in the JIT
-extern "C" double flux_create_matrix(double* data, int rows, int cols) {
-    // MatrixManager implementation is expected to be available
-    // return (double)(uintptr_t)data;
-    return 0.0; // Placeholder if MatrixManager is missing
+#include <Eigen/Dense>
+
+extern "C" void* flux_create_matrix(double* data, int rows, int cols) {
+    Eigen::MatrixXd* mat = new Eigen::MatrixXd(rows, cols);
+    for (int r = 0; r < rows; ++r) {
+        for (int c = 0; c < cols; ++c) {
+            (*mat)(r, c) = data[r * cols + c];
+        }
+    }
+    return mat;
 }
 
-extern "C" double flux_matrix_mul(double a_val, double b_val) {
-    return a_val * b_val; // Placeholder
+extern "C" void* flux_matrix_mul(void* a_ptr, void* b_ptr) {
+    Eigen::MatrixXd* A = static_cast<Eigen::MatrixXd*>(a_ptr);
+    Eigen::MatrixXd* B = static_cast<Eigen::MatrixXd*>(b_ptr);
+    Eigen::MatrixXd* res = new Eigen::MatrixXd((*A) * (*B));
+    return res;
 }
 
-extern "C" double flux_matrix_transpose(double m_val) {
-    return m_val; // Placeholder
+extern "C" void* flux_matrix_mul_ms(void* m_ptr, double s) {
+    Eigen::MatrixXd* M = static_cast<Eigen::MatrixXd*>(m_ptr);
+    Eigen::MatrixXd* res = new Eigen::MatrixXd((*M) * s);
+    return res;
+}
+
+extern "C" void* flux_matrix_add(void* a_ptr, void* b_ptr) {
+    Eigen::MatrixXd* A = static_cast<Eigen::MatrixXd*>(a_ptr);
+    Eigen::MatrixXd* B = static_cast<Eigen::MatrixXd*>(b_ptr);
+    Eigen::MatrixXd* res = new Eigen::MatrixXd((*A) + (*B));
+    return res;
+}
+
+extern "C" void* flux_matrix_sub(void* a_ptr, void* b_ptr) {
+    Eigen::MatrixXd* A = static_cast<Eigen::MatrixXd*>(a_ptr);
+    Eigen::MatrixXd* B = static_cast<Eigen::MatrixXd*>(b_ptr);
+    Eigen::MatrixXd* res = new Eigen::MatrixXd((*A) - (*B));
+    return res;
+}
+
+extern "C" void* flux_matrix_transpose(void* m_ptr) {
+    Eigen::MatrixXd* M = static_cast<Eigen::MatrixXd*>(m_ptr);
+    Eigen::MatrixXd* res = new Eigen::MatrixXd(M->transpose());
+    return res;
+}
+
+extern "C" int flux_matrix_rows(void* m_ptr) {
+    if (!m_ptr) return 0;
+    return static_cast<Eigen::MatrixXd*>(m_ptr)->rows();
+}
+
+extern "C" int flux_matrix_cols(void* m_ptr) {
+    if (!m_ptr) return 0;
+    return static_cast<Eigen::MatrixXd*>(m_ptr)->cols();
+}
+
+extern "C" double flux_matrix_get(void* m_ptr, int row, int col) {
+    Eigen::MatrixXd* M = static_cast<Eigen::MatrixXd*>(m_ptr);
+    return (*M)(row, col);
 }
 
 extern "C" double flux_create_vector_sum(double* data, int size) {
     double sum = 0.0;
     for(int i=0; i<size; ++i) sum += data[i];
     return sum;
+}
+
+extern "C" double flux_print_matrix(void* m_ptr) {
+    Eigen::MatrixXd* M = static_cast<Eigen::MatrixXd*>(m_ptr);
+    if (!M) return 0.0;
+    std::cout << *M << std::endl;
+    return 1.0;
 }
 
 JITEngine& JITEngine::instance() {
@@ -93,52 +166,49 @@ JITEngine::~JITEngine() {
 }
 
 void JITEngine::setOptimizationLevel(OptimizationLevel level) {
-    if (m_jit) {
-        m_jit->setOptimizationLevel(level);
-    }
+    if (m_jit) m_jit->setOptimizationLevel(level);
 }
 
 OptimizationLevel JITEngine::getOptimizationLevel() const {
-    if (m_jit) {
-        return m_jit->getOptimizationLevel();
-    }
-    return OptimizationLevel::O2;  // Default
+    if (m_jit) return m_jit->getOptimizationLevel();
+    return OptimizationLevel::O2;
 }
 
 void JITEngine::initialize() {
     if (m_initialized) return;
-
     m_jit = std::make_unique<FluxJIT>();
     m_codegenCtx = std::make_unique<CodegenContext>();
     m_codegenCtx->TheModule = std::make_unique<llvm::Module>("Flux JIT Core", m_codegenCtx->TheContext);
-
     m_initialized = true;
-
-    // Register helper functions with JIT
     registerEigenFunctions();
-
     std::cout << "FluxScript C++ LLVM JIT Engine Initialized." << std::endl;
 }
 
 void JITEngine::registerEigenFunctions() {
     if (!m_jit || !m_codegenCtx) return;
     
-    // Register vector helper functions
     m_jit->registerFunction("flux_create_vector_sum", reinterpret_cast<void*>(&flux_create_vector_sum));
-    
-    // Register matrix helper functions
     m_jit->registerFunction("flux_matrix_mul", reinterpret_cast<void*>(&flux_matrix_mul));
+    m_jit->registerFunction("flux_matrix_mul_ms", reinterpret_cast<void*>(&flux_matrix_mul_ms));
+    m_jit->registerFunction("flux_matrix_add", reinterpret_cast<void*>(&flux_matrix_add));
+    m_jit->registerFunction("flux_matrix_sub", reinterpret_cast<void*>(&flux_matrix_sub));
     m_jit->registerFunction("flux_matrix_transpose", reinterpret_cast<void*>(&flux_matrix_transpose));
+    m_jit->registerFunction("flux_matrix_get", reinterpret_cast<void*>(&flux_matrix_get));
     m_jit->registerFunction("flux_create_matrix", reinterpret_cast<void*>(&flux_create_matrix));
+    m_jit->registerFunction("print_matrix", reinterpret_cast<void*>(&flux_print_matrix));
 
-    // Register string helper functions
     m_jit->registerFunction("print_string", reinterpret_cast<void*>(&flux_print_string));
 
-    // Register SPICE-style node access functions
     m_jit->registerFunction("flux_get_voltage", reinterpret_cast<void*>(&flux_get_voltage));
     m_jit->registerFunction("flux_get_current", reinterpret_cast<void*>(&flux_get_current));
+    m_jit->registerFunction("flux_get_parameter", reinterpret_cast<void*>(&flux_get_parameter));
 
-    // Register mathematical library functions
+    // Behavioral Functions
+    m_jit->registerFunction("uramp", reinterpret_cast<void*>(&flux_uramp));
+    m_jit->registerFunction("limit", reinterpret_cast<void*>(&flux_limit));
+    m_jit->registerFunction("buf", reinterpret_cast<void*>(&flux_buf));
+    m_jit->registerFunction("inv", reinterpret_cast<void*>(&flux_inv));
+
     m_jit->registerFunction("sin", reinterpret_cast<void*>(&flux_sin));
     m_jit->registerFunction("cos", reinterpret_cast<void*>(&flux_cos));
     m_jit->registerFunction("tan", reinterpret_cast<void*>(&flux_tan));
@@ -159,9 +229,49 @@ void JITEngine::registerEigenFunctions() {
     m_jit->registerFunction("cosh", reinterpret_cast<void*>(&flux_cosh));
     m_jit->registerFunction("tanh", reinterpret_cast<void*>(&flux_tanh));
 
-    // Register mathematical constants (as zero-argument functions)
     m_jit->registerFunction("pi", reinterpret_cast<void*>(&flux_pi));
     m_jit->registerFunction("e", reinterpret_cast<void*>(&flux_e));
+}
+
+void JITEngine::injectStandardLibrary() {
+    if (!m_codegenCtx) return;
+    
+    auto inject = [&](const std::string& name, int args) {
+        std::vector<std::pair<std::string, FluxType>> params;
+        for (int i = 0; i < args; ++i) {
+            params.push_back({"arg" + std::to_string(i), FluxType(TypeKind::Double)});
+        }
+        PrototypeAST proto(name, params, FluxType(TypeKind::Double));
+        proto.codegen(*m_codegenCtx);
+        m_functionReturnTypes[name] = FluxType(TypeKind::Double);
+    };
+
+    // Trigonometry
+    inject("sin", 1);
+    inject("cos", 1);
+    inject("tan", 1);
+    inject("asin", 1);
+    inject("acos", 1);
+    inject("atan", 1);
+    inject("atan2", 2);
+    inject("sinh", 1);
+    inject("cosh", 1);
+    inject("tanh", 1);
+    
+    // Core math
+    inject("sqrt", 1);
+    inject("exp", 1);
+    inject("log", 1);
+    inject("log10", 1);
+    inject("abs", 1);
+    inject("floor", 1);
+    inject("ceil", 1);
+    inject("round", 1);
+    inject("pow", 2);
+
+    // Constants
+    inject("pi", 0);
+    inject("e", 0);
 }
 
 void JITEngine::finalize() {
@@ -174,55 +284,42 @@ bool JITEngine::isInitialized() const {
     return m_initialized;
 }
 
-#if FLUX_HAS_QT
+#if defined(FLUX_HAS_QT)
 bool JITEngine::compileScript(const QString& code, QString* error) {
     if (!m_initialized) initialize();
-
     Parser parser(code.toStdString());
     m_functionReturnTypes.clear();
-
+    injectStandardLibrary();
     while (parser.CurTok != static_cast<int>(TokenType::tok_eof)) {
         std::unique_ptr<FunctionAST> fnAST = nullptr;
-
         if (parser.CurTok == static_cast<int>(TokenType::tok_def)) {
             fnAST = parser.ParseDefinition();
         } else if (parser.CurTok == static_cast<int>(TokenType::tok_extern)) {
-            // Extern declarations create function prototypes in the module
             auto proto = parser.ParseExtern();
             if (proto) {
                 m_functionReturnTypes[proto->getName()] = proto->getReturnType();
                 proto->codegen(*m_codegenCtx);
             }
-            continue;  // Don't try to generate code for extern declarations
+            continue;
         } else if (parser.CurTok == static_cast<int>(TokenType::tok_semicolon)) {
-            // Skip semicolons as statement separators
             parser.getNextToken();
             continue;
         } else {
             fnAST = parser.ParseTopLevelExpr();
         }
-
-        // Generate code for the function
         if (fnAST) {
             std::string fnName = fnAST->getProto()->getName();
             m_functionReturnTypes[fnName] = fnAST->getProto()->getReturnType();
-
-            if (llvm::Function* F = fnAST->codegen(*m_codegenCtx)) {
-                // Success
-            } else {
+            if (!fnAST->codegen(*m_codegenCtx)) {
                 if (error) *error = "Code generation failed.";
                 return false;
             }
         } else {
-            if (parser.CurTok != static_cast<int>(TokenType::tok_eof)) {
-                parser.SkipToSynchronizationPoint();
-            }
+            if (parser.CurTok != static_cast<int>(TokenType::tok_eof)) parser.SkipToSynchronizationPoint();
         }
     }
-
     m_jit->addModule(std::move(m_codegenCtx->TheModule));
     m_codegenCtx->TheModule = std::make_unique<llvm::Module>("Flux JIT Core", m_codegenCtx->TheContext);
-
     return true;
 }
 
@@ -234,14 +331,12 @@ bool JITEngine::executeString(const QString& code, QString* error) {
 
 bool JITEngine::compileScript(const std::string& code, std::string* error) {
     if (!m_initialized) initialize();
-
     Parser parser(code);
     m_functionReturnTypes.clear();
+    injectStandardLibrary();
     m_overloadedFunctions.clear();
-
     while (parser.CurTok != static_cast<int>(TokenType::tok_eof)) {
         std::unique_ptr<FunctionAST> fnAST = nullptr;
-
         if (parser.CurTok == static_cast<int>(TokenType::tok_def)) {
             fnAST = parser.ParseDefinition();
         } else if (parser.CurTok == static_cast<int>(TokenType::tok_extern)) {
@@ -257,27 +352,19 @@ bool JITEngine::compileScript(const std::string& code, std::string* error) {
         } else {
             fnAST = parser.ParseTopLevelExpr();
         }
-
         if (fnAST) {
             std::string fnName = fnAST->getProto()->getName();
             m_functionReturnTypes[fnName] = fnAST->getProto()->getReturnType();
-
-            if (fnAST->codegen(*m_codegenCtx)) {
-                // Success
-            } else {
+            if (!fnAST->codegen(*m_codegenCtx)) {
                 if (error) *error = "Code generation failed.";
                 return false;
             }
         } else {
-            if (parser.CurTok != static_cast<int>(TokenType::tok_eof)) {
-                parser.SkipToSynchronizationPoint();
-            }
+            if (parser.CurTok != static_cast<int>(TokenType::tok_eof)) parser.SkipToSynchronizationPoint();
         }
     }
-
     m_jit->addModule(std::move(m_codegenCtx->TheModule));
     m_codegenCtx->TheModule = std::make_unique<llvm::Module>("Flux JIT Core", m_codegenCtx->TheContext);
-
     return true;
 }
 
@@ -286,68 +373,108 @@ bool JITEngine::executeString(const std::string& code, std::string* error) {
     return true;
 }
 
-#if FLUX_HAS_QT
+#if defined(FLUX_HAS_QT)
 FluxValue JITEngine::callFunction(const std::string& name, const std::vector<double>& args, QString* error) {
-    if (!m_initialized) {
-        if (error) *error = "JIT not initialized";
-        return 0.0;
-    }
-
+    if (!m_initialized) { if (error) *error = "JIT not initialized"; return 0.0; }
     void* fnPtr = m_jit->getPointerToFunction(name);
-    if (!fnPtr) {
-        if (error) *error = QString("Function not found: ") + QString::fromStdString(name);
-        return 0.0;
-    }
-
+    if (!fnPtr) { if (error) *error = QString("Function not found: ") + QString::fromStdString(name); return 0.0; }
     FluxType retType = m_functionReturnTypes[name];
 
-    if (retType.Kind == TypeKind::Complex) {
-        using ComplexFn = std::complex<double>(*)();
-        using ComplexFn1 = std::complex<double>(*)(double);
-        using ComplexFn2 = std::complex<double>(*)(double, double);
+    if (retType.Kind == TypeKind::Matrix) {
+        struct MatrixRet { void* ptr; int rows; int cols; };
+        using MatrixFn = MatrixRet(*)();
+        using MatrixFn1 = MatrixRet(*)(double);
+        using MatrixFn2 = MatrixRet(*)(double, double);
 
-        if (args.empty()) return reinterpret_cast<ComplexFn>(fnPtr)();
-        if (args.size() == 1) return reinterpret_cast<ComplexFn1>(fnPtr)(args[0]);
-        if (args.size() == 2) return reinterpret_cast<ComplexFn2>(fnPtr)(args[0], args[1]);
+        MatrixRet r = {nullptr, 0, 0};
+        if (args.empty()) r = reinterpret_cast<MatrixFn>(fnPtr)();
+        else if (args.size() == 1) r = reinterpret_cast<MatrixFn1>(fnPtr)(args[0]);
+        else if (args.size() == 2) r = reinterpret_cast<MatrixFn2>(fnPtr)(args[0], args[1]);
+
+        return MatrixResult{r.ptr, r.rows, r.cols};
+    } else if (retType.Kind == TypeKind::Complex) {
+        // Complex return: LLVM returns small structs in registers or via hidden pointer.
+        // For {double, double}, it's usually returned as a pair of registers.
+        // The safest way to handle this across different ABIs without a wrapper is to 
+        // use a helper that returns by value and hope it matches, but for {double, double}
+        // it's often more reliable to call a function that takes a pointer to the result.
+
+        // However, since we are using JIT and casting fnPtr directly:
+        struct ComplexRet { double real; double imag; };
+        using ComplexFn = ComplexRet(*)();
+        using ComplexFn1 = ComplexRet(*)(double);
+        using ComplexFn2 = ComplexRet(*)(double, double);
+
+        if (args.empty()) {
+            ComplexRet r = reinterpret_cast<ComplexFn>(fnPtr)();
+            return std::complex<double>(r.real, r.imag);
+        }
+        if (args.size() == 1) {
+            ComplexRet r = reinterpret_cast<ComplexFn1>(fnPtr)(args[0]);
+            return std::complex<double>(r.real, r.imag);
+        }
+        if (args.size() == 2) {
+            ComplexRet r = reinterpret_cast<ComplexFn2>(fnPtr)(args[0], args[1]);
+            return std::complex<double>(r.real, r.imag);
+        }
     } else {
         if (args.empty()) return reinterpret_cast<double(*)()>(fnPtr)();
         if (args.size() == 1) return reinterpret_cast<double(*)(double)>(fnPtr)(args[0]);
         if (args.size() == 2) return reinterpret_cast<double(*)(double, double)>(fnPtr)(args[0], args[1]);
     }
-
     if (error) *error = "Unsupported arguments or return type";
     return 0.0;
 }
 #endif
 
 FluxValue JITEngine::callFunction(const std::string& name, const std::vector<double>& args, std::string* error) {
-    if (!m_initialized) {
-        if (error) *error = "JIT not initialized";
-        return 0.0;
-    }
-
+    if (!m_initialized) { if (error) *error = "JIT not initialized"; return 0.0; }
     void* fnPtr = m_jit->getPointerToFunction(name);
-    if (!fnPtr) {
-        if (error) *error = "Function not found: " + name;
-        return 0.0;
-    }
-
+    if (!fnPtr) { if (error) *error = "Function not found: " + name; return 0.0; }
     FluxType retType = m_functionReturnTypes[name];
 
-    if (retType.Kind == TypeKind::Complex) {
-        using ComplexFn = std::complex<double>(*)();
-        using ComplexFn1 = std::complex<double>(*)(double);
-        using ComplexFn2 = std::complex<double>(*)(double, double);
+    if (retType.Kind == TypeKind::Matrix) {
+        struct MatrixRet { void* ptr; int rows; int cols; };
+        using MatrixFn = MatrixRet(*)();
+        using MatrixFn1 = MatrixRet(*)(double);
+        using MatrixFn2 = MatrixRet(*)(double, double);
 
-        if (args.empty()) return reinterpret_cast<ComplexFn>(fnPtr)();
-        if (args.size() == 1) return reinterpret_cast<ComplexFn1>(fnPtr)(args[0]);
-        if (args.size() == 2) return reinterpret_cast<ComplexFn2>(fnPtr)(args[0], args[1]);
+        MatrixRet r = {nullptr, 0, 0};
+        if (args.empty()) r = reinterpret_cast<MatrixFn>(fnPtr)();
+        else if (args.size() == 1) r = reinterpret_cast<MatrixFn1>(fnPtr)(args[0]);
+        else if (args.size() == 2) r = reinterpret_cast<MatrixFn2>(fnPtr)(args[0], args[1]);
+
+        return MatrixResult{r.ptr, r.rows, r.cols};
+    } else if (retType.Kind == TypeKind::Complex) {
+        // Complex return: LLVM returns small structs in registers or via hidden pointer.
+        // For {double, double}, it's usually returned as a pair of registers.
+        // The safest way to handle this across different ABIs without a wrapper is to 
+        // use a helper that returns by value and hope it matches, but for {double, double}
+        // it's often more reliable to call a function that takes a pointer to the result.
+
+        // However, since we are using JIT and casting fnPtr directly:
+        struct ComplexRet { double real; double imag; };
+        using ComplexFn = ComplexRet(*)();
+        using ComplexFn1 = ComplexRet(*)(double);
+        using ComplexFn2 = ComplexRet(*)(double, double);
+
+        if (args.empty()) {
+            ComplexRet r = reinterpret_cast<ComplexFn>(fnPtr)();
+            return std::complex<double>(r.real, r.imag);
+        }
+        if (args.size() == 1) {
+            ComplexRet r = reinterpret_cast<ComplexFn1>(fnPtr)(args[0]);
+            return std::complex<double>(r.real, r.imag);
+        }
+        if (args.size() == 2) {
+            ComplexRet r = reinterpret_cast<ComplexFn2>(fnPtr)(args[0], args[1]);
+            return std::complex<double>(r.real, r.imag);
+        }
     } else {
         if (args.empty()) return reinterpret_cast<double(*)()>(fnPtr)();
         if (args.size() == 1) return reinterpret_cast<double(*)(double)>(fnPtr)(args[0]);
         if (args.size() == 2) return reinterpret_cast<double(*)(double, double)>(fnPtr)(args[0], args[1]);
     }
-
     if (error) *error = "Unsupported arguments or return type";
     return 0.0;
 }

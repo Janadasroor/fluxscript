@@ -55,20 +55,23 @@ private:
 // External C interface for JIT
 extern "C" {
     // Matrix multiplication
-    double flux_matrix_mul(double a, double b);
+    void* flux_matrix_mul(void* a, void* b);
     
     // Matrix transpose
-    double flux_matrix_transpose(double m);
+    void* flux_matrix_transpose(void* m);
 
     // Create matrix from array
-    double flux_create_matrix(double* data, int rows, int cols);
+    void* flux_create_matrix(double* data, int rows, int cols);
+
+    // Matrix Get Element
+    double flux_matrix_get(void* m, int row, int col);
 
     // Helper functions for vector operations
     double flux_vector_dot(double* a_data, int a_size, double* b_data, int b_size);
     double flux_vector_norm(double* data, int size);
     
     // Create vector
-    double flux_create_vector_sum(double* data, int size);
+    void* flux_create_vector_sum(double* data, int size);
 }
 
 #endif // FLUX_EIGEN_WRAPPER_H

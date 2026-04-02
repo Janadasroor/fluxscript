@@ -62,6 +62,7 @@ int Lexer::gettok() {
         if (IdentifierStr == "void") return static_cast<int>(TokenType::tok_type_void);
         if (IdentifierStr == "complex") return static_cast<int>(TokenType::tok_type_complex);
         if (IdentifierStr == "string") return static_cast<int>(TokenType::tok_type_string);
+        if (IdentifierStr == "matrix") return static_cast<int>(TokenType::tok_type_matrix);
         if (IdentifierStr == "xor") return static_cast<int>(TokenType::tok_bitwise_xor);
         if (IdentifierStr == "break") return static_cast<int>(TokenType::tok_break);
         if (IdentifierStr == "continue") return static_cast<int>(TokenType::tok_continue);

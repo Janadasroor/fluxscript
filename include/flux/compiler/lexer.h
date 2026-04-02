@@ -54,47 +54,49 @@ enum class TokenType {
     tok_type_void = -36,
     tok_type_complex = -37,
     tok_type_string = -38,
+    tok_type_vector = -39,
+    tok_type_matrix = -40,
 
     // Type annotation
-    tok_arrow = -39,         // ->
+    tok_arrow = -41,         // ->
 
     // Complex numbers
-    tok_imaginary = -40,     // Number with 'j' suffix (e.g., 2.0j)
-    tok_complex = -41,       // Full complex literal (e.g., 1.0+2.0j)
+    tok_imaginary = -42,     // Number with 'j' suffix (e.g., 2.0j)
+    tok_complex = -43,       // Full complex literal (e.g., 1.0+2.0j)
 
     // String literals
-    tok_string = -42,         // Quoted string (e.g., "hello")
+    tok_string = -44,         // Quoted string (e.g., "hello")
 
     // Element-wise operators (MATLAB-style)
-    tok_ew_mul = -43,         // .*  element-wise multiply
-    tok_ew_div = -44,         // ./  element-wise divide
-    tok_ew_power = -45,       // .^  element-wise power
+    tok_ew_mul = -45,         // .*  element-wise multiply
+    tok_ew_div = -46,         // ./  element-wise divide
+    tok_ew_power = -47,       // .^  element-wise power
 
     // Block delimiters
-    tok_lbrace = -46,         // {
-    tok_rbrace = -47,         // }
+    tok_lbrace = -48,         // {
+    tok_rbrace = -49,         // }
 
     // Matrix row separator
-    tok_semicolon = -48,       // ;  row separator in matrix literals
+    tok_semicolon = -50,       // ;  row separator in matrix literals
 
     // Slicing
-    tok_colon = -58,           // :  range/slice operator
+    tok_colon = -51,           // :  range/slice operator
 
     // Compound assignment operators
-    tok_plus_equal = -49,      // +=
-    tok_minus_equal = -50,     // -=
-    tok_star_equal = -51,      // *=
-    tok_slash_equal = -52,     // /=
+    tok_plus_equal = -52,      // +=
+    tok_minus_equal = -53,     // -=
+    tok_star_equal = -54,      // *=
+    tok_slash_equal = -55,     // /=
 
     // Control flow
-    tok_break = -53,
-    tok_continue = -54,
-    tok_switch = -55,
-    tok_case = -56,
-    tok_default = -57,
+    tok_break = -56,
+    tok_continue = -57,
+    tok_switch = -58,
+    tok_case = -59,
+    tok_default = -60,
 
     // Matrix operations
-    tok_transpose = -59        // ' (tick)
+    tok_transpose = -61        // ' (tick)
 };
 
 class Lexer {

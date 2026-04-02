@@ -23,7 +23,13 @@ namespace Flux {
 class FluxJIT;
 class Parser;
 
-using FluxValue = std::variant<double, std::complex<double>, int>;
+struct MatrixResult {
+    void* ptr;
+    int rows;
+    int cols;
+};
+
+using FluxValue = std::variant<double, std::complex<double>, int, MatrixResult>;
 
 class JITEngine {
 public:
@@ -61,6 +67,7 @@ private:
     ~JITEngine();
 
     void registerEigenFunctions();
+    void injectStandardLibrary();
 
     // Function overloading support
     std::string getFunctionSignature(const std::string& name, const std::vector<FluxType>& argTypes);
