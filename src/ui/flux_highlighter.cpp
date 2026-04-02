@@ -18,24 +18,24 @@ EditorTheme EditorTheme::darkTheme()
 
     // Base colors
     theme.backgroundColor = QColor(30, 30, 30);
-    theme.textColor = QColor(200, 200, 200);
+    theme.textColor = QColor(220, 220, 220);  // Brighter text
     theme.lineNumberColor = QColor(120, 120, 120);
     theme.currentLineColor = QColor(50, 50, 60);
     theme.selectionColor = QColor(60, 100, 150);
     theme.bracketColor = QColor(150, 150, 150);
     theme.whitespaceColor = QColor(80, 80, 80);
 
-    // Syntax colors
-    theme.keywordColor = QColor(197, 134, 192);      // Purple
-    theme.builtinColor = QColor(229, 192, 123);      // Orange
-    theme.functionColor = QColor(97, 175, 239);      // Blue
-    theme.functionDeclColor = QColor(78, 201, 176);  // Teal
-    theme.numberColor = QColor(181, 206, 168);       // Green
-    theme.stringColor = QColor(206, 145, 120);       // Red-orange
-    theme.commentColor = QColor(90, 100, 110);       // Gray
-    theme.typeColor = QColor(78, 201, 176);          // Teal
-    theme.operatorColor = QColor(150, 150, 150);     // Light gray
-    theme.preprocessorColor = QColor(150, 120, 200); // Light purple
+    // Syntax colors - brighter for better visibility
+    theme.keywordColor = QColor(220, 150, 220);      // Bright purple
+    theme.builtinColor = QColor(240, 200, 140);      // Bright orange
+    theme.functionColor = QColor(120, 190, 255);     // Bright blue
+    theme.functionDeclColor = QColor(100, 220, 200); // Bright teal
+    theme.numberColor = QColor(200, 220, 180);       // Bright green
+    theme.stringColor = QColor(230, 160, 140);       // Bright red-orange
+    theme.commentColor = QColor(100, 120, 140);      // Lighter gray
+    theme.typeColor = QColor(100, 220, 200);         // Bright teal
+    theme.operatorColor = QColor(180, 180, 180);     // Lighter gray
+    theme.preprocessorColor = QColor(180, 140, 220); // Light purple
 
     // Diagnostic colors
     theme.errorColor = QColor(255, 100, 100);

@@ -205,6 +205,7 @@ private:
     // Initialization
     // ========================================================================
     void setupEditor();
+    void setupCompleter();
     void setupConnections();
     void setupShortcuts();
     

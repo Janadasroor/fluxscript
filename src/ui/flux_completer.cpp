@@ -257,26 +257,41 @@ void Completer::updateFluxKeywords()
 {
     m_keywords = {
         // Control flow
-        "if", "else", "then", "endif",
-        "for", "while", "do", "end",
-        "break", "continue", "return",
+        "if", "else", "then", "endif", "elseif",
+        "for", "while", "do", "end", "loop",
+        "break", "continue", "return", "goto",
+        "switch", "case", "default",
 
         // Declarations
-        "def", "var", "let", "in",
-        "extern",
+        "def", "function", "var", "let", "const", "in",
+        "extern", "static", "global",
 
         // Types
-        "int", "double", "float", "void",
-        "bool", "true", "false",
-        "matrix", "vector", "complex",
+        "int", "double", "float", "void", "auto",
+        "bool", "true", "false", "null", "nil",
+        "matrix", "vector", "complex", "string",
+        "array", "list", "map", "dict",
 
         // Logical operators
-        "and", "or", "not",
-        "&&", "||", "!",
+        "and", "or", "not", "xor",
+        "&&", "||", "!", "^",
+
+        // Comparison operators
+        "==", "!=", "<", ">", "<=", ">=",
+        "eq", "ne", "lt", "gt", "le", "ge",
+
+        // Arithmetic operators
+        "+", "-", "*", "/", "%", "**", "^",
+        "mod", "div",
 
         // Other keywords
-        "import", "export", "module",
-        "namespace", "using"
+        "import", "export", "module", "package",
+        "namespace", "using", "include", "require",
+        "class", "struct", "enum", "union",
+        "public", "private", "protected",
+        "try", "catch", "throw", "finally",
+        "print", "println", "echo",
+        "read", "write", "open", "close"
     };
 
     updateCompletions();
@@ -285,15 +300,21 @@ void Completer::updateFluxKeywords()
 void Completer::updateFluxBuiltins()
 {
     m_builtins = {
+        // I/O functions
+        { "print", "print(value) - Output a value" },
+        { "println", "println(value) - Output with newline" },
+        { "read", "read() - Read input" },
+        { "input", "input(prompt) - Read user input" },
+        
         // Math functions
-        { "sin", "sin(x)" },
-        { "cos", "cos(x)" },
-        { "tan", "tan(x)" },
-        { "asin", "asin(x)" },
-        { "acos", "acos(x)" },
-        { "atan", "atan(x)" },
-        { "atan2", "atan2(y, x)" },
-        { "sinh", "sinh(x)" },
+        { "sin", "sin(x) - Sine function" },
+        { "cos", "cos(x) - Cosine function" },
+        { "tan", "tan(x) - Tangent function" },
+        { "asin", "asin(x) - Arc sine" },
+        { "acos", "acos(x) - Arc cosine" },
+        { "atan", "atan(x) - Arc tangent" },
+        { "atan2", "atan2(y, x) - Two-argument arc tangent" },
+        { "sinh", "sinh(x) - Hyperbolic sine" },
         { "cosh", "cosh(x)" },
         { "tanh", "tanh(x)" },
         { "exp", "exp(x)" },

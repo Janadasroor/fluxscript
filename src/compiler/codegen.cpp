@@ -804,6 +804,13 @@ TypedValue ForExprAST::codegen(CodegenContext& context) {
     llvm::BasicBlock* PreheaderBB = context.Builder.GetInsertBlock();
     llvm::BasicBlock* LoopBB = llvm::BasicBlock::Create(context.TheContext, "loop", TheFunction);
     llvm::BasicBlock* AfterBB = llvm::BasicBlock::Create(context.TheContext, "afterloop");
+    
+    // Set up break/continue targets
+    llvm::BasicBlock* OldLoopEnd = context.CurrentLoopEnd;
+    llvm::BasicBlock* OldLoopCont = context.CurrentLoopCont;
+    context.CurrentLoopEnd = AfterBB;
+    context.CurrentLoopCont = LoopBB;  // Continue jumps to loop condition
+    
     context.Builder.CreateBr(LoopBB);
     context.Builder.SetInsertPoint(LoopBB);
     llvm::PHINode* Variable = context.Builder.CreatePHI(llvm::Type::getDoubleTy(context.TheContext), 2, VarName.c_str());
@@ -819,6 +826,11 @@ TypedValue ForExprAST::codegen(CodegenContext& context) {
     context.Builder.CreateCondBr(EndCond, LoopBB, AfterBB);
     TheFunction->insert(TheFunction->end(), AfterBB);
     context.Builder.SetInsertPoint(AfterBB);
+    
+    // Restore break/continue targets
+    context.CurrentLoopEnd = OldLoopEnd;
+    context.CurrentLoopCont = OldLoopCont;
+    
     return BodyTV;
 }
 
@@ -827,6 +839,13 @@ TypedValue WhileExprAST::codegen(CodegenContext& context) {
     llvm::BasicBlock* CondBB = llvm::BasicBlock::Create(context.TheContext, "whilecond", TheFunction);
     llvm::BasicBlock* BodyBB = llvm::BasicBlock::Create(context.TheContext, "whilebody");
     llvm::BasicBlock* AfterBB = llvm::BasicBlock::Create(context.TheContext, "afterwhile");
+    
+    // Set up break/continue targets
+    llvm::BasicBlock* OldLoopEnd = context.CurrentLoopEnd;
+    llvm::BasicBlock* OldLoopCont = context.CurrentLoopCont;
+    context.CurrentLoopEnd = AfterBB;
+    context.CurrentLoopCont = CondBB;  // Continue jumps to condition
+    
     context.Builder.CreateBr(CondBB);
     context.Builder.SetInsertPoint(CondBB);
     TypedValue CondTV = Cond->codegen(context);
@@ -840,6 +859,11 @@ TypedValue WhileExprAST::codegen(CodegenContext& context) {
     context.Builder.CreateBr(CondBB);
     TheFunction->insert(TheFunction->end(), AfterBB);
     context.Builder.SetInsertPoint(AfterBB);
+    
+    // Restore break/continue targets
+    context.CurrentLoopEnd = OldLoopEnd;
+    context.CurrentLoopCont = OldLoopCont;
+    
     return BodyTV;
 }
 

@@ -403,7 +403,7 @@ double ScriptInterpreter::computeMath(const QString& expr)
     // Apply operations
     for (int i = 0; i < operators.size() && i + 1 < tokens.size(); ++i) {
         double nextVal = tokens[i + 1].toDouble();
-        if (!nextOk && m_variables.contains(tokens[i + 1])) {
+        if (!ok && m_variables.contains(tokens[i + 1])) {
             nextVal = m_variables[tokens[i + 1]].toDouble();
         }
         

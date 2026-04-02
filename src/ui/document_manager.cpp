@@ -218,6 +218,10 @@ FluxDocument* DocumentManager::openDocument(const QString& filePath)
     if (m_pathToIndex.contains(filePath)) {
         int index = m_pathToIndex[filePath];
         m_tabWidget->setCurrentIndex(index);
+        // Give focus to the editor
+        if (auto* editor = qobject_cast<FluxEditor*>(m_tabWidget->currentWidget())) {
+            editor->setFocus();
+        }
         return m_documents.value(index);
     }
 
@@ -242,6 +246,10 @@ FluxDocument* DocumentManager::openDocument(const QString& filePath)
     int index = m_tabWidget->addTab(editor, doc->fileName());
     m_documents[index] = doc;
     m_pathToIndex[filePath] = index;
+    
+    // Switch to new tab and give focus
+    m_tabWidget->setCurrentIndex(index);
+    editor->setFocus();
 
     updateTabText(index, doc);
 

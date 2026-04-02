@@ -17,6 +17,11 @@ public:
     std::unique_ptr<FunctionAST> ParseDefinition();
     std::unique_ptr<FunctionAST> ParseTopLevelExpr();
     std::unique_ptr<ImportExprAST> ParseImport();
+    std::unique_ptr<DebugStmtAST> ParseDebugStmt();
+    std::unique_ptr<SensitivityStmtAST> ParseSensitivityStmt();
+    std::unique_ptr<AskExprAST> ParseAskExpr();
+    std::unique_ptr<ExplainExprAST> ParseExplainExpr();
+    std::unique_ptr<SubstituteStmtAST> ParseSubstituteStmt();
 
     int CurTok;
     int getNextToken();
@@ -47,6 +52,11 @@ private:
     std::unique_ptr<ExprAST> ParsePrimary();
     std::unique_ptr<ExprAST> ParseBinOpRHS(int ExprPrec, std::unique_ptr<ExprAST> LHS);
     std::unique_ptr<PrototypeAST> ParsePrototype();
+    
+    // Advanced control flow
+    std::unique_ptr<ExprAST> ParseSwitchExpr();
+    std::unique_ptr<ExprAST> ParseBreakExpr();
+    std::unique_ptr<ExprAST> ParseContinueExpr();
 
     int GetTokPrecedence();
 

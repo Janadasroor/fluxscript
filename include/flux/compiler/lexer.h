@@ -33,6 +33,13 @@ enum class TokenType {
     tok_let = -15,
     tok_fn = -16,
     tok_import = -17,
+    tok_debug = -62,
+    tok_sensitivity = -63,
+    tok_ask = -64,
+    tok_explain = -65,
+    tok_substitute = -61,
+    tok_corner = -66,
+    tok_yield = -67,
 
     // operators
     tok_power = -18,        // ^

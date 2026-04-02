@@ -435,10 +435,21 @@ std::unique_ptr<ExprAST> Parser::ParsePrimary() {
     case static_cast<int>(TokenType::tok_var): Res = ParseLetExpr(); break;
     case static_cast<int>(TokenType::tok_fn): Res = ParseLambdaExpr(); break;
     case static_cast<int>(TokenType::tok_import): Res = ParseImport(); break;
+    case static_cast<int>(TokenType::tok_debug): Res = ParseDebugStmt(); break;
+    case static_cast<int>(TokenType::tok_sensitivity): Res = ParseSensitivityStmt(); break;
+    case static_cast<int>(TokenType::tok_ask): Res = ParseAskExpr(); break;
+    case static_cast<int>(TokenType::tok_explain): Res = ParseExplainExpr(); break;
+    case static_cast<int>(TokenType::tok_substitute): Res = ParseSubstituteStmt(); break;
     case static_cast<int>(TokenType::tok_return):
         getNextToken(); // eat return
         Res = ParseExpression();
         break;
+    
+    // Advanced control flow
+    case static_cast<int>(TokenType::tok_switch): Res = ParseSwitchExpr(); break;
+    case static_cast<int>(TokenType::tok_break): Res = ParseBreakExpr(); break;
+    case static_cast<int>(TokenType::tok_continue): Res = ParseContinueExpr(); break;
+    
     default: {
         std::string msg = "unknown token in expression: ";
         if (CurTok > 0 && CurTok < 128) msg += (char)CurTok;
@@ -528,6 +539,138 @@ std::unique_ptr<FunctionAST> Parser::ParseDefinition() {
     if (!Proto) return nullptr;
     if (auto Body = ParseExpression()) return std::make_unique<FunctionAST>(std::move(Proto), std::move(Body));
     return nullptr;
+}
+
+// Parse debug statement: debug circuit "file.flux" { symptom: "clipping" }
+std::unique_ptr<DebugStmtAST> Parser::ParseDebugStmt() {
+    getNextToken(); // eat debug
+    
+    std::string circuitFile;
+    std::string symptom;
+    std::map<std::string, std::string> options;
+    
+    // Parse circuit file
+    if (CurTok == static_cast<int>(TokenType::tok_string)) {
+        circuitFile = m_lexer.StringVal;
+        getNextToken();
+    }
+    
+    // Parse options block
+    if (CurTok == '{') {
+        getNextToken();
+        while (CurTok != '}' && CurTok != static_cast<int>(TokenType::tok_eof)) {
+            if (CurTok == static_cast<int>(TokenType::tok_identifier)) {
+                std::string key = m_lexer.IdentifierStr;
+                getNextToken();
+                if (CurTok == ':') {
+                    getNextToken();
+                    if (CurTok == static_cast<int>(TokenType::tok_string)) {
+                        options[key] = m_lexer.StringVal;
+                        if (key == "symptom") symptom = m_lexer.StringVal;
+                        getNextToken();
+                    }
+                }
+            }
+            if (CurTok == ',') getNextToken();
+            else if (CurTok != '}') break;
+        }
+        if (CurTok == '}') getNextToken();
+    }
+    
+    return std::make_unique<DebugStmtAST>(circuitFile, symptom, options);
+}
+
+// Parse sensitivity statement: sensitivity(output="Vout", params=["R1", "C1"])
+std::unique_ptr<SensitivityStmtAST> Parser::ParseSensitivityStmt() {
+    getNextToken(); // eat sensitivity
+    
+    std::string output;
+    std::vector<std::string> params;
+    std::string circuit;
+    
+    if (CurTok == '(') {
+        getNextToken();
+        while (CurTok != ')' && CurTok != static_cast<int>(TokenType::tok_eof)) {
+            if (CurTok == static_cast<int>(TokenType::tok_identifier)) {
+                std::string key = m_lexer.IdentifierStr;
+                getNextToken();
+                if (CurTok == '=') {
+                    getNextToken();
+                    if (CurTok == static_cast<int>(TokenType::tok_string)) {
+                        if (key == "output") output = m_lexer.StringVal;
+                        else if (key == "circuit") circuit = m_lexer.StringVal;
+                        getNextToken();
+                    } else if (CurTok == '[') {
+                        // Parse array
+                        getNextToken();
+                        while (CurTok != ']') {
+                            if (CurTok == static_cast<int>(TokenType::tok_string)) {
+                                params.push_back(m_lexer.StringVal);
+                                getNextToken();
+                            }
+                            if (CurTok == ',') getNextToken();
+                            else if (CurTok != ']') break;
+                        }
+                        if (CurTok == ']') getNextToken();
+                    }
+                }
+            }
+            if (CurTok == ',') getNextToken();
+            else if (CurTok != ')') break;
+        }
+        if (CurTok == ')') getNextToken();
+    }
+    
+    return std::make_unique<SensitivityStmtAST>(output, params, circuit);
+}
+
+// Parse ask expression: ask "Why is gain low?"
+std::unique_ptr<AskExprAST> Parser::ParseAskExpr() {
+    getNextToken(); // eat ask
+    
+    std::string question;
+    if (CurTok == static_cast<int>(TokenType::tok_string)) {
+        question = m_lexer.StringVal;
+        getNextToken();
+    }
+    
+    return std::make_unique<AskExprAST>(question);
+}
+
+// Parse explain expression: explain circuit "file.flux"
+std::unique_ptr<ExplainExprAST> Parser::ParseExplainExpr() {
+    getNextToken(); // eat explain
+    
+    std::string circuit;
+    std::string aspect;
+    
+    if (CurTok == static_cast<int>(TokenType::tok_identifier) && m_lexer.IdentifierStr == "circuit") {
+        getNextToken();
+        if (CurTok == static_cast<int>(TokenType::tok_string)) {
+            circuit = m_lexer.StringVal;
+            getNextToken();
+        }
+    } else if (CurTok == static_cast<int>(TokenType::tok_string)) {
+        aspect = m_lexer.StringVal;
+        getNextToken();
+    }
+    
+    return std::make_unique<ExplainExprAST>(circuit, aspect);
+}
+
+// Parse substitute statement: substitute "RC0603FR-0710KL"
+std::unique_ptr<SubstituteStmtAST> Parser::ParseSubstituteStmt() {
+    getNextToken(); // eat substitute
+    
+    std::string partNumber;
+    std::vector<std::string> options;
+    
+    if (CurTok == static_cast<int>(TokenType::tok_string)) {
+        partNumber = m_lexer.StringVal;
+        getNextToken();
+    }
+    
+    return std::make_unique<SubstituteStmtAST>(partNumber, options);
 }
 
 std::unique_ptr<FunctionAST> Parser::ParseTopLevelExpr() {

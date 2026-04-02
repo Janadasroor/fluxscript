@@ -173,9 +173,20 @@ void FluxEditor::setupEditor()
 
     // Setup highlighter
     m_highlighter = new Highlighter(document());
+    
+    // Setup completer
+    setupCompleter();
 
     // Update gutter width
     updateLineNumberAreaWidth(0);
+}
+
+void FluxEditor::setupCompleter()
+{
+    auto* completer = new Flux::Completer(this);
+    completer->updateFluxKeywords();
+    completer->updateFluxBuiltins();
+    setCompleter(completer);
 }
 
 void FluxEditor::setupConnections()

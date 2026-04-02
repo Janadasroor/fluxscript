@@ -123,11 +123,19 @@ public:
     llvm::DICompileUnit* DebugCompileUnit = nullptr;
     llvm::DIFile* DebugFile = nullptr;
     bool DebugEnabled = false;
+    
+    // Control flow context for break/continue
+    llvm::BasicBlock* CurrentLoopEnd = nullptr;      // Target for break in loops
+    llvm::BasicBlock* CurrentLoopCont = nullptr;     // Target for continue in loops
+    llvm::BasicBlock* CurrentSwitchEnd = nullptr;    // Target for break in switch
 
     CodegenContext()
         : OwnedContext(std::make_unique<llvm::LLVMContext>()),
           TheContext(*OwnedContext),
-          Builder(TheContext) {
+          Builder(TheContext),
+          CurrentLoopEnd(nullptr),
+          CurrentLoopCont(nullptr),
+          CurrentSwitchEnd(nullptr) {
         // Enable Fast-Math flags by default for performance in simulations
         llvm::FastMathFlags FMF;
         FMF.setFast();
@@ -194,6 +202,58 @@ public:
     const std::string& getVersionSpec() const { return VersionSpec; }
     const std::string& getAlias() const { return Alias; }
     const std::vector<std::string>& getSymbols() const { return Symbols; }
+};
+
+// Debug statement AST
+class DebugStmtAST : public ExprAST {
+    std::string CircuitFile;
+    std::string Symptom;
+    std::map<std::string, std::string> Options;
+public:
+    DebugStmtAST(const std::string& circuit, const std::string& symptom,
+                 const std::map<std::string, std::string>& opts)
+        : CircuitFile(circuit), Symptom(symptom), Options(opts) {}
+    TypedValue codegen(CodegenContext& context) override;
+};
+
+// Sensitivity analysis AST
+class SensitivityStmtAST : public ExprAST {
+    std::string OutputVar;
+    std::vector<std::string> Params;
+    std::string CircuitFile;
+public:
+    SensitivityStmtAST(const std::string& output, const std::vector<std::string>& params,
+                       const std::string& circuit = "")
+        : OutputVar(output), Params(params), CircuitFile(circuit) {}
+    TypedValue codegen(CodegenContext& context) override;
+};
+
+// Ask question AST
+class AskExprAST : public ExprAST {
+    std::string Question;
+public:
+    explicit AskExprAST(const std::string& question) : Question(question) {}
+    TypedValue codegen(CodegenContext& context) override;
+};
+
+// Explain circuit AST
+class ExplainExprAST : public ExprAST {
+    std::string CircuitFile;
+    std::string Aspect;
+public:
+    ExplainExprAST(const std::string& circuit, const std::string& aspect = "")
+        : CircuitFile(circuit), Aspect(aspect) {}
+    TypedValue codegen(CodegenContext& context) override;
+};
+
+// Component substitution AST
+class SubstituteStmtAST : public ExprAST {
+    std::string PartNumber;
+    std::vector<std::string> Options;
+public:
+    SubstituteStmtAST(const std::string& part, const std::vector<std::string>& opts)
+        : PartNumber(part), Options(opts) {}
+    TypedValue codegen(CodegenContext& context) override;
 };
 
 class VariableExprAST : public ExprAST {
@@ -438,6 +498,44 @@ public:
         : Statements(std::move(Statements)) {}
     TypedValue codegen(CodegenContext& context) override;
     const std::vector<std::unique_ptr<ExprAST>>& getStatements() const { return Statements; }
+};
+
+// Switch statement AST
+class CaseClauseAST {
+    std::unique_ptr<ExprAST> Value;
+    std::vector<std::unique_ptr<ExprAST>> Body;
+public:
+    CaseClauseAST(std::unique_ptr<ExprAST> Value, std::vector<std::unique_ptr<ExprAST>> Body)
+        : Value(std::move(Value)), Body(std::move(Body)) {}
+    ExprAST* getValue() const { return Value.get(); }
+    const std::vector<std::unique_ptr<ExprAST>>& getBody() const { return Body; }
+};
+
+class SwitchExprAST : public ExprAST {
+    std::unique_ptr<ExprAST> Condition;
+    std::vector<CaseClauseAST> Cases;
+    std::vector<std::unique_ptr<ExprAST>> DefaultBody;
+public:
+    SwitchExprAST(std::unique_ptr<ExprAST> Cond, std::vector<CaseClauseAST> Cases,
+                  std::vector<std::unique_ptr<ExprAST>> DefaultBody)
+        : Condition(std::move(Cond)), Cases(std::move(Cases)), DefaultBody(std::move(DefaultBody)) {}
+    TypedValue codegen(CodegenContext& context) override;
+    ExprAST* getCondition() const { return Condition.get(); }
+    const std::vector<CaseClauseAST>& getCases() const { return Cases; }
+    const std::vector<std::unique_ptr<ExprAST>>& getDefaultBody() const { return DefaultBody; }
+};
+
+// Break and Continue statements
+class BreakExprAST : public ExprAST {
+public:
+    BreakExprAST() {}
+    TypedValue codegen(CodegenContext& context) override;
+};
+
+class ContinueExprAST : public ExprAST {
+public:
+    ContinueExprAST() {}
+    TypedValue codegen(CodegenContext& context) override;
 };
 
 class PrototypeAST {

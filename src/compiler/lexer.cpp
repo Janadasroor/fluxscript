@@ -98,6 +98,13 @@ int Lexer::gettok() {
         if (IdentifierStr == "do") return static_cast<int>(TokenType::tok_do);
         if (IdentifierStr == "while") return static_cast<int>(TokenType::tok_while);
         if (IdentifierStr == "import") return static_cast<int>(TokenType::tok_import);
+        if (IdentifierStr == "debug") return static_cast<int>(TokenType::tok_debug);
+        if (IdentifierStr == "sensitivity") return static_cast<int>(TokenType::tok_sensitivity);
+        if (IdentifierStr == "ask") return static_cast<int>(TokenType::tok_ask);
+        if (IdentifierStr == "explain") return static_cast<int>(TokenType::tok_explain);
+        if (IdentifierStr == "substitute") return static_cast<int>(TokenType::tok_substitute);
+        if (IdentifierStr == "corner") return static_cast<int>(TokenType::tok_corner);
+        if (IdentifierStr == "yield") return static_cast<int>(TokenType::tok_yield);
         if (IdentifierStr == "float") return static_cast<int>(TokenType::tok_type_float);
         if (IdentifierStr == "double") return static_cast<int>(TokenType::tok_type_double);
         if (IdentifierStr == "int") return static_cast<int>(TokenType::tok_type_int);
