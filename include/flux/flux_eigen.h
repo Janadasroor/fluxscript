@@ -71,7 +71,7 @@ extern "C" {
     double flux_vector_norm(double* data, int size);
     
     // Create vector
-    void* flux_create_vector_sum(double* data, int size);
+    double flux_create_vector_sum(double* data, int size);
 }
 
 #endif // FLUX_EIGEN_WRAPPER_H

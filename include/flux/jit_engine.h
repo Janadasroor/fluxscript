@@ -7,8 +7,11 @@
 #include <complex>
 #include <string>
 #include <map>
+#include <set>
 
 #include "flux/compiler/ast.h"
+#include "flux/compiler/compiler_instance.h"
+#include "flux/jit/flux_jit.h"
 
 #ifdef FLUX_HAS_QT
 #include <QString>
@@ -67,7 +70,6 @@ private:
     ~JITEngine();
 
     void registerEigenFunctions();
-    void injectStandardLibrary();
 
     // Function overloading support
     std::string getFunctionSignature(const std::string& name, const std::vector<FluxType>& argTypes);
@@ -76,8 +78,10 @@ private:
 
     std::unique_ptr<FluxJIT> m_jit;
     std::unique_ptr<CodegenContext> m_codegenCtx;
+    CompilerOptions m_compilerOptions;
     std::map<std::string, FluxType> m_functionReturnTypes;
     std::map<std::string, llvm::Function*> m_overloadedFunctions;  // signature -> function
+    std::set<std::string> m_importedModules;
     bool m_initialized = false;
 };
 

@@ -3,7 +3,12 @@
 #include <llvm/ExecutionEngine/Orc/ThreadSafeModule.h>
 #include <llvm/ExecutionEngine/Orc/ExecutorProcessControl.h>
 #include <llvm/IR/LLVMContext.h>
+#include <llvm/IR/Verifier.h>
 #include <llvm/Support/DynamicLibrary.h>
+#include <llvm/Support/Error.h>
+#include <llvm/TargetParser/Host.h>
+#include <llvm/Support/raw_ostream.h>
+#include <llvm/ExecutionEngine/Orc/ExecutionUtils.h>
 #include <iostream>
 #include <cstdio>
 
@@ -28,11 +33,6 @@ extern "C" {
         return i;
     }
 
-    // Print string to stdout (for print_string extern function)
-    void print_string(const char* str) {
-        printf("%s", str);
-    }
-
     // Print string with newline
     void println_string(const char* str) {
         printf("%s\n", str);
@@ -41,8 +41,21 @@ extern "C" {
 
 namespace Flux {
 
+namespace {
+
+void logError(llvm::Error Err, llvm::StringRef Prefix) {
+    if (!Err)
+        return;
+
+    llvm::errs() << Prefix << "\n";
+    llvm::logAllUnhandledErrors(std::move(Err), llvm::errs(), "  ");
+}
+
+} // namespace
+
 FluxJIT::FluxJIT(OptimizationLevel optLevel)
-    : m_optLevel(optLevel) {
+    : m_dataLayout(""),
+      m_optLevel(optLevel) {
     llvm::InitializeNativeTarget();
     llvm::InitializeNativeTargetAsmPrinter();
     llvm::InitializeNativeTargetAsmParser();
@@ -52,13 +65,26 @@ FluxJIT::FluxJIT(OptimizationLevel optLevel)
 
     auto JIT = llvm::orc::LLJITBuilder().create();
     if (!JIT) {
-        std::cerr << "Failed to create LLJIT" << std::endl;
+        logError(JIT.takeError(), "Failed to create LLJIT");
         return;
     }
     m_lljit = std::move(*JIT);
+    m_dataLayout = m_lljit->getDataLayout();
+    m_targetTriple = llvm::sys::getProcessTriple();
 
     // Initialize pass builder for optimization
     m_passBuilder = std::make_unique<llvm::PassBuilder>();
+
+    auto ProcessSymbols =
+        llvm::orc::DynamicLibrarySearchGenerator::GetForCurrentProcess(
+            m_lljit->getDataLayout().getGlobalPrefix());
+    if (!ProcessSymbols) {
+        logError(ProcessSymbols.takeError(),
+                 "Failed to create current-process symbol generator");
+        return;
+    }
+
+    m_lljit->getMainJITDylib().addGenerator(std::move(*ProcessSymbols));
     
     // Register complex number helper functions with the JIT
     registerComplexHelpers();
@@ -80,12 +106,6 @@ void FluxJIT::registerComplexHelpers() {
     imagSym[m_lljit->mangleAndIntern("complex_imag")] =
         { llvm::orc::ExecutorAddr::fromPtr(&complex_imag), llvm::JITSymbolFlags::Exported };
     (void)mainJD.define(llvm::orc::absoluteSymbols(std::move(imagSym)));
-
-    // Register print_string function
-    llvm::orc::SymbolMap printSym;
-    printSym[m_lljit->mangleAndIntern("print_string")] =
-        { llvm::orc::ExecutorAddr::fromPtr(&print_string), llvm::JITSymbolFlags::Exported };
-    (void)mainJD.define(llvm::orc::absoluteSymbols(std::move(printSym)));
 
     // Register println_string function
     llvm::orc::SymbolMap printlnSym;
@@ -162,16 +182,33 @@ void FluxJIT::optimizeModule(llvm::Module* M) {
     MPM.run(*M, MAM);
 }
 
-void FluxJIT::addModule(std::unique_ptr<llvm::Module> M) {
-    if (!m_lljit) return;
+void FluxJIT::prepareModule(llvm::Module& M) {
+    if (!m_lljit)
+        return;
+
+    M.setDataLayout(m_dataLayout);
+    M.setTargetTriple(m_targetTriple);
+}
+
+void FluxJIT::addModule(std::unique_ptr<llvm::Module> M,
+                        std::unique_ptr<llvm::LLVMContext> Ctx) {
+    if (!m_lljit || !M || !Ctx)
+        return;
+
+    prepareModule(*M);
+
+    if (llvm::verifyModule(*M, &llvm::errs())) {
+        llvm::errs() << "Refusing to add invalid LLVM module to JIT\n";
+        return;
+    }
 
     // Optimize the module before adding to JIT
     optimizeModule(M.get());
 
-    auto TSM = llvm::orc::ThreadSafeModule(std::move(M), std::make_unique<llvm::LLVMContext>());
+    auto TSM = llvm::orc::ThreadSafeModule(std::move(M), std::move(Ctx));
     auto Err = m_lljit->addIRModule(std::move(TSM));
     if (Err) {
-        std::cerr << "Failed to add module to JIT" << std::endl;
+        logError(std::move(Err), "Failed to add module to JIT");
     }
 }
 
@@ -180,7 +217,7 @@ void* FluxJIT::getPointerToFunction(const std::string& Name) {
 
     auto ExprSymbol = m_lljit->lookup(Name);
     if (!ExprSymbol) {
-        std::cerr << "Failed to find symbol: " << Name << std::endl;
+        logError(ExprSymbol.takeError(), "Failed to find symbol: " + Name);
         return nullptr;
     }
 
@@ -194,7 +231,9 @@ void FluxJIT::registerFunction(const std::string& Name, void* FuncPtr) {
     llvm::orc::SymbolMap symMap;
     symMap[m_lljit->mangleAndIntern(Name)] = 
         { llvm::orc::ExecutorAddr::fromPtr(FuncPtr), llvm::JITSymbolFlags::Exported };
-    (void)mainJD.define(llvm::orc::absoluteSymbols(std::move(symMap)));
+    if (auto Err = mainJD.define(llvm::orc::absoluteSymbols(std::move(symMap)))) {
+        logError(std::move(Err), "Failed to register JIT symbol: " + Name);
+    }
 }
 
 } // namespace Flux

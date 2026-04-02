@@ -1,5 +1,4 @@
 #include "flux/compiler/parser.h"
-#include <iostream>
 
 namespace Flux {
 
@@ -44,7 +43,7 @@ int Parser::GetTokPrecedence() {
 }
 
 void Parser::ReportError(const std::string& message) {
-    std::cerr << "Error: " << message << " at line " << m_lexer.getCurrentLine() << ", col " << m_lexer.getCurrentColumn() << std::endl;
+    m_lexer.reportError(message);
     m_hasError = true;
 }
 
@@ -84,6 +83,17 @@ std::unique_ptr<ExprAST> Parser::ParseStringExpr() {
     auto Result = std::make_unique<StringExprAST>(m_lexer.StringVal);
     getNextToken();
     return Result;
+}
+
+std::unique_ptr<ImportExprAST> Parser::ParseImport() {
+    getNextToken(); // eat import
+    if (CurTok != static_cast<int>(TokenType::tok_string)) {
+        ReportError("expected module name string after import");
+        return nullptr;
+    }
+    std::string ModuleName = m_lexer.StringVal;
+    getNextToken(); // eat string
+    return std::make_unique<ImportExprAST>(ModuleName);
 }
 
 std::unique_ptr<ExprAST> Parser::ParseParenExpr() {
@@ -203,17 +213,29 @@ std::unique_ptr<ExprAST> Parser::ParseLetExpr() {
     if (CurTok != static_cast<int>(TokenType::tok_identifier)) { ReportError("expected identifier after let/var"); return nullptr; }
     std::string IdName = m_lexer.IdentifierStr;
     getNextToken();
-    FluxType Type(TypeKind::Auto);
-    if (CurTok == static_cast<int>(TokenType::tok_colon)) { getNextToken(); Type = FluxType::fromToken(CurTok); getNextToken(); }
-    if (CurTok != '=') { ReportError("expected '=' after let/var"); return nullptr; }
+    FluxType Type(TypeKind::Double);
+    if (CurTok == static_cast<int>(TokenType::tok_colon)) {
+        getNextToken(); // eat :
+        Type = FluxType::fromToken(CurTok);
+        getNextToken(); // eat type keyword
+    }
+    if (CurTok != '=') {
+        ReportError("expected '=' after let/var");
+        return nullptr;
+    }
     getNextToken();
     auto Init = ParseExpression();
     if (!Init) return nullptr;
-    if (CurTok != static_cast<int>(TokenType::tok_in)) { ReportError("expected 'in' after let/var"); return nullptr; }
-    getNextToken();
-    auto Body = ParseExpression();
-    if (!Body) return nullptr;
-    return std::make_unique<LetExprAST>(IdName, Type, std::move(Init), std::move(Body));
+
+    // In block contexts, 'in' is optional. If not present, we assume it's part of a sequence.
+    if (CurTok == static_cast<int>(TokenType::tok_in)) {
+        getNextToken();
+        auto Body = ParseExpression();
+        if (!Body) return nullptr;
+        return std::make_unique<LetExprAST>(IdName, Type, std::move(Init), std::move(Body));
+    }
+
+    return std::make_unique<LetExprAST>(IdName, Type, std::move(Init), nullptr);
 }
 
 std::unique_ptr<ExprAST> Parser::ParseLambdaExpr() {
@@ -240,13 +262,13 @@ std::unique_ptr<ExprAST> Parser::ParseLambdaExpr() {
 std::unique_ptr<ExprAST> Parser::ParseUnaryExpr() {
     bool isUnary = false;
     if (isascii(CurTok)) {
-        if (CurTok == '-' || CurTok == '+' || CurTok == '!' || CurTok == '~') isUnary = true;
+        if (CurTok == '-' || CurTok == '+' || CurTok == static_cast<int>(TokenType::tok_logical_not) || CurTok == static_cast<int>(TokenType::tok_bitwise_not)) isUnary = true;
     } else {
         if (CurTok == static_cast<int>(TokenType::tok_bitwise_not) ||
             CurTok == static_cast<int>(TokenType::tok_logical_not)) isUnary = true;
     }
 
-    if (!isUnary || CurTok == '(' || CurTok == ',' || CurTok == '[' || CurTok == '{') return ParsePrimary();
+    if (!isUnary || CurTok == '(' || CurTok == ',' || CurTok == '[' || CurTok == static_cast<int>(TokenType::tok_lbrace)) return ParsePrimary();
     int Opc = CurTok;
     getNextToken();
     if (auto Operand = ParseUnaryExpr()) return std::make_unique<UnaryExprAST>(Opc, std::move(Operand));
@@ -316,6 +338,11 @@ std::unique_ptr<ExprAST> Parser::ParsePrimary() {
     case static_cast<int>(TokenType::tok_let):
     case static_cast<int>(TokenType::tok_var): Res = ParseLetExpr(); break;
     case static_cast<int>(TokenType::tok_fn): Res = ParseLambdaExpr(); break;
+    case static_cast<int>(TokenType::tok_import): Res = ParseImport(); break;
+    case static_cast<int>(TokenType::tok_return):
+        getNextToken(); // eat return
+        Res = ParseExpression();
+        break;
     default: {
         std::string msg = "unknown token in expression: ";
         if (CurTok > 0 && CurTok < 128) msg += (char)CurTok;
@@ -340,8 +367,12 @@ std::unique_ptr<ExprAST> Parser::ParseBinOpRHS(int ExprPrec, std::unique_ptr<Exp
         int NextPrec = GetTokPrecedence();
         if (TokPrec < NextPrec) { RHS = ParseBinOpRHS(TokPrec + 1, std::move(RHS)); if (!RHS) return nullptr; }
         if (BinOp == '=') {
-            if (auto* LHSE = dynamic_cast<VariableExprAST*>(LHS.get())) LHS = std::make_unique<AssignExprAST>(LHSE->getName(), std::move(RHS));
-            else return nullptr;
+            if (auto* LHSE = dynamic_cast<VariableExprAST*>(LHS.get())) {
+                LHS = std::make_unique<AssignExprAST>(LHSE->getName(), std::move(RHS));
+            } else if (auto* PHSE = dynamic_cast<ParameterExprAST*>(LHS.get())) {
+                // Special case for SPICE parameters: P(name) = value
+                LHS = std::make_unique<AssignExprAST>(PHSE->getParamName(), std::move(RHS), 0, true);
+            } else return nullptr;
         } else LHS = std::make_unique<BinaryExprAST>(BinOp, std::move(LHS), std::move(RHS));
     }
 }
@@ -363,7 +394,11 @@ std::unique_ptr<PrototypeAST> Parser::ParsePrototype() {
         std::string Name = m_lexer.IdentifierStr;
         getNextToken();
         FluxType Type(TypeKind::Double);
-        if (CurTok == static_cast<int>(TokenType::tok_colon)) { getNextToken(); Type = FluxType::fromToken(CurTok); getNextToken(); }
+        if (CurTok == static_cast<int>(TokenType::tok_colon)) {
+            getNextToken(); // eat :
+            Type = FluxType::fromToken(CurTok);
+            getNextToken(); // eat type keyword
+        }
         Args.push_back({Name, Type});
         if (CurTok == ')') break;
         if (CurTok != ',') return nullptr;

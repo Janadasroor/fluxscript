@@ -111,12 +111,16 @@ public:
 
 class CodegenContext {
 public:
-    llvm::LLVMContext TheContext;
+    std::unique_ptr<llvm::LLVMContext> OwnedContext;
+    llvm::LLVMContext& TheContext;
     llvm::IRBuilder<> Builder;
     std::unique_ptr<llvm::Module> TheModule;
     std::map<std::string, llvm::Value*> NamedValues;
 
-    CodegenContext() : Builder(TheContext) {}
+    CodegenContext()
+        : OwnedContext(std::make_unique<llvm::LLVMContext>()),
+          TheContext(*OwnedContext),
+          Builder(TheContext) {}
 };
 
 struct TypedValue {
@@ -140,6 +144,7 @@ class NumberExprAST : public ExprAST {
 public:
     NumberExprAST(double Val) : Val(Val) {}
     TypedValue codegen(CodegenContext& context) override;
+    double getValue() const { return Val; }
 };
 
 class ComplexExprAST : public ExprAST {
@@ -148,6 +153,8 @@ class ComplexExprAST : public ExprAST {
 public:
     ComplexExprAST(double Real, double Imag) : Real(Real), Imag(Imag) {}
     TypedValue codegen(CodegenContext& context) override;
+    double getReal() const { return Real; }
+    double getImag() const { return Imag; }
 };
 
 class StringExprAST : public ExprAST {
@@ -155,6 +162,15 @@ class StringExprAST : public ExprAST {
 public:
     StringExprAST(const std::string& Val) : Val(Val) {}
     TypedValue codegen(CodegenContext& context) override;
+    const std::string& getValue() const { return Val; }
+};
+
+class ImportExprAST : public ExprAST {
+    std::string ModuleName;
+public:
+    ImportExprAST(const std::string& ModuleName) : ModuleName(ModuleName) {}
+    TypedValue codegen(CodegenContext& context) override;
+    const std::string& getModuleName() const { return ModuleName; }
 };
 
 class VariableExprAST : public ExprAST {
@@ -172,6 +188,9 @@ public:
     BinaryExprAST(int Op, std::unique_ptr<ExprAST> LHS, std::unique_ptr<ExprAST> RHS)
         : Op(Op), LHS(std::move(LHS)), RHS(std::move(RHS)) {}
     TypedValue codegen(CodegenContext& context) override;
+    int getOp() const { return Op; }
+    const ExprAST* getLHS() const { return LHS.get(); }
+    const ExprAST* getRHS() const { return RHS.get(); }
 };
 
 class UnaryExprAST : public ExprAST {
@@ -181,6 +200,8 @@ public:
     UnaryExprAST(int Op, std::unique_ptr<ExprAST> Operand)
         : Op(Op), Operand(std::move(Operand)) {}
     TypedValue codegen(CodegenContext& context) override;
+    int getOp() const { return Op; }
+    const ExprAST* getOperand() const { return Operand.get(); }
 };
 
 class TransposeExprAST : public ExprAST {
@@ -189,6 +210,7 @@ public:
     TransposeExprAST(std::unique_ptr<ExprAST> Operand)
         : Operand(std::move(Operand)) {}
     TypedValue codegen(CodegenContext& context) override;
+    const ExprAST* getOperand() const { return Operand.get(); }
 };
 
 class CallExprAST : public ExprAST {
@@ -198,6 +220,8 @@ public:
     CallExprAST(const std::string& Callee, std::vector<std::unique_ptr<ExprAST>> Args)
         : Callee(Callee), Args(std::move(Args)) {}
     TypedValue codegen(CodegenContext& context) override;
+    const std::string& getCallee() const { return Callee; }
+    const std::vector<std::unique_ptr<ExprAST>>& getArgs() const { return Args; }
 };
 
 class AssignExprAST : public ExprAST {
@@ -208,6 +232,9 @@ public:
     AssignExprAST(const std::string& Name, std::unique_ptr<ExprAST> Val, int Op = 0)
         : Name(Name), Val(std::move(Val)), Op(Op) {}
     TypedValue codegen(CodegenContext& context) override;
+    const std::string& getName() const { return Name; }
+    const ExprAST* getValueExpr() const { return Val.get(); }
+    int getAssignmentOp() const { return Op; }
 };
 
 class IfExprAST : public ExprAST {
@@ -217,6 +244,9 @@ public:
               std::unique_ptr<ExprAST> Else)
         : Cond(std::move(Cond)), Then(std::move(Then)), Else(std::move(Else)) {}
     TypedValue codegen(CodegenContext& context) override;
+    const ExprAST* getCond() const { return Cond.get(); }
+    const ExprAST* getThen() const { return Then.get(); }
+    const ExprAST* getElse() const { return Else.get(); }
 };
 
 class ForExprAST : public ExprAST {
@@ -230,6 +260,11 @@ public:
         : VarName(VarName), Start(std::move(Start)), End(std::move(End)), 
           Step(std::move(Step)), Body(std::move(Body)) {}
     TypedValue codegen(CodegenContext& context) override;
+    const std::string& getVarName() const { return VarName; }
+    const ExprAST* getStart() const { return Start.get(); }
+    const ExprAST* getEnd() const { return End.get(); }
+    const ExprAST* getStep() const { return Step.get(); }
+    const ExprAST* getBody() const { return Body.get(); }
 };
 
 class ArrayExprAST : public ExprAST {
@@ -247,6 +282,8 @@ public:
     WhileExprAST(std::unique_ptr<ExprAST> Cond, std::unique_ptr<ExprAST> Body)
         : Cond(std::move(Cond)), Body(std::move(Body)) {}
     TypedValue codegen(CodegenContext& context) override;
+    const ExprAST* getCond() const { return Cond.get(); }
+    const ExprAST* getBody() const { return Body.get(); }
 };
 
 class LetExprAST : public ExprAST {
@@ -258,6 +295,10 @@ public:
     LetExprAST(const std::string& VarName, FluxType Type, std::unique_ptr<ExprAST> Init, std::unique_ptr<ExprAST> Body)
         : VarName(VarName), Type(Type), Init(std::move(Init)), Body(std::move(Body)) {}
     TypedValue codegen(CodegenContext& context) override;
+    const std::string& getVarName() const { return VarName; }
+    const FluxType& getDeclaredType() const { return Type; }
+    const ExprAST* getInit() const { return Init.get(); }
+    const ExprAST* getBody() const { return Body.get(); }
 };
 
 class LambdaExprAST : public ExprAST {
@@ -267,6 +308,8 @@ public:
     LambdaExprAST(std::vector<std::string> Args, std::unique_ptr<ExprAST> Body)
         : Args(std::move(Args)), Body(std::move(Body)) {}
     TypedValue codegen(CodegenContext& context) override;
+    const std::vector<std::string>& getArgs() const { return Args; }
+    const ExprAST* getBody() const { return Body.get(); }
 };
 
 class VectorExprAST : public ExprAST {
@@ -275,6 +318,7 @@ public:
     VectorExprAST(std::vector<std::unique_ptr<ExprAST>> Elements)
         : Elements(std::move(Elements)) {}
     TypedValue codegen(CodegenContext& context) override;
+    const std::vector<std::unique_ptr<ExprAST>>& getElements() const { return Elements; }
 };
 
 class MatrixExprAST : public ExprAST {
@@ -285,6 +329,7 @@ public:
     MatrixExprAST(std::vector<std::vector<std::unique_ptr<ExprAST>>> Rows, int rows, int cols)
         : Rows(std::move(Rows)), NumRows(rows), NumCols(cols) {}
     TypedValue codegen(CodegenContext& context) override;
+    const std::vector<std::vector<std::unique_ptr<ExprAST>>>& getRows() const { return Rows; }
     int getNumRows() const { return NumRows; }
     int getNumCols() const { return NumCols; }
 };
@@ -328,6 +373,10 @@ public:
           IsMatrixIndex(true) {}
 
     TypedValue codegen(CodegenContext& context) override;
+    const ExprAST* getArray() const { return Array.get(); }
+    const ExprAST* getRowIndex() const { return RowIndex.get(); }
+    const ExprAST* getColIndex() const { return ColIndex.get(); }
+    bool isMatrixIndex() const { return IsMatrixIndex; }
 };
 
 // Range expression for slicing: start:end or start:step:end
@@ -343,6 +392,9 @@ public:
         : Start(std::move(Start)), Step(std::move(Step)), End(std::move(End)) {}
     
     TypedValue codegen(CodegenContext& context) override;
+    const ExprAST* getStart() const { return Start.get(); }
+    const ExprAST* getStep() const { return Step.get(); }
+    const ExprAST* getEnd() const { return End.get(); }
 };
 
 class BlockExprAST : public ExprAST {
@@ -351,6 +403,7 @@ public:
     BlockExprAST(std::vector<std::unique_ptr<ExprAST>> Statements)
         : Statements(std::move(Statements)) {}
     TypedValue codegen(CodegenContext& context) override;
+    const std::vector<std::unique_ptr<ExprAST>>& getStatements() const { return Statements; }
 };
 
 class PrototypeAST {
@@ -374,6 +427,7 @@ public:
         : Proto(std::move(Proto)), Body(std::move(Body)) {}
     llvm::Function* codegen(CodegenContext& context);
     PrototypeAST* getProto() const { return Proto.get(); }
+    const ExprAST* getBody() const { return Body.get(); }
 };
 
 } // namespace Flux

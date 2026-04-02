@@ -75,6 +75,11 @@ TypedValue StringExprAST::codegen(CodegenContext& context) {
     return TypedValue(ValV, TypeKind::String);
 }
 
+TypedValue ImportExprAST::codegen(CodegenContext& context) {
+    // Import is handled at the JITEngine level, so this is a no-op during codegen
+    return TypedValue(llvm::ConstantFP::get(context.TheContext, llvm::APFloat(0.0)), TypeKind::Double);
+}
+
 TypedValue BlockExprAST::codegen(CodegenContext& context) {
     TypedValue LastVal(nullptr, TypeKind::Void);
     
@@ -541,6 +546,47 @@ TypedValue TransposeExprAST::codegen(CodegenContext& context) {
 }
 
 TypedValue CallExprAST::codegen(CodegenContext& context) {
+    // Handle built-in complex number functions
+    if (Args.size() == 1) {
+        TypedValue Arg = Args[0]->codegen(context);
+        if (isComplexType(Arg)) {
+            llvm::Value* Real = context.Builder.CreateExtractValue(Arg.Val, 0, "real");
+            llvm::Value* Imag = context.Builder.CreateExtractValue(Arg.Val, 1, "imag");
+            
+            if (Callee == "real") return TypedValue(Real, TypeKind::Double);
+            if (Callee == "imag") return TypedValue(Imag, TypeKind::Double);
+            if (Callee == "conj") {
+                llvm::Value* NegImag = context.Builder.CreateFNeg(Imag, "negimag");
+                llvm::Value* Res = llvm::UndefValue::get(Arg.Val->getType());
+                Res = context.Builder.CreateInsertValue(Res, Real, 0);
+                return TypedValue(context.Builder.CreateInsertValue(Res, NegImag, 1), TypeKind::Complex);
+            }
+            if (Callee == "abs" || Callee == "mag") {
+                // sqrt(re*re + im*im)
+                llvm::Value* Re2 = context.Builder.CreateFMul(Real, Real, "re2");
+                llvm::Value* Im2 = context.Builder.CreateFMul(Imag, Imag, "im2");
+                llvm::Value* Sum = context.Builder.CreateFAdd(Re2, Im2, "sum2");
+                
+                llvm::Function* SqrtF = context.TheModule->getFunction("llvm.sqrt.f64");
+                if (!SqrtF) {
+                    SqrtF = llvm::Function::Create(
+                        llvm::FunctionType::get(llvm::Type::getDoubleTy(context.TheContext), {llvm::Type::getDoubleTy(context.TheContext)}, false),
+                        llvm::Function::ExternalLinkage, "llvm.sqrt.f64", context.TheModule.get());
+                }
+                return TypedValue(context.Builder.CreateCall(SqrtF, {Sum}, "abs"), TypeKind::Double);
+            }
+            if (Callee == "arg" || Callee == "phase") {
+                llvm::Function* Atan2F = context.TheModule->getFunction("atan2");
+                if (!Atan2F) {
+                    Atan2F = llvm::Function::Create(
+                        llvm::FunctionType::get(llvm::Type::getDoubleTy(context.TheContext), {llvm::Type::getDoubleTy(context.TheContext), llvm::Type::getDoubleTy(context.TheContext)}, false),
+                        llvm::Function::ExternalLinkage, "atan2", context.TheModule.get());
+                }
+                return TypedValue(context.Builder.CreateCall(Atan2F, {Imag, Real}, "arg"), TypeKind::Double);
+            }
+        }
+    }
+
     llvm::Function* CalleeF = context.TheModule->getFunction(Callee);
     if (!CalleeF) {
         llvm::Value* VarVal = context.NamedValues[Callee];
@@ -705,6 +751,7 @@ TypedValue LetExprAST::codegen(CodegenContext& context) {
     context.Builder.CreateStore(InitV, Alloca);
     llvm::Value* OldVal = context.NamedValues[VarName];
     context.NamedValues[VarName] = Alloca;
+    if (!Body) return InitTV;
     TypedValue BodyTV = Body->codegen(context);
     if (!BodyTV.Val) return TypedValue();
     context.NamedValues[VarName] = OldVal;

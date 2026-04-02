@@ -16,6 +16,7 @@ public:
     std::unique_ptr<PrototypeAST> ParseExtern();
     std::unique_ptr<FunctionAST> ParseDefinition();
     std::unique_ptr<FunctionAST> ParseTopLevelExpr();
+    std::unique_ptr<ImportExprAST> ParseImport();
 
     int CurTok;
     int getNextToken();

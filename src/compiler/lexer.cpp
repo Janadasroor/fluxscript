@@ -1,12 +1,24 @@
 #include "flux/compiler/lexer.h"
+#include <llvm/Support/MemoryBuffer.h>
+#include <llvm/Support/SMLoc.h>
+#include <llvm/Support/SourceMgr.h>
 #include <cctype>
 #include <cstdlib>
-#include <iostream>
 
 namespace Flux {
 
 Lexer::Lexer(const std::string& input) 
-    : m_input(input), m_pos(0), m_lastChar(' '), m_line(1), m_column(1), m_lineStart(0) {}
+    : m_input(input),
+      m_pos(0),
+      m_tokenStart(0),
+      m_lastChar(' '),
+      m_line(1),
+      m_column(1),
+      m_lineStart(0),
+      m_buffer(llvm::MemoryBuffer::getMemBufferCopy(input, "<flux>")),
+      m_sourceMgr(std::make_unique<llvm::SourceMgr>()) {
+    m_sourceMgr->AddNewSourceBuffer(std::move(m_buffer), llvm::SMLoc());
+}
 
 int Lexer::advance() {
     if (m_pos < m_input.size()) {
@@ -31,11 +43,30 @@ std::string Lexer::getCurrentLineText() const {
     return m_input.substr(m_lineStart, end - m_lineStart);
 }
 
+llvm::SMLoc Lexer::getCurrentTokenLoc() const {
+    if (!m_sourceMgr || m_sourceMgr->getNumBuffers() == 0)
+        return llvm::SMLoc();
+
+    const auto *buffer = m_sourceMgr->getMemoryBuffer(m_sourceMgr->getMainFileID());
+    const size_t safeOffset = std::min(m_tokenStart, buffer->getBufferSize());
+    return llvm::SMLoc::getFromPointer(buffer->getBufferStart() + safeOffset);
+}
+
+void Lexer::reportError(const std::string& message) const {
+    if (!m_sourceMgr || m_sourceMgr->getNumBuffers() == 0)
+        return;
+
+    m_sourceMgr->PrintMessage(getCurrentTokenLoc(), llvm::SourceMgr::DK_Error, message);
+}
+
 int Lexer::gettok() {
+    m_tokenStart = m_pos > 0 ? m_pos - 1 : 0;
+
     // Skip whitespace
     while (isspace(m_lastChar)) {
         advance();
     }
+    m_tokenStart = m_pos > 0 ? m_pos - 1 : 0;
 
     if (isalpha(m_lastChar)) { // identifier: [a-zA-Z][a-zA-Z0-9]*
         IdentifierStr = m_lastChar;
@@ -56,12 +87,14 @@ int Lexer::gettok() {
         if (IdentifierStr == "in") return static_cast<int>(TokenType::tok_in);
         if (IdentifierStr == "do") return static_cast<int>(TokenType::tok_do);
         if (IdentifierStr == "while") return static_cast<int>(TokenType::tok_while);
+        if (IdentifierStr == "import") return static_cast<int>(TokenType::tok_import);
         if (IdentifierStr == "float") return static_cast<int>(TokenType::tok_type_float);
         if (IdentifierStr == "double") return static_cast<int>(TokenType::tok_type_double);
         if (IdentifierStr == "int") return static_cast<int>(TokenType::tok_type_int);
         if (IdentifierStr == "void") return static_cast<int>(TokenType::tok_type_void);
         if (IdentifierStr == "complex") return static_cast<int>(TokenType::tok_type_complex);
         if (IdentifierStr == "string") return static_cast<int>(TokenType::tok_type_string);
+        if (IdentifierStr == "vector") return static_cast<int>(TokenType::tok_type_vector);
         if (IdentifierStr == "matrix") return static_cast<int>(TokenType::tok_type_matrix);
         if (IdentifierStr == "xor") return static_cast<int>(TokenType::tok_bitwise_xor);
         if (IdentifierStr == "break") return static_cast<int>(TokenType::tok_break);
@@ -231,7 +264,7 @@ int Lexer::gettok() {
         if (m_lastChar == '"') {
             advance(); // consume closing quote
         } else {
-            std::cerr << "Unterminated string literal" << std::endl;
+            reportError("unterminated string literal");
         }
         return static_cast<int>(TokenType::tok_string);
     }

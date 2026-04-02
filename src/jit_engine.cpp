@@ -6,12 +6,13 @@
 #endif
 
 #include "flux/jit_engine.h"
-#include "flux/compiler/parser.h"
 #include "flux/flux_eigen.h"
 #include <iostream>
+#include <fstream>
 #include <cstdio>
 #include <cmath>
 #include <cstdint>
+#include <set>
 
 namespace Flux {
 
@@ -35,6 +36,11 @@ extern "C" double flux_get_current(const char* branch) {
 extern "C" double flux_get_parameter(const char* name) {
     if (std::string(name) == "TEMP") return 27.0;
     return 1.0;
+}
+
+extern "C" double flux_set_parameter(const char* name, double value) {
+    printf("FluxScript: Setting parameter %s to %f\n", name, value);
+    return value;
 }
 
 // Behavioral Modeling Functions
@@ -177,8 +183,9 @@ OptimizationLevel JITEngine::getOptimizationLevel() const {
 void JITEngine::initialize() {
     if (m_initialized) return;
     m_jit = std::make_unique<FluxJIT>();
-    m_codegenCtx = std::make_unique<CodegenContext>();
-    m_codegenCtx->TheModule = std::make_unique<llvm::Module>("Flux JIT Core", m_codegenCtx->TheContext);
+    m_compilerOptions.moduleName = "Flux JIT Core";
+    m_compilerOptions.injectStdlib = true;
+    m_codegenCtx = nullptr;
     m_initialized = true;
     registerEigenFunctions();
     std::cout << "FluxScript C++ LLVM JIT Engine Initialized." << std::endl;
@@ -202,6 +209,7 @@ void JITEngine::registerEigenFunctions() {
     m_jit->registerFunction("flux_get_voltage", reinterpret_cast<void*>(&flux_get_voltage));
     m_jit->registerFunction("flux_get_current", reinterpret_cast<void*>(&flux_get_current));
     m_jit->registerFunction("flux_get_parameter", reinterpret_cast<void*>(&flux_get_parameter));
+    m_jit->registerFunction("flux_set_parameter", reinterpret_cast<void*>(&flux_set_parameter));
 
     // Behavioral Functions
     m_jit->registerFunction("uramp", reinterpret_cast<void*>(&flux_uramp));
@@ -233,47 +241,6 @@ void JITEngine::registerEigenFunctions() {
     m_jit->registerFunction("e", reinterpret_cast<void*>(&flux_e));
 }
 
-void JITEngine::injectStandardLibrary() {
-    if (!m_codegenCtx) return;
-    
-    auto inject = [&](const std::string& name, int args) {
-        std::vector<std::pair<std::string, FluxType>> params;
-        for (int i = 0; i < args; ++i) {
-            params.push_back({"arg" + std::to_string(i), FluxType(TypeKind::Double)});
-        }
-        PrototypeAST proto(name, params, FluxType(TypeKind::Double));
-        proto.codegen(*m_codegenCtx);
-        m_functionReturnTypes[name] = FluxType(TypeKind::Double);
-    };
-
-    // Trigonometry
-    inject("sin", 1);
-    inject("cos", 1);
-    inject("tan", 1);
-    inject("asin", 1);
-    inject("acos", 1);
-    inject("atan", 1);
-    inject("atan2", 2);
-    inject("sinh", 1);
-    inject("cosh", 1);
-    inject("tanh", 1);
-    
-    // Core math
-    inject("sqrt", 1);
-    inject("exp", 1);
-    inject("log", 1);
-    inject("log10", 1);
-    inject("abs", 1);
-    inject("floor", 1);
-    inject("ceil", 1);
-    inject("round", 1);
-    inject("pow", 2);
-
-    // Constants
-    inject("pi", 0);
-    inject("e", 0);
-}
-
 void JITEngine::finalize() {
     m_initialized = false;
     m_jit.reset();
@@ -287,39 +254,17 @@ bool JITEngine::isInitialized() const {
 #if defined(FLUX_HAS_QT)
 bool JITEngine::compileScript(const QString& code, QString* error) {
     if (!m_initialized) initialize();
-    Parser parser(code.toStdString());
-    m_functionReturnTypes.clear();
-    injectStandardLibrary();
-    while (parser.CurTok != static_cast<int>(TokenType::tok_eof)) {
-        std::unique_ptr<FunctionAST> fnAST = nullptr;
-        if (parser.CurTok == static_cast<int>(TokenType::tok_def)) {
-            fnAST = parser.ParseDefinition();
-        } else if (parser.CurTok == static_cast<int>(TokenType::tok_extern)) {
-            auto proto = parser.ParseExtern();
-            if (proto) {
-                m_functionReturnTypes[proto->getName()] = proto->getReturnType();
-                proto->codegen(*m_codegenCtx);
-            }
-            continue;
-        } else if (parser.CurTok == static_cast<int>(TokenType::tok_semicolon)) {
-            parser.getNextToken();
-            continue;
-        } else {
-            fnAST = parser.ParseTopLevelExpr();
-        }
-        if (fnAST) {
-            std::string fnName = fnAST->getProto()->getName();
-            m_functionReturnTypes[fnName] = fnAST->getProto()->getReturnType();
-            if (!fnAST->codegen(*m_codegenCtx)) {
-                if (error) *error = "Code generation failed.";
-                return false;
-            }
-        } else {
-            if (parser.CurTok != static_cast<int>(TokenType::tok_eof)) parser.SkipToSynchronizationPoint();
-        }
+    CompilerInstance compiler(m_compilerOptions);
+    std::string compileError;
+    auto artifacts = compiler.compileToIR(code.toStdString(), &compileError);
+    if (!artifacts) {
+        if (error) *error = QString::fromStdString(compileError);
+        return false;
     }
-    m_jit->addModule(std::move(m_codegenCtx->TheModule));
-    m_codegenCtx->TheModule = std::make_unique<llvm::Module>("Flux JIT Core", m_codegenCtx->TheContext);
+    m_functionReturnTypes = artifacts->functionReturnTypes;
+    m_codegenCtx = std::move(artifacts->codegenContext);
+    m_jit->addModule(std::move(m_codegenCtx->TheModule), std::move(m_codegenCtx->OwnedContext));
+    m_codegenCtx.reset();
     return true;
 }
 
@@ -331,40 +276,14 @@ bool JITEngine::executeString(const QString& code, QString* error) {
 
 bool JITEngine::compileScript(const std::string& code, std::string* error) {
     if (!m_initialized) initialize();
-    Parser parser(code);
-    m_functionReturnTypes.clear();
-    injectStandardLibrary();
+    CompilerInstance compiler(m_compilerOptions);
     m_overloadedFunctions.clear();
-    while (parser.CurTok != static_cast<int>(TokenType::tok_eof)) {
-        std::unique_ptr<FunctionAST> fnAST = nullptr;
-        if (parser.CurTok == static_cast<int>(TokenType::tok_def)) {
-            fnAST = parser.ParseDefinition();
-        } else if (parser.CurTok == static_cast<int>(TokenType::tok_extern)) {
-            auto proto = parser.ParseExtern();
-            if (proto) {
-                m_functionReturnTypes[proto->getName()] = proto->getReturnType();
-                proto->codegen(*m_codegenCtx);
-            }
-            continue;
-        } else if (parser.CurTok == static_cast<int>(TokenType::tok_semicolon)) {
-            parser.getNextToken();
-            continue;
-        } else {
-            fnAST = parser.ParseTopLevelExpr();
-        }
-        if (fnAST) {
-            std::string fnName = fnAST->getProto()->getName();
-            m_functionReturnTypes[fnName] = fnAST->getProto()->getReturnType();
-            if (!fnAST->codegen(*m_codegenCtx)) {
-                if (error) *error = "Code generation failed.";
-                return false;
-            }
-        } else {
-            if (parser.CurTok != static_cast<int>(TokenType::tok_eof)) parser.SkipToSynchronizationPoint();
-        }
-    }
-    m_jit->addModule(std::move(m_codegenCtx->TheModule));
-    m_codegenCtx->TheModule = std::make_unique<llvm::Module>("Flux JIT Core", m_codegenCtx->TheContext);
+    auto artifacts = compiler.compileToIR(code, error);
+    if (!artifacts) return false;
+    m_functionReturnTypes = artifacts->functionReturnTypes;
+    m_codegenCtx = std::move(artifacts->codegenContext);
+    m_jit->addModule(std::move(m_codegenCtx->TheModule), std::move(m_codegenCtx->OwnedContext));
+    m_codegenCtx.reset();
     return true;
 }
 

@@ -3,6 +3,10 @@
 
 #include <string>
 #include <vector>
+#include <memory>
+#include <llvm/Support/MemoryBuffer.h>
+#include <llvm/Support/SMLoc.h>
+#include <llvm/Support/SourceMgr.h>
 
 namespace Flux {
 
@@ -27,6 +31,7 @@ enum class TokenType {
     tok_while = -14,
     tok_let = -15,
     tok_fn = -16,
+    tok_import = -17,
 
     // operators
     tok_power = -18,        // ^
@@ -116,17 +121,22 @@ public:
     int getCurrentLine() const { return m_line; }
     int getCurrentColumn() const { return m_column; }
     std::string getCurrentLineText() const;
+    void reportError(const std::string& message) const;
 
 private:
     int gettok();
     int advance();
+    llvm::SMLoc getCurrentTokenLoc() const;
 
     std::string m_input;
     size_t m_pos;
+    size_t m_tokenStart;
     int m_lastChar;
     int m_line;
     int m_column;
     size_t m_lineStart;
+    std::unique_ptr<llvm::MemoryBuffer> m_buffer;
+    std::unique_ptr<llvm::SourceMgr> m_sourceMgr;
 };
 
 } // namespace Flux

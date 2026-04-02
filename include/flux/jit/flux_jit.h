@@ -5,6 +5,7 @@
 #include <llvm/IR/Module.h>
 #include <llvm/Passes/PassBuilder.h>
 #include <llvm/Passes/PassPlugin.h>
+#include <llvm/IR/DataLayout.h>
 #include <memory>
 #include <string>
 
@@ -35,7 +36,7 @@ public:
     FluxJIT(OptimizationLevel optLevel = OptimizationLevel::O2);
     ~FluxJIT();
 
-    void addModule(std::unique_ptr<llvm::Module> M);
+    void addModule(std::unique_ptr<llvm::Module> M, std::unique_ptr<llvm::LLVMContext> Ctx);
     void* getPointerToFunction(const std::string& Name);
     void registerFunction(const std::string& Name, void* FuncPtr);
 
@@ -52,9 +53,12 @@ private:
     void registerNativeFunctions();
     void registerComplexHelpers();
     void optimizeModule(llvm::Module* M);
+    void prepareModule(llvm::Module& M);
 
     std::unique_ptr<llvm::orc::LLJIT> m_lljit;
     std::unique_ptr<llvm::PassBuilder> m_passBuilder;
+    llvm::DataLayout m_dataLayout;
+    std::string m_targetTriple;
     OptimizationLevel m_optLevel;
     SIMDOptions m_simdOptions;
     TCOOptions m_tcoOptions;
