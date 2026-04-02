@@ -1,0 +1,85 @@
+#ifndef FLUX_NETLIST_GENERATOR_H
+#define FLUX_NETLIST_GENERATOR_H
+
+#include "flux/compiler/ast.h"
+#include <string>
+#include <sstream>
+#include <vector>
+#include <memory>
+
+namespace Flux {
+
+class NetlistGenerator {
+public:
+    NetlistGenerator();
+    ~NetlistGenerator();
+    
+    // Generate complete netlist from AST
+    std::string generateNetlist(
+        const std::vector<std::unique_ptr<FunctionAST>>& functions,
+        const std::vector<std::unique_ptr<SubcktAST>>& subckts,
+        const std::vector<std::unique_ptr<ModelAST>>& models,
+        const std::vector<std::unique_ptr<AnalysisDeclAST>>& analyses);
+    
+    // Generate specific SPICE cards
+    std::string generateTitle(const std::string& title);
+    std::string generateInclude(const std::string& file);
+    std::string generateLib(const std::string& lib);
+    std::string generateParam(const std::string& name, double value);
+    std::string generateAnalysisCard(const AnalysisDeclAST* analysis);
+    std::string generateMeasureCard(const MeasureDeclAST* measure);
+    std::string generateProbeCard(const ProbeDeclAST* probe);
+    std::string generateSaveCard(const std::vector<std::string>& signals);
+    std::string generateSubcktCard(const SubcktAST* subckt);
+    std::string generateModelCard(const ModelAST* model);
+    std::string generateEnds();
+    
+    // Generate component instances
+    std::string generateResistor(const std::string& name, const std::string& n1, 
+                                  const std::string& n2, double value);
+    std::string generateCapacitor(const std::string& name, const std::string& n1,
+                                   const std::string& n2, double value);
+    std::string generateInductor(const std::string& name, const std::string& n1,
+                                  const std::string& n2, double value);
+    std::string generateDiode(const std::string& name, const std::string& n1,
+                               const std::string& n2, const std::string& model);
+    std::string generateBJT(const std::string& name, const std::string& nc,
+                             const std::string& nb, const std::string& ne,
+                             const std::string& ns, const std::string& model);
+    std::string generateMOSFET(const std::string& name, const std::string& nd,
+                                const std::string& ng, const std::string& ns,
+                                const std::string& nb, const std::string& model);
+    
+    // Generate behavioral sources
+    std::string generateBSource(const std::string& name, 
+                                const std::vector<std::string>& nodes,
+                                const std::string& type,
+                                const std::string& expression);
+    std::string generateBVoltage(const std::string& name,
+                                  const std::string& nPlus,
+                                  const std::string& nMinus,
+                                  const std::string& expression);
+    std::string generateBCurrent(const std::string& name,
+                                  const std::string& nPlus,
+                                  const std::string& nMinus,
+                                  const std::string& expression);
+    
+    // Generate subcircuit instance
+    std::string generateSubcktInstance(const std::string& name,
+                                        const std::string& subcktName,
+                                        const std::vector<std::string>& nodes,
+                                        const std::map<std::string, double>& params);
+
+private:
+    std::ostringstream m_netlist;
+    int m_nodeCounter;
+    std::map<std::string, int> m_nodeMap;
+    
+    std::string getInternalNode(const std::string& name);
+    std::string expressionToSpice(ExprAST* expr);
+    std::string valueToSpice(double value);
+};
+
+} // namespace Flux
+
+#endif // FLUX_NETLIST_GENERATOR_H
