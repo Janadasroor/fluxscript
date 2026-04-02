@@ -93,7 +93,69 @@ std::unique_ptr<ImportExprAST> Parser::ParseImport() {
     }
     std::string ModuleName = m_lexer.StringVal;
     getNextToken(); // eat string
-    return std::make_unique<ImportExprAST>(ModuleName);
+    
+    std::string VersionSpec;
+    std::string Alias;
+    std::vector<std::string> Symbols;
+    
+    // Check for version specification: import "module" version "1.0.0"
+    if (CurTok == static_cast<int>(TokenType::tok_identifier) && 
+        m_lexer.IdentifierStr == "version") {
+        getNextToken(); // eat 'version'
+        if (CurTok != static_cast<int>(TokenType::tok_string)) {
+            ReportError("expected version string after 'version'");
+            return nullptr;
+        }
+        VersionSpec = m_lexer.StringVal;
+        getNextToken(); // eat version string
+    }
+    
+    // Check for alias: import "module" as alias
+    if (CurTok == static_cast<int>(TokenType::tok_identifier) && 
+        m_lexer.IdentifierStr == "as") {
+        getNextToken(); // eat 'as'
+        if (CurTok != static_cast<int>(TokenType::tok_identifier)) {
+            ReportError("expected identifier for alias");
+            return nullptr;
+        }
+        Alias = m_lexer.IdentifierStr;
+        getNextToken(); // eat alias identifier
+    }
+    
+    // Check for specific symbols: import "module" using {sym1, sym2}
+    if (CurTok == static_cast<int>(TokenType::tok_identifier) && 
+        m_lexer.IdentifierStr == "using") {
+        getNextToken(); // eat 'using'
+        if (CurTok != '{') {
+            ReportError("expected '{' after 'using'");
+            return nullptr;
+        }
+        getNextToken(); // eat '{'
+        
+        while (CurTok != '}' && CurTok != static_cast<int>(TokenType::tok_eof)) {
+            if (CurTok != static_cast<int>(TokenType::tok_identifier)) {
+                ReportError("expected identifier in symbol list");
+                return nullptr;
+            }
+            Symbols.push_back(m_lexer.IdentifierStr);
+            getNextToken(); // eat identifier
+            
+            if (CurTok == ',') {
+                getNextToken(); // eat ','
+            } else if (CurTok != '}') {
+                ReportError("expected ',' or '}' in symbol list");
+                return nullptr;
+            }
+        }
+        
+        if (CurTok != '}') {
+            ReportError("expected '}' to close symbol list");
+            return nullptr;
+        }
+        getNextToken(); // eat '}'
+    }
+    
+    return std::make_unique<ImportExprAST>(ModuleName, VersionSpec, Alias, Symbols);
 }
 
 std::unique_ptr<ExprAST> Parser::ParseParenExpr() {
@@ -108,11 +170,45 @@ std::unique_ptr<ExprAST> Parser::ParseParenExpr() {
 std::unique_ptr<ExprAST> Parser::ParseIdentifierExpr() {
     std::string IdName = m_lexer.IdentifierStr;
     getNextToken();
-    
+
+    // Handle namespace qualifier: math::fft
+    if (CurTok == static_cast<int>(TokenType::tok_namespace_sep)) {
+        getNextToken(); // eat ::
+        if (CurTok != static_cast<int>(TokenType::tok_identifier)) {
+            ReportError("expected identifier after ::");
+            return nullptr;
+        }
+        std::string memberName = m_lexer.IdentifierStr;
+        getNextToken(); // eat member identifier
+        
+        // Create namespace-qualified variable name
+        std::string qualifiedName = IdName + "::" + memberName;
+        
+        // Check if followed by function call
+        if (CurTok == '(') {
+            getNextToken();
+            std::vector<std::unique_ptr<ExprAST>> Args;
+            if (CurTok != ')') {
+                while (true) {
+                    if (auto Arg = ParseExpression()) Args.push_back(std::move(Arg));
+                    else return nullptr;
+                    if (CurTok == ')') break;
+                    if (CurTok != ',') { ReportError("expected ')' or ',' in argument list"); return nullptr; }
+                    getNextToken();
+                }
+            }
+            getNextToken();
+            // Call with qualified name
+            return std::make_unique<CallExprAST>(qualifiedName, std::move(Args));
+        }
+        
+        return std::make_unique<VariableExprAST>(qualifiedName);
+    }
+
     // Handle V(node), I(branch), and P(param) as special expressions for SPICE support
     if (CurTok == '(' && (IdName == "V" || IdName == "I" || IdName == "P")) {
         getNextToken(); // eat (
-        if (CurTok != static_cast<int>(TokenType::tok_identifier) && 
+        if (CurTok != static_cast<int>(TokenType::tok_identifier) &&
             CurTok != static_cast<int>(TokenType::tok_number)) {
             ReportError("expected name in V() / I() / P()");
             return nullptr;
@@ -352,7 +448,23 @@ std::unique_ptr<ExprAST> Parser::ParsePrimary() {
     }
     }
     if (!Res) return nullptr;
-    while (CurTok == static_cast<int>(TokenType::tok_transpose)) { Res = std::make_unique<TransposeExprAST>(std::move(Res)); getNextToken(); }
+    while (true) {
+        if (CurTok == static_cast<int>(TokenType::tok_transpose)) {
+            Res = std::make_unique<TransposeExprAST>(std::move(Res));
+            getNextToken();
+        } else if (CurTok == static_cast<int>(TokenType::tok_dot)) {
+            getNextToken(); // eat .
+            if (CurTok != static_cast<int>(TokenType::tok_identifier)) {
+                ReportError("expected identifier after '.'");
+                return nullptr;
+            }
+            std::string MemberName = m_lexer.IdentifierStr;
+            getNextToken();
+            Res = std::make_unique<MemberExprAST>(std::move(Res), MemberName);
+        } else {
+            break;
+        }
+    }
     return Res;
 }
 
@@ -367,13 +479,10 @@ std::unique_ptr<ExprAST> Parser::ParseBinOpRHS(int ExprPrec, std::unique_ptr<Exp
         int NextPrec = GetTokPrecedence();
         if (TokPrec < NextPrec) { RHS = ParseBinOpRHS(TokPrec + 1, std::move(RHS)); if (!RHS) return nullptr; }
         if (BinOp == '=') {
-            if (auto* LHSE = dynamic_cast<VariableExprAST*>(LHS.get())) {
-                LHS = std::make_unique<AssignExprAST>(LHSE->getName(), std::move(RHS));
-            } else if (auto* PHSE = dynamic_cast<ParameterExprAST*>(LHS.get())) {
-                // Special case for SPICE parameters: P(name) = value
-                LHS = std::make_unique<AssignExprAST>(PHSE->getParamName(), std::move(RHS), 0, true);
-            } else return nullptr;
-        } else LHS = std::make_unique<BinaryExprAST>(BinOp, std::move(LHS), std::move(RHS));
+            LHS = std::make_unique<AssignExprAST>(std::move(LHS), std::move(RHS));
+        } else {
+            LHS = std::make_unique<BinaryExprAST>(BinOp, std::move(LHS), std::move(RHS));
+        }
     }
 }
 

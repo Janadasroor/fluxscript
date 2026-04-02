@@ -6,6 +6,8 @@
 #include <string>
 #include <vector>
 
+#include <llvm/ADT/StringRef.h>
+
 #include "flux/compiler/ast.h"
 #include "flux/jit/flux_jit.h"
 
@@ -18,6 +20,9 @@ struct TokenInfo {
     std::string spelling;
     int line = 0;
     int column = 0;
+    size_t offset = 0;
+    size_t length = 0;
+    std::string rawText;
 };
 
 struct CompilerOptions {
@@ -25,6 +30,7 @@ struct CompilerOptions {
     std::string moduleName = "Flux Module";
     OptimizationLevel optimizationLevel = OptimizationLevel::O2;
     bool injectStdlib = true;
+    bool debugInfo = false;
 };
 
 struct CompileArtifacts {

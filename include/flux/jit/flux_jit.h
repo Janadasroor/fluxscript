@@ -2,6 +2,7 @@
 #define FLUX_JIT_H
 
 #include <llvm/ExecutionEngine/Orc/LLJIT.h>
+#include <llvm/Support/MemoryBuffer.h>
 #include <llvm/IR/Module.h>
 #include <llvm/Passes/PassBuilder.h>
 #include <llvm/Passes/PassPlugin.h>
@@ -37,6 +38,7 @@ public:
     ~FluxJIT();
 
     void addModule(std::unique_ptr<llvm::Module> M, std::unique_ptr<llvm::LLVMContext> Ctx);
+    void addObjectFile(std::unique_ptr<llvm::MemoryBuffer> ObjectBuffer);
     void* getPointerToFunction(const std::string& Name);
     void registerFunction(const std::string& Name, void* FuncPtr);
 
@@ -48,6 +50,9 @@ public:
 
     void setTCOOptions(const TCOOptions& options);
     TCOOptions getTCOOptions() const;
+
+    const llvm::DataLayout& getDataLayout() const { return m_dataLayout; }
+    const std::string& getTargetTriple() const { return m_targetTriple; }
 
 private:
     void registerNativeFunctions();

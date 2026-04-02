@@ -193,6 +193,7 @@ protected:
     void wheelEvent(QWheelEvent* e) override;
     void focusInEvent(QFocusEvent* e) override;
     void paintEvent(QPaintEvent* e) override;
+    void contextMenuEvent(QContextMenuEvent* e) override;
 
 private slots:
     void updateLineNumberAreaWidth(int newBlockCount);
@@ -228,6 +229,24 @@ private:
     void updateExtraSelections();
     QColor markerColorForType(GutterMarkerType type) const;
     void drawGutterMarkers(QPainter* painter, int line, int y, int width);
+
+    // ========================================================================
+    // Context Menu Helpers
+    // ========================================================================
+    void toggleLineComment();
+    void toggleBlockComment();
+    void toggleCommentForSelection();
+    void selectCurrentLine();
+    void selectCurrentWord();
+    void showGoToLineDialog();
+    void goToMatchingBrace();
+    void showPasteHistory();
+    void duplicateLine();
+    void deleteCurrentLine();
+    void moveLineUp();
+    void moveLineDown();
+    void sortSelectedLines();
+    void unindentLine();
 
     // ========================================================================
     // Members

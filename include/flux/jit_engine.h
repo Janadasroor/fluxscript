@@ -12,6 +12,7 @@
 #include "flux/compiler/ast.h"
 #include "flux/compiler/compiler_instance.h"
 #include "flux/jit/flux_jit.h"
+#include "flux/modules/module_loader.h"
 
 #ifdef FLUX_HAS_QT
 #include <QString>
@@ -45,6 +46,26 @@ public:
     // Optimization level control
     void setOptimizationLevel(OptimizationLevel level);
     OptimizationLevel getOptimizationLevel() const;
+    void setJITCacheEnabled(bool enabled) { m_cacheEnabled = enabled; }
+    bool isJITCacheEnabled() const { return m_cacheEnabled; }
+    void setJITCacheDirectory(std::string directory) { m_cacheDirectory = std::move(directory); }
+    const std::string& getJITCacheDirectory() const { return m_cacheDirectory; }
+    bool lastCompileUsedCache() const { return m_lastCompileUsedCache; }
+
+    // Module system integration
+    ModuleLoader& getModuleLoader() { return ModuleLoader::instance(); }
+    bool importModule(const std::string& moduleName, std::string* error = nullptr);
+    bool loadPlugin(const std::string& pluginPath, std::string* error = nullptr);
+    
+    // Reflection API
+    std::vector<std::string> getLoadedModules() const;
+    std::vector<std::string> getModuleExports(const std::string& moduleName) const;
+    std::string getFunctionSignature(const std::string& functionName) const;
+    
+    // Configuration
+    void setDefine(const std::string& name, bool value);
+    bool getDefine(const std::string& name) const;
+    void setOptimizationLevelForModules(OptimizationLevel level);
 
 #ifdef FLUX_HAS_QT
     // QString overloads (for Qt-based GUI)
@@ -82,6 +103,9 @@ private:
     std::map<std::string, FluxType> m_functionReturnTypes;
     std::map<std::string, llvm::Function*> m_overloadedFunctions;  // signature -> function
     std::set<std::string> m_importedModules;
+    std::string m_cacheDirectory;
+    bool m_cacheEnabled = true;
+    bool m_lastCompileUsedCache = false;
     bool m_initialized = false;
 };
 

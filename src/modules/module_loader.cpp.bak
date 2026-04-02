@@ -1,0 +1,478 @@
+#include "flux/modules/module_loader.h"
+#include "flux/compiler/compiler_instance.h"
+#include "flux/jit_engine.h"
+#include "flux/tooling/tooling.h"
+
+#include <fstream>
+#include <sstream>
+#include <iostream>
+#include <regex>
+#include <dlfcn.h>
+
+namespace Flux {
+
+// ============ ModuleLoader Implementation ============
+
+ModuleLoader& ModuleLoader::instance() {
+    static ModuleLoader loader;
+    return loader;
+}
+
+void ModuleLoader::initialize(const ModuleConfig& config) {
+    if (m_initialized) return;
+    
+    m_config = config;
+    
+    // Add default search paths
+    if (m_config.searchPaths.empty()) {
+        // Current directory
+        m_config.searchPaths.push_back(".");
+        
+        // User home directory
+        const char* home = std::getenv("HOME");
+        if (home) {
+            m_config.searchPaths.push_back(std::string(home) + "/.fluxscript/modules");
+        }
+        
+        // System-wide directory
+        m_config.searchPaths.push_back("/usr/share/fluxscript/modules");
+        m_config.searchPaths.push_back("/usr/local/share/fluxscript/modules");
+    }
+    
+    // Set default cache directory
+    if (m_config.cacheDirectory.empty()) {
+        const char* home = std::getenv("HOME");
+        if (home) {
+            m_config.cacheDirectory = std::string(home) + "/.fluxscript/cache";
+        } else {
+            m_config.cacheDirectory = ".fluxscript/cache";
+        }
+    }
+    
+    // Create cache directory
+    std::filesystem::create_directories(m_config.cacheDirectory);
+    
+    // Set default conditional compilation flags
+    m_config.defines["FLUX_DEBUG"] = false;
+    m_config.defines["FLUX_RELEASE"] = true;
+    m_config.defines["FLUX_UNIX"] = true;
+    
+    m_initialized = true;
+    std::cout << "FluxScript Module System initialized." << std::endl;
+}
+
+void ModuleLoader::finalize() {
+    // Unload all plugins
+    for (auto& [name, handle] : m_loadedPlugins) {
+        if (handle) {
+            dlclose(handle);
+        }
+    }
+    m_loadedPlugins.clear();
+    m_pluginFunctions.clear();
+    m_modules.clear();
+    m_namespaces.clear();
+    m_initialized = false;
+}
+
+bool ModuleLoader::loadModule(const std::string& moduleName, std::string* error) {
+    std::string path = findModule(moduleName);
+    if (path.empty()) {
+        if (error) *error = "Module not found: " + moduleName;
+        return false;
+    }
+    
+    return loadModuleFromFile(path, error);
+}
+
+bool ModuleLoader::loadModuleFromFile(const std::string& path, std::string* error) {
+    // Check if already loaded
+    std::string moduleName = ModuleUtils::pathToModule(path);
+    if (isModuleLoaded(moduleName)) {
+        return true;
+    }
+    
+    // Read source file
+    std::ifstream file(path);
+    if (!file.is_open()) {
+        if (error) *error = "Cannot open module file: " + path;
+        return false;
+    }
+    
+    std::stringstream buffer;
+    buffer << file.rdbuf();
+    std::string source = buffer.str();
+    file.close();
+    
+    // Preprocess source (handle conditional compilation)
+    source = preprocessSource(source, m_config);
+    
+    // Compile the module
+    return compileModule(path, moduleName, error);
+}
+
+bool ModuleLoader::compileModule(const std::string& path, const std::string& moduleName, std::string* error) {
+    // Read source
+    std::ifstream file(path);
+    if (!file.is_open()) {
+        if (error) *error = "Cannot open file: " + path;
+        return false;
+    }
+    
+    std::stringstream buffer;
+    buffer << file.rdbuf();
+    std::string source = buffer.str();
+    file.close();
+    
+    // Preprocess
+    source = preprocessSource(source, m_config);
+    
+    // Compile to IR
+    CompilerOptions options;
+    options.inputName = path;
+    options.moduleName = moduleName;
+    options.optimizationLevel = m_config.optimization;
+    
+    CompilerInstance compiler(options);
+    std::string compileError;
+    auto artifacts = compiler.compileToIR(source, &compileError);
+    
+    if (!artifacts) {
+        if (error) *error = "Compilation failed: " + compileError;
+        return false;
+    }
+    
+    // Add to JIT
+    auto& jit = JITEngine::instance();
+    jit.context().TheModule = std::move(artifacts->TheModule);
+    jit.context().OwnedContext = std::move(artifacts->OwnedContext);
+    
+    // Register module info
+    ModuleInfo info;
+    info.name = moduleName;
+    info.path = path;
+    info.isLoaded = true;
+    
+    // Extract exports (functions defined in the module)
+    for (auto& [name, func] : artifacts->functionReturnTypes) {
+        info.exports.push_back(name);
+    }
+    
+    m_modules[moduleName] = info;
+    
+    if (m_config.verboseLogging) {
+        std::cout << "Loaded module: " << moduleName << " (" << info.exports.size() << " exports)" << std::endl;
+    }
+    
+    return true;
+}
+
+bool ModuleLoader::unloadModule(const std::string& moduleName) {
+    auto it = m_modules.find(moduleName);
+    if (it != m_modules.end()) {
+        m_modules.erase(it);
+        return true;
+    }
+    return false;
+}
+
+bool ModuleLoader::isModuleLoaded(const std::string& moduleName) const {
+    return m_modules.find(moduleName) != m_modules.end();
+}
+
+bool ModuleLoader::importModule(const std::string& moduleName, const std::string& version, std::string* error) {
+    // Check if already loaded
+    if (isModuleLoaded(moduleName)) {
+        return true;
+    }
+    
+    // Version checking (simplified - just log for now)
+    if (!version.empty()) {
+        std::cout << "Importing module: " << moduleName << " version " << version << std::endl;
+        // Full version resolution would go here
+    }
+    
+    return loadModule(moduleName, error);
+}
+
+std::string ModuleLoader::resolveNamespaceSymbol(const std::string& namespacePath, const std::string& symbol) {
+    // Handle math::fft syntax
+    std::string fullName = namespacePath + "::" + symbol;
+    
+    // Check if we have a namespace mapping
+    auto it = m_namespaces.find(namespacePath);
+    if (it != m_namespaces.end()) {
+        std::string moduleName = it->second;
+        return moduleName + "_" + symbol;  // Mangled name
+    }
+    
+    // Try to find the symbol directly
+    return fullName;
+}
+
+bool ModuleLoader::registerNamespace(const std::string& ns, const std::string& moduleName) {
+    m_namespaces[ns] = moduleName;
+    return true;
+}
+
+bool ModuleLoader::loadPlugin(const std::string& pluginPath, std::string* error) {
+    // Load the shared library
+    void* handle = dlopen(pluginPath.c_str(), RTLD_LAZY | RTLD_GLOBAL);
+    if (!handle) {
+        if (error) *error = std::string("Cannot load plugin: ") + dlerror();
+        return false;
+    }
+    
+    m_loadedPlugins[pluginPath] = handle;
+    
+    // Look for plugin registration function
+    typedef void (*RegisterFunc)();
+    RegisterFunc registerFunc = (RegisterFunc)dlsym(handle, "flux_plugin_register");
+    
+    if (registerFunc) {
+        registerFunc();
+    }
+    
+    if (m_config.verboseLogging) {
+        std::cout << "Loaded plugin: " << pluginPath << std::endl;
+    }
+    
+    return true;
+}
+
+bool ModuleLoader::registerPluginFunction(const std::string& name, void* funcPtr, const std::string& signature) {
+    PluginFunction func;
+    func.name = name;
+    func.funcPtr = funcPtr;
+    func.signature = signature;
+    m_pluginFunctions[name] = func;
+    
+    // Also register with JIT
+    JITEngine::instance().initialize();
+    // Note: Would need to add a method to JITEngine to register external functions
+    
+    return true;
+}
+
+void* ModuleLoader::getPluginFunction(const std::string& name) {
+    auto it = m_pluginFunctions.find(name);
+    if (it != m_pluginFunctions.end()) {
+        return it->second.funcPtr;
+    }
+    return nullptr;
+}
+
+bool ModuleLoader::loadStandardLibrary(std::string* error) {
+    if (m_stdlibLoaded) return true;
+    
+    // Try to find stdlib.flux in search paths
+    std::string stdlibPath = findModule("stdlib");
+    
+    if (stdlibPath.empty()) {
+        // Try common locations
+        const char* home = std::getenv("HOME");
+        if (home) {
+            stdlibPath = std::string(home) + "/.fluxscript/stdlib.flux";
+        }
+        if (stdlibPath.empty() || !std::filesystem::exists(stdlibPath)) {
+            stdlibPath = "/usr/share/fluxscript/stdlib.flux";
+        }
+    }
+    
+    if (std::filesystem::exists(stdlibPath)) {
+        if (!loadModuleFromFile(stdlibPath, error)) {
+            return false;
+        }
+        m_stdlibLoaded = true;
+        std::cout << "Standard library loaded from: " << stdlibPath << std::endl;
+        return true;
+    }
+    
+    // stdlib not found - not a fatal error
+    std::cout << "Standard library not found (optional)" << std::endl;
+    m_stdlibLoaded = true;  // Mark as loaded to avoid repeated checks
+    return true;
+}
+
+void ModuleLoader::addSearchPath(const std::string& path) {
+    if (std::find(m_config.searchPaths.begin(), m_config.searchPaths.end(), path) == m_config.searchPaths.end()) {
+        m_config.searchPaths.push_back(path);
+    }
+}
+
+std::string ModuleLoader::findModule(const std::string& moduleName) const {
+    std::string normalized = ModuleUtils::normalizeModuleName(moduleName);
+    std::string modulePath = ModuleUtils::moduleToPath(normalized);
+    
+    for (const auto& searchPath : m_config.searchPaths) {
+        std::filesystem::path fullPath = std::filesystem::path(searchPath) / modulePath;
+        
+        // Try .flux extension
+        if (std::filesystem::exists(fullPath)) {
+            return fullPath.string();
+        }
+        
+        // Try with .flux extension
+        std::filesystem::path fullPathFlux = fullPath;
+        fullPathFlux += ".flux";
+        if (std::filesystem::exists(fullPathFlux)) {
+            return fullPathFlux.string();
+        }
+    }
+    
+    return "";
+}
+
+bool ModuleLoader::getDefine(const std::string& name) const {
+    auto it = m_config.defines.find(name);
+    if (it != m_config.defines.end()) {
+        return it->second;
+    }
+    return false;
+}
+
+const ModuleInfo* ModuleLoader::getModuleInfo(const std::string& moduleName) const {
+    auto it = m_modules.find(moduleName);
+    if (it != m_modules.end()) {
+        return &it->second;
+    }
+    return nullptr;
+}
+
+std::vector<std::string> ModuleLoader::getLoadedModules() const {
+    std::vector<std::string> result;
+    for (const auto& [name, info] : m_modules) {
+        result.push_back(name);
+    }
+    return result;
+}
+
+std::vector<std::string> ModuleLoader::getModuleExports(const std::string& moduleName) const {
+    auto it = m_modules.find(moduleName);
+    if (it != m_modules.end()) {
+        return it->second.exports;
+    }
+    return {};
+}
+
+std::string ModuleLoader::getFunctionSignature(const std::string& functionName) const {
+    auto it = m_pluginFunctions.find(functionName);
+    if (it != m_pluginFunctions.end()) {
+        return it->second.signature;
+    }
+    return "";
+}
+
+std::string ModuleLoader::preprocessSource(const std::string& source, const ModuleConfig& config) {
+    std::string result = source;
+    
+    // Handle #ifdef / #ifndef / #else / #endif
+    std::regex ifdefRegex(R"(#\s*ifdef\s+(\w+))");
+    std::regex ifndefRegex(R"(#\s*ifndef\s+(\w+))");
+    std::regex elseRegex(R"(#\s*else\s*)");
+    std::regex endifRegex(R"(#\s*endif\s*)");
+    
+    std::vector<bool> includeStack;
+    std::vector<bool> skipStack;
+    
+    std::istringstream iss(result);
+    std::ostringstream oss;
+    std::string line;
+    
+    while (std::getline(iss, line)) {
+        std::smatch match;
+        
+        if (std::regex_search(line, match, ifdefRegex)) {
+            std::string defineName = match[1].str();
+            bool defined = config.defines.count(defineName) && config.defines.at(defineName);
+            includeStack.push_back(true);
+            skipStack.push_back(!defined);
+            continue;  // Skip this line
+        }
+        
+        if (std::regex_search(line, match, ifndefRegex)) {
+            std::string defineName = match[1].str();
+            bool defined = config.defines.count(defineName) && config.defines.at(defineName);
+            includeStack.push_back(true);
+            skipStack.push_back(defined);
+            continue;
+        }
+        
+        if (std::regex_search(line, match, elseRegex)) {
+            if (!skipStack.empty()) {
+                bool parentSkip = skipStack.size() > 1 ? skipStack[skipStack.size() - 2] : false;
+                skipStack.back() = parentSkip || !skipStack.back();
+            }
+            continue;
+        }
+        
+        if (std::regex_search(line, match, endifRegex)) {
+            if (!skipStack.empty()) {
+                skipStack.pop_back();
+                includeStack.pop_back();
+            }
+            continue;
+        }
+        
+        // Check if we should skip this line
+        bool shouldSkip = false;
+        for (bool skip : skipStack) {
+            if (skip) {
+                shouldSkip = true;
+                break;
+            }
+        }
+        
+        if (!shouldSkip) {
+            oss << line << "\n";
+        }
+    }
+    
+    return oss.str();
+}
+
+// ============ ModuleUtils Implementation ============
+
+namespace ModuleUtils {
+
+std::string normalizeModuleName(const std::string& name) {
+    std::string result = name;
+    // Replace :: with /
+    size_t pos = 0;
+    while ((pos = result.find("::", pos)) != std::string::npos) {
+        result.replace(pos, 2, "/");
+    }
+    return result;
+}
+
+std::string moduleToPath(const std::string& moduleName) {
+    return normalizeModuleName(moduleName);
+}
+
+std::string pathToModule(const std::string& path) {
+    std::filesystem::path p(path);
+    std::string stem = p.stem().string();
+    return stem;
+}
+
+bool parseVersion(const std::string& versionStr, int& major, int& minor, int& patch) {
+    std::regex versionRegex(R"((\d+)\.(\d+)\.?(\d*)?)");
+    std::smatch match;
+    
+    if (std::regex_search(versionStr, match, versionRegex)) {
+        major = std::stoi(match[1].str());
+        minor = std::stoi(match[2].str());
+        patch = match[3].matched ? std::stoi(match[3].str()) : 0;
+        return true;
+    }
+    
+    return false;
+}
+
+std::string versionToString(int major, int minor, int patch) {
+    return std::to_string(major) + "." + std::to_string(minor) + "." + std::to_string(patch);
+}
+
+} // namespace ModuleUtils
+
+} // namespace Flux

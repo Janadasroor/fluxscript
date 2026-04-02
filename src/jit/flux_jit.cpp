@@ -212,6 +212,15 @@ void FluxJIT::addModule(std::unique_ptr<llvm::Module> M,
     }
 }
 
+void FluxJIT::addObjectFile(std::unique_ptr<llvm::MemoryBuffer> ObjectBuffer) {
+    if (!m_lljit || !ObjectBuffer)
+        return;
+
+    if (auto Err = m_lljit->addObjectFile(std::move(ObjectBuffer))) {
+        logError(std::move(Err), "Failed to add object file to JIT");
+    }
+}
+
 void* FluxJIT::getPointerToFunction(const std::string& Name) {
     if (!m_lljit) return nullptr;
 

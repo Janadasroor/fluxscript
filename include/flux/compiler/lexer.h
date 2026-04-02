@@ -4,6 +4,7 @@
 #include <string>
 #include <vector>
 #include <memory>
+#include <cstddef>
 #include <llvm/Support/MemoryBuffer.h>
 #include <llvm/Support/SMLoc.h>
 #include <llvm/Support/SourceMgr.h>
@@ -87,21 +88,38 @@ enum class TokenType {
     // Slicing
     tok_colon = -51,           // :  range/slice operator
 
+    // Conditional compilation (preprocessor)
+    tok_pp_ifdef = -52,        // #ifdef
+    tok_pp_ifndef = -53,       // #ifndef
+    tok_pp_endif = -54,        // #endif
+    tok_pp_define = -55,       // #define
+    tok_pp_undef = -56,        // #undef
+    tok_pp_if = -57,           // #if
+    tok_pp_elif = -58,         // #elif
+    tok_pp_else = -59,         // #else
+    tok_pp_defined = -60,      // defined()
+    tok_pp_warning = -61,      // #warning
+    tok_pp_error = -62,        // #error
+
     // Compound assignment operators
-    tok_plus_equal = -52,      // +=
-    tok_minus_equal = -53,     // -=
-    tok_star_equal = -54,      // *=
-    tok_slash_equal = -55,     // /=
+    tok_plus_equal = -63,      // +=
+    tok_minus_equal = -64,     // -=
+    tok_star_equal = -65,      // *=
+    tok_slash_equal = -66,     // /=
 
     // Control flow
-    tok_break = -56,
-    tok_continue = -57,
-    tok_switch = -58,
-    tok_case = -59,
-    tok_default = -60,
+    tok_break = -67,
+    tok_continue = -68,
+    tok_switch = -69,
+    tok_case = -70,
+    tok_default = -71,
 
     // Matrix operations
-    tok_transpose = -61        // ' (tick)
+    tok_transpose = -72,       // ' (tick)
+    tok_dot = -73,             // . (member access)
+    
+    // Namespace operator
+    tok_namespace_sep = -74,   // :: (namespace separator)
 };
 
 class Lexer {
@@ -120,6 +138,9 @@ public:
     // Position tracking for error messages
     int getCurrentLine() const { return m_line; }
     int getCurrentColumn() const { return m_column; }
+    size_t getCurrentTokenOffset() const { return m_currentTokenOffset; }
+    size_t getCurrentTokenLength() const { return m_currentTokenLength; }
+    std::string getCurrentTokenText() const;
     std::string getCurrentLineText() const;
     void reportError(const std::string& message) const;
 
@@ -135,6 +156,8 @@ private:
     int m_line;
     int m_column;
     size_t m_lineStart;
+    size_t m_currentTokenOffset;
+    size_t m_currentTokenLength;
     std::unique_ptr<llvm::MemoryBuffer> m_buffer;
     std::unique_ptr<llvm::SourceMgr> m_sourceMgr;
 };

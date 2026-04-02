@@ -15,6 +15,8 @@ Lexer::Lexer(const std::string& input)
       m_line(1),
       m_column(1),
       m_lineStart(0),
+      m_currentTokenOffset(0),
+      m_currentTokenLength(0),
       m_buffer(llvm::MemoryBuffer::getMemBufferCopy(input, "<flux>")),
       m_sourceMgr(std::make_unique<llvm::SourceMgr>()) {
     m_sourceMgr->AddNewSourceBuffer(std::move(m_buffer), llvm::SMLoc());
@@ -41,6 +43,14 @@ std::string Lexer::getCurrentLineText() const {
     size_t end = m_input.find('\n', m_lineStart);
     if (end == std::string::npos) end = m_input.size();
     return m_input.substr(m_lineStart, end - m_lineStart);
+}
+
+std::string Lexer::getCurrentTokenText() const {
+    if (m_currentTokenOffset >= m_input.size())
+        return {};
+
+    const size_t safeLength = std::min(m_currentTokenLength, m_input.size() - m_currentTokenOffset);
+    return m_input.substr(m_currentTokenOffset, safeLength);
 }
 
 llvm::SMLoc Lexer::getCurrentTokenLoc() const {
@@ -238,7 +248,7 @@ int Lexer::gettok() {
             return static_cast<int>(TokenType::tok_ew_power);
         }
         // Just a single . - could be part of a number or struct access
-        return '.';
+        return static_cast<int>(TokenType::tok_dot);
     }
 
     if (m_lastChar == '"') { // String literal: "..."
@@ -308,9 +318,13 @@ int Lexer::gettok() {
         return static_cast<int>(TokenType::tok_semicolon);
     }
 
-    // Handle colon as slice operator (MATLAB-style)
+    // Handle colon as slice operator (MATLAB-style) or namespace separator ::
     if (m_lastChar == ':') {
         advance();
+        if (m_lastChar == ':') {
+            advance();
+            return static_cast<int>(TokenType::tok_namespace_sep);
+        }
         return static_cast<int>(TokenType::tok_colon);
     }
 
@@ -448,6 +462,16 @@ int Lexer::gettok() {
 
 int Lexer::getNextToken() {
     CurTok = gettok();
+    m_currentTokenOffset = std::min(m_tokenStart, m_input.size());
+    if (m_pos >= m_tokenStart) {
+        m_currentTokenLength = m_pos - m_tokenStart;
+    } else {
+        m_currentTokenLength = 0;
+    }
+
+    if (CurTok == static_cast<int>(TokenType::tok_eof))
+        m_currentTokenLength = 0;
+
     // std::cerr << "DEBUG getNextToken: returning " << CurTok << " '" << (char)CurTok << "'" << std::endl;
     return CurTok;
 }

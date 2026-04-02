@@ -202,7 +202,8 @@ private:
     QStandardItemModel* m_model;
     
     // Completion providers
-    QMap<QString, std::unique_ptr<CompletionProvider>> m_providers;
+    QMap<QString, CompletionProvider*> m_providers;
+    std::vector<std::unique_ptr<CompletionProvider>> m_providerStorage;
     
     // Documentation cache
     QMap<QString, QString> m_documentation;

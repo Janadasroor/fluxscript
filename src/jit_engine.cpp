@@ -7,158 +7,13 @@
 
 #include "flux/jit_engine.h"
 #include "flux/flux_eigen.h"
+#include "flux/runtime/flux_runtime.h"
+#include "flux/tooling/tooling.h"
+
 #include <iostream>
-#include <fstream>
-#include <cstdio>
-#include <cmath>
-#include <cstdint>
-#include <set>
+#include <filesystem>
 
 namespace Flux {
-
-// External C function for printing strings
-extern "C" double flux_print_string(const char* str) {
-    printf("%s", str);
-    fflush(stdout);
-    return 0.0;
-}
-
-// SPICE-style node access
-extern "C" double flux_get_voltage(const char* node) {
-    if (std::string(node) == "0") return 0.0;
-    return 5.0; 
-}
-
-extern "C" double flux_get_current(const char* branch) {
-    return 0.001; 
-}
-
-extern "C" double flux_get_parameter(const char* name) {
-    if (std::string(name) == "TEMP") return 27.0;
-    return 1.0;
-}
-
-extern "C" double flux_set_parameter(const char* name, double value) {
-    printf("FluxScript: Setting parameter %s to %f\n", name, value);
-    return value;
-}
-
-// Behavioral Modeling Functions
-extern "C" double flux_uramp(double x) {
-    return x > 0.0 ? x : 0.0;
-}
-
-extern "C" double flux_limit(double x, double low, double high) {
-    if (x < low) return low;
-    if (x > high) return high;
-    return x;
-}
-
-extern "C" double flux_buf(double x) {
-    return x > 0.5 ? 1.0 : 0.0;
-}
-
-extern "C" double flux_inv(double x) {
-    return x > 0.5 ? 0.0 : 1.0;
-}
-
-// Mathematical library functions
-extern "C" double flux_sin(double x) { return std::sin(x); }
-extern "C" double flux_cos(double x) { return std::cos(x); }
-extern "C" double flux_tan(double x) { return std::tan(x); }
-extern "C" double flux_asin(double x) { return std::asin(x); }
-extern "C" double flux_acos(double x) { return std::acos(x); }
-extern "C" double flux_atan(double x) { return std::atan(x); }
-extern "C" double flux_atan2(double y, double x) { return std::atan2(y, x); }
-extern "C" double flux_sqrt(double x) { return std::sqrt(x); }
-extern "C" double flux_exp(double x) { return std::exp(x); }
-extern "C" double flux_log(double x) { return std::log(x); }
-extern "C" double flux_log10(double x) { return std::log10(x); }
-extern "C" double flux_abs(double x) { return std::fabs(x); }
-extern "C" double flux_floor(double x) { return std::floor(x); }
-extern "C" double flux_ceil(double x) { return std::ceil(x); }
-extern "C" double flux_round(double x) { return std::round(x); }
-extern "C" double flux_pow(double base, double exp) { return std::pow(base, exp); }
-extern "C" double flux_sinh(double x) { return std::sinh(x); }
-extern "C" double flux_cosh(double x) { return std::cosh(x); }
-extern "C" double flux_tanh(double x) { return std::tanh(x); }
-
-// Mathematical constants
-extern "C" double flux_pi() { return 3.14159265358979323846; }
-extern "C" double flux_e() { return 2.71828182845904523536; }
-
-#include <Eigen/Dense>
-
-extern "C" void* flux_create_matrix(double* data, int rows, int cols) {
-    Eigen::MatrixXd* mat = new Eigen::MatrixXd(rows, cols);
-    for (int r = 0; r < rows; ++r) {
-        for (int c = 0; c < cols; ++c) {
-            (*mat)(r, c) = data[r * cols + c];
-        }
-    }
-    return mat;
-}
-
-extern "C" void* flux_matrix_mul(void* a_ptr, void* b_ptr) {
-    Eigen::MatrixXd* A = static_cast<Eigen::MatrixXd*>(a_ptr);
-    Eigen::MatrixXd* B = static_cast<Eigen::MatrixXd*>(b_ptr);
-    Eigen::MatrixXd* res = new Eigen::MatrixXd((*A) * (*B));
-    return res;
-}
-
-extern "C" void* flux_matrix_mul_ms(void* m_ptr, double s) {
-    Eigen::MatrixXd* M = static_cast<Eigen::MatrixXd*>(m_ptr);
-    Eigen::MatrixXd* res = new Eigen::MatrixXd((*M) * s);
-    return res;
-}
-
-extern "C" void* flux_matrix_add(void* a_ptr, void* b_ptr) {
-    Eigen::MatrixXd* A = static_cast<Eigen::MatrixXd*>(a_ptr);
-    Eigen::MatrixXd* B = static_cast<Eigen::MatrixXd*>(b_ptr);
-    Eigen::MatrixXd* res = new Eigen::MatrixXd((*A) + (*B));
-    return res;
-}
-
-extern "C" void* flux_matrix_sub(void* a_ptr, void* b_ptr) {
-    Eigen::MatrixXd* A = static_cast<Eigen::MatrixXd*>(a_ptr);
-    Eigen::MatrixXd* B = static_cast<Eigen::MatrixXd*>(b_ptr);
-    Eigen::MatrixXd* res = new Eigen::MatrixXd((*A) - (*B));
-    return res;
-}
-
-extern "C" void* flux_matrix_transpose(void* m_ptr) {
-    Eigen::MatrixXd* M = static_cast<Eigen::MatrixXd*>(m_ptr);
-    Eigen::MatrixXd* res = new Eigen::MatrixXd(M->transpose());
-    return res;
-}
-
-extern "C" int flux_matrix_rows(void* m_ptr) {
-    if (!m_ptr) return 0;
-    return static_cast<Eigen::MatrixXd*>(m_ptr)->rows();
-}
-
-extern "C" int flux_matrix_cols(void* m_ptr) {
-    if (!m_ptr) return 0;
-    return static_cast<Eigen::MatrixXd*>(m_ptr)->cols();
-}
-
-extern "C" double flux_matrix_get(void* m_ptr, int row, int col) {
-    Eigen::MatrixXd* M = static_cast<Eigen::MatrixXd*>(m_ptr);
-    return (*M)(row, col);
-}
-
-extern "C" double flux_create_vector_sum(double* data, int size) {
-    double sum = 0.0;
-    for(int i=0; i<size; ++i) sum += data[i];
-    return sum;
-}
-
-extern "C" double flux_print_matrix(void* m_ptr) {
-    Eigen::MatrixXd* M = static_cast<Eigen::MatrixXd*>(m_ptr);
-    if (!M) return 0.0;
-    std::cout << *M << std::endl;
-    return 1.0;
-}
 
 JITEngine& JITEngine::instance() {
     static JITEngine engine;
@@ -185,60 +40,19 @@ void JITEngine::initialize() {
     m_jit = std::make_unique<FluxJIT>();
     m_compilerOptions.moduleName = "Flux JIT Core";
     m_compilerOptions.injectStdlib = true;
+    if (m_cacheDirectory.empty())
+        m_cacheDirectory = Tooling::defaultCacheDirectory();
     m_codegenCtx = nullptr;
     m_initialized = true;
     registerEigenFunctions();
+
     std::cout << "FluxScript C++ LLVM JIT Engine Initialized." << std::endl;
 }
 
 void JITEngine::registerEigenFunctions() {
-    if (!m_jit || !m_codegenCtx) return;
-    
-    m_jit->registerFunction("flux_create_vector_sum", reinterpret_cast<void*>(&flux_create_vector_sum));
-    m_jit->registerFunction("flux_matrix_mul", reinterpret_cast<void*>(&flux_matrix_mul));
-    m_jit->registerFunction("flux_matrix_mul_ms", reinterpret_cast<void*>(&flux_matrix_mul_ms));
-    m_jit->registerFunction("flux_matrix_add", reinterpret_cast<void*>(&flux_matrix_add));
-    m_jit->registerFunction("flux_matrix_sub", reinterpret_cast<void*>(&flux_matrix_sub));
-    m_jit->registerFunction("flux_matrix_transpose", reinterpret_cast<void*>(&flux_matrix_transpose));
-    m_jit->registerFunction("flux_matrix_get", reinterpret_cast<void*>(&flux_matrix_get));
-    m_jit->registerFunction("flux_create_matrix", reinterpret_cast<void*>(&flux_create_matrix));
-    m_jit->registerFunction("print_matrix", reinterpret_cast<void*>(&flux_print_matrix));
+    if (!m_jit) return;
 
-    m_jit->registerFunction("print_string", reinterpret_cast<void*>(&flux_print_string));
-
-    m_jit->registerFunction("flux_get_voltage", reinterpret_cast<void*>(&flux_get_voltage));
-    m_jit->registerFunction("flux_get_current", reinterpret_cast<void*>(&flux_get_current));
-    m_jit->registerFunction("flux_get_parameter", reinterpret_cast<void*>(&flux_get_parameter));
-    m_jit->registerFunction("flux_set_parameter", reinterpret_cast<void*>(&flux_set_parameter));
-
-    // Behavioral Functions
-    m_jit->registerFunction("uramp", reinterpret_cast<void*>(&flux_uramp));
-    m_jit->registerFunction("limit", reinterpret_cast<void*>(&flux_limit));
-    m_jit->registerFunction("buf", reinterpret_cast<void*>(&flux_buf));
-    m_jit->registerFunction("inv", reinterpret_cast<void*>(&flux_inv));
-
-    m_jit->registerFunction("sin", reinterpret_cast<void*>(&flux_sin));
-    m_jit->registerFunction("cos", reinterpret_cast<void*>(&flux_cos));
-    m_jit->registerFunction("tan", reinterpret_cast<void*>(&flux_tan));
-    m_jit->registerFunction("asin", reinterpret_cast<void*>(&flux_asin));
-    m_jit->registerFunction("acos", reinterpret_cast<void*>(&flux_acos));
-    m_jit->registerFunction("atan", reinterpret_cast<void*>(&flux_atan));
-    m_jit->registerFunction("atan2", reinterpret_cast<void*>(&flux_atan2));
-    m_jit->registerFunction("sqrt", reinterpret_cast<void*>(&flux_sqrt));
-    m_jit->registerFunction("exp", reinterpret_cast<void*>(&flux_exp));
-    m_jit->registerFunction("log", reinterpret_cast<void*>(&flux_log));
-    m_jit->registerFunction("log10", reinterpret_cast<void*>(&flux_log10));
-    m_jit->registerFunction("abs", reinterpret_cast<void*>(&flux_abs));
-    m_jit->registerFunction("floor", reinterpret_cast<void*>(&flux_floor));
-    m_jit->registerFunction("ceil", reinterpret_cast<void*>(&flux_ceil));
-    m_jit->registerFunction("round", reinterpret_cast<void*>(&flux_round));
-    m_jit->registerFunction("pow", reinterpret_cast<void*>(&flux_pow));
-    m_jit->registerFunction("sinh", reinterpret_cast<void*>(&flux_sinh));
-    m_jit->registerFunction("cosh", reinterpret_cast<void*>(&flux_cosh));
-    m_jit->registerFunction("tanh", reinterpret_cast<void*>(&flux_tanh));
-
-    m_jit->registerFunction("pi", reinterpret_cast<void*>(&flux_pi));
-    m_jit->registerFunction("e", reinterpret_cast<void*>(&flux_e));
+    registerRuntimeFunctions(*m_jit);
 }
 
 void JITEngine::finalize() {
@@ -278,9 +92,45 @@ bool JITEngine::compileScript(const std::string& code, std::string* error) {
     if (!m_initialized) initialize();
     CompilerInstance compiler(m_compilerOptions);
     m_overloadedFunctions.clear();
+    m_lastCompileUsedCache = false;
+
+    const std::string cacheKey = Tooling::computeCacheKey(code, m_compilerOptions);
+    const std::filesystem::path cacheDir(m_cacheDirectory);
+    const std::filesystem::path objectPath = cacheDir / (cacheKey + ".o");
+    const std::filesystem::path metaPath = cacheDir / (cacheKey + ".meta");
+
+    if (m_cacheEnabled && std::filesystem::exists(objectPath) && std::filesystem::exists(metaPath)) {
+        auto objectBuffer = llvm::MemoryBuffer::getFile(objectPath.string());
+        if (objectBuffer && Tooling::loadReturnTypes(metaPath.string(), m_functionReturnTypes, error)) {
+            m_jit->addObjectFile(std::move(*objectBuffer));
+            m_lastCompileUsedCache = true;
+            if (error)
+                error->clear();
+            return true;
+        }
+    }
+
     auto artifacts = compiler.compileToIR(code, error);
     if (!artifacts) return false;
     m_functionReturnTypes = artifacts->functionReturnTypes;
+
+    if (m_cacheEnabled) {
+        std::filesystem::create_directories(cacheDir);
+        std::unique_ptr<llvm::MemoryBuffer> objectBuffer;
+        std::string cacheError;
+        if (Tooling::emitObjectBuffer(*artifacts, m_compilerOptions.optimizationLevel, objectBuffer, &cacheError) && objectBuffer) {
+            auto jitObject = llvm::MemoryBuffer::getMemBufferCopy(objectBuffer->getBuffer(), objectPath.filename().string());
+            m_jit->addObjectFile(std::move(jitObject));
+            Tooling::saveReturnTypes(metaPath.string(), m_functionReturnTypes, nullptr);
+            std::error_code ec;
+            llvm::raw_fd_ostream stream(objectPath.string(), ec, llvm::sys::fs::OF_None);
+            if (!ec)
+                stream << objectBuffer->getBuffer();
+            m_lastCompileUsedCache = false;
+            return true;
+        }
+    }
+
     m_codegenCtx = std::move(artifacts->codegenContext);
     m_jit->addModule(std::move(m_codegenCtx->TheModule), std::move(m_codegenCtx->OwnedContext));
     m_codegenCtx.reset();
@@ -396,6 +246,42 @@ FluxValue JITEngine::callFunction(const std::string& name, const std::vector<dou
     }
     if (error) *error = "Unsupported arguments or return type";
     return 0.0;
+}
+
+// ============ Module System Integration ============
+
+bool JITEngine::importModule(const std::string& moduleName, std::string* error) {
+    // Use ModuleLoader to load module
+    return true;  // Simplified for now
+}
+
+bool JITEngine::loadPlugin(const std::string& pluginPath, std::string* error) {
+    // Use ModuleLoader to load plugin
+    return true;  // Simplified for now
+}
+
+std::vector<std::string> JITEngine::getLoadedModules() const {
+    return {};  // Simplified for now
+}
+
+std::vector<std::string> JITEngine::getModuleExports(const std::string& moduleName) const {
+    return {};  // Simplified for now
+}
+
+std::string JITEngine::getFunctionSignature(const std::string& functionName) const {
+    return "";  // Simplified for now
+}
+
+void JITEngine::setDefine(const std::string& name, bool value) {
+    // Simplified for now
+}
+
+bool JITEngine::getDefine(const std::string& name) const {
+    return false;  // Simplified for now
+}
+
+void JITEngine::setOptimizationLevelForModules(OptimizationLevel level) {
+    // Simplified for now
 }
 
 } // namespace Flux

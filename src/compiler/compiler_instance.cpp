@@ -1,6 +1,7 @@
 #include "flux/compiler/compiler_instance.h"
 
 #include <llvm/IR/Verifier.h>
+#include <llvm/IR/DebugInfoMetadata.h>
 #include <llvm/Support/MemoryBuffer.h>
 #include <llvm/ADT/SmallString.h>
 #include <llvm/Support/raw_ostream.h>
@@ -67,6 +68,31 @@ CompilerInstance::CompilerInstance(CompilerOptions options)
 std::unique_ptr<CodegenContext> CompilerInstance::createCodegenContext() const {
     auto context = std::make_unique<CodegenContext>();
     context->TheModule = std::make_unique<llvm::Module>(m_options.moduleName, context->TheContext);
+
+    if (m_options.debugInfo) {
+        namespace path = llvm::sys::path;
+        llvm::SmallString<256> fullPath(m_options.inputName.empty() ? "<stdin>" : m_options.inputName);
+        llvm::SmallString<256> directory(fullPath);
+        path::remove_filename(directory);
+        const llvm::StringRef fileName = path::filename(fullPath);
+
+        context->DebugEnabled = true;
+        context->TheModule->addModuleFlag(llvm::Module::Warning, "Debug Info Version",
+                                          llvm::DEBUG_METADATA_VERSION);
+        context->TheModule->addModuleFlag(llvm::Module::Warning, "Dwarf Version", 5);
+        context->DebugBuilder = std::make_unique<llvm::DIBuilder>(*context->TheModule);
+        context->DebugFile = context->DebugBuilder->createFile(
+            fileName.empty() ? llvm::StringRef("<stdin>") : fileName,
+            directory.empty() ? llvm::StringRef(".") : llvm::StringRef(directory));
+        context->DebugCompileUnit = context->DebugBuilder->createCompileUnit(
+            llvm::dwarf::DW_LANG_C_plus_plus,
+            context->DebugFile,
+            "FluxScript",
+            false,
+            "",
+            0);
+    }
+
     return context;
 }
 
@@ -103,6 +129,25 @@ void CompilerInstance::injectStandardLibrary(CodegenContext& context,
     inject("pow", 2);
     inject("pi", 0);
     inject("e", 0);
+
+    // EDA functions (strings as arguments)
+    auto injectStr = [&](const std::string& name, int args) {
+        std::vector<std::pair<std::string, FluxType>> params;
+        for (int i = 0; i < args; ++i)
+            params.push_back({"arg" + std::to_string(i), FluxType(TypeKind::String)});
+        PrototypeAST proto(name, params, FluxType(TypeKind::Double));
+        proto.codegen(context);
+        returnTypes[name] = FluxType(TypeKind::Double);
+    };
+
+    injectStr("net", 1);
+    injectStr("branch", 1);
+    injectStr("p", 1); // Alias for get_parameter if needed, but we have MemberExpr
+
+    inject("sim_run", 0);
+    inject("sim_stop", 0);
+    inject("sim_pause", 0);
+    inject("erc_check", 0);
 }
 
 std::string CompilerInstance::resolveImportPath(const std::string& moduleName) const {
@@ -197,7 +242,10 @@ std::vector<TokenInfo> CompilerInstance::tokenize(const std::string& code, std::
             token,
             tokenSpelling(lexer, token),
             lexer.getCurrentLine(),
-            lexer.getCurrentColumn()
+            lexer.getCurrentColumn(),
+            lexer.getCurrentTokenOffset(),
+            lexer.getCurrentTokenLength(),
+            lexer.getCurrentTokenText()
         });
 
         if (token == static_cast<int>(TokenType::tok_eof))
@@ -221,6 +269,9 @@ std::unique_ptr<CompileArtifacts> CompilerInstance::compileToIR(const std::strin
     std::map<std::string, bool> importedModules;
     if (!compileParser(parser, *artifacts->codegenContext, artifacts->functionReturnTypes, error, importedModules))
         return nullptr;
+
+    if (artifacts->codegenContext->DebugBuilder)
+        artifacts->codegenContext->DebugBuilder->finalize();
 
     if (llvm::verifyModule(*artifacts->codegenContext->TheModule, &llvm::errs())) {
         if (error)

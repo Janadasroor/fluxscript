@@ -5,9 +5,12 @@
 #include <memory>
 #include <vector>
 #include <map>
+#include <memory>
 #include <llvm/IR/Value.h>
 #include <llvm/IR/Module.h>
 #include <llvm/IR/IRBuilder.h>
+#include <llvm/IR/DIBuilder.h>
+#include <llvm/IR/DebugInfoMetadata.h>
 #include "flux/compiler/lexer.h"
 
 namespace Flux {
@@ -116,11 +119,20 @@ public:
     llvm::IRBuilder<> Builder;
     std::unique_ptr<llvm::Module> TheModule;
     std::map<std::string, llvm::Value*> NamedValues;
+    std::unique_ptr<llvm::DIBuilder> DebugBuilder;
+    llvm::DICompileUnit* DebugCompileUnit = nullptr;
+    llvm::DIFile* DebugFile = nullptr;
+    bool DebugEnabled = false;
 
     CodegenContext()
         : OwnedContext(std::make_unique<llvm::LLVMContext>()),
           TheContext(*OwnedContext),
-          Builder(TheContext) {}
+          Builder(TheContext) {
+        // Enable Fast-Math flags by default for performance in simulations
+        llvm::FastMathFlags FMF;
+        FMF.setFast();
+        Builder.setFastMathFlags(FMF);
+    }
 };
 
 struct TypedValue {
@@ -167,10 +179,21 @@ public:
 
 class ImportExprAST : public ExprAST {
     std::string ModuleName;
+    std::string VersionSpec;      // Version specification (e.g., "1.0.0", ">=1.0.0")
+    std::string Alias;            // Optional namespace alias
+    std::vector<std::string> Symbols;  // Specific symbols to import
+    
 public:
-    ImportExprAST(const std::string& ModuleName) : ModuleName(ModuleName) {}
+    ImportExprAST(const std::string& ModuleName, 
+                  const std::string& VersionSpec = "",
+                  const std::string& Alias = "",
+                  const std::vector<std::string>& Symbols = {})
+        : ModuleName(ModuleName), VersionSpec(VersionSpec), Alias(Alias), Symbols(Symbols) {}
     TypedValue codegen(CodegenContext& context) override;
     const std::string& getModuleName() const { return ModuleName; }
+    const std::string& getVersionSpec() const { return VersionSpec; }
+    const std::string& getAlias() const { return Alias; }
+    const std::vector<std::string>& getSymbols() const { return Symbols; }
 };
 
 class VariableExprAST : public ExprAST {
@@ -179,6 +202,17 @@ public:
     VariableExprAST(const std::string& Name) : Name(Name) {}
     TypedValue codegen(CodegenContext& context) override;
     const std::string& getName() const { return Name; }
+};
+
+class MemberExprAST : public ExprAST {
+    std::unique_ptr<ExprAST> Object;
+    std::string MemberName;
+public:
+    MemberExprAST(std::unique_ptr<ExprAST> Object, const std::string& MemberName)
+        : Object(std::move(Object)), MemberName(MemberName) {}
+    TypedValue codegen(CodegenContext& context) override;
+    const ExprAST* getObject() const { return Object.get(); }
+    const std::string& getMemberName() const { return MemberName; }
 };
 
 class BinaryExprAST : public ExprAST {
@@ -225,14 +259,14 @@ public:
 };
 
 class AssignExprAST : public ExprAST {
-    std::string Name;
+    std::unique_ptr<ExprAST> LHS;
     std::unique_ptr<ExprAST> Val;
-    int Op;  // 0 for simple assignment, otherwise the compound operator
+    int Op;
 public:
-    AssignExprAST(const std::string& Name, std::unique_ptr<ExprAST> Val, int Op = 0)
-        : Name(Name), Val(std::move(Val)), Op(Op) {}
+    AssignExprAST(std::unique_ptr<ExprAST> LHS, std::unique_ptr<ExprAST> Val, int Op = 0)
+        : LHS(std::move(LHS)), Val(std::move(Val)), Op(Op) {}
     TypedValue codegen(CodegenContext& context) override;
-    const std::string& getName() const { return Name; }
+    const ExprAST* getLHS() const { return LHS.get(); }
     const ExprAST* getValueExpr() const { return Val.get(); }
     int getAssignmentOp() const { return Op; }
 };
