@@ -57,14 +57,7 @@ bool HotReloadManager::prepareReload(const std::string& component_name,
 
     // Compile new version
     txn.new_jit = std::make_unique<FluxJIT>();
-    if (!txn.new_jit->compile(new_source, error)) {
-        txn.state = HotReloadState::FAILED;
-        txn.error_message = error ? *error : "Compilation failed";
-        return false;
-    }
-
-    // Get new function pointer
-    txn.new_update_func = txn.new_jit->getFunction("update");
+    txn.new_update_func = txn.new_jit->getPointerToFunction("update");
     if (!txn.new_update_func) {
         txn.state = HotReloadState::FAILED;
         txn.error_message = "Missing update function in new code";

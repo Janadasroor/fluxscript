@@ -1,0 +1,6 @@
+* Test Circuit 7: Behavioral Source - FM Modulation
+Vin in 0 DC=0
+B1 out 0 V={sin(2*3.14159*(1000 + 500*sin(2*3.14159*10*time))*time)}
+R1 out 0 1k
+.tran 10u 200m
+.END

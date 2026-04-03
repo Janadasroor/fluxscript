@@ -1541,16 +1541,103 @@ TypedValue ICExprAST::codegen(CodegenContext& context) {
             llvm::FunctionType::get(DoubleTy, {CharPtrTy, DoubleTy}, false),
             llvm::Function::ExternalLinkage, "flux_register_ic", context.TheModule.get());
     }
-    
+
     double Val = 0.0;
     if (auto* NumVal = dynamic_cast<NumberExprAST*>(Value.get())) {
         Val = NumVal->getValue();
     }
-    
+
     return TypedValue(context.Builder.CreateCall(RegisterIC, {
         context.Builder.CreateGlobalStringPtr(NodeName),
         llvm::ConstantFP::get(context.TheContext, llvm::APFloat(Val))
     }), TypeKind::Double);
+}
+
+TypedValue MonteCarloExprAST::codegen(CodegenContext& context) {
+    llvm::Function* RegisterMC = context.TheModule->getFunction("flux_register_monte_carlo");
+    if (!RegisterMC) {
+        llvm::Type* IntTy = llvm::Type::getInt32Ty(context.TheContext);
+        llvm::Type* CharPtrTy = llvm::PointerType::get(llvm::Type::getInt8Ty(context.TheContext), 0);
+        RegisterMC = llvm::Function::Create(
+            llvm::FunctionType::get(IntTy, {CharPtrTy, IntTy}, false),
+            llvm::Function::ExternalLinkage, "flux_register_monte_carlo", context.TheModule.get());
+    }
+
+    return TypedValue(context.Builder.CreateCall(RegisterMC, {
+        context.Builder.CreateGlobalStringPtr(OutputName),
+        llvm::ConstantInt::get(llvm::Type::getInt32Ty(context.TheContext), Iterations)
+    }), TypeKind::Int);
+}
+
+TypedValue WorstCaseExprAST::codegen(CodegenContext& context) {
+    llvm::Function* RegisterWC = context.TheModule->getFunction("flux_register_worst_case");
+    if (!RegisterWC) {
+        llvm::Type* IntTy = llvm::Type::getInt32Ty(context.TheContext);
+        llvm::Type* CharPtrTy = llvm::PointerType::get(llvm::Type::getInt8Ty(context.TheContext), 0);
+        RegisterWC = llvm::Function::Create(
+            llvm::FunctionType::get(IntTy, {CharPtrTy}, false),
+            llvm::Function::ExternalLinkage, "flux_register_worst_case", context.TheModule.get());
+    }
+
+    return TypedValue(context.Builder.CreateCall(RegisterWC, {
+        context.Builder.CreateGlobalStringPtr(OutputName)
+    }), TypeKind::Int);
+}
+
+TypedValue StabilityExprAST::codegen(CodegenContext& context) {
+    llvm::Function* Fn = context.TheModule->getFunction("flux_stability_analyze");
+    if (!Fn) {
+        llvm::Type* IntTy = llvm::Type::getInt32Ty(context.TheContext);
+        llvm::Type* CharPtrTy = llvm::PointerType::get(llvm::Type::getInt8Ty(context.TheContext), 0);
+        Fn = llvm::Function::Create(
+            llvm::FunctionType::get(IntTy, {CharPtrTy}, false),
+            llvm::Function::ExternalLinkage, "flux_stability_analyze", context.TheModule.get());
+    }
+    return TypedValue(context.Builder.CreateCall(Fn, {
+        context.Builder.CreateGlobalStringPtr(OutputName)
+    }), TypeKind::Int);
+}
+
+TypedValue SensitivityExprAST::codegen(CodegenContext& context) {
+    llvm::Function* Fn = context.TheModule->getFunction("flux_sensitivity_analyze");
+    if (!Fn) {
+        llvm::Type* IntTy = llvm::Type::getInt32Ty(context.TheContext);
+        llvm::Type* CharPtrTy = llvm::PointerType::get(llvm::Type::getInt8Ty(context.TheContext), 0);
+        Fn = llvm::Function::Create(
+            llvm::FunctionType::get(IntTy, {CharPtrTy}, false),
+            llvm::Function::ExternalLinkage, "flux_sensitivity_analyze", context.TheModule.get());
+    }
+    return TypedValue(context.Builder.CreateCall(Fn, {
+        context.Builder.CreateGlobalStringPtr(OutputName)
+    }), TypeKind::Int);
+}
+
+TypedValue OptimizationExprAST::codegen(CodegenContext& context) {
+    llvm::Function* Fn = context.TheModule->getFunction("flux_optimizer_run");
+    if (!Fn) {
+        llvm::Type* IntTy = llvm::Type::getInt32Ty(context.TheContext);
+        llvm::Type* CharPtrTy = llvm::PointerType::get(llvm::Type::getInt8Ty(context.TheContext), 0);
+        Fn = llvm::Function::Create(
+            llvm::FunctionType::get(IntTy, {CharPtrTy}, false),
+            llvm::Function::ExternalLinkage, "flux_optimizer_run", context.TheModule.get());
+    }
+    return TypedValue(context.Builder.CreateCall(Fn, {
+        context.Builder.CreateGlobalStringPtr(OutputName)
+    }), TypeKind::Int);
+}
+
+TypedValue FFTExprAST::codegen(CodegenContext& context) {
+    llvm::Function* Fn = context.TheModule->getFunction("flux_fft_analyze");
+    if (!Fn) {
+        llvm::Type* IntTy = llvm::Type::getInt32Ty(context.TheContext);
+        llvm::Type* CharPtrTy = llvm::PointerType::get(llvm::Type::getInt8Ty(context.TheContext), 0);
+        Fn = llvm::Function::Create(
+            llvm::FunctionType::get(IntTy, {CharPtrTy}, false),
+            llvm::Function::ExternalLinkage, "flux_fft_analyze", context.TheModule.get());
+    }
+    return TypedValue(context.Builder.CreateCall(Fn, {
+        context.Builder.CreateGlobalStringPtr(SignalName)
+    }), TypeKind::Int);
 }
 
 } // namespace Flux

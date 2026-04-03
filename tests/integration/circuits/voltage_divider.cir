@@ -1,0 +1,7 @@
+* Test Circuit 2: Voltage Divider
+Vin in 0 DC=10
+R1 in out 10k
+R2 out 0 10k
+.OP
+.tran 1u 1m
+.END

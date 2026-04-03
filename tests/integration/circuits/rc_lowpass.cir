@@ -1,0 +1,7 @@
+* Test Circuit 1: RC Low-Pass Filter
+* Cutoff: fc = 1/(2*pi*R*C) = 1.59 kHz
+Vin in 0 PULSE(0 5 0 1u 1u 1m 2m)
+R1 in out 10k
+C1 out 0 1nF
+.tran 10u 3m
+.END

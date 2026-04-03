@@ -119,7 +119,8 @@ public:
         std::promise<decltype(func())> promise;
         auto future = promise.get_future();
 
-        std::thread exec_thread([this, &promise, func = std::forward<Func>(func), context]() {
+        std::thread exec_thread([this, &promise, func = std::forward<Func>(func), 
+                                 context, timeout_ms]() {
             // Register thread for timeout monitoring
             registerThread(std::this_thread::get_id(), timeout_ms, context);
             
@@ -261,19 +262,21 @@ public:
     std::vector<typename std::result_of<SweepFunc(double)>::type>
     parallelSweep(const std::vector<double>& param_values, SweepFunc&& func) {
         using ResultType = typename std::result_of<SweepFunc(double)>::type;
-        
-        return executeParallel(
-            [func = std::forward<SweepFunc>(func)](ParallelExecutionContext& ctx) -> ResultType {
-                // Get next parameter value
-                static std::atomic<int> param_index{0};
-                int idx = param_index.fetch_add(1);
-                if (idx >= param_values.size()) {
-                    return ResultType();
+        std::vector<ResultType> results(param_values.size());
+        std::atomic<int> task_counter{0};
+
+        executeParallel(
+            [&param_values, &results, &func, &task_counter](ParallelExecutionContext& ctx) {
+                while (true) {
+                    int idx = task_counter.fetch_add(1);
+                    if (idx >= param_values.size()) break;
+                    results[idx] = func(param_values[idx]);
                 }
-                return func(param_values[idx]);
             },
             param_values.size()
         );
+        
+        return results;
     }
 
     // Statistics

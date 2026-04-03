@@ -1,0 +1,6 @@
+* Test Circuit 6: RC Integrator
+Vin in 0 PULSE(0 5 0 10u 10u 1m 2m)
+R1 in out 10k
+C1 out 0 100nF
+.tran 10u 5m
+.END

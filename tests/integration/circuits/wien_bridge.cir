@@ -1,0 +1,10 @@
+* Test Circuit 9: Wien Bridge Oscillator (simplified)
+Vcc vcc 0 DC=12
+Vee vee 0 DC=-12
+B1 out 0 V={5*sin(2*3.14159*1000*time)}
+R1 out n1 10k
+C1 n1 0 10nF
+R2 out n2 10k
+C2 n2 0 10nF
+.tran 10u 2m
+.END

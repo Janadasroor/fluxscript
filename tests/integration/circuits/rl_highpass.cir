@@ -1,0 +1,6 @@
+* Test Circuit 3: RL High-Pass Filter
+Vin in 0 SIN(0 1 1000)
+R1 out 0 1k
+L1 in out 10mH
+.tran 10u 2m
+.END

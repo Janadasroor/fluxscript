@@ -63,6 +63,36 @@ public:
                                   const std::string& nPlus,
                                   const std::string& nMinus,
                                   const std::string& expression);
+
+    // Generate E-source (VCVS)
+    std::string generateESource(const std::string& name,
+                                 const std::string& nPlus,
+                                 const std::string& nMinus,
+                                 const std::string& cnPlus,
+                                 const std::string& cnMinus,
+                                 double gain);
+
+    // Generate F-source (CCCS)
+    std::string generateFSource(const std::string& name,
+                                 const std::string& nPlus,
+                                 const std::string& nMinus,
+                                 const std::string& vSourceName,
+                                 double gain);
+
+    // Generate G-source (VCCS)
+    std::string generateGSource(const std::string& name,
+                                 const std::string& nPlus,
+                                 const std::string& nMinus,
+                                 const std::string& cnPlus,
+                                 const std::string& cnMinus,
+                                 double transconductance);
+
+    // Generate H-source (CCVS)
+    std::string generateHSource(const std::string& name,
+                                 const std::string& nPlus,
+                                 const std::string& nMinus,
+                                 const std::string& vSourceName,
+                                 double transresistance);
     
     // Generate subcircuit instance
     std::string generateSubcktInstance(const std::string& name,

@@ -178,21 +178,30 @@ enum class TokenType {
     tok_poles = -177,             // find poles
     tok_zeros = -178,             // find zeros
     tok_collect = -179,           // collect terms
-
-    // SPICE Time-Domain Simulation
-    tok_time = -105,           // time built-in variable
-    tok_dt = -106,             // dt (time step) built-in variable
-    tok_temp = -107,           // temp (temperature) built-in variable
-    tok_update = -108,         // update(t, inputs) function
-    tok_inputs = -109,         // inputs dictionary
-    tok_outputs = -110,        // outputs dictionary
-
-    // Behavioral Sources
-    tok_bsource = -111,        // B-source declaration
-    tok_esource = -112,        // E-device (VCVS)
-    tok_fsource = -113,        // F-device (CCCS)
-    tok_gsource = -114,        // G-device (VCCS)
-    tok_hsource = -115,        // H-device (CCVS)
+    tok_time = -180,               // time built-in variable
+    tok_inputs = -181,             // inputs dictionary
+    tok_outputs = -182,            // outputs dictionary
+    tok_update = -183,             // update function
+    tok_bsource = -184,            // B-source declaration
+    tok_montecarlo = -194,         // Monte Carlo analysis
+    tok_worstcase = -195,          // Worst-case analysis
+    tok_stability = -302,          // Stability analysis
+    // tok_sensitivity already defined at -137
+    tok_optimize = -303,           // Optimization
+    tok_fft = -304,                // FFT analysis
+    tok_phasor = -305,             // Phasor type
+    tok_bode = -306,               // Bode plot
+    tok_esource = -190,            // E-source (VCVS)
+    tok_fsource = -191,            // F-source (CCCS)
+    tok_gsource = -192,            // G-source (VCCS)
+    tok_hsource = -193,            // H-source (CCVS)
+    tok_dt = -196,                 // timestep
+    tok_temp = -197,               // temperature
+    tok_node = -185,               // node voltage
+    tok_initial = -186,            // initial condition
+    tok_transient = -187,          // transient analysis
+    tok_timestep = -188,           // simulation timestep
+    tok_simtime = -189,            // simulation time variable
 
     // Analysis Control
     tok_analysis = -116,       // analysis directive
@@ -228,6 +237,29 @@ enum class TokenType {
     tok_model = -154,          // model declaration
     tok_param = -155,          // param keyword
     tok_ic = -156,             // initial condition
+    
+    /* Hierarchical Design */
+    tok_instance = -190,           // subckt instance (X prefix)
+    tok_params = -191,             // parameter block
+    tok_hier = -192,               // hierarchical separator
+    
+    /* Verilog-A Lite */
+    tok_analog = -193,             // analog block
+    tok_contributor = -194,        // <+ operator
+    tok_branch = -195,             // branch declaration
+    tok_V = -196,                  // V() voltage access
+    tok_I = -197,                  // I() current access
+    tok_ddt = -198,                // ddt() time derivative
+    tok_idt = -199,                // idt() time integral
+    tok_abstol = -201,             // absolute tolerance
+    tok_reltol = -202,             // relative tolerance
+    
+    /* Symbol Pin Mapping */
+    tok_symbol = -203,             // symbol declaration
+    tok_pinmap = -204,             // pin mapping
+    tok_map = -205,                // map keyword
+    tok_endsymbol = -206,          // end symbol
+    tok_contributor_op = -207,     // <+ contributor operator
 };
 
 class Lexer {

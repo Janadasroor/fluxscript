@@ -166,21 +166,46 @@ int Lexer::gettok() {
         if (IdentifierStr == "poles") return static_cast<int>(TokenType::tok_poles);
         if (IdentifierStr == "zeros") return static_cast<int>(TokenType::tok_zeros);
         if (IdentifierStr == "collect") return static_cast<int>(TokenType::tok_collect);
-
-        // SPICE Time-Domain Simulation
         if (IdentifierStr == "time") return static_cast<int>(TokenType::tok_time);
-        if (IdentifierStr == "dt") return static_cast<int>(TokenType::tok_dt);
-        if (IdentifierStr == "temp") return static_cast<int>(TokenType::tok_temp);
-        if (IdentifierStr == "update") return static_cast<int>(TokenType::tok_update);
         if (IdentifierStr == "inputs") return static_cast<int>(TokenType::tok_inputs);
         if (IdentifierStr == "outputs") return static_cast<int>(TokenType::tok_outputs);
-
-        // Behavioral Sources
+        if (IdentifierStr == "update") return static_cast<int>(TokenType::tok_update);
         if (IdentifierStr == "bsource") return static_cast<int>(TokenType::tok_bsource);
+        if (IdentifierStr == "montecarlo" || IdentifierStr == "monte_carlo") return static_cast<int>(TokenType::tok_montecarlo);
+        if (IdentifierStr == "worstcase" || IdentifierStr == "worst_case") return static_cast<int>(TokenType::tok_worstcase);
+        if (IdentifierStr == "stability") return static_cast<int>(TokenType::tok_stability);
+        if (IdentifierStr == "sensitivity") return static_cast<int>(TokenType::tok_sensitivity);
+        if (IdentifierStr == "optimize") return static_cast<int>(TokenType::tok_optimize);
+        if (IdentifierStr == "fft") return static_cast<int>(TokenType::tok_fft);
+        if (IdentifierStr == "phasor") return static_cast<int>(TokenType::tok_phasor);
+        if (IdentifierStr == "bode") return static_cast<int>(TokenType::tok_bode);
         if (IdentifierStr == "esource") return static_cast<int>(TokenType::tok_esource);
         if (IdentifierStr == "fsource") return static_cast<int>(TokenType::tok_fsource);
         if (IdentifierStr == "gsource") return static_cast<int>(TokenType::tok_gsource);
         if (IdentifierStr == "hsource") return static_cast<int>(TokenType::tok_hsource);
+        if (IdentifierStr == "node") return static_cast<int>(TokenType::tok_node);
+        if (IdentifierStr == "initial") return static_cast<int>(TokenType::tok_initial);
+        if (IdentifierStr == "transient") return static_cast<int>(TokenType::tok_transient);
+        if (IdentifierStr == "timestep") return static_cast<int>(TokenType::tok_timestep);
+        if (IdentifierStr == "simtime") return static_cast<int>(TokenType::tok_simtime);
+        /* Hierarchical Design */
+        if (IdentifierStr == "instance") return static_cast<int>(TokenType::tok_instance);
+        if (IdentifierStr == "params") return static_cast<int>(TokenType::tok_params);
+        
+        /* Verilog-A Lite */
+        if (IdentifierStr == "analog") return static_cast<int>(TokenType::tok_analog);
+        if (IdentifierStr == "branch") return static_cast<int>(TokenType::tok_branch);
+        if (IdentifierStr == "ddt") return static_cast<int>(TokenType::tok_ddt);
+        if (IdentifierStr == "idt") return static_cast<int>(TokenType::tok_idt);
+        if (IdentifierStr == "abstol") return static_cast<int>(TokenType::tok_abstol);
+        if (IdentifierStr == "reltol") return static_cast<int>(TokenType::tok_reltol);
+        
+        /* Symbol Pin Mapping */
+        if (IdentifierStr == "symbol") return static_cast<int>(TokenType::tok_symbol);
+        if (IdentifierStr == "pinmap") return static_cast<int>(TokenType::tok_pinmap);
+        if (IdentifierStr == "map") return static_cast<int>(TokenType::tok_map);
+
+        // SPICE Time-Domain Simulation
 
         // Analysis Control
         if (IdentifierStr == "analysis") return static_cast<int>(TokenType::tok_analysis);
@@ -494,6 +519,14 @@ int Lexer::gettok() {
             return static_cast<int>(TokenType::tok_not_equal);
         }
         return static_cast<int>(TokenType::tok_logical_not);
+    if (m_lastChar == '<') {
+        advance();
+        if (m_lastChar == '+') {
+            advance();
+            return static_cast<int>(TokenType::tok_contributor_op);
+        }
+        return '<';
+    }
     }
     
     if (m_lastChar == '=') {

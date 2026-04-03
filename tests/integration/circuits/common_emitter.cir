@@ -1,0 +1,11 @@
+* Test Circuit 5: Common Emitter Amplifier
+Vcc vcc 0 DC=12
+Vin in 0 SIN(0 0.01 1000)
+R1 vcc base 100k
+R2 base 0 20k
+Rc vcc out 4.7k
+Re emit 0 1k
+Q1 out base emit 2N3904
+.model 2N3904 NPN(Is=1e-14 Bf=100)
+.tran 10u 2m
+.END

@@ -1,0 +1,121 @@
+* ============================================================================
+* FluxScript Time-Domain Simulation Test Suite - ngspice Integration
+* Tests all behavioral source features with real SPICE simulation
+* ============================================================================
+
+.title FluxScript Time-Domain Tests
+
+* ============================================================================
+* Test 1: Basic B-Source (Voltage Doubler)
+* ============================================================================
+V1 in1 0 DC 1 SIN(0 1 1k)
+B1 out1 0 V=2*V(in1)
+.tran 10u 1m
+.print tran V(in1) V(out1)
+
+* ============================================================================
+* Test 2: Time-Dependent Source
+* ============================================================================
+B2 out2 0 V=sin(2*3.14159*1k*time)
+.tran 10u 1m
+.print tran V(out2)
+
+* ============================================================================
+* Test 3: Temperature-Dependent Resistor
+* ============================================================================
+.param R0=1k TC1=0.0039 T0=300
+Rtemp in3 0 {R0 * (1 + TC1 * (TEMP - T0))}
+V3 in3 0 DC 1
+.op
+.print tran V(in3)
+
+* ============================================================================
+* Test 4: Behavioral Integrator
+* ============================================================================
+.param C_int=1u
+V4 in4 0 PWL(0 0 1m 1 2m 0)
+B4 out4 0 V=sdts(V(in4)/C_int)
+.tran 10u 2m
+.print tran V(in4) V(out4)
+
+* ============================================================================
+* Test 5: Behavioral Differentiator
+* ============================================================================
+.param R_diff=1k C_diff=1n
+V5 in5 0 PWL(0 0 0.1m 1 0.2m 0)
+B5 out5 0 V=R_diff*C_diff*ddt(V(in5))
+.tran 1u 0.2m
+.print tran V(in5) V(out5)
+
+* ============================================================================
+* Test 6: Voltage-Controlled Oscillator
+* ============================================================================
+.param f0=1k kvco=10k
+V6 ctrl6 0 DC 0.5
+B6 out6 0 V=sin(2*3.14159*(f0+kvco*V(ctrl6))*time)
+.tran 1u 2m
+.print tran V(out6)
+
+* ============================================================================
+* Test 7: Behavioral Op-Amp (Simplified)
+* ============================================================================
+.param A_ol=100k Vsat=15
+V7p in7p 0 DC 0.001
+V7n in7n 0 DC 0
+B7 out7 0 V=limit(A_ol*(V(in7p)-V(in7n)), -Vsat, Vsat)
+.op
+.print tran V(out7)
+
+* ============================================================================
+* Test 8: Behavioral Diode (Shockley Equation)
+* ============================================================================
+.param Is=1e-12 Vt=0.026 n=1
+V8 anode8 0 DC 0.7
+B8 diode8 0 I=Is*(exp(V(anode8)/(n*Vt))-1)
+.op
+.print dc I(B8)
+
+* ============================================================================
+* Test 9: RC Low-Pass Filter
+* ============================================================================
+.param R=1k C=1u
+V9 in9 0 SIN(0 1 1k)
+R9 in9 out9 {R}
+C9 out9 0 {C}
+.tran 10u 5m
+.print tran V(in9) V(out9)
+
+* ============================================================================
+* Test 10: RLC Circuit
+* ============================================================================
+.param R_rlc=100 L_rlc=1m C_rlc=1u
+V10 in10 0 SIN(0 1 1k)
+R10 in10 out10 {R_rlc}
+L10 out10 node10 {L_rlc}
+C10 node10 0 {C_rlc}
+.tran 1u 2m
+.print tran V(in10) V(out10) V(node10)
+
+* ============================================================================
+* Test 11: Parameter Sweep
+* ============================================================================
+.param Rval=1k
+V11 in11 0 SIN(0 1 1k)
+R11 in11 out11 {Rval}
+C11 out11 0 1u
+.tran 10u 5m
+.step param Rval list 1k 2k 5k 10k
+.print tran V(out11)
+
+* ============================================================================
+* Test 12: Monte Carlo Setup
+* ============================================================================
+.param R_nom=1k R_tol=0.01
+.param C_nom=1u C_tol=0.1
+V12 in12 0 SIN(0 1 1k)
+R12 in12 out12 {R_nom * (1 + R_tol * mc(R_nom, R_tol))}
+C12 out12 0 {C_nom * (1 + C_tol * mc(C_nom, C_tol))}
+.tran 10u 5m
+.print tran V(out12)
+
+.end

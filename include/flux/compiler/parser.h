@@ -79,6 +79,16 @@ private:
     std::unique_ptr<ExprAST> ParseSimplifyExpr();
     std::unique_ptr<ExprAST> ParseDifferentiateExpr();
     std::unique_ptr<ExprAST> ParseSubstituteExpr();
+    
+    // Time-domain simulation
+    std::unique_ptr<ExprAST> ParseBSourceDecl();
+    std::unique_ptr<ExprAST> ParseTransientAnalysis();
+    std::unique_ptr<ExprAST> ParseInitialCond();
+    std::unique_ptr<ExprAST> ParseTimeVar();
+    std::unique_ptr<ExprAST> ParseTimestepVar();
+    std::unique_ptr<ExprAST> ParseTempVar();
+    std::unique_ptr<ExprAST> ParseInputsExpr();
+    std::unique_ptr<ExprAST> ParseOutputsExpr();
 
     // SPICE Time-Domain Simulation
     std::unique_ptr<ExprAST> ParseBuiltinVar();
@@ -88,12 +98,30 @@ private:
     std::unique_ptr<ExprAST> ParseFSource();
     std::unique_ptr<ExprAST> ParseGSource();
     std::unique_ptr<ExprAST> ParseHSource();
+    std::unique_ptr<ExprAST> ParseMonteCarloAnalysis();
+    std::unique_ptr<ExprAST> ParseWorstCaseAnalysis();
+    std::unique_ptr<ExprAST> ParseStabilityAnalysis();
+    std::unique_ptr<ExprAST> ParseSensitivityAnalysis();
+    std::unique_ptr<ExprAST> ParseOptimization();
+    std::unique_ptr<ExprAST> ParseFFTAnalysis();
     std::unique_ptr<ExprAST> ParseAnalysis();
     std::unique_ptr<ExprAST> ParseMeasure();
     std::unique_ptr<ExprAST> ParseProbe();
     std::unique_ptr<ExprAST> ParseSave();
     std::unique_ptr<ExprAST> ParseSubckt();
     std::unique_ptr<ExprAST> ParseModel();
+    
+    /* Hierarchical Design */
+    std::unique_ptr<ExprAST> ParseSubcktInstance();
+    
+    /* Verilog-A Lite */
+    std::unique_ptr<ExprAST> ParseAnalogBlock();
+    std::unique_ptr<ExprAST> ParseDdtExpr();
+    std::unique_ptr<ExprAST> ParseIdtExpr();
+    
+    /* Symbol Pin Mapping */
+    std::unique_ptr<ExprAST> ParseSymbolDecl();
+    std::unique_ptr<ExprAST> ParsePinMap();
     std::unique_ptr<ExprAST> ParseParam();
     std::unique_ptr<ExprAST> ParseIC();
 

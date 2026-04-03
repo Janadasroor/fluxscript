@@ -238,6 +238,56 @@ std::string NetlistGenerator::generateBCurrent(const std::string& name,
     return generateBSource(name, {nPlus, nMinus}, "I", expression);
 }
 
+// E-source (Voltage-Controlled Voltage Source)
+std::string NetlistGenerator::generateESource(const std::string& name,
+                                               const std::string& nPlus,
+                                               const std::string& nMinus,
+                                               const std::string& cnPlus,
+                                               const std::string& cnMinus,
+                                               double gain) {
+    std::ostringstream oss;
+    oss << "E" << name << " " << nPlus << " " << nMinus << " "
+        << cnPlus << " " << cnMinus << " " << gain << "\n";
+    return oss.str();
+}
+
+// F-source (Current-Controlled Current Source)
+std::string NetlistGenerator::generateFSource(const std::string& name,
+                                               const std::string& nPlus,
+                                               const std::string& nMinus,
+                                               const std::string& vSourceName,
+                                               double gain) {
+    std::ostringstream oss;
+    oss << "F" << name << " " << nPlus << " " << nMinus << " "
+        << vSourceName << " " << gain << "\n";
+    return oss.str();
+}
+
+// G-source (Voltage-Controlled Current Source)
+std::string NetlistGenerator::generateGSource(const std::string& name,
+                                               const std::string& nPlus,
+                                               const std::string& nMinus,
+                                               const std::string& cnPlus,
+                                               const std::string& cnMinus,
+                                               double transconductance) {
+    std::ostringstream oss;
+    oss << "G" << name << " " << nPlus << " " << nMinus << " "
+        << cnPlus << " " << cnMinus << " " << transconductance << "\n";
+    return oss.str();
+}
+
+// H-source (Current-Controlled Voltage Source)
+std::string NetlistGenerator::generateHSource(const std::string& name,
+                                               const std::string& nPlus,
+                                               const std::string& nMinus,
+                                               const std::string& vSourceName,
+                                               double transresistance) {
+    std::ostringstream oss;
+    oss << "H" << name << " " << nPlus << " " << nMinus << " "
+        << vSourceName << " " << transresistance << "\n";
+    return oss.str();
+}
+
 std::string NetlistGenerator::generateSubcktInstance(const std::string& name,
                                                       const std::string& subcktName,
                                                       const std::vector<std::string>& nodes,

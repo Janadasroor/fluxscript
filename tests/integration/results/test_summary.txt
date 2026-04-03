@@ -1,0 +1,9 @@
+FluxScript + ngspice Integration Test Results
+===============================================
+Date: 2026-04-03 20:42:37
+ngspice: ** ngspice-42
+
+Total Tests:  17
+Passed:       17
+Failed:       0
+Pass Rate:    100%

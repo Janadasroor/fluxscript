@@ -1,0 +1,6 @@
+* Test Circuit 8: Behavioral Source - Chirp Signal
+Vin in 0 DC=0
+B1 out 0 V={sin(2*3.14159*(100 + 5000*time/0.1)*time)}
+R1 out 0 1k
+.tran 10u 100m
+.END

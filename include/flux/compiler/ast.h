@@ -942,6 +942,78 @@ public:
     const ExprAST* getValue() const { return Value.get(); }
 };
 
+// Monte Carlo Analysis
+class MonteCarloExprAST : public ExprAST {
+    std::string OutputName;
+    std::map<std::string, double> ComponentNominal;
+    std::map<std::string, double> ComponentTolerance;
+    int Iterations;
+public:
+    MonteCarloExprAST(const std::string& output, int iterations)
+        : OutputName(output), Iterations(iterations) {}
+    void addComponent(const std::string& name, double nominal, double tolerance) {
+        ComponentNominal[name] = nominal;
+        ComponentTolerance[name] = tolerance;
+    }
+    TypedValue codegen(CodegenContext& context) override;
+    const std::string& getOutputName() const { return OutputName; }
+    int getIterations() const { return Iterations; }
+    const std::map<std::string, double>& getComponentNominal() const { return ComponentNominal; }
+    const std::map<std::string, double>& getComponentTolerance() const { return ComponentTolerance; }
+};
+
+// Worst-Case Analysis
+class WorstCaseExprAST : public ExprAST {
+    std::string OutputName;
+    std::map<std::string, double> ComponentNominal;
+    std::map<std::string, double> ComponentTolerance;
+public:
+    WorstCaseExprAST(const std::string& output) : OutputName(output) {}
+    void addComponent(const std::string& name, double nominal, double tolerance) {
+        ComponentNominal[name] = nominal;
+        ComponentTolerance[name] = tolerance;
+    }
+    TypedValue codegen(CodegenContext& context) override;
+    const std::string& getOutputName() const { return OutputName; }
+    const std::map<std::string, double>& getComponentNominal() const { return ComponentNominal; }
+};
+
+// Stability Analysis
+class StabilityExprAST : public ExprAST {
+    std::string OutputName;
+public:
+    StabilityExprAST(const std::string& output) : OutputName(output) {}
+    TypedValue codegen(CodegenContext& context) override;
+    const std::string& getOutputName() const { return OutputName; }
+};
+
+// Sensitivity Analysis
+class SensitivityExprAST : public ExprAST {
+    std::string OutputName;
+public:
+    SensitivityExprAST(const std::string& output) : OutputName(output) {}
+    TypedValue codegen(CodegenContext& context) override;
+    const std::string& getOutputName() const { return OutputName; }
+};
+
+// Optimization
+class OptimizationExprAST : public ExprAST {
+    std::string OutputName;
+public:
+    OptimizationExprAST(const std::string& output) : OutputName(output) {}
+    TypedValue codegen(CodegenContext& context) override;
+    const std::string& getOutputName() const { return OutputName; }
+};
+
+// FFT Analysis
+class FFTExprAST : public ExprAST {
+    std::string SignalName;
+public:
+    FFTExprAST(const std::string& signal) : SignalName(signal) {}
+    TypedValue codegen(CodegenContext& context) override;
+    const std::string& getSignalName() const { return SignalName; }
+};
+
 } // namespace Flux
 
 #endif // FLUX_COMPILER_AST_H
