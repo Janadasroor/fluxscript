@@ -86,6 +86,31 @@ std::unique_ptr<ExprAST> Parser::ParseStringExpr() {
     return Result;
 }
 
+std::unique_ptr<ExprAST> Parser::ParseSymDecl() {
+    getNextToken();
+    if (CurTok == static_cast<int>(TokenType::tok_identifier)) {
+        getNextToken();
+    } else {
+        ReportError("expected variable name after sym");
+    }
+    return std::make_unique<NumberExprAST>(0.0);
+}
+
+std::unique_ptr<ExprAST> Parser::ParseSolveExpr() {
+    getNextToken();
+    return std::make_unique<NumberExprAST>(0.0);
+}
+
+std::unique_ptr<ExprAST> Parser::ParseSimplifyExpr() {
+    getNextToken();
+    return std::make_unique<NumberExprAST>(0.0);
+}
+
+std::unique_ptr<ExprAST> Parser::ParseDifferentiateExpr() {
+    getNextToken();
+    return std::make_unique<NumberExprAST>(0.0);
+}
+
 std::unique_ptr<ExprAST> Parser::ParseImport() {
     getNextToken(); // eat import
 

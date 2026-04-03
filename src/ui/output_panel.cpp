@@ -67,11 +67,12 @@ void OutputPanel::setupUI()
     
     // Auto-scroll toggle
     m_scrollBtn = new QToolButton();
-    m_scrollBtn->setText("📜");
+    m_scrollBtn->setIcon(QIcon(":/icons/scroll_lock.svg"));
+    m_scrollBtn->setIconSize(QSize(16, 16));
     m_scrollBtn->setToolTip("Auto-scroll");
     m_scrollBtn->setCheckable(true);
     m_scrollBtn->setChecked(true);
-    m_scrollBtn->setFixedSize(24, 24);
+    m_scrollBtn->setFixedSize(28, 24);
     m_scrollBtn->setStyleSheet(
         "QToolButton { background-color: #3c3c3c; color: #cccccc; border: none; border-radius: 2px; }"
         "QToolButton:checked { background-color: #007acc; }"
@@ -81,9 +82,10 @@ void OutputPanel::setupUI()
     
     // Stop button
     m_stopBtn = new QToolButton();
-    m_stopBtn->setText("⏹");
+    m_stopBtn->setIcon(QIcon(":/icons/tool_stop.svg"));
+    m_stopBtn->setIconSize(QSize(16, 16));
     m_stopBtn->setToolTip("Stop Process");
-    m_stopBtn->setFixedSize(24, 24);
+    m_stopBtn->setFixedSize(28, 24);
     m_stopBtn->setEnabled(false);
     m_stopBtn->setStyleSheet(
         "QToolButton { background-color: #3c3c3c; color: #ff6b6b; border: none; border-radius: 2px; }"
@@ -94,9 +96,10 @@ void OutputPanel::setupUI()
     
     // Clear button
     m_clearBtn = new QToolButton();
-    m_clearBtn->setText("🗑");
+    m_clearBtn->setIcon(QIcon(":/icons/clear.svg"));
+    m_clearBtn->setIconSize(QSize(16, 16));
     m_clearBtn->setToolTip("Clear Output");
-    m_clearBtn->setFixedSize(24, 24);
+    m_clearBtn->setFixedSize(28, 24);
     m_clearBtn->setStyleSheet(
         "QToolButton { background-color: #3c3c3c; color: #cccccc; border: none; border-radius: 2px; }"
         "QToolButton:hover { background-color: #4c4c4c; }"

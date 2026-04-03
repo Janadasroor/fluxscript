@@ -10,3 +10,9 @@ BUILD_STATUS.json
 /gui/
 /scripts/
 *.md
+tests/integration/results/*
+tests/integration/results/test_*.log
+tests/integration/results/test_*.out
+tests/integration/results/test_*.err
+tests/integration/results/test_*.txt
+tests/integration/results/test_*.raw

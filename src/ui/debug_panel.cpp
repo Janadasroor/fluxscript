@@ -51,30 +51,45 @@ void DebugPanel::setupUI()
     );
     
     auto* continueBtn = new QToolButton();
-    continueBtn->setText("▶ Continue");
+    continueBtn->setIcon(QIcon(":/icons/tool_play.svg"));
+    continueBtn->setIconSize(QSize(14, 14));
+    continueBtn->setText("Continue");
     continueBtn->setToolTip("Continue (F5)");
+    continueBtn->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
     continueBtn->setEnabled(false);
     
     auto* stopBtn = new QToolButton();
-    stopBtn->setText("⏹ Stop");
+    stopBtn->setIcon(QIcon(":/icons/tool_stop.svg"));
+    stopBtn->setIconSize(QSize(14, 14));
+    stopBtn->setText("Stop");
     stopBtn->setToolTip("Stop Debugging");
+    stopBtn->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
     
     m_debugToolbar->addWidget(continueBtn);
     m_debugToolbar->addSeparator();
     
     auto* stepOverBtn = new QToolButton();
-    stepOverBtn->setText("⏭ Over");
+    stepOverBtn->setIcon(QIcon(":/icons/tool_step_over.svg"));
+    stepOverBtn->setIconSize(QSize(14, 14));
+    stepOverBtn->setText("Over");
     stepOverBtn->setToolTip("Step Over (F10)");
+    stepOverBtn->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
     stepOverBtn->setEnabled(false);
     
     auto* stepIntoBtn = new QToolButton();
-    stepIntoBtn->setText("⬇ Into");
+    stepIntoBtn->setIcon(QIcon(":/icons/tool_step_into.svg"));
+    stepIntoBtn->setIconSize(QSize(14, 14));
+    stepIntoBtn->setText("Into");
     stepIntoBtn->setToolTip("Step Into (F11)");
+    stepIntoBtn->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
     stepIntoBtn->setEnabled(false);
     
     auto* stepOutBtn = new QToolButton();
-    stepOutBtn->setText("⬆ Out");
+    stepOutBtn->setIcon(QIcon(":/icons/tool_step_out.svg"));
+    stepOutBtn->setIconSize(QSize(14, 14));
+    stepOutBtn->setText("Out");
     stepOutBtn->setToolTip("Step Out (Shift+F11)");
+    stepOutBtn->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
     stepOutBtn->setEnabled(false);
     
     m_debugToolbar->addWidget(stepOverBtn);
@@ -96,7 +111,8 @@ void DebugPanel::setupUI()
     panelsWidget->setStyleSheet("background-color: #252526;");
     
     // Variables tree
-    auto* variablesLabel = new QLabel("📦 Variables");
+    auto* variablesLabel = new QLabel(" Variables");
+    variablesLabel->setPixmap(QIcon(":/icons/variables.svg").pixmap(14, 14));
     variablesLabel->setStyleSheet("color: #cccccc; font-weight: bold; padding: 4px; background-color: #2d2d2d;");
     panelsLayout->addWidget(variablesLabel);
     
@@ -116,7 +132,8 @@ void DebugPanel::setupUI()
     panelsLayout->addWidget(m_variablesTree, 1);
     
     // Watch tree
-    auto* watchLabel = new QLabel("👁 Watch");
+    auto* watchLabel = new QLabel(" Watch");
+    watchLabel->setPixmap(QIcon(":/icons/watch.svg").pixmap(14, 14));
     watchLabel->setStyleSheet("color: #cccccc; font-weight: bold; padding: 4px; background-color: #2d2d2d;");
     panelsLayout->addWidget(watchLabel);
     
@@ -128,7 +145,8 @@ void DebugPanel::setupUI()
     panelsLayout->addWidget(m_watchTree, 1);
     
     // Call stack
-    auto* stackLabel = new QLabel("📚 Call Stack");
+    auto* stackLabel = new QLabel(" Call Stack");
+    stackLabel->setPixmap(QIcon(":/icons/call_stack.svg").pixmap(14, 14));
     stackLabel->setStyleSheet("color: #cccccc; font-weight: bold; padding: 4px; background-color: #2d2d2d;");
     panelsLayout->addWidget(stackLabel);
     
@@ -140,7 +158,8 @@ void DebugPanel::setupUI()
     panelsLayout->addWidget(m_callStackTree, 1);
     
     // Breakpoints
-    auto* bpLabel = new QLabel("🚩 Breakpoints");
+    auto* bpLabel = new QLabel(" Breakpoints");
+    bpLabel->setPixmap(QIcon(":/icons/breakpoint.svg").pixmap(14, 14));
     bpLabel->setStyleSheet("color: #cccccc; font-weight: bold; padding: 4px; background-color: #2d2d2d;");
     panelsLayout->addWidget(bpLabel);
     

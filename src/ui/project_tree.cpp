@@ -28,27 +28,28 @@ void ProjectTree::setupTree()
     // Create file system model
     m_fileSystemModel = new QFileSystemModel(this);
     m_fileSystemModel->setReadOnly(false);
-    
+
     // Set filters - show files and directories, no hidden files
     m_fileSystemModel->setFilter(QDir::AllEntries | QDir::NoDotAndDotDot | QDir::Files | QDir::Dirs);
-    
+
     // Name filters for showing relevant files
-    m_nameFilters = QStringList() << "*.flux" << "*.lib" << "*.cir" << "*.txt" << "*.md" 
+    m_nameFilters = QStringList() << "*.flux" << "*.lib" << "*.cir" << "*.txt" << "*.md"
                                    << "*.cpp" << "*.h" << "*.hpp" << "*.qml" << "*.qss"
                                    << "CMakeLists.txt" << "*.cmake" << "*.json" << "*.xml";
     m_fileSystemModel->setNameFilters(m_nameFilters);
     m_fileSystemModel->setNameFilterDisables(false); // Hide filtered files instead of disabling
-    
+
     // Set the model
     setModel(m_fileSystemModel);
-    
+
     // Configure tree view
     setAnimated(true);
     setIndentation(20);
     setSortingEnabled(true);
     setExpandsOnDoubleClick(false); // We handle double-click ourselves
     setContextMenuPolicy(Qt::CustomContextMenu);
-    
+    setIconSize(QSize(16, 16));
+
     // Hide size and type columns, keep only name
     hideColumn(1); // Size
     hideColumn(2); // Type

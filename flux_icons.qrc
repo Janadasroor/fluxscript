@@ -1,0 +1,42 @@
+<RCC>
+    <qresource prefix="/icons">
+        <!-- File/Folder icons -->
+        <file alias="folder_open.svg">resources/icons/folder_open.svg</file>
+        <file alias="folder_closed.svg">resources/icons/folder_closed.svg</file>
+        
+        <!-- Toolbar icons -->
+        <file alias="toolbar_new.png">resources/icons/toolbar_new.png</file>
+        <file alias="toolbar_open.png">resources/icons/toolbar_open.png</file>
+        <file alias="toolbar_refresh.png">resources/icons/toolbar_refresh.png</file>
+        <file alias="toolbar_file.png">resources/icons/toolbar_file.png</file>
+        
+        <!-- Run/Debug icons -->
+        <file alias="tool_run.svg">resources/icons/tool_run.svg</file>
+        <file alias="tool_stop.svg">resources/icons/tool_stop.svg</file>
+        <file alias="tool_play.svg">resources/icons/tool_play.svg</file>
+        <file alias="tool_pause.svg">resources/icons/tool_pause.svg</file>
+        <file alias="tool_step_over.svg">resources/icons/tool_step_over.svg</file>
+        <file alias="tool_step_into.svg">resources/icons/tool_step_into.svg</file>
+        <file alias="tool_step_out.svg">resources/icons/tool_step_out.svg</file>
+        
+        <!-- Panel icons -->
+        <file alias="output_panel.svg">resources/icons/output_panel.svg</file>
+        <file alias="variables.svg">resources/icons/variables.svg</file>
+        <file alias="watch.svg">resources/icons/watch.svg</file>
+        <file alias="call_stack.svg">resources/icons/call_stack.svg</file>
+        <file alias="breakpoint.svg">resources/icons/breakpoint.svg</file>
+        
+        <!-- Action icons -->
+        <file alias="clear.svg">resources/icons/clear.svg</file>
+        <file alias="tool_delete.svg">resources/icons/tool_delete.svg</file>
+        <file alias="tool_search.svg">resources/icons/tool_search.svg</file>
+        <file alias="tool_gear.svg">resources/icons/tool_gear.svg</file>
+        <file alias="scroll_lock.svg">resources/icons/scroll_lock.svg</file>
+        <file alias="undo.svg">resources/icons/undo.svg</file>
+        <file alias="redo.svg">resources/icons/redo.svg</file>
+        
+        <!-- View icons -->
+        <file alias="view_zoom_in.svg">resources/icons/view_zoom_in.svg</file>
+        <file alias="view_zoom_out.svg">resources/icons/view_zoom_out.svg</file>
+    </qresource>
+</RCC>
