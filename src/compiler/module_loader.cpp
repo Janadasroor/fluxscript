@@ -30,16 +30,22 @@ ModuleLoader::ModuleLoader() {
     m_searchPaths.push_back(std::filesystem::current_path() / "modules");
     m_searchPaths.push_back(std::filesystem::current_path() / "lib");
     
+    // Add stdlib directory
+    m_searchPaths.push_back(std::filesystem::current_path() / "stdlib");
+
     // User home directory
     const char* home = std::getenv("HOME");
     if (home) {
         m_searchPaths.push_back(std::filesystem::path(home) / ".flux" / "modules");
+        m_searchPaths.push_back(std::filesystem::path(home) / ".flux" / "stdlib");
     }
-    
+
     // System-wide paths
     m_searchPaths.push_back("/usr/local/share/flux/modules");
     m_searchPaths.push_back("/usr/share/flux/modules");
-    
+    m_searchPaths.push_back("/usr/local/share/flux/stdlib");
+    m_searchPaths.push_back("/usr/share/flux/stdlib");
+
     // Set default cache directory
     const char* cacheDir = std::getenv("XDG_CACHE_HOME");
     if (cacheDir) {
@@ -47,7 +53,7 @@ ModuleLoader::ModuleLoader() {
     } else {
         m_cacheDirectory = std::filesystem::current_path() / ".flux_cache";
     }
-    
+
     // Create cache directory if it doesn't exist
     std::filesystem::create_directories(m_cacheDirectory);
 }

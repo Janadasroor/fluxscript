@@ -103,8 +103,6 @@ int Lexer::gettok() {
         if (IdentifierStr == "ask") return static_cast<int>(TokenType::tok_ask);
         if (IdentifierStr == "explain") return static_cast<int>(TokenType::tok_explain);
         if (IdentifierStr == "substitute") return static_cast<int>(TokenType::tok_substitute);
-        if (IdentifierStr == "corner") return static_cast<int>(TokenType::tok_corner);
-        if (IdentifierStr == "yield") return static_cast<int>(TokenType::tok_yield);
         if (IdentifierStr == "float") return static_cast<int>(TokenType::tok_type_float);
         if (IdentifierStr == "double") return static_cast<int>(TokenType::tok_type_double);
         if (IdentifierStr == "int") return static_cast<int>(TokenType::tok_type_int);
@@ -119,6 +117,105 @@ int Lexer::gettok() {
         if (IdentifierStr == "switch") return static_cast<int>(TokenType::tok_switch);
         if (IdentifierStr == "case") return static_cast<int>(TokenType::tok_case);
         if (IdentifierStr == "default") return static_cast<int>(TokenType::tok_default);
+        if (IdentifierStr == "try") return static_cast<int>(TokenType::tok_try);
+        if (IdentifierStr == "catch") return static_cast<int>(TokenType::tok_catch);
+        if (IdentifierStr == "finally") return static_cast<int>(TokenType::tok_finally);
+        if (IdentifierStr == "throw") return static_cast<int>(TokenType::tok_throw);
+        if (IdentifierStr == "assert") return static_cast<int>(TokenType::tok_assert);
+        if (IdentifierStr == "static") return static_cast<int>(TokenType::tok_static);
+        if (IdentifierStr == "const") return static_cast<int>(TokenType::tok_const);
+        if (IdentifierStr == "enum") return static_cast<int>(TokenType::tok_enum);
+        if (IdentifierStr == "struct") return static_cast<int>(TokenType::tok_struct);
+        if (IdentifierStr == "class") return static_cast<int>(TokenType::tok_class);
+        if (IdentifierStr == "public") return static_cast<int>(TokenType::tok_public);
+        if (IdentifierStr == "private") return static_cast<int>(TokenType::tok_private);
+        if (IdentifierStr == "protected") return static_cast<int>(TokenType::tok_protected);
+        if (IdentifierStr == "virtual") return static_cast<int>(TokenType::tok_virtual);
+        if (IdentifierStr == "override") return static_cast<int>(TokenType::tok_override);
+        if (IdentifierStr == "inline") return static_cast<int>(TokenType::tok_inline);
+        if (IdentifierStr == "noexcept") return static_cast<int>(TokenType::tok_noexcept);
+        if (IdentifierStr == "export") return static_cast<int>(TokenType::tok_export);
+        if (IdentifierStr == "namespace") return static_cast<int>(TokenType::tok_namespace);
+        if (IdentifierStr == "using") return static_cast<int>(TokenType::tok_using);
+        if (IdentifierStr == "typedef") return static_cast<int>(TokenType::tok_typedef);
+        if (IdentifierStr == "alias") return static_cast<int>(TokenType::tok_alias);
+        if (IdentifierStr == "match") return static_cast<int>(TokenType::tok_match);
+        if (IdentifierStr == "guard") return static_cast<int>(TokenType::tok_guard);
+        if (IdentifierStr == "foreach") return static_cast<int>(TokenType::tok_foreach);
+        if (IdentifierStr == "repeat") return static_cast<int>(TokenType::tok_repeat);
+        if (IdentifierStr == "until") return static_cast<int>(TokenType::tok_until);
+        if (IdentifierStr == "parallel") return static_cast<int>(TokenType::tok_parallel);
+        if (IdentifierStr == "schematic") return static_cast<int>(TokenType::tok_schematic);
+        if (IdentifierStr == "component") return static_cast<int>(TokenType::tok_component);
+        if (IdentifierStr == "connect") return static_cast<int>(TokenType::tok_connect);
+        if (IdentifierStr == "port") return static_cast<int>(TokenType::tok_port);
+        if (IdentifierStr == "net") return static_cast<int>(TokenType::tok_net);
+        if (IdentifierStr == "pin") return static_cast<int>(TokenType::tok_pin);
+        if (IdentifierStr == "sym") return static_cast<int>(TokenType::tok_sym);
+        if (IdentifierStr == "solve") return static_cast<int>(TokenType::tok_solve);
+        if (IdentifierStr == "simplify") return static_cast<int>(TokenType::tok_simplify);
+        if (IdentifierStr == "differentiate") return static_cast<int>(TokenType::tok_differentiate);
+        if (IdentifierStr == "integrate") return static_cast<int>(TokenType::tok_integrate);
+        if (IdentifierStr == "laplace") return static_cast<int>(TokenType::tok_laplace);
+        if (IdentifierStr == "inverse_laplace") return static_cast<int>(TokenType::tok_inverse_laplace);
+        if (IdentifierStr == "substitute") return static_cast<int>(TokenType::tok_substitute);
+        if (IdentifierStr == "expand") return static_cast<int>(TokenType::tok_expand);
+        if (IdentifierStr == "factor") return static_cast<int>(TokenType::tok_factor);
+        if (IdentifierStr == "numerator") return static_cast<int>(TokenType::tok_numerator);
+        if (IdentifierStr == "denominator") return static_cast<int>(TokenType::tok_denominator);
+        if (IdentifierStr == "poles") return static_cast<int>(TokenType::tok_poles);
+        if (IdentifierStr == "zeros") return static_cast<int>(TokenType::tok_zeros);
+        if (IdentifierStr == "collect") return static_cast<int>(TokenType::tok_collect);
+
+        // SPICE Time-Domain Simulation
+        if (IdentifierStr == "time") return static_cast<int>(TokenType::tok_time);
+        if (IdentifierStr == "dt") return static_cast<int>(TokenType::tok_dt);
+        if (IdentifierStr == "temp") return static_cast<int>(TokenType::tok_temp);
+        if (IdentifierStr == "update") return static_cast<int>(TokenType::tok_update);
+        if (IdentifierStr == "inputs") return static_cast<int>(TokenType::tok_inputs);
+        if (IdentifierStr == "outputs") return static_cast<int>(TokenType::tok_outputs);
+
+        // Behavioral Sources
+        if (IdentifierStr == "bsource") return static_cast<int>(TokenType::tok_bsource);
+        if (IdentifierStr == "esource") return static_cast<int>(TokenType::tok_esource);
+        if (IdentifierStr == "fsource") return static_cast<int>(TokenType::tok_fsource);
+        if (IdentifierStr == "gsource") return static_cast<int>(TokenType::tok_gsource);
+        if (IdentifierStr == "hsource") return static_cast<int>(TokenType::tok_hsource);
+
+        // Analysis Control
+        if (IdentifierStr == "analysis") return static_cast<int>(TokenType::tok_analysis);
+        if (IdentifierStr == "tran") return static_cast<int>(TokenType::tok_tran);
+        if (IdentifierStr == "dc") return static_cast<int>(TokenType::tok_dc);
+        if (IdentifierStr == "ac") return static_cast<int>(TokenType::tok_ac);
+        if (IdentifierStr == "noise") return static_cast<int>(TokenType::tok_noise);
+        if (IdentifierStr == "op") return static_cast<int>(TokenType::tok_op);
+        if (IdentifierStr == "tf") return static_cast<int>(TokenType::tok_tf);
+        if (IdentifierStr == "sens") return static_cast<int>(TokenType::tok_sens);
+        if (IdentifierStr == "fourier") return static_cast<int>(TokenType::tok_fourier);
+
+        // Measurements
+        if (IdentifierStr == "measure") return static_cast<int>(TokenType::tok_measure);
+        if (IdentifierStr == "MAX") return static_cast<int>(TokenType::tok_max);
+        if (IdentifierStr == "MIN") return static_cast<int>(TokenType::tok_min);
+        if (IdentifierStr == "AVG") return static_cast<int>(TokenType::tok_avg);
+        if (IdentifierStr == "RMS") return static_cast<int>(TokenType::tok_rms);
+        if (IdentifierStr == "TRIG") return static_cast<int>(TokenType::tok_trig);
+        if (IdentifierStr == "TARG") return static_cast<int>(TokenType::tok_targ);
+        if (IdentifierStr == "WHEN") return static_cast<int>(TokenType::tok_meas_when);
+        if (IdentifierStr == "FIND") return static_cast<int>(TokenType::tok_find);
+        if (IdentifierStr == "DERIV") return static_cast<int>(TokenType::tok_deriv);
+        if (IdentifierStr == "INTEG") return static_cast<int>(TokenType::tok_integ);
+
+        // Probing
+        if (IdentifierStr == "probe") return static_cast<int>(TokenType::tok_probe);
+        if (IdentifierStr == "save") return static_cast<int>(TokenType::tok_save);
+
+        // Subcircuits and Models
+        if (IdentifierStr == "subckt") return static_cast<int>(TokenType::tok_subckt);
+        if (IdentifierStr == "ends") return static_cast<int>(TokenType::tok_ends);
+        if (IdentifierStr == "model") return static_cast<int>(TokenType::tok_model);
+        if (IdentifierStr == "param") return static_cast<int>(TokenType::tok_param);
+        if (IdentifierStr == "ic") return static_cast<int>(TokenType::tok_ic);
 
         return static_cast<int>(TokenType::tok_identifier);
     }

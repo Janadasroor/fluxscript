@@ -538,6 +538,108 @@ public:
     TypedValue codegen(CodegenContext& context) override;
 };
 
+// Try/Catch/Finally
+class TryCatchExprAST : public ExprAST {
+    std::unique_ptr<ExprAST> TryBody;
+    std::vector<std::pair<std::string, std::unique_ptr<ExprAST>>> CatchClauses;  // (exception_var, handler)
+    std::unique_ptr<ExprAST> FinallyBody;
+public:
+    TryCatchExprAST(std::unique_ptr<ExprAST> TryBody)
+        : TryBody(std::move(TryBody)) {}
+    TypedValue codegen(CodegenContext& context) override;
+    void addCatch(const std::string& var, std::unique_ptr<ExprAST> handler);
+    void setFinally(std::unique_ptr<ExprAST> body);
+};
+
+// Throw exception
+class ThrowExprAST : public ExprAST {
+    std::unique_ptr<ExprAST> Exception;
+public:
+    ThrowExprAST(std::unique_ptr<ExprAST> Exception)
+        : Exception(std::move(Exception)) {}
+    TypedValue codegen(CodegenContext& context) override;
+};
+
+// Assert
+class AssertExprAST : public ExprAST {
+    std::unique_ptr<ExprAST> Condition;
+    std::string Message;
+public:
+    AssertExprAST(std::unique_ptr<ExprAST> Cond, std::string Msg)
+        : Condition(std::move(Cond)), Message(std::move(Msg)) {}
+    TypedValue codegen(CodegenContext& context) override;
+};
+
+// Yield (generator)
+class YieldExprAST : public ExprAST {
+    std::unique_ptr<ExprAST> Value;
+public:
+    YieldExprAST(std::unique_ptr<ExprAST> Value)
+        : Value(std::move(Value)) {}
+    TypedValue codegen(CodegenContext& context) override;
+};
+
+// Corner case analysis
+class CornerExprAST : public ExprAST {
+    std::string Variable;
+    std::vector<std::pair<std::string, std::unique_ptr<ExprAST>>> Cases;
+public:
+    CornerExprAST(std::string Var)
+        : Variable(std::move(Var)) {}
+    TypedValue codegen(CodegenContext& context) override;
+    void addCase(const std::string& name, std::unique_ptr<ExprAST> expr);
+};
+
+// Pattern matching
+class MatchExprAST : public ExprAST {
+    std::unique_ptr<ExprAST> Value;
+    std::vector<std::pair<std::unique_ptr<ExprAST>, std::unique_ptr<ExprAST>>> Arms;  // (pattern, result)
+    std::unique_ptr<ExprAST> DefaultArm;
+public:
+    MatchExprAST(std::unique_ptr<ExprAST> Value)
+        : Value(std::move(Value)) {}
+    TypedValue codegen(CodegenContext& context) override;
+    void addArm(std::unique_ptr<ExprAST> pattern, std::unique_ptr<ExprAST> result);
+    void setDefault(std::unique_ptr<ExprAST> arm);
+};
+
+// Foreach loop
+class ForeachExprAST : public ExprAST {
+    std::string VarName;
+    std::unique_ptr<ExprAST> Iterable;
+    std::unique_ptr<ExprAST> Body;
+public:
+    ForeachExprAST(std::string Var, std::unique_ptr<ExprAST> Iterable, std::unique_ptr<ExprAST> Body)
+        : VarName(std::move(Var)), Iterable(std::move(Iterable)), Body(std::move(Body)) {}
+    TypedValue codegen(CodegenContext& context) override;
+};
+
+// Repeat-Until loop
+class RepeatUntilExprAST : public ExprAST {
+    std::unique_ptr<ExprAST> Body;
+    std::unique_ptr<ExprAST> Condition;
+public:
+    RepeatUntilExprAST(std::unique_ptr<ExprAST> Body, std::unique_ptr<ExprAST> Cond)
+        : Body(std::move(Body)), Condition(std::move(Cond)) {}
+    TypedValue codegen(CodegenContext& context) override;
+};
+
+// Parallel for loop
+class ParallelForExprAST : public ExprAST {
+    std::string VarName;
+    std::unique_ptr<ExprAST> Start;
+    std::unique_ptr<ExprAST> End;
+    std::unique_ptr<ExprAST> Body;
+    int ChunkSize;  // Work chunk size for load balancing
+public:
+    ParallelForExprAST(std::string Var, std::unique_ptr<ExprAST> Start,
+                       std::unique_ptr<ExprAST> End, std::unique_ptr<ExprAST> Body,
+                       int ChunkSize = 1)
+        : VarName(std::move(Var)), Start(std::move(Start)), End(std::move(End)),
+          Body(std::move(Body)), ChunkSize(ChunkSize) {}
+    TypedValue codegen(CodegenContext& context) override;
+};
+
 class PrototypeAST {
     std::string Name;
     std::vector<std::pair<std::string, FluxType>> Args;  // Name-Type pairs
@@ -560,6 +662,284 @@ public:
     llvm::Function* codegen(CodegenContext& context);
     PrototypeAST* getProto() const { return Proto.get(); }
     const ExprAST* getBody() const { return Body.get(); }
+};
+
+// ============================================================================
+// SPICE Time-Domain Simulation AST Nodes
+// ============================================================================
+
+// Built-in variable: time, dt, temp
+class BuiltinVarExprAST : public ExprAST {
+    std::string Name;
+public:
+    explicit BuiltinVarExprAST(const std::string& Name) : Name(Name) {}
+    TypedValue codegen(CodegenContext& context) override;
+    const std::string& getName() const { return Name; }
+};
+
+// update(t, inputs) function declaration
+class UpdateFuncAST : public ExprAST {
+    std::string TimeVar;
+    std::string InputsVar;
+    std::unique_ptr<ExprAST> Body;
+public:
+    UpdateFuncAST(const std::string& TimeVar, const std::string& InputsVar, std::unique_ptr<ExprAST> Body)
+        : TimeVar(TimeVar), InputsVar(InputsVar), Body(std::move(Body)) {}
+    TypedValue codegen(CodegenContext& context) override;
+    const std::string& getTimeVar() const { return TimeVar; }
+    const std::string& getInputsVar() const { return InputsVar; }
+    const ExprAST* getBody() const { return Body.get(); }
+};
+
+// ============================================================================
+// SPICE Behavioral Source AST Nodes
+// ============================================================================
+
+// B-source (arbitrary behavioral voltage/current source)
+class BSourceExprAST : public ExprAST {
+    std::string Name;
+    std::string PositiveNode;
+    std::string NegativeNode;
+    std::unique_ptr<ExprAST> Expression;  // The behavioral expression
+    bool IsCurrent;  // true for I-source, false for V-source
+public:
+    BSourceExprAST(const std::string& Name, const std::string& PosNode, const std::string& NegNode,
+                   std::unique_ptr<ExprAST> Expr, bool IsCurrent = false)
+        : Name(Name), PositiveNode(PosNode), NegativeNode(NegNode),
+          Expression(std::move(Expr)), IsCurrent(IsCurrent) {}
+    TypedValue codegen(CodegenContext& context) override;
+    const std::string& getName() const { return Name; }
+    const std::string& getPositiveNode() const { return PositiveNode; }
+    const std::string& getNegativeNode() const { return NegativeNode; }
+    const ExprAST* getExpression() const { return Expression.get(); }
+    bool isCurrentSource() const { return IsCurrent; }
+};
+
+// E-device (Voltage-Controlled Voltage Source)
+class ESourceExprAST : public ExprAST {
+    std::string Name;
+    std::string PositiveNode;
+    std::string NegativeNode;
+    std::string ControlPosNode;
+    std::string ControlNegNode;
+    std::unique_ptr<ExprAST> Gain;  // Can be expression or constant
+public:
+    ESourceExprAST(const std::string& Name, const std::string& PosNode, const std::string& NegNode,
+                   const std::string& CtrlPosNode, const std::string& CtrlNegNode,
+                   std::unique_ptr<ExprAST> Gain)
+        : Name(Name), PositiveNode(PosNode), NegativeNode(NegNode),
+          ControlPosNode(CtrlPosNode), ControlNegNode(CtrlNegNode), Gain(std::move(Gain)) {}
+    TypedValue codegen(CodegenContext& context) override;
+    const std::string& getName() const { return Name; }
+    const std::string& getPositiveNode() const { return PositiveNode; }
+    const std::string& getNegativeNode() const { return NegativeNode; }
+    const std::string& getControlPosNode() const { return ControlPosNode; }
+    const std::string& getControlNegNode() const { return ControlNegNode; }
+    const ExprAST* getGain() const { return Gain.get(); }
+};
+
+// F-device (Current-Controlled Current Source)
+class FSourceExprAST : public ExprAST {
+    std::string Name;
+    std::string PositiveNode;
+    std::string NegativeNode;
+    std::string VoltageSourceName;  // Current measured through this V-source
+    std::unique_ptr<ExprAST> Gain;
+public:
+    FSourceExprAST(const std::string& Name, const std::string& PosNode, const std::string& NegNode,
+                   const std::string& VSourceName, std::unique_ptr<ExprAST> Gain)
+        : Name(Name), PositiveNode(PosNode), NegativeNode(NegNode),
+          VoltageSourceName(VSourceName), Gain(std::move(Gain)) {}
+    TypedValue codegen(CodegenContext& context) override;
+    const std::string& getName() const { return Name; }
+    const std::string& getPositiveNode() const { return PositiveNode; }
+    const std::string& getNegativeNode() const { return NegativeNode; }
+    const std::string& getVoltageSourceName() const { return VoltageSourceName; }
+    const ExprAST* getGain() const { return Gain.get(); }
+};
+
+// G-device (Voltage-Controlled Current Source)
+class GSourceExprAST : public ExprAST {
+    std::string Name;
+    std::string PositiveNode;
+    std::string NegativeNode;
+    std::string ControlPosNode;
+    std::string ControlNegNode;
+    std::unique_ptr<ExprAST> Transconductance;
+public:
+    GSourceExprAST(const std::string& Name, const std::string& PosNode, const std::string& NegNode,
+                   const std::string& CtrlPosNode, const std::string& CtrlNegNode,
+                   std::unique_ptr<ExprAST> Transcond)
+        : Name(Name), PositiveNode(PosNode), NegativeNode(NegNode),
+          ControlPosNode(CtrlPosNode), ControlNegNode(CtrlNegNode), Transconductance(std::move(Transcond)) {}
+    TypedValue codegen(CodegenContext& context) override;
+    const std::string& getName() const { return Name; }
+    const std::string& getPositiveNode() const { return PositiveNode; }
+    const std::string& getNegativeNode() const { return NegativeNode; }
+    const std::string& getControlPosNode() const { return ControlPosNode; }
+    const std::string& getControlNegNode() const { return ControlNegNode; }
+    const ExprAST* getTransconductance() const { return Transconductance.get(); }
+};
+
+// H-device (Current-Controlled Voltage Source)
+class HSourceExprAST : public ExprAST {
+    std::string Name;
+    std::string PositiveNode;
+    std::string NegativeNode;
+    std::string VoltageSourceName;  // Current measured through this V-source
+    std::unique_ptr<ExprAST> Transresistance;
+public:
+    HSourceExprAST(const std::string& Name, const std::string& PosNode, const std::string& NegNode,
+                   const std::string& VSourceName, std::unique_ptr<ExprAST> Transres)
+        : Name(Name), PositiveNode(PosNode), NegativeNode(NegNode),
+          VoltageSourceName(VSourceName), Transresistance(std::move(Transres)) {}
+    TypedValue codegen(CodegenContext& context) override;
+    const std::string& getName() const { return Name; }
+    const std::string& getPositiveNode() const { return PositiveNode; }
+    const std::string& getNegativeNode() const { return NegativeNode; }
+    const std::string& getVoltageSourceName() const { return VoltageSourceName; }
+    const ExprAST* getTransresistance() const { return Transresistance.get(); }
+};
+
+// ============================================================================
+// SPICE Analysis Control AST Nodes
+// ============================================================================
+
+// Analysis type enumeration
+enum class AnalysisType {
+    TRAN,    // Transient analysis
+    DC,      // DC sweep
+    AC,      // AC small-signal analysis
+    NOISE,   // Noise analysis
+    OP,      // Operating point
+    TF,      // Transfer function
+    SENS,    // Sensitivity analysis
+    FOURIER  // Fourier analysis
+};
+
+// Analysis directive
+class AnalysisExprAST : public ExprAST {
+    AnalysisType Type;
+    std::map<std::string, std::unique_ptr<ExprAST>> Parameters;
+public:
+    AnalysisExprAST(AnalysisType Type) : Type(Type) {}
+    TypedValue codegen(CodegenContext& context) override;
+    void addParameter(const std::string& Name, std::unique_ptr<ExprAST> Value);
+    AnalysisType getAnalysisType() const { return Type; }
+    const std::map<std::string, std::unique_ptr<ExprAST>>& getParameters() const { return Parameters; }
+};
+
+// Measurement type enumeration
+enum class MeasureType {
+    MAX,     // Maximum value
+    MIN,     // Minimum value
+    AVG,     // Average value
+    RMS,     // Root mean square
+    TRIG,    // Trigger (rise/fall time)
+    TARG,    // Target (delay, etc.)
+    WHEN,    // Time when condition is met
+    FIND,    // Find value at specific time/condition
+    DERIV,   // Derivative
+    INTEG    // Integral
+};
+
+// Measurement directive
+class MeasureExprAST : public ExprAST {
+    std::string Name;
+    MeasureType Type;
+    std::unique_ptr<ExprAST> Expression;
+    std::map<std::string, std::unique_ptr<ExprAST>> Parameters;
+public:
+    MeasureExprAST(const std::string& Name, MeasureType Type, std::unique_ptr<ExprAST> Expr)
+        : Name(Name), Type(Type), Expression(std::move(Expr)) {}
+    TypedValue codegen(CodegenContext& context) override;
+    void addParameter(const std::string& Name, std::unique_ptr<ExprAST> Value);
+    const std::string& getName() const { return Name; }
+    MeasureType getMeasureType() const { return Type; }
+    const ExprAST* getExpression() const { return Expression.get(); }
+    const std::map<std::string, std::unique_ptr<ExprAST>>& getParameters() const { return Parameters; }
+};
+
+// Probe directive
+class ProbeExprAST : public ExprAST {
+    std::string VariableName;
+    std::string OutputName;  // Optional custom name for output
+public:
+    ProbeExprAST(const std::string& VarName, const std::string& OutName = "")
+        : VariableName(VarName), OutputName(OutName) {}
+    TypedValue codegen(CodegenContext& context) override;
+    const std::string& getVariableName() const { return VariableName; }
+    const std::string& getOutputName() const { return OutputName; }
+};
+
+// Save directive
+class SaveExprAST : public ExprAST {
+    std::string VariableName;
+public:
+    explicit SaveExprAST(const std::string& VarName) : VariableName(VarName) {}
+    TypedValue codegen(CodegenContext& context) override;
+    const std::string& getVariableName() const { return VariableName; }
+};
+
+// ============================================================================
+// SPICE Subcircuit and Model AST Nodes
+// ============================================================================
+
+// Subcircuit definition
+class SubcktExprAST : public ExprAST {
+    std::string Name;
+    std::vector<std::string> Pins;
+    std::vector<std::pair<std::string, std::unique_ptr<ExprAST>>> Parameters;
+    std::vector<std::unique_ptr<ExprAST>> Body;
+public:
+    SubcktExprAST(const std::string& Name, std::vector<std::string> Pins)
+        : Name(Name), Pins(std::move(Pins)) {}
+    TypedValue codegen(CodegenContext& context) override;
+    void addParameter(const std::string& Name, std::unique_ptr<ExprAST> Value);
+    void addStatement(std::unique_ptr<ExprAST> Stmt);
+    const std::string& getName() const { return Name; }
+    const std::vector<std::string>& getPins() const { return Pins; }
+    const std::vector<std::pair<std::string, std::unique_ptr<ExprAST>>>& getParameters() const { return Parameters; }
+    const std::vector<std::unique_ptr<ExprAST>>& getBody() const { return Body; }
+};
+
+// Model declaration
+class ModelExprAST : public ExprAST {
+    std::string Name;
+    std::string ModelType;  // D, NPN, PNP, NMOS, PMOS, R, L, C, SW, T, K
+    std::map<std::string, std::unique_ptr<ExprAST>> Parameters;
+public:
+    ModelExprAST(const std::string& Name, const std::string& Type)
+        : Name(Name), ModelType(Type) {}
+    TypedValue codegen(CodegenContext& context) override;
+    void addParameter(const std::string& Name, std::unique_ptr<ExprAST> Value);
+    const std::string& getName() const { return Name; }
+    const std::string& getModelType() const { return ModelType; }
+    const std::map<std::string, std::unique_ptr<ExprAST>>& getParameters() const { return Parameters; }
+};
+
+// Parameter declaration
+class ParamExprAST : public ExprAST {
+    std::string Name;
+    std::unique_ptr<ExprAST> Value;
+public:
+    ParamExprAST(const std::string& Name, std::unique_ptr<ExprAST> Value)
+        : Name(Name), Value(std::move(Value)) {}
+    TypedValue codegen(CodegenContext& context) override;
+    const std::string& getName() const { return Name; }
+    const ExprAST* getValue() const { return Value.get(); }
+};
+
+// Initial condition
+class ICExprAST : public ExprAST {
+    std::string NodeName;
+    std::unique_ptr<ExprAST> Value;
+public:
+    ICExprAST(const std::string& NodeName, std::unique_ptr<ExprAST> Value)
+        : NodeName(NodeName), Value(std::move(Value)) {}
+    TypedValue codegen(CodegenContext& context) override;
+    const std::string& getNodeName() const { return NodeName; }
+    const ExprAST* getValue() const { return Value.get(); }
 };
 
 } // namespace Flux

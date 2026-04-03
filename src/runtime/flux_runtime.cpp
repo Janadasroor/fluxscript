@@ -30,7 +30,7 @@
 #include "flux/runtime/flux_sim_service.h"
 
 // Global service pointer definition
-FluxSimulationService* g_flux_sim_service = nullptr;
+extern "C" FluxSimulationService* g_flux_sim_service = nullptr;
 
 namespace Flux {
 

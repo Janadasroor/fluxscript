@@ -745,6 +745,91 @@ void FluxEditor::keyPressEvent(QKeyEvent* e)
             break;
         }
     }
+    
+    // Bracket and quote auto-closing
+    if (!e->modifiers() || e->modifiers() == Qt::ShiftModifier) {
+        QTextCursor cursor = textCursor();
+        bool hasSelection = cursor.hasSelection();
+        
+        // Skip over closing brackets if next char matches
+        if (!hasSelection) {
+            cursor.movePosition(QTextCursor::Right, QTextCursor::KeepAnchor);
+            QString nextChar = cursor.selectedText();
+            cursor.movePosition(QTextCursor::Left);
+            
+            if (e->text() == ")" && nextChar == ")") {
+                cursor.movePosition(QTextCursor::Right);
+                setTextCursor(cursor);
+                return;
+            }
+            if (e->text() == "]" && nextChar == "]") {
+                cursor.movePosition(QTextCursor::Right);
+                setTextCursor(cursor);
+                return;
+            }
+            if (e->text() == "}" && nextChar == "}") {
+                cursor.movePosition(QTextCursor::Right);
+                setTextCursor(cursor);
+                return;
+            }
+            if (e->text() == "\"" && nextChar == "\"") {
+                cursor.movePosition(QTextCursor::Right);
+                setTextCursor(cursor);
+                return;
+            }
+            if (e->text() == "'" && nextChar == "'") {
+                cursor.movePosition(QTextCursor::Right);
+                setTextCursor(cursor);
+                return;
+            }
+        }
+        
+        if (!hasSelection) {
+            // Auto-close brackets and quotes
+            if (e->text() == "(") {
+                cursor.insertText("()");
+                cursor.movePosition(QTextCursor::Left);
+                setTextCursor(cursor);
+                return;
+            }
+            if (e->text() == "[") {
+                cursor.insertText("[]");
+                cursor.movePosition(QTextCursor::Left);
+                setTextCursor(cursor);
+                return;
+            }
+            if (e->text() == "{") {
+                cursor.insertText("{}");
+                cursor.movePosition(QTextCursor::Left);
+                setTextCursor(cursor);
+                return;
+            }
+            if (e->text() == "\"") {
+                cursor.insertText("\"\"");
+                cursor.movePosition(QTextCursor::Left);
+                setTextCursor(cursor);
+                return;
+            }
+            if (e->text() == "'") {
+                cursor.insertText("''");
+                cursor.movePosition(QTextCursor::Left);
+                setTextCursor(cursor);
+                return;
+            }
+        } else if (!e->modifiers()) {
+            // Wrap selection with brackets/quotes
+            if (e->text() == "(" || e->text() == "[" || e->text() == "{" || 
+                e->text() == "\"" || e->text() == "'") {
+                cursor.beginEditBlock();
+                cursor.insertText(e->text());
+                cursor.movePosition(QTextCursor::Left);
+                cursor.movePosition(QTextCursor::Right, QTextCursor::KeepAnchor, 1);
+                cursor.insertText(e->text());
+                cursor.endEditBlock();
+                return;
+            }
+        }
+    }
 
     // Handle Tab for indentation
     if (e->key() == Qt::Key_Tab && !e->modifiers()) {

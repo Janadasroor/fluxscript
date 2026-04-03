@@ -16,7 +16,7 @@ public:
     std::unique_ptr<PrototypeAST> ParseExtern();
     std::unique_ptr<FunctionAST> ParseDefinition();
     std::unique_ptr<FunctionAST> ParseTopLevelExpr();
-    std::unique_ptr<ImportExprAST> ParseImport();
+    std::unique_ptr<ExprAST> ParseImport();
     std::unique_ptr<DebugStmtAST> ParseDebugStmt();
     std::unique_ptr<SensitivityStmtAST> ParseSensitivityStmt();
     std::unique_ptr<AskExprAST> ParseAskExpr();
@@ -57,6 +57,45 @@ private:
     std::unique_ptr<ExprAST> ParseSwitchExpr();
     std::unique_ptr<ExprAST> ParseBreakExpr();
     std::unique_ptr<ExprAST> ParseContinueExpr();
+    
+    // Additional keywords
+    std::unique_ptr<ExprAST> ParseTryCatchExpr();
+    std::unique_ptr<ExprAST> ParseThrowExpr();
+    std::unique_ptr<ExprAST> ParseAssertExpr();
+    std::unique_ptr<ExprAST> ParseYieldExpr();
+    std::unique_ptr<ExprAST> ParseCornerExpr();
+    std::unique_ptr<ExprAST> ParseMatchExpr();
+    std::unique_ptr<ExprAST> ParseForeachExpr();
+    std::unique_ptr<ExprAST> ParseRepeatUntil();
+    std::unique_ptr<ExprAST> ParseParallelForExpr();
+    
+    // Schematic generation
+    std::unique_ptr<ExprAST> ParseSchematicExpr();
+    std::unique_ptr<ExprAST> ParseExportSchematic();
+    
+    // Symbolic math
+    std::unique_ptr<ExprAST> ParseSymDecl();
+    std::unique_ptr<ExprAST> ParseSolveExpr();
+    std::unique_ptr<ExprAST> ParseSimplifyExpr();
+    std::unique_ptr<ExprAST> ParseDifferentiateExpr();
+    std::unique_ptr<ExprAST> ParseSubstituteExpr();
+
+    // SPICE Time-Domain Simulation
+    std::unique_ptr<ExprAST> ParseBuiltinVar();
+    std::unique_ptr<ExprAST> ParseUpdateFunc();
+    std::unique_ptr<ExprAST> ParseBSource();
+    std::unique_ptr<ExprAST> ParseESource();
+    std::unique_ptr<ExprAST> ParseFSource();
+    std::unique_ptr<ExprAST> ParseGSource();
+    std::unique_ptr<ExprAST> ParseHSource();
+    std::unique_ptr<ExprAST> ParseAnalysis();
+    std::unique_ptr<ExprAST> ParseMeasure();
+    std::unique_ptr<ExprAST> ParseProbe();
+    std::unique_ptr<ExprAST> ParseSave();
+    std::unique_ptr<ExprAST> ParseSubckt();
+    std::unique_ptr<ExprAST> ParseModel();
+    std::unique_ptr<ExprAST> ParseParam();
+    std::unique_ptr<ExprAST> ParseIC();
 
     int GetTokPrecedence();
 

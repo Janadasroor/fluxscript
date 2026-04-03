@@ -1137,4 +1137,420 @@ TypedValue ParameterExprAST::codegen(CodegenContext& context) {
     return TypedValue(context.Builder.CreateCall(GetPF, {context.Builder.CreateGlobalStringPtr(ParamName)}, "p"), TypeKind::Double);
 }
 
+// ============================================================================
+// SPICE Time-Domain Simulation Codegen
+// ============================================================================
+
+TypedValue BuiltinVarExprAST::codegen(CodegenContext& context) {
+    // Generate calls for built-in variables: time, dt, temp
+    std::string FuncName;
+    if (Name == "time") FuncName = "flux_get_time";
+    else if (Name == "dt") FuncName = "flux_get_dt";
+    else if (Name == "temp") FuncName = "flux_get_temp";
+    else {
+        std::cerr << "Unknown built-in variable: " << Name << std::endl;
+        return TypedValue();
+    }
+
+    llvm::Function* GetFunc = context.TheModule->getFunction(FuncName);
+    if (!GetFunc) {
+        llvm::Type* DoubleTy = llvm::Type::getDoubleTy(context.TheContext);
+        GetFunc = llvm::Function::Create(llvm::FunctionType::get(DoubleTy, {}, false),
+                                         llvm::Function::ExternalLinkage,
+                                         FuncName, context.TheModule.get());
+    }
+    return TypedValue(context.Builder.CreateCall(GetFunc, {}, Name.c_str()), TypeKind::Double);
+}
+
+TypedValue UpdateFuncAST::codegen(CodegenContext& context) {
+    // Generate update(t, inputs) function
+    // This creates a function that will be called by ngspice during simulation
+    std::vector<llvm::Type*> ArgTypes;
+    std::vector<std::string> ArgNames;
+    
+    // Time argument (double)
+    ArgTypes.push_back(llvm::Type::getDoubleTy(context.TheContext));
+    ArgNames.push_back(TimeVar);
+    
+    // Inputs argument (pointer to inputs array)
+    llvm::Type* DoublePtrTy = llvm::PointerType::get(llvm::Type::getDoubleTy(context.TheContext), 0);
+    ArgTypes.push_back(DoublePtrTy);
+    ArgNames.push_back(InputsVar);
+    
+    // Return type is double (output value)
+    llvm::Type* RetTy = llvm::Type::getDoubleTy(context.TheContext);
+    
+    llvm::FunctionType* FT = llvm::FunctionType::get(RetTy, ArgTypes, false);
+    llvm::Function* TheFunction = llvm::Function::Create(FT, llvm::Function::ExternalLinkage, "update", context.TheModule.get());
+    
+    // Set argument names and allocate on stack
+    unsigned Idx = 0;
+    for (auto& Arg : TheFunction->args()) {
+        Arg.setName(ArgNames[Idx]);
+        llvm::IRBuilder<> TmpB(&TheFunction->getEntryBlock(), TheFunction->getEntryBlock().begin());
+        llvm::AllocaInst* Alloca = TmpB.CreateAlloca(Arg.getType(), nullptr, ArgNames[Idx]);
+        context.Builder.CreateStore(&Arg, Alloca);
+        context.NamedValues[std::string(Arg.getName())] = Alloca;
+        Idx++;
+    }
+    
+    if (TypedValue RetTV = Body->codegen(context)) {
+        llvm::Value* RetVal = RetTV.Val;
+        if (RetVal->getType() != RetTy) {
+            if (RetTy->isFloatingPointTy() && RetVal->getType()->isIntegerTy()) {
+                RetVal = context.Builder.CreateSIToFP(RetVal, RetTy, "cast");
+            }
+        }
+        context.Builder.CreateRet(RetVal);
+        llvm::verifyFunction(*TheFunction);
+        return TypedValue(TheFunction, TypeKind::Double);
+    }
+    
+    TheFunction->eraseFromParent();
+    return TypedValue();
+}
+
+// ============================================================================
+// SPICE Behavioral Sources Codegen
+// ============================================================================
+
+TypedValue BSourceExprAST::codegen(CodegenContext& context) {
+    // Generate B-source netlist entry
+    // Bxxx n+ n- V=<expression> or I=<expression>
+    std::string SourceType = IsCurrent ? "I" : "V";
+    std::string NetlistEntry = "B" + Name + " " + PositiveNode + " " + NegativeNode + " " + SourceType + "=";
+    
+    // The expression will be evaluated and stored as a string
+    // For now, we generate a placeholder and mark it for later netlist generation
+    llvm::Function* RegisterBSource = context.TheModule->getFunction("flux_register_bsource");
+    if (!RegisterBSource) {
+        llvm::Type* DoubleTy = llvm::Type::getDoubleTy(context.TheContext);
+        llvm::Type* CharPtrTy = llvm::PointerType::get(llvm::Type::getInt8Ty(context.TheContext), 0);
+        RegisterBSource = llvm::Function::Create(
+            llvm::FunctionType::get(DoubleTy, {CharPtrTy, CharPtrTy, CharPtrTy, CharPtrTy}, false),
+            llvm::Function::ExternalLinkage, "flux_register_bsource", context.TheModule.get());
+    }
+    
+    return TypedValue(context.Builder.CreateCall(RegisterBSource, {
+        context.Builder.CreateGlobalStringPtr(Name),
+        context.Builder.CreateGlobalStringPtr(PositiveNode),
+        context.Builder.CreateGlobalStringPtr(NegativeNode),
+        context.Builder.CreateGlobalStringPtr(SourceType)
+    }), TypeKind::Double);
+}
+
+TypedValue ESourceExprAST::codegen(CodegenContext& context) {
+    // Generate E-source (VCVS) netlist entry
+    // Exxx n+ n- nc+ nc- <gain>
+    llvm::Function* RegisterESource = context.TheModule->getFunction("flux_register_esource");
+    if (!RegisterESource) {
+        llvm::Type* DoubleTy = llvm::Type::getDoubleTy(context.TheContext);
+        llvm::Type* CharPtrTy = llvm::PointerType::get(llvm::Type::getInt8Ty(context.TheContext), 0);
+        RegisterESource = llvm::Function::Create(
+            llvm::FunctionType::get(DoubleTy, {CharPtrTy, CharPtrTy, CharPtrTy, CharPtrTy, CharPtrTy, DoubleTy}, false),
+            llvm::Function::ExternalLinkage, "flux_register_esource", context.TheModule.get());
+    }
+    
+    // Evaluate gain expression
+    double GainVal = 1.0;
+    if (Gain) {
+        if (auto* NumGain = dynamic_cast<NumberExprAST*>(Gain.get())) {
+            GainVal = NumGain->getValue();
+        }
+    }
+    
+    return TypedValue(context.Builder.CreateCall(RegisterESource, {
+        context.Builder.CreateGlobalStringPtr(Name),
+        context.Builder.CreateGlobalStringPtr(PositiveNode),
+        context.Builder.CreateGlobalStringPtr(NegativeNode),
+        context.Builder.CreateGlobalStringPtr(ControlPosNode),
+        context.Builder.CreateGlobalStringPtr(ControlNegNode),
+        llvm::ConstantFP::get(context.TheContext, llvm::APFloat(GainVal))
+    }), TypeKind::Double);
+}
+
+TypedValue FSourceExprAST::codegen(CodegenContext& context) {
+    // Generate F-source (CCCS) netlist entry
+    // Fxxx n+ n- <vsource_name> <gain>
+    llvm::Function* RegisterFSource = context.TheModule->getFunction("flux_register_fsource");
+    if (!RegisterFSource) {
+        llvm::Type* DoubleTy = llvm::Type::getDoubleTy(context.TheContext);
+        llvm::Type* CharPtrTy = llvm::PointerType::get(llvm::Type::getInt8Ty(context.TheContext), 0);
+        RegisterFSource = llvm::Function::Create(
+            llvm::FunctionType::get(DoubleTy, {CharPtrTy, CharPtrTy, CharPtrTy, CharPtrTy, DoubleTy}, false),
+            llvm::Function::ExternalLinkage, "flux_register_fsource", context.TheModule.get());
+    }
+    
+    double GainVal = 1.0;
+    if (Gain) {
+        if (auto* NumGain = dynamic_cast<NumberExprAST*>(Gain.get())) {
+            GainVal = NumGain->getValue();
+        }
+    }
+    
+    return TypedValue(context.Builder.CreateCall(RegisterFSource, {
+        context.Builder.CreateGlobalStringPtr(Name),
+        context.Builder.CreateGlobalStringPtr(PositiveNode),
+        context.Builder.CreateGlobalStringPtr(NegativeNode),
+        context.Builder.CreateGlobalStringPtr(VoltageSourceName),
+        llvm::ConstantFP::get(context.TheContext, llvm::APFloat(GainVal))
+    }), TypeKind::Double);
+}
+
+TypedValue GSourceExprAST::codegen(CodegenContext& context) {
+    // Generate G-source (VCCS) netlist entry
+    // Gxxx n+ n- nc+ nc- <transconductance>
+    llvm::Function* RegisterGSource = context.TheModule->getFunction("flux_register_gsource");
+    if (!RegisterGSource) {
+        llvm::Type* DoubleTy = llvm::Type::getDoubleTy(context.TheContext);
+        llvm::Type* CharPtrTy = llvm::PointerType::get(llvm::Type::getInt8Ty(context.TheContext), 0);
+        RegisterGSource = llvm::Function::Create(
+            llvm::FunctionType::get(DoubleTy, {CharPtrTy, CharPtrTy, CharPtrTy, CharPtrTy, CharPtrTy, DoubleTy}, false),
+            llvm::Function::ExternalLinkage, "flux_register_gsource", context.TheModule.get());
+    }
+    
+    double TranscondVal = 1.0;
+    if (Transconductance) {
+        if (auto* NumVal = dynamic_cast<NumberExprAST*>(Transconductance.get())) {
+            TranscondVal = NumVal->getValue();
+        }
+    }
+    
+    return TypedValue(context.Builder.CreateCall(RegisterGSource, {
+        context.Builder.CreateGlobalStringPtr(Name),
+        context.Builder.CreateGlobalStringPtr(PositiveNode),
+        context.Builder.CreateGlobalStringPtr(NegativeNode),
+        context.Builder.CreateGlobalStringPtr(ControlPosNode),
+        context.Builder.CreateGlobalStringPtr(ControlNegNode),
+        llvm::ConstantFP::get(context.TheContext, llvm::APFloat(TranscondVal))
+    }), TypeKind::Double);
+}
+
+TypedValue HSourceExprAST::codegen(CodegenContext& context) {
+    // Generate H-source (CCVS) netlist entry
+    // Hxxx n+ n- <vsource_name> <transresistance>
+    llvm::Function* RegisterHSource = context.TheModule->getFunction("flux_register_hsource");
+    if (!RegisterHSource) {
+        llvm::Type* DoubleTy = llvm::Type::getDoubleTy(context.TheContext);
+        llvm::Type* CharPtrTy = llvm::PointerType::get(llvm::Type::getInt8Ty(context.TheContext), 0);
+        RegisterHSource = llvm::Function::Create(
+            llvm::FunctionType::get(DoubleTy, {CharPtrTy, CharPtrTy, CharPtrTy, CharPtrTy, DoubleTy}, false),
+            llvm::Function::ExternalLinkage, "flux_register_hsource", context.TheModule.get());
+    }
+    
+    double TransresVal = 1.0;
+    if (Transresistance) {
+        if (auto* NumVal = dynamic_cast<NumberExprAST*>(Transresistance.get())) {
+            TransresVal = NumVal->getValue();
+        }
+    }
+    
+    return TypedValue(context.Builder.CreateCall(RegisterHSource, {
+        context.Builder.CreateGlobalStringPtr(Name),
+        context.Builder.CreateGlobalStringPtr(PositiveNode),
+        context.Builder.CreateGlobalStringPtr(NegativeNode),
+        context.Builder.CreateGlobalStringPtr(VoltageSourceName),
+        llvm::ConstantFP::get(context.TheContext, llvm::APFloat(TransresVal))
+    }), TypeKind::Double);
+}
+
+// ============================================================================
+// SPICE Analysis Control Codegen
+// ============================================================================
+
+void AnalysisExprAST::addParameter(const std::string& Name, std::unique_ptr<ExprAST> Value) {
+    Parameters[Name] = std::move(Value);
+}
+
+TypedValue AnalysisExprAST::codegen(CodegenContext& context) {
+    std::string AnalysisName;
+    switch (Type) {
+        case AnalysisType::TRAN: AnalysisName = "tran"; break;
+        case AnalysisType::DC: AnalysisName = "dc"; break;
+        case AnalysisType::AC: AnalysisName = "ac"; break;
+        case AnalysisType::NOISE: AnalysisName = "noise"; break;
+        case AnalysisType::OP: AnalysisName = "op"; break;
+        case AnalysisType::TF: AnalysisName = "tf"; break;
+        case AnalysisType::SENS: AnalysisName = "sens"; break;
+        case AnalysisType::FOURIER: AnalysisName = "fourier"; break;
+    }
+    
+    llvm::Function* RegisterAnalysis = context.TheModule->getFunction("flux_register_analysis");
+    if (!RegisterAnalysis) {
+        llvm::Type* DoubleTy = llvm::Type::getDoubleTy(context.TheContext);
+        llvm::Type* CharPtrTy = llvm::PointerType::get(llvm::Type::getInt8Ty(context.TheContext), 0);
+        RegisterAnalysis = llvm::Function::Create(
+            llvm::FunctionType::get(DoubleTy, {CharPtrTy}, false),
+            llvm::Function::ExternalLinkage, "flux_register_analysis", context.TheModule.get());
+    }
+    
+    return TypedValue(context.Builder.CreateCall(RegisterAnalysis, {
+        context.Builder.CreateGlobalStringPtr(AnalysisName)
+    }), TypeKind::Double);
+}
+
+void MeasureExprAST::addParameter(const std::string& Name, std::unique_ptr<ExprAST> Value) {
+    Parameters[Name] = std::move(Value);
+}
+
+TypedValue MeasureExprAST::codegen(CodegenContext& context) {
+    std::string MeasureName;
+    switch (Type) {
+        case MeasureType::MAX: MeasureName = "MAX"; break;
+        case MeasureType::MIN: MeasureName = "MIN"; break;
+        case MeasureType::AVG: MeasureName = "AVG"; break;
+        case MeasureType::RMS: MeasureName = "RMS"; break;
+        case MeasureType::TRIG: MeasureName = "TRIG"; break;
+        case MeasureType::TARG: MeasureName = "TARG"; break;
+        case MeasureType::WHEN: MeasureName = "WHEN"; break;
+        case MeasureType::FIND: MeasureName = "FIND"; break;
+        case MeasureType::DERIV: MeasureName = "DERIV"; break;
+        case MeasureType::INTEG: MeasureName = "INTEG"; break;
+    }
+    
+    llvm::Function* RegisterMeasure = context.TheModule->getFunction("flux_register_measure");
+    if (!RegisterMeasure) {
+        llvm::Type* DoubleTy = llvm::Type::getDoubleTy(context.TheContext);
+        llvm::Type* CharPtrTy = llvm::PointerType::get(llvm::Type::getInt8Ty(context.TheContext), 0);
+        RegisterMeasure = llvm::Function::Create(
+            llvm::FunctionType::get(DoubleTy, {CharPtrTy, CharPtrTy}, false),
+            llvm::Function::ExternalLinkage, "flux_register_measure", context.TheModule.get());
+    }
+    
+    return TypedValue(context.Builder.CreateCall(RegisterMeasure, {
+        context.Builder.CreateGlobalStringPtr(Name),
+        context.Builder.CreateGlobalStringPtr(MeasureName)
+    }), TypeKind::Double);
+}
+
+TypedValue ProbeExprAST::codegen(CodegenContext& context) {
+    llvm::Function* RegisterProbe = context.TheModule->getFunction("flux_register_probe");
+    if (!RegisterProbe) {
+        llvm::Type* DoubleTy = llvm::Type::getDoubleTy(context.TheContext);
+        llvm::Type* CharPtrTy = llvm::PointerType::get(llvm::Type::getInt8Ty(context.TheContext), 0);
+        RegisterProbe = llvm::Function::Create(
+            llvm::FunctionType::get(DoubleTy, {CharPtrTy, CharPtrTy}, false),
+            llvm::Function::ExternalLinkage, "flux_register_probe", context.TheModule.get());
+    }
+    
+    return TypedValue(context.Builder.CreateCall(RegisterProbe, {
+        context.Builder.CreateGlobalStringPtr(VariableName),
+        context.Builder.CreateGlobalStringPtr(OutputName.empty() ? VariableName : OutputName)
+    }), TypeKind::Double);
+}
+
+TypedValue SaveExprAST::codegen(CodegenContext& context) {
+    llvm::Function* RegisterSave = context.TheModule->getFunction("flux_register_save");
+    if (!RegisterSave) {
+        llvm::Type* DoubleTy = llvm::Type::getDoubleTy(context.TheContext);
+        llvm::Type* CharPtrTy = llvm::PointerType::get(llvm::Type::getInt8Ty(context.TheContext), 0);
+        RegisterSave = llvm::Function::Create(
+            llvm::FunctionType::get(DoubleTy, {CharPtrTy}, false),
+            llvm::Function::ExternalLinkage, "flux_register_save", context.TheModule.get());
+    }
+    
+    return TypedValue(context.Builder.CreateCall(RegisterSave, {
+        context.Builder.CreateGlobalStringPtr(VariableName)
+    }), TypeKind::Double);
+}
+
+// ============================================================================
+// SPICE Subcircuit and Model Codegen
+// ============================================================================
+
+void SubcktExprAST::addParameter(const std::string& Name, std::unique_ptr<ExprAST> Value) {
+    Parameters.push_back({Name, std::move(Value)});
+}
+
+void SubcktExprAST::addStatement(std::unique_ptr<ExprAST> Stmt) {
+    Body.push_back(std::move(Stmt));
+}
+
+TypedValue SubcktExprAST::codegen(CodegenContext& context) {
+    // Build pin list string
+    std::string PinsStr;
+    for (size_t i = 0; i < Pins.size(); ++i) {
+        if (i > 0) PinsStr += " ";
+        PinsStr += Pins[i];
+    }
+    
+    llvm::Function* RegisterSubckt = context.TheModule->getFunction("flux_register_subckt");
+    if (!RegisterSubckt) {
+        llvm::Type* DoubleTy = llvm::Type::getDoubleTy(context.TheContext);
+        llvm::Type* CharPtrTy = llvm::PointerType::get(llvm::Type::getInt8Ty(context.TheContext), 0);
+        RegisterSubckt = llvm::Function::Create(
+            llvm::FunctionType::get(DoubleTy, {CharPtrTy, CharPtrTy}, false),
+            llvm::Function::ExternalLinkage, "flux_register_subckt", context.TheModule.get());
+    }
+    
+    return TypedValue(context.Builder.CreateCall(RegisterSubckt, {
+        context.Builder.CreateGlobalStringPtr(Name),
+        context.Builder.CreateGlobalStringPtr(PinsStr)
+    }), TypeKind::Double);
+}
+
+void ModelExprAST::addParameter(const std::string& Name, std::unique_ptr<ExprAST> Value) {
+    Parameters[Name] = std::move(Value);
+}
+
+TypedValue ModelExprAST::codegen(CodegenContext& context) {
+    llvm::Function* RegisterModel = context.TheModule->getFunction("flux_register_model");
+    if (!RegisterModel) {
+        llvm::Type* DoubleTy = llvm::Type::getDoubleTy(context.TheContext);
+        llvm::Type* CharPtrTy = llvm::PointerType::get(llvm::Type::getInt8Ty(context.TheContext), 0);
+        RegisterModel = llvm::Function::Create(
+            llvm::FunctionType::get(DoubleTy, {CharPtrTy, CharPtrTy}, false),
+            llvm::Function::ExternalLinkage, "flux_register_model", context.TheModule.get());
+    }
+    
+    return TypedValue(context.Builder.CreateCall(RegisterModel, {
+        context.Builder.CreateGlobalStringPtr(Name),
+        context.Builder.CreateGlobalStringPtr(ModelType)
+    }), TypeKind::Double);
+}
+
+TypedValue ParamExprAST::codegen(CodegenContext& context) {
+    // Parameters are handled at the simulation setup level
+    // This just marks the parameter as declared
+    llvm::Function* RegisterParam = context.TheModule->getFunction("flux_register_param");
+    if (!RegisterParam) {
+        llvm::Type* DoubleTy = llvm::Type::getDoubleTy(context.TheContext);
+        llvm::Type* CharPtrTy = llvm::PointerType::get(llvm::Type::getInt8Ty(context.TheContext), 0);
+        RegisterParam = llvm::Function::Create(
+            llvm::FunctionType::get(DoubleTy, {CharPtrTy, DoubleTy}, false),
+            llvm::Function::ExternalLinkage, "flux_register_param", context.TheModule.get());
+    }
+    
+    double Val = 0.0;
+    if (auto* NumVal = dynamic_cast<NumberExprAST*>(Value.get())) {
+        Val = NumVal->getValue();
+    }
+    
+    return TypedValue(context.Builder.CreateCall(RegisterParam, {
+        context.Builder.CreateGlobalStringPtr(Name),
+        llvm::ConstantFP::get(context.TheContext, llvm::APFloat(Val))
+    }), TypeKind::Double);
+}
+
+TypedValue ICExprAST::codegen(CodegenContext& context) {
+    llvm::Function* RegisterIC = context.TheModule->getFunction("flux_register_ic");
+    if (!RegisterIC) {
+        llvm::Type* DoubleTy = llvm::Type::getDoubleTy(context.TheContext);
+        llvm::Type* CharPtrTy = llvm::PointerType::get(llvm::Type::getInt8Ty(context.TheContext), 0);
+        RegisterIC = llvm::Function::Create(
+            llvm::FunctionType::get(DoubleTy, {CharPtrTy, DoubleTy}, false),
+            llvm::Function::ExternalLinkage, "flux_register_ic", context.TheModule.get());
+    }
+    
+    double Val = 0.0;
+    if (auto* NumVal = dynamic_cast<NumberExprAST*>(Value.get())) {
+        Val = NumVal->getValue();
+    }
+    
+    return TypedValue(context.Builder.CreateCall(RegisterIC, {
+        context.Builder.CreateGlobalStringPtr(NodeName),
+        llvm::ConstantFP::get(context.TheContext, llvm::APFloat(Val))
+    }), TypeKind::Double);
+}
+
 } // namespace Flux

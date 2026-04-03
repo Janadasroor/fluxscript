@@ -1,3 +1,4 @@
+#include <iostream>
 #include "flux/compiler/parser.h"
 
 namespace Flux {
@@ -85,78 +86,84 @@ std::unique_ptr<ExprAST> Parser::ParseStringExpr() {
     return Result;
 }
 
-std::unique_ptr<ImportExprAST> Parser::ParseImport() {
+std::unique_ptr<ExprAST> Parser::ParseImport() {
     getNextToken(); // eat import
-    if (CurTok != static_cast<int>(TokenType::tok_string)) {
-        ReportError("expected module name string after import");
+
+    std::string moduleName;
+    std::string versionSpec;
+    std::string alias;
+    std::vector<std::string> symbols;
+
+    if (CurTok != static_cast<int>(TokenType::tok_identifier)) {
+        ReportError("expected module name after import");
         return nullptr;
     }
-    std::string ModuleName = m_lexer.StringVal;
-    getNextToken(); // eat string
-    
-    std::string VersionSpec;
-    std::string Alias;
-    std::vector<std::string> Symbols;
-    
-    // Check for version specification: import "module" version "1.0.0"
-    if (CurTok == static_cast<int>(TokenType::tok_identifier) && 
-        m_lexer.IdentifierStr == "version") {
-        getNextToken(); // eat 'version'
-        if (CurTok != static_cast<int>(TokenType::tok_string)) {
-            ReportError("expected version string after 'version'");
-            return nullptr;
+
+    moduleName = m_lexer.IdentifierStr;
+    getNextToken();
+
+    if (CurTok == '@') {
+        getNextToken();
+
+        if (CurTok == static_cast<int>(TokenType::tok_number)) {
+            versionSpec = std::to_string(static_cast<int>(m_lexer.NumVal));
+            getNextToken();
+
+            if (CurTok == '.') {
+                getNextToken();
+                if (CurTok == static_cast<int>(TokenType::tok_number)) {
+                    versionSpec += "." + std::to_string(static_cast<int>(m_lexer.NumVal));
+                    getNextToken();
+
+                    if (CurTok == '.') {
+                        getNextToken();
+                        if (CurTok == static_cast<int>(TokenType::tok_number)) {
+                            versionSpec += "." + std::to_string(static_cast<int>(m_lexer.NumVal));
+                            getNextToken();
+                        }
+                    }
+                }
+            }
         }
-        VersionSpec = m_lexer.StringVal;
-        getNextToken(); // eat version string
     }
-    
-    // Check for alias: import "module" as alias
-    if (CurTok == static_cast<int>(TokenType::tok_identifier) && 
-        m_lexer.IdentifierStr == "as") {
-        getNextToken(); // eat 'as'
+
+    if (CurTok == static_cast<int>(TokenType::tok_identifier) && m_lexer.IdentifierStr == "as") {
+        getNextToken();
+
         if (CurTok != static_cast<int>(TokenType::tok_identifier)) {
-            ReportError("expected identifier for alias");
+            ReportError("expected alias name after 'as'");
             return nullptr;
         }
-        Alias = m_lexer.IdentifierStr;
-        getNextToken(); // eat alias identifier
+
+        alias = m_lexer.IdentifierStr;
+        getNextToken();
     }
-    
-    // Check for specific symbols: import "module" using {sym1, sym2}
-    if (CurTok == static_cast<int>(TokenType::tok_identifier) && 
-        m_lexer.IdentifierStr == "using") {
-        getNextToken(); // eat 'using'
-        if (CurTok != '{') {
-            ReportError("expected '{' after 'using'");
-            return nullptr;
-        }
-        getNextToken(); // eat '{'
-        
-        while (CurTok != '}' && CurTok != static_cast<int>(TokenType::tok_eof)) {
-            if (CurTok != static_cast<int>(TokenType::tok_identifier)) {
-                ReportError("expected identifier in symbol list");
-                return nullptr;
-            }
-            Symbols.push_back(m_lexer.IdentifierStr);
-            getNextToken(); // eat identifier
-            
-            if (CurTok == ',') {
-                getNextToken(); // eat ','
-            } else if (CurTok != '}') {
-                ReportError("expected ',' or '}' in symbol list");
-                return nullptr;
+
+    if (CurTok == static_cast<int>(TokenType::tok_lbrace)) {
+        getNextToken();
+
+        while (CurTok != static_cast<int>(TokenType::tok_rbrace) &&
+               CurTok != static_cast<int>(TokenType::tok_eof)) {
+            if (CurTok == static_cast<int>(TokenType::tok_identifier)) {
+                symbols.push_back(m_lexer.IdentifierStr);
+                getNextToken();
+
+                if (CurTok == ',') {
+                    getNextToken();
+                }
+            } else {
+                getNextToken();
             }
         }
-        
-        if (CurTok != '}') {
-            ReportError("expected '}' to close symbol list");
-            return nullptr;
+
+        if (CurTok == static_cast<int>(TokenType::tok_rbrace)) {
+            getNextToken();
         }
-        getNextToken(); // eat '}'
     }
-    
-    return std::make_unique<ImportExprAST>(ModuleName, VersionSpec, Alias, Symbols);
+
+    return std::make_unique<ImportExprAST>(moduleName, versionSpec, alias, symbols);
 }
+
 
 std::unique_ptr<ExprAST> Parser::ParseParenExpr() {
     getNextToken();
@@ -450,6 +457,51 @@ std::unique_ptr<ExprAST> Parser::ParsePrimary() {
     case static_cast<int>(TokenType::tok_break): Res = ParseBreakExpr(); break;
     case static_cast<int>(TokenType::tok_continue): Res = ParseContinueExpr(); break;
     
+    // Additional keywords
+    case static_cast<int>(TokenType::tok_try): Res = ParseTryCatchExpr(); break;
+    case static_cast<int>(TokenType::tok_throw): Res = ParseThrowExpr(); break;
+    case static_cast<int>(TokenType::tok_assert): Res = ParseAssertExpr(); break;
+    case static_cast<int>(TokenType::tok_yield): Res = ParseYieldExpr(); break;
+    case static_cast<int>(TokenType::tok_corner): Res = ParseCornerExpr(); break;
+    case static_cast<int>(TokenType::tok_match): Res = ParseMatchExpr(); break;
+    case static_cast<int>(TokenType::tok_foreach): Res = ParseForeachExpr(); break;
+    case static_cast<int>(TokenType::tok_repeat): Res = ParseRepeatUntil(); break;
+    case static_cast<int>(TokenType::tok_parallel): Res = ParseParallelForExpr(); break;
+    
+    // Schematic generation
+    case static_cast<int>(TokenType::tok_schematic): Res = ParseSchematicExpr(); break;
+    case static_cast<int>(TokenType::tok_export): Res = ParseExportSchematic(); break;
+    
+    // Symbolic math
+    case static_cast<int>(TokenType::tok_sym): Res = ParseSymDecl(); break;
+    case static_cast<int>(TokenType::tok_solve): Res = ParseSolveExpr(); break;
+    case static_cast<int>(TokenType::tok_simplify): Res = ParseSimplifyExpr(); break;
+    case static_cast<int>(TokenType::tok_differentiate): Res = ParseDifferentiateExpr(); break;
+
+    // SPICE Time-Domain Simulation
+    case static_cast<int>(TokenType::tok_time):
+    case static_cast<int>(TokenType::tok_dt):
+    case static_cast<int>(TokenType::tok_temp):
+        Res = ParseBuiltinVar(); break;
+    case static_cast<int>(TokenType::tok_update): Res = ParseUpdateFunc(); break;
+
+    // SPICE Behavioral Sources
+    case static_cast<int>(TokenType::tok_bsource): Res = ParseBSource(); break;
+    case static_cast<int>(TokenType::tok_esource): Res = ParseESource(); break;
+    case static_cast<int>(TokenType::tok_fsource): Res = ParseFSource(); break;
+    case static_cast<int>(TokenType::tok_gsource): Res = ParseGSource(); break;
+    case static_cast<int>(TokenType::tok_hsource): Res = ParseHSource(); break;
+
+    // SPICE Analysis Control
+    case static_cast<int>(TokenType::tok_analysis): Res = ParseAnalysis(); break;
+    case static_cast<int>(TokenType::tok_measure): Res = ParseMeasure(); break;
+    case static_cast<int>(TokenType::tok_probe): Res = ParseProbe(); break;
+    case static_cast<int>(TokenType::tok_save): Res = ParseSave(); break;
+    case static_cast<int>(TokenType::tok_subckt): Res = ParseSubckt(); break;
+    case static_cast<int>(TokenType::tok_model): Res = ParseModel(); break;
+    case static_cast<int>(TokenType::tok_param): Res = ParseParam(); break;
+    case static_cast<int>(TokenType::tok_ic): Res = ParseIC(); break;
+    
     default: {
         std::string msg = "unknown token in expression: ";
         if (CurTok > 0 && CurTok < 128) msg += (char)CurTok;
@@ -684,6 +736,670 @@ std::unique_ptr<FunctionAST> Parser::ParseTopLevelExpr() {
         return std::make_unique<FunctionAST>(std::make_unique<PrototypeAST>("__anon_expr", std::vector<std::pair<std::string, FluxType>>(), RetType), std::move(Body));
     }
     return nullptr;
+}
+
+// ============================================================================
+// SPICE Parser Implementations
+// ============================================================================
+
+// Parse built-in variable: time, dt, temp
+std::unique_ptr<ExprAST> Parser::ParseBuiltinVar() {
+    std::string VarName = m_lexer.IdentifierStr;
+    getNextToken(); // eat variable name
+    return std::make_unique<BuiltinVarExprAST>(VarName);
+}
+
+// Parse update function: update(t, inputs) { ... }
+std::unique_ptr<ExprAST> Parser::ParseUpdateFunc() {
+    getNextToken(); // eat update
+    
+    if (CurTok != '(') {
+        ReportError("expected '(' after update");
+        return nullptr;
+    }
+    getNextToken(); // eat (
+    
+    // Parse time variable name
+    if (CurTok != static_cast<int>(TokenType::tok_identifier)) {
+        ReportError("expected time variable name");
+        return nullptr;
+    }
+    std::string TimeVar = m_lexer.IdentifierStr;
+    getNextToken();
+    
+    if (CurTok != ',') {
+        ReportError("expected ',' in update function");
+        return nullptr;
+    }
+    getNextToken(); // eat ,
+    
+    // Parse inputs variable name
+    if (CurTok != static_cast<int>(TokenType::tok_identifier)) {
+        ReportError("expected inputs variable name");
+        return nullptr;
+    }
+    std::string InputsVar = m_lexer.IdentifierStr;
+    getNextToken();
+    
+    if (CurTok != ')') {
+        ReportError("expected ')' after update parameters");
+        return nullptr;
+    }
+    getNextToken(); // eat )
+    
+    // Parse body
+    auto Body = ParseBlockExpr();
+    if (!Body) {
+        ReportError("expected body for update function");
+        return nullptr;
+    }
+    
+    return std::make_unique<UpdateFuncAST>(TimeVar, InputsVar, std::move(Body));
+}
+
+// Parse B-source: bsource name V(node+, node-) { expression }
+std::unique_ptr<ExprAST> Parser::ParseBSource() {
+    getNextToken(); // eat bsource
+    
+    if (CurTok != static_cast<int>(TokenType::tok_identifier)) {
+        ReportError("expected B-source name");
+        return nullptr;
+    }
+    std::string Name = m_lexer.IdentifierStr;
+    getNextToken();
+    
+    // Parse V or I prefix
+    bool IsCurrent = false;
+    if (CurTok == static_cast<int>(TokenType::tok_identifier)) {
+        std::string Prefix = m_lexer.IdentifierStr;
+        if (Prefix == "I") IsCurrent = true;
+        else if (Prefix != "V") {
+            ReportError("expected V or I prefix for B-source");
+            return nullptr;
+        }
+        getNextToken();
+    }
+    
+    // Parse V(node+, node-)
+    if (CurTok != '(') {
+        ReportError("expected '(' for B-source nodes");
+        return nullptr;
+    }
+    getNextToken(); // eat (
+    
+    if (CurTok != static_cast<int>(TokenType::tok_identifier) && CurTok != static_cast<int>(TokenType::tok_number)) {
+        ReportError("expected positive node name");
+        return nullptr;
+    }
+    std::string PosNode = (CurTok == static_cast<int>(TokenType::tok_identifier)) ? m_lexer.IdentifierStr : std::to_string(static_cast<int>(m_lexer.NumVal));
+    getNextToken();
+    
+    if (CurTok != ',') {
+        ReportError("expected ',' between nodes");
+        return nullptr;
+    }
+    getNextToken(); // eat ,
+    
+    if (CurTok != static_cast<int>(TokenType::tok_identifier) && CurTok != static_cast<int>(TokenType::tok_number)) {
+        ReportError("expected negative node name");
+        return nullptr;
+    }
+    std::string NegNode = (CurTok == static_cast<int>(TokenType::tok_identifier)) ? m_lexer.IdentifierStr : std::to_string(static_cast<int>(m_lexer.NumVal));
+    getNextToken();
+    
+    if (CurTok != ')') {
+        ReportError("expected ')' after nodes");
+        return nullptr;
+    }
+    getNextToken(); // eat )
+    
+    // Parse expression body
+    auto Expr = ParseBlockExpr();
+    if (!Expr) {
+        ReportError("expected expression body for B-source");
+        return nullptr;
+    }
+    
+    return std::make_unique<BSourceExprAST>(Name, PosNode, NegNode, std::move(Expr), IsCurrent);
+}
+
+// Parse E-source (VCVS): esource name V(node+, node-) V(ctrl+, ctrl-) { gain }
+std::unique_ptr<ExprAST> Parser::ParseESource() {
+    getNextToken(); // eat esource
+    
+    if (CurTok != static_cast<int>(TokenType::tok_identifier)) {
+        ReportError("expected E-source name");
+        return nullptr;
+    }
+    std::string Name = m_lexer.IdentifierStr;
+    getNextToken();
+    
+    // Parse output nodes V(node+, node-)
+    if (CurTok != '(') {
+        ReportError("expected '(' for E-source output nodes");
+        return nullptr;
+    }
+    getNextToken();
+    
+    std::string PosNode = (CurTok == static_cast<int>(TokenType::tok_identifier) || CurTok == static_cast<int>(TokenType::tok_number)) ?
+        ((CurTok == static_cast<int>(TokenType::tok_identifier)) ? m_lexer.IdentifierStr : std::to_string(static_cast<int>(m_lexer.NumVal))) : "";
+    getNextToken();
+    
+    if (CurTok != ',') { ReportError("expected ','"); return nullptr; }
+    getNextToken();
+    
+    std::string NegNode = (CurTok == static_cast<int>(TokenType::tok_identifier) || CurTok == static_cast<int>(TokenType::tok_number)) ?
+        ((CurTok == static_cast<int>(TokenType::tok_identifier)) ? m_lexer.IdentifierStr : std::to_string(static_cast<int>(m_lexer.NumVal))) : "";
+    getNextToken();
+    
+    if (CurTok != ')') { ReportError("expected ')'"); return nullptr; }
+    getNextToken();
+    
+    // Parse control nodes V(ctrl+, ctrl-)
+    if (CurTok != '(') {
+        ReportError("expected '(' for E-source control nodes");
+        return nullptr;
+    }
+    getNextToken();
+    
+    std::string CtrlPosNode = (CurTok == static_cast<int>(TokenType::tok_identifier) || CurTok == static_cast<int>(TokenType::tok_number)) ?
+        ((CurTok == static_cast<int>(TokenType::tok_identifier)) ? m_lexer.IdentifierStr : std::to_string(static_cast<int>(m_lexer.NumVal))) : "";
+    getNextToken();
+    
+    if (CurTok != ',') { ReportError("expected ','"); return nullptr; }
+    getNextToken();
+    
+    std::string CtrlNegNode = (CurTok == static_cast<int>(TokenType::tok_identifier) || CurTok == static_cast<int>(TokenType::tok_number)) ?
+        ((CurTok == static_cast<int>(TokenType::tok_identifier)) ? m_lexer.IdentifierStr : std::to_string(static_cast<int>(m_lexer.NumVal))) : "";
+    getNextToken();
+    
+    if (CurTok != ')') { ReportError("expected ')'"); return nullptr; }
+    getNextToken();
+    
+    // Parse gain expression
+    auto Gain = ParseBlockExpr();
+    if (!Gain) Gain = std::make_unique<NumberExprAST>(1.0);
+    
+    return std::make_unique<ESourceExprAST>(Name, PosNode, NegNode, CtrlPosNode, CtrlNegNode, std::move(Gain));
+}
+
+// Parse F-source (CCCS): fsource name V(node+, node-) Vname { gain }
+std::unique_ptr<ExprAST> Parser::ParseFSource() {
+    getNextToken(); // eat fsource
+    
+    if (CurTok != static_cast<int>(TokenType::tok_identifier)) {
+        ReportError("expected F-source name");
+        return nullptr;
+    }
+    std::string Name = m_lexer.IdentifierStr;
+    getNextToken();
+    
+    // Parse output nodes
+    if (CurTok != '(') { ReportError("expected '('"); return nullptr; }
+    getNextToken();
+    
+    std::string PosNode = (CurTok == static_cast<int>(TokenType::tok_identifier)) ? m_lexer.IdentifierStr : std::to_string(static_cast<int>(m_lexer.NumVal));
+    getNextToken();
+    
+    if (CurTok != ',') { ReportError("expected ','"); return nullptr; }
+    getNextToken();
+    
+    std::string NegNode = (CurTok == static_cast<int>(TokenType::tok_identifier)) ? m_lexer.IdentifierStr : std::to_string(static_cast<int>(m_lexer.NumVal));
+    getNextToken();
+    
+    if (CurTok != ')') { ReportError("expected ')'"); return nullptr; }
+    getNextToken();
+    
+    // Parse voltage source name for current sensing
+    if (CurTok != static_cast<int>(TokenType::tok_identifier)) {
+        ReportError("expected voltage source name for current sensing");
+        return nullptr;
+    }
+    std::string VSourceName = m_lexer.IdentifierStr;
+    getNextToken();
+    
+    // Parse gain
+    auto Gain = ParseBlockExpr();
+    if (!Gain) Gain = std::make_unique<NumberExprAST>(1.0);
+    
+    return std::make_unique<FSourceExprAST>(Name, PosNode, NegNode, VSourceName, std::move(Gain));
+}
+
+// Parse G-source (VCCS): gsource name V(node+, node-) V(ctrl+, ctrl-) { transconductance }
+std::unique_ptr<ExprAST> Parser::ParseGSource() {
+    getNextToken(); // eat gsource
+    
+    if (CurTok != static_cast<int>(TokenType::tok_identifier)) {
+        ReportError("expected G-source name");
+        return nullptr;
+    }
+    std::string Name = m_lexer.IdentifierStr;
+    getNextToken();
+    
+    // Parse output nodes
+    if (CurTok != '(') { ReportError("expected '('"); return nullptr; }
+    getNextToken();
+    
+    std::string PosNode = (CurTok == static_cast<int>(TokenType::tok_identifier)) ? m_lexer.IdentifierStr : std::to_string(static_cast<int>(m_lexer.NumVal));
+    getNextToken();
+    
+    if (CurTok != ',') { ReportError("expected ','"); return nullptr; }
+    getNextToken();
+    
+    std::string NegNode = (CurTok == static_cast<int>(TokenType::tok_identifier)) ? m_lexer.IdentifierStr : std::to_string(static_cast<int>(m_lexer.NumVal));
+    getNextToken();
+    
+    if (CurTok != ')') { ReportError("expected ')'"); return nullptr; }
+    getNextToken();
+    
+    // Parse control nodes
+    if (CurTok != '(') { ReportError("expected '(' for control nodes"); return nullptr; }
+    getNextToken();
+    
+    std::string CtrlPosNode = (CurTok == static_cast<int>(TokenType::tok_identifier)) ? m_lexer.IdentifierStr : std::to_string(static_cast<int>(m_lexer.NumVal));
+    getNextToken();
+    
+    if (CurTok != ',') { ReportError("expected ','"); return nullptr; }
+    getNextToken();
+    
+    std::string CtrlNegNode = (CurTok == static_cast<int>(TokenType::tok_identifier)) ? m_lexer.IdentifierStr : std::to_string(static_cast<int>(m_lexer.NumVal));
+    getNextToken();
+    
+    if (CurTok != ')') { ReportError("expected ')'"); return nullptr; }
+    getNextToken();
+    
+    // Parse transconductance
+    auto Transcond = ParseBlockExpr();
+    if (!Transcond) Transcond = std::make_unique<NumberExprAST>(1.0);
+    
+    return std::make_unique<GSourceExprAST>(Name, PosNode, NegNode, CtrlPosNode, CtrlNegNode, std::move(Transcond));
+}
+
+// Parse H-source (CCVS): hsource name V(node+, node-) Vname { transresistance }
+std::unique_ptr<ExprAST> Parser::ParseHSource() {
+    getNextToken(); // eat hsource
+    
+    if (CurTok != static_cast<int>(TokenType::tok_identifier)) {
+        ReportError("expected H-source name");
+        return nullptr;
+    }
+    std::string Name = m_lexer.IdentifierStr;
+    getNextToken();
+    
+    // Parse output nodes
+    if (CurTok != '(') { ReportError("expected '('"); return nullptr; }
+    getNextToken();
+    
+    std::string PosNode = (CurTok == static_cast<int>(TokenType::tok_identifier)) ? m_lexer.IdentifierStr : std::to_string(static_cast<int>(m_lexer.NumVal));
+    getNextToken();
+    
+    if (CurTok != ',') { ReportError("expected ','"); return nullptr; }
+    getNextToken();
+    
+    std::string NegNode = (CurTok == static_cast<int>(TokenType::tok_identifier)) ? m_lexer.IdentifierStr : std::to_string(static_cast<int>(m_lexer.NumVal));
+    getNextToken();
+    
+    if (CurTok != ')') { ReportError("expected ')'"); return nullptr; }
+    getNextToken();
+    
+    // Parse voltage source name
+    if (CurTok != static_cast<int>(TokenType::tok_identifier)) {
+        ReportError("expected voltage source name");
+        return nullptr;
+    }
+    std::string VSourceName = m_lexer.IdentifierStr;
+    getNextToken();
+    
+    // Parse transresistance
+    auto Transres = ParseBlockExpr();
+    if (!Transres) Transres = std::make_unique<NumberExprAST>(1.0);
+    
+    return std::make_unique<HSourceExprAST>(Name, PosNode, NegNode, VSourceName, std::move(Transres));
+}
+
+// Parse analysis directive: analysis tran { tstop, tstart, tstep }
+std::unique_ptr<ExprAST> Parser::ParseAnalysis() {
+    getNextToken(); // eat analysis
+    
+    if (CurTok != static_cast<int>(TokenType::tok_identifier)) {
+        ReportError("expected analysis type");
+        return nullptr;
+    }
+    
+    std::string AnalysisTypeStr = m_lexer.IdentifierStr;
+    getNextToken();
+    
+    AnalysisType AType;
+    if (AnalysisTypeStr == "tran") AType = AnalysisType::TRAN;
+    else if (AnalysisTypeStr == "dc") AType = AnalysisType::DC;
+    else if (AnalysisTypeStr == "ac") AType = AnalysisType::AC;
+    else if (AnalysisTypeStr == "noise") AType = AnalysisType::NOISE;
+    else if (AnalysisTypeStr == "op") AType = AnalysisType::OP;
+    else if (AnalysisTypeStr == "tf") AType = AnalysisType::TF;
+    else if (AnalysisTypeStr == "sens") AType = AnalysisType::SENS;
+    else if (AnalysisTypeStr == "fourier") AType = AnalysisType::FOURIER;
+    else {
+        ReportError("unknown analysis type: " + AnalysisTypeStr);
+        return nullptr;
+    }
+    
+    auto Analysis = std::make_unique<AnalysisExprAST>(AType);
+    
+    // Parse parameters in braces
+    if (CurTok == static_cast<int>(TokenType::tok_lbrace)) {
+        getNextToken(); // eat {
+        
+        while (CurTok != static_cast<int>(TokenType::tok_rbrace) && CurTok != static_cast<int>(TokenType::tok_eof)) {
+            if (CurTok == static_cast<int>(TokenType::tok_identifier)) {
+                std::string ParamName = m_lexer.IdentifierStr;
+                getNextToken();
+                
+                if (CurTok != '=') {
+                    ReportError("expected '=' after parameter name");
+                    return nullptr;
+                }
+                getNextToken(); // eat =
+                
+                auto ParamValue = ParseExpression();
+                if (!ParamValue) return nullptr;
+                
+                Analysis->addParameter(ParamName, std::move(ParamValue));
+            }
+            
+            if (CurTok == ',') getNextToken();
+        }
+        
+        if (CurTok == static_cast<int>(TokenType::tok_rbrace)) {
+            getNextToken(); // eat }
+        }
+    }
+    
+    return Analysis;
+}
+
+// Parse measure directive: measure name MAX { expression, params }
+std::unique_ptr<ExprAST> Parser::ParseMeasure() {
+    getNextToken(); // eat measure
+    
+    if (CurTok != static_cast<int>(TokenType::tok_identifier)) {
+        ReportError("expected measurement name");
+        return nullptr;
+    }
+    std::string Name = m_lexer.IdentifierStr;
+    getNextToken();
+    
+    // Parse measurement type
+    if (CurTok != static_cast<int>(TokenType::tok_identifier)) {
+        ReportError("expected measurement type (MAX, MIN, AVG, RMS, etc.)");
+        return nullptr;
+    }
+    
+    std::string MeasureTypeStr = m_lexer.IdentifierStr;
+    getNextToken();
+    
+    MeasureType MType;
+    if (MeasureTypeStr == "MAX") MType = MeasureType::MAX;
+    else if (MeasureTypeStr == "MIN") MType = MeasureType::MIN;
+    else if (MeasureTypeStr == "AVG") MType = MeasureType::AVG;
+    else if (MeasureTypeStr == "RMS") MType = MeasureType::RMS;
+    else if (MeasureTypeStr == "TRIG") MType = MeasureType::TRIG;
+    else if (MeasureTypeStr == "TARG") MType = MeasureType::TARG;
+    else if (MeasureTypeStr == "WHEN") MType = MeasureType::WHEN;
+    else if (MeasureTypeStr == "FIND") MType = MeasureType::FIND;
+    else if (MeasureTypeStr == "DERIV") MType = MeasureType::DERIV;
+    else if (MeasureTypeStr == "INTEG") MType = MeasureType::INTEG;
+    else {
+        ReportError("unknown measurement type: " + MeasureTypeStr);
+        return nullptr;
+    }
+    
+    // Parse expression
+    auto Expr = ParseExpression();
+    if (!Expr) {
+        ReportError("expected expression for measure");
+        return nullptr;
+    }
+    
+    auto Measure = std::make_unique<MeasureExprAST>(Name, MType, std::move(Expr));
+    
+    // Parse optional parameters
+    if (CurTok == static_cast<int>(TokenType::tok_lbrace)) {
+        getNextToken(); // eat {
+        
+        while (CurTok != static_cast<int>(TokenType::tok_rbrace) && CurTok != static_cast<int>(TokenType::tok_eof)) {
+            if (CurTok == static_cast<int>(TokenType::tok_identifier)) {
+                std::string ParamName = m_lexer.IdentifierStr;
+                getNextToken();
+                
+                if (CurTok != '=') {
+                    ReportError("expected '=' after parameter name");
+                    return nullptr;
+                }
+                getNextToken(); // eat =
+                
+                auto ParamValue = ParseExpression();
+                if (!ParamValue) return nullptr;
+                
+                Measure->addParameter(ParamName, std::move(ParamValue));
+            }
+            
+            if (CurTok == ',') getNextToken();
+        }
+        
+        if (CurTok == static_cast<int>(TokenType::tok_rbrace)) {
+            getNextToken(); // eat }
+        }
+    }
+    
+    return Measure;
+}
+
+// Parse probe directive: probe varname [as "outputname"]
+std::unique_ptr<ExprAST> Parser::ParseProbe() {
+    getNextToken(); // eat probe
+    
+    if (CurTok != static_cast<int>(TokenType::tok_identifier)) {
+        ReportError("expected variable name after probe");
+        return nullptr;
+    }
+    std::string VarName = m_lexer.IdentifierStr;
+    getNextToken();
+    
+    std::string OutputName;
+    if (CurTok == static_cast<int>(TokenType::tok_identifier) && m_lexer.IdentifierStr == "as") {
+        getNextToken(); // eat as
+        if (CurTok != static_cast<int>(TokenType::tok_string)) {
+            ReportError("expected string after 'as'");
+            return nullptr;
+        }
+        OutputName = m_lexer.StringVal;
+        getNextToken();
+    }
+    
+    return std::make_unique<ProbeExprAST>(VarName, OutputName);
+}
+
+// Parse save directive: save varname
+std::unique_ptr<ExprAST> Parser::ParseSave() {
+    getNextToken(); // eat save
+    
+    if (CurTok != static_cast<int>(TokenType::tok_identifier)) {
+        ReportError("expected variable name after save");
+        return nullptr;
+    }
+    std::string VarName = m_lexer.IdentifierStr;
+    getNextToken();
+    
+    return std::make_unique<SaveExprAST>(VarName);
+}
+
+// Parse subckt definition: subckt name (pin1, pin2, ...) { params... body... }
+std::unique_ptr<ExprAST> Parser::ParseSubckt() {
+    getNextToken(); // eat subckt
+    
+    if (CurTok != static_cast<int>(TokenType::tok_identifier)) {
+        ReportError("expected subcircuit name");
+        return nullptr;
+    }
+    std::string Name = m_lexer.IdentifierStr;
+    getNextToken();
+    
+    // Parse pin list
+    std::vector<std::string> Pins;
+    if (CurTok == '(') {
+        getNextToken(); // eat (
+        
+        while (CurTok != ')' && CurTok != static_cast<int>(TokenType::tok_eof)) {
+            if (CurTok != static_cast<int>(TokenType::tok_identifier)) {
+                ReportError("expected pin name");
+                return nullptr;
+            }
+            Pins.push_back(m_lexer.IdentifierStr);
+            getNextToken();
+            
+            if (CurTok == ',') getNextToken();
+        }
+        
+        if (CurTok == ')') getNextToken(); // eat )
+    }
+    
+    auto Subckt = std::make_unique<SubcktExprAST>(Name, std::move(Pins));
+    
+    // Parse body
+    if (CurTok == static_cast<int>(TokenType::tok_lbrace)) {
+        getNextToken(); // eat {
+        
+        while (CurTok != static_cast<int>(TokenType::tok_rbrace) && CurTok != static_cast<int>(TokenType::tok_eof)) {
+            if (auto Stmt = ParseExpression()) {
+                Subckt->addStatement(std::move(Stmt));
+            } else {
+                ReportError("invalid statement in subcircuit");
+                return nullptr;
+            }
+        }
+        
+        if (CurTok == static_cast<int>(TokenType::tok_rbrace)) {
+            getNextToken(); // eat }
+        }
+    }
+    
+    return Subckt;
+}
+
+// Parse model declaration: model name type { params }
+std::unique_ptr<ExprAST> Parser::ParseModel() {
+    getNextToken(); // eat model
+    
+    if (CurTok != static_cast<int>(TokenType::tok_identifier)) {
+        ReportError("expected model name");
+        return nullptr;
+    }
+    std::string Name = m_lexer.IdentifierStr;
+    getNextToken();
+    
+    if (CurTok != static_cast<int>(TokenType::tok_identifier)) {
+        ReportError("expected model type (D, NPN, PNP, NMOS, PMOS, R, L, C, etc.)");
+        return nullptr;
+    }
+    std::string ModelType = m_lexer.IdentifierStr;
+    getNextToken();
+    
+    auto Model = std::make_unique<ModelExprAST>(Name, ModelType);
+    
+    // Parse parameters
+    if (CurTok == static_cast<int>(TokenType::tok_lbrace)) {
+        getNextToken(); // eat {
+        
+        while (CurTok != static_cast<int>(TokenType::tok_rbrace) && CurTok != static_cast<int>(TokenType::tok_eof)) {
+            if (CurTok == static_cast<int>(TokenType::tok_identifier)) {
+                std::string ParamName = m_lexer.IdentifierStr;
+                getNextToken();
+                
+                if (CurTok != '=') {
+                    ReportError("expected '=' after parameter name");
+                    return nullptr;
+                }
+                getNextToken(); // eat =
+                
+                auto ParamValue = ParseExpression();
+                if (!ParamValue) return nullptr;
+                
+                Model->addParameter(ParamName, std::move(ParamValue));
+            }
+            
+            if (CurTok == ',') getNextToken();
+        }
+        
+        if (CurTok == static_cast<int>(TokenType::tok_rbrace)) {
+            getNextToken(); // eat }
+        }
+    }
+    
+    return Model;
+}
+
+// Parse param declaration: param name = value
+std::unique_ptr<ExprAST> Parser::ParseParam() {
+    getNextToken(); // eat param
+    
+    if (CurTok != static_cast<int>(TokenType::tok_identifier)) {
+        ReportError("expected parameter name");
+        return nullptr;
+    }
+    std::string Name = m_lexer.IdentifierStr;
+    getNextToken();
+    
+    std::unique_ptr<ExprAST> Value = std::make_unique<NumberExprAST>(0.0);
+    
+    if (CurTok == '=') {
+        getNextToken(); // eat =
+        Value = ParseExpression();
+        if (!Value) return nullptr;
+    }
+    
+    return std::make_unique<ParamExprAST>(Name, std::move(Value));
+}
+
+// Parse initial condition: ic V(node) = value
+std::unique_ptr<ExprAST> Parser::ParseIC() {
+    getNextToken(); // eat ic
+    
+    // Parse V(node)
+    if (CurTok != static_cast<int>(TokenType::tok_identifier) || m_lexer.IdentifierStr != "V") {
+        ReportError("expected V(node) for initial condition");
+        return nullptr;
+    }
+    getNextToken(); // eat V
+    
+    if (CurTok != '(') {
+        ReportError("expected '(' after V");
+        return nullptr;
+    }
+    getNextToken(); // eat (
+    
+    if (CurTok != static_cast<int>(TokenType::tok_identifier) && CurTok != static_cast<int>(TokenType::tok_number)) {
+        ReportError("expected node name");
+        return nullptr;
+    }
+    std::string NodeName = (CurTok == static_cast<int>(TokenType::tok_identifier)) ? m_lexer.IdentifierStr : std::to_string(static_cast<int>(m_lexer.NumVal));
+    getNextToken();
+    
+    if (CurTok != ')') {
+        ReportError("expected ')' after node name");
+        return nullptr;
+    }
+    getNextToken(); // eat )
+    
+    if (CurTok != '=') {
+        ReportError("expected '=' after node specification");
+        return nullptr;
+    }
+    getNextToken(); // eat =
+    
+    auto Value = ParseExpression();
+    if (!Value) return nullptr;
+
+    return std::make_unique<ICExprAST>(NodeName, std::move(Value));
 }
 
 } // namespace Flux

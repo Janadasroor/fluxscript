@@ -1,6 +1,12 @@
 #ifndef FLUX_JIT_H
 #define FLUX_JIT_H
 
+// Undefine Qt's emit macro before including LLVM headers
+// Qt defines 'emit' as a macro which conflicts with LLVM-18's Orc JIT layer
+#ifdef emit
+#undef emit
+#endif
+
 #include <llvm/ExecutionEngine/Orc/LLJIT.h>
 #include <llvm/Support/MemoryBuffer.h>
 #include <llvm/IR/Module.h>

@@ -33,13 +33,13 @@ enum class TokenType {
     tok_let = -15,
     tok_fn = -16,
     tok_import = -17,
-    tok_debug = -62,
-    tok_sensitivity = -63,
-    tok_ask = -64,
-    tok_explain = -65,
-    tok_substitute = -61,
-    tok_corner = -66,
-    tok_yield = -67,
+    tok_debug = -136,
+    tok_sensitivity = -137,
+    tok_ask = -138,
+    tok_explain = -139,
+    tok_substitute = -140,
+    tok_corner = -141,
+    tok_yield = -142,
 
     // operators
     tok_power = -18,        // ^
@@ -105,17 +105,17 @@ enum class TokenType {
     tok_pp_elif = -58,         // #elif
     tok_pp_else = -59,         // #else
     tok_pp_defined = -60,      // defined()
-    tok_pp_warning = -61,      // #warning
-    tok_pp_error = -62,        // #error
+    tok_pp_warning = -143,     // #warning
+    tok_pp_error = -144,       // #error
 
     // Compound assignment operators
-    tok_plus_equal = -63,      // +=
-    tok_minus_equal = -64,     // -=
-    tok_star_equal = -65,      // *=
-    tok_slash_equal = -66,     // /=
+    tok_plus_equal = -145,     // +=
+    tok_minus_equal = -146,    // -=
+    tok_star_equal = -147,     // *=
+    tok_slash_equal = -148,    // /=
 
     // Control flow
-    tok_break = -67,
+    tok_break = -149,
     tok_continue = -68,
     tok_switch = -69,
     tok_case = -70,
@@ -127,6 +127,107 @@ enum class TokenType {
     
     // Namespace operator
     tok_namespace_sep = -74,   // :: (namespace separator)
+    
+    // Additional keywords
+    tok_try = -75,             // try block
+    tok_catch = -76,           // catch block
+    tok_finally = -77,         // finally block
+    tok_throw = -78,           // throw exception
+    tok_assert = -79,          // assertion
+    tok_static = -80,          // static variable
+    tok_const = -81,           // const variable
+    tok_enum = -82,            // enumeration
+    tok_struct = -83,          // struct definition
+    tok_class = -84,           // class definition
+    tok_public = -85,          // public access
+    tok_private = -86,         // private access
+    tok_protected = -87,       // protected access
+    tok_virtual = -88,         // virtual function
+    tok_override = -89,        // override function
+    tok_inline = -90,          // inline function
+    tok_noexcept = -91,        // noexcept function
+    tok_export = -92,          // export symbol
+    tok_namespace = -93,       // namespace block
+    tok_using = -94,           // using directive
+    tok_typedef = -95,         // typedef
+    tok_alias = -96,           // type alias
+    tok_match = -97,           // pattern matching
+    tok_guard = -99,           // guard condition
+    tok_foreach = -102,        // foreach loop
+    tok_repeat = -103,         // repeat loop
+    tok_until = -104,          // until condition
+    tok_parallel = -157,       // parallel execution
+    tok_schematic = -158,       // schematic block
+    tok_component = -159,       // component declaration
+    tok_connect = -160,         // connection directive
+    tok_port = -161,            // port declaration
+    tok_net = -162,             // net declaration
+    tok_endschematic = -163,    // end schematic block
+    tok_pin = -164,             // pin specification
+    tok_sym = -165,               // symbolic variable
+    tok_solve = -166,             // solve equation
+    tok_simplify = -167,          // simplify expression
+    tok_differentiate = -168,     // derivative
+    tok_integrate = -169,         // integral
+    tok_laplace = -170,           // Laplace transform
+    tok_inverse_laplace = -171,   // Inverse Laplace
+    tok_expand = -173,            // expand expression
+    tok_factor = -174,            // factor expression
+    tok_numerator = -175,         // get numerator
+    tok_denominator = -176,       // get denominator
+    tok_poles = -177,             // find poles
+    tok_zeros = -178,             // find zeros
+    tok_collect = -179,           // collect terms
+
+    // SPICE Time-Domain Simulation
+    tok_time = -105,           // time built-in variable
+    tok_dt = -106,             // dt (time step) built-in variable
+    tok_temp = -107,           // temp (temperature) built-in variable
+    tok_update = -108,         // update(t, inputs) function
+    tok_inputs = -109,         // inputs dictionary
+    tok_outputs = -110,        // outputs dictionary
+
+    // Behavioral Sources
+    tok_bsource = -111,        // B-source declaration
+    tok_esource = -112,        // E-device (VCVS)
+    tok_fsource = -113,        // F-device (CCCS)
+    tok_gsource = -114,        // G-device (VCCS)
+    tok_hsource = -115,        // H-device (CCVS)
+
+    // Analysis Control
+    tok_analysis = -116,       // analysis directive
+    tok_tran = -117,           // .TRAN transient analysis
+    tok_dc = -118,             // .DC sweep
+    tok_ac = -119,             // .AC analysis
+    tok_noise = -120,          // .NOISE analysis
+    tok_op = -121,             // .OP operating point
+    tok_tf = -122,             // .TF transfer function
+    tok_sens = -123,           // .SENS sensitivity
+    tok_fourier = -124,        // .FOUR fourier analysis
+
+    // Measurements
+    tok_measure = -125,        // .MEAS measurement
+    tok_max = -126,            // MAX measurement
+    tok_min = -127,            // MIN measurement
+    tok_avg = -128,            // AVG measurement
+    tok_rms = -129,            // RMS measurement
+    tok_trig = -130,           // TRIG measurement
+    tok_targ = -131,           // TARG measurement
+    tok_meas_when = -132,      // WHEN measurement (renamed to avoid conflict with tok_when = -98)
+    tok_find = -133,           // FIND measurement
+    tok_deriv = -134,          // DERIV measurement
+    tok_integ = -135,          // INTEG measurement
+
+    // Probing
+    tok_probe = -150,          // probe directive
+    tok_save = -151,           // save directive
+
+    // Subcircuits and Models
+    tok_subckt = -152,         // subckt definition
+    tok_ends = -153,           // ends subcircuit
+    tok_model = -154,          // model declaration
+    tok_param = -155,          // param keyword
+    tok_ic = -156,             // initial condition
 };
 
 class Lexer {

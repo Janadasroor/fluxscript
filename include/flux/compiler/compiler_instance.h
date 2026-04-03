@@ -51,7 +51,7 @@ private:
     void injectStandardLibrary(CodegenContext& context, std::map<std::string, FluxType>& returnTypes) const;
     bool compileParser(Parser& parser, CodegenContext& context,
                        std::map<std::string, FluxType>& returnTypes,
-                       std::string* error,
+                       std::string& error,
                        std::map<std::string, bool>& importedModules) const;
     bool importModule(const std::string& moduleName, CodegenContext& context,
                       std::map<std::string, FluxType>& returnTypes,

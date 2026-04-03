@@ -181,13 +181,18 @@ bool CompilerInstance::importModule(const std::string& moduleName,
     }
 
     Parser importedParser(std::string(bufferOrErr.get()->getBuffer()));
-    return compileParser(importedParser, context, returnTypes, error, importedModules);
+    std::string importError;
+    bool result = compileParser(importedParser, context, returnTypes, importError, importedModules);
+    if (!result && error) {
+        *error = importError;
+    }
+    return result;
 }
 
 bool CompilerInstance::compileParser(Parser& parser,
                                      CodegenContext& context,
                                      std::map<std::string, FluxType>& returnTypes,
-                                     std::string* error,
+                                     std::string& error,
                                      std::map<std::string, bool>& importedModules) const {
     while (parser.CurTok != static_cast<int>(TokenType::tok_eof)) {
         std::unique_ptr<FunctionAST> functionAst;
@@ -196,9 +201,10 @@ bool CompilerInstance::compileParser(Parser& parser,
             functionAst = parser.ParseDefinition();
         } else if (parser.CurTok == static_cast<int>(TokenType::tok_import)) {
             auto importAst = parser.ParseImport();
-            if (importAst &&
-                !importModule(importAst->getModuleName(), context, returnTypes, error, importedModules))
+            if (!importAst) {
+                error = "Failed to parse import statement";
                 return false;
+            }
             continue;
         } else if (parser.CurTok == static_cast<int>(TokenType::tok_extern)) {
             auto proto = parser.ParseExtern();
@@ -223,8 +229,7 @@ bool CompilerInstance::compileParser(Parser& parser,
         const std::string functionName = functionAst->getProto()->getName();
         returnTypes[functionName] = functionAst->getProto()->getReturnType();
         if (!functionAst->codegen(context)) {
-            if (error)
-                *error = "Code generation failed.";
+            error = "Code generation failed.";
             return false;
         }
     }
@@ -267,8 +272,11 @@ std::unique_ptr<CompileArtifacts> CompilerInstance::compileToIR(const std::strin
 
     Parser parser(code);
     std::map<std::string, bool> importedModules;
-    if (!compileParser(parser, *artifacts->codegenContext, artifacts->functionReturnTypes, error, importedModules))
+    std::string compileError;
+    if (!compileParser(parser, *artifacts->codegenContext, artifacts->functionReturnTypes, compileError, importedModules)) {
+        if (error) *error = compileError;
         return nullptr;
+    }
 
     if (artifacts->codegenContext->DebugBuilder)
         artifacts->codegenContext->DebugBuilder->finalize();
