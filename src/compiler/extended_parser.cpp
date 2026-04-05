@@ -166,23 +166,50 @@ std::unique_ptr<ExprAST> Parser::ParseCornerExpr() {
 
 std::unique_ptr<ExprAST> Parser::ParseMatchExpr() {
     getNextToken(); // eat match
-    
+
     auto value = ParseExpression();
     if (!value) return nullptr;
-    
+
     auto expr = std::make_unique<MatchExprAST>(std::move(value));
-    
-    if (CurTok == '{') {
+
+    if (CurTok == static_cast<int>(TokenType::tok_lbrace)) {
         getNextToken(); // eat {
-        
+
         while (CurTok != static_cast<int>(TokenType::tok_rbrace) &&
                CurTok != static_cast<int>(TokenType::tok_eof)) {
-            
+
+            // Handle patterns: identifiers, numbers, wildcard _, default
             if (CurTok == static_cast<int>(TokenType::tok_identifier) ||
-                CurTok == static_cast<int>(TokenType::tok_number)) {
-                
-                auto pattern = ParseExpression();
-                if (!pattern) return nullptr;
+                CurTok == static_cast<int>(TokenType::tok_number) ||
+                CurTok == '_' ||
+                CurTok == static_cast<int>(TokenType::tok_default)) {
+
+                std::unique_ptr<ExprAST> pattern;
+
+                // Handle wildcard _ specially (not a valid expression starter)
+                if (CurTok == '_') {
+                    getNextToken(); // eat _
+                    
+                    if (CurTok != static_cast<int>(TokenType::tok_arrow)) {
+                        ReportError("expected '=>' after match pattern");
+                        return nullptr;
+                    }
+                    getNextToken(); // eat =>
+                    
+                    auto result = ParseExpression();
+                    if (!result) return nullptr;
+                    
+                    // Store as default arm (wildcard = default)
+                    expr->setDefault(std::move(result));
+                    
+                    if (CurTok == ',') {
+                        getNextToken();
+                    }
+                    continue;
+                } else {
+                    pattern = ParseExpression();
+                    if (!pattern) return nullptr;
+                }
                 
                 if (CurTok != static_cast<int>(TokenType::tok_arrow)) {
                     ReportError("expected '=>' after match pattern");

@@ -242,76 +242,80 @@ void MatchExprAST::setDefault(std::unique_ptr<ExprAST> arm) {
 
 TypedValue MatchExprAST::codegen(CodegenContext& context) {
     // Generate pattern matching as a series of if-else comparisons
-    // Each arm is checked in order, and the first match wins
-    
     llvm::Function* TheFunction = context.Builder.GetInsertBlock()->getParent();
     llvm::LLVMContext& Ctx = context.TheContext;
-    
+    llvm::Type* DoubleTy = llvm::Type::getDoubleTy(Ctx);
+
     // Generate the value to match against
     TypedValue MatchValTV = Value->codegen(context);
     if (!MatchValTV.Val) return TypedValue();
-    
-    // Create merge block for result
-    llvm::BasicBlock* MergeBB = llvm::BasicBlock::Create(Ctx, "match_merge", TheFunction);
-    llvm::PHINode* ResultPhi = context.Builder.CreatePHI(llvm::Type::getDoubleTy(Ctx), Arms.size() + 1, "match_result");
-    
+
+    // Create merge and result alloc
+    llvm::BasicBlock* MergeBB = llvm::BasicBlock::Create(Ctx, "match_merge");
+    llvm::AllocaInst* ResultAlloc = context.Builder.CreateAlloca(DoubleTy, nullptr, "match_result");
+
     llvm::BasicBlock* CurrentBB = context.Builder.GetInsertBlock();
-    
-    // Generate each arm
-    for (size_t i = 0; i < Arms.size(); i++) {
+
+    // Generate each arm as nested if-else
+    llvm::BasicBlock* NextCheckBB = nullptr;
+
+    for (int i = static_cast<int>(Arms.size()) - 1; i >= 0; i--) {
         auto& [Pattern, Result] = Arms[i];
-        
-        // Generate pattern value
+
+        // Create the "else" block (next check or default)
+        llvm::BasicBlock* ElseBB;
+        if (NextCheckBB) {
+            ElseBB = NextCheckBB;
+        } else if (i == static_cast<int>(Arms.size()) - 1 && DefaultArm) {
+            ElseBB = llvm::BasicBlock::Create(Ctx, "match_default", TheFunction);
+        } else {
+            ElseBB = MergeBB;
+        }
+
+        // Create match block
+        llvm::BasicBlock* MatchBB = llvm::BasicBlock::Create(Ctx, "match_arm_" + std::to_string(i), TheFunction);
+
+        // Re-generate pattern value (need to regenerate in current context)
+        // Save and restore builder position
+        llvm::IRBuilder<>::InsertPoint GuardIP = context.Builder.saveIP();
+        context.Builder.SetInsertPoint(CurrentBB);
+
         TypedValue PatternTV = Pattern->codegen(context);
         if (!PatternTV.Val) return TypedValue();
-        
-        // Create comparison
+
         llvm::Value* IsMatch = context.Builder.CreateFCmpOEQ(
-            MatchValTV.Val,
-            PatternTV.Val,
-            "match_check_" + std::to_string(i));
-        
-        // Create blocks for this arm
-        llvm::BasicBlock* MatchBB = llvm::BasicBlock::Create(Ctx, "match_arm_" + std::to_string(i), TheFunction);
-        llvm::BasicBlock* NextBB = (i == Arms.size() - 1) ? 
-            (DefaultArm ? llvm::BasicBlock::Create(Ctx, "match_default", TheFunction) : MergeBB) :
-            llvm::BasicBlock::Create(Ctx, "match_next_" + std::to_string(i + 1), TheFunction);
-        
-        context.Builder.CreateCondBr(IsMatch, MatchBB, NextBB);
-        
-        // Generate arm body
+            MatchValTV.Val, PatternTV.Val, "match_check_" + std::to_string(i));
+
+        context.Builder.CreateCondBr(IsMatch, MatchBB, ElseBB);
+
+        // Generate match arm body
         context.Builder.SetInsertPoint(MatchBB);
         TypedValue ResultTV = Result->codegen(context);
         if (!ResultTV.Val) return TypedValue();
-        
-        ResultPhi->addIncoming(ResultTV.Val, context.Builder.GetInsertBlock());
+        context.Builder.CreateStore(ResultTV.Val, ResultAlloc);
         context.Builder.CreateBr(MergeBB);
-        
-        // Move to next block
-        if (i < Arms.size() - 1 || DefaultArm) {
-            TheFunction->insert(TheFunction->end(), NextBB);
-            context.Builder.SetInsertPoint(NextBB);
+
+        NextCheckBB = ElseBB;
+        context.Builder.restoreIP(GuardIP);
+    }
+
+    // Generate default arm if exists and not yet handled
+    if (DefaultArm && NextCheckBB != MergeBB) {
+        // We need to check if NextCheckBB is the default block we created
+        if (NextCheckBB && NextCheckBB->getName() == "match_default") {
+            context.Builder.SetInsertPoint(NextCheckBB);
+            TypedValue DefaultTV = DefaultArm->codegen(context);
+            if (!DefaultTV.Val) return TypedValue();
+            context.Builder.CreateStore(DefaultTV.Val, ResultAlloc);
+            context.Builder.CreateBr(MergeBB);
         }
     }
-    
-    // Generate default arm if exists
-    if (DefaultArm) {
-        TypedValue DefaultTV = DefaultArm->codegen(context);
-        if (!DefaultTV.Val) return TypedValue();
-        
-        ResultPhi->addIncoming(DefaultTV.Val, context.Builder.GetInsertBlock());
-        context.Builder.CreateBr(MergeBB);
-    } else {
-        // No default - return 0.0 if no match
-        ResultPhi->addIncoming(llvm::ConstantFP::get(Ctx, llvm::APFloat(0.0)), CurrentBB);
-        context.Builder.CreateBr(MergeBB);
-    }
-    
-    // Merge block
+
+    // Insert merge block and load result
     TheFunction->insert(TheFunction->end(), MergeBB);
     context.Builder.SetInsertPoint(MergeBB);
-    
-    return TypedValue(ResultPhi, TypeKind::Double);
+    llvm::Value* ResultVal = context.Builder.CreateLoad(DoubleTy, ResultAlloc, "match_result_val");
+    return TypedValue(ResultVal, TypeKind::Double);
 }
 
 // ============ Foreach Codegen ============
