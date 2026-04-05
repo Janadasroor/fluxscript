@@ -323,6 +323,137 @@ std::unique_ptr<ExprAST> Parser::ParseWhileExpr() {
     return std::make_unique<WhileExprAST>(std::move(Cond), std::move(Body));
 }
 
+// ============================================================================
+// Statement-based Control Flow Parsers
+// Syntax: if (cond) { stmts } else { stmts }
+//         for (init; cond; step) { stmts }
+//         while (cond) { stmts }
+// ============================================================================
+
+std::vector<std::unique_ptr<ExprAST>> Parser::ParseStmtBlock() {
+    std::vector<std::unique_ptr<ExprAST>> stmts;
+    if (CurTok != static_cast<int>(TokenType::tok_lbrace)) {
+        ReportError("expected '{' to start statement block");
+        return stmts;
+    }
+    getNextToken(); // eat {
+
+    while (CurTok != static_cast<int>(TokenType::tok_rbrace) &&
+           CurTok != static_cast<int>(TokenType::tok_eof)) {
+        if (auto Expr = ParseExpression()) {
+            stmts.push_back(std::move(Expr));
+        } else {
+            getNextToken();
+            continue;
+        }
+        if (CurTok == static_cast<int>(TokenType::tok_semicolon))
+            getNextToken();
+    }
+
+    if (CurTok == static_cast<int>(TokenType::tok_rbrace))
+        getNextToken(); // eat }
+
+    return stmts;
+}
+
+std::unique_ptr<ExprAST> Parser::ParseIfStmt() {
+    getNextToken(); // eat if
+
+    // Expect parentheses: if (cond) { ... }
+    if (CurTok != '(') { ReportError("expected '(' after if"); return nullptr; }
+    getNextToken(); // eat (
+
+    auto Cond = ParseExpression();
+    if (!Cond) return nullptr;
+
+    if (CurTok != ')') { ReportError("expected ')' after if condition"); return nullptr; }
+    getNextToken(); // eat )
+
+    // Then block
+    auto ThenBody = ParseStmtBlock();
+    if (ThenBody.empty()) return nullptr;
+
+    // Optional else block
+    std::vector<std::unique_ptr<ExprAST>> ElseBody;
+    if (CurTok == static_cast<int>(TokenType::tok_else)) {
+        getNextToken(); // eat else
+        if (CurTok == static_cast<int>(TokenType::tok_if)) {
+            // else if — wrap as a nested IfStmt
+            auto ElseIf = ParseIfStmt();
+            if (!ElseIf) return nullptr;
+            ElseBody.push_back(std::move(ElseIf));
+        } else {
+            ElseBody = ParseStmtBlock();
+            if (ElseBody.empty()) return nullptr;
+        }
+    }
+
+    return std::make_unique<IfStmtAST>(std::move(Cond), std::move(ThenBody), std::move(ElseBody));
+}
+
+std::unique_ptr<ExprAST> Parser::ParseForStmt() {
+    getNextToken(); // eat for
+
+    // Expect parentheses: for (init; cond; step) { ... }
+    if (CurTok != '(') { ReportError("expected '(' after for"); return nullptr; }
+    getNextToken(); // eat (
+
+    // Init: can be empty (for (;;)), expression, or variable declaration
+    std::unique_ptr<ExprAST> Init;
+    if (CurTok != static_cast<int>(TokenType::tok_semicolon)) {
+        Init = ParseExpression();
+        if (!Init) return nullptr;
+    }
+    if (CurTok != static_cast<int>(TokenType::tok_semicolon)) { ReportError("expected ';' after for init"); return nullptr; }
+    getNextToken(); // eat ;
+
+    // Condition: can be empty (treated as true)
+    std::unique_ptr<ExprAST> Cond;
+    if (CurTok != static_cast<int>(TokenType::tok_semicolon)) {
+        Cond = ParseExpression();
+        if (!Cond) return nullptr;
+    } else {
+        Cond = std::make_unique<NumberExprAST>(1.0); // always true
+    }
+    if (CurTok != static_cast<int>(TokenType::tok_semicolon)) { ReportError("expected ';' after for condition"); return nullptr; }
+    getNextToken(); // eat ;
+
+    // Step: can be empty
+    std::unique_ptr<ExprAST> Step;
+    if (CurTok != ')') {
+        Step = ParseExpression();
+        if (!Step) return nullptr;
+    }
+    if (CurTok != ')') { ReportError("expected ')' after for step"); return nullptr; }
+    getNextToken(); // eat )
+
+    // Body block
+    auto Body = ParseStmtBlock();
+    if (Body.empty()) return nullptr;
+
+    return std::make_unique<ForStmtAST>(std::move(Init), std::move(Cond), std::move(Step), std::move(Body));
+}
+
+std::unique_ptr<ExprAST> Parser::ParseWhileStmt() {
+    getNextToken(); // eat while
+
+    // Expect parentheses: while (cond) { ... }
+    if (CurTok != '(') { ReportError("expected '(' after while"); return nullptr; }
+    getNextToken(); // eat (
+
+    auto Cond = ParseExpression();
+    if (!Cond) return nullptr;
+
+    if (CurTok != ')') { ReportError("expected ')' after while condition"); return nullptr; }
+    getNextToken(); // eat )
+
+    // Body block
+    auto Body = ParseStmtBlock();
+    if (Body.empty()) return nullptr;
+
+    return std::make_unique<WhileStmtAST>(std::move(Cond), std::move(Body));
+}
+
 std::unique_ptr<ExprAST> Parser::ParseLetExpr() {
     bool isLet = (CurTok == static_cast<int>(TokenType::tok_let));
     getNextToken();
@@ -448,9 +579,28 @@ std::unique_ptr<ExprAST> Parser::ParsePrimary() {
     case '(': Res = ParseParenExpr(); break;
     case '[': Res = ParseMatrixExpr(); break;
     case static_cast<int>(TokenType::tok_lbrace): Res = ParseBlockExpr(); break;
-    case static_cast<int>(TokenType::tok_if): Res = ParseIfExpr(); break;
-    case static_cast<int>(TokenType::tok_for): Res = ParseForExpr(); break;
-    case static_cast<int>(TokenType::tok_while): Res = ParseWhileExpr(); break;
+    case static_cast<int>(TokenType::tok_if):
+        // Peek ahead: if '(' follows, it's statement-based; otherwise expression-based
+        if (m_lexer.peekToken() == '(') {
+            Res = ParseIfStmt();
+        } else {
+            Res = ParseIfExpr();
+        }
+        break;
+    case static_cast<int>(TokenType::tok_for):
+        if (m_lexer.peekToken() == '(') {
+            Res = ParseForStmt();
+        } else {
+            Res = ParseForExpr();
+        }
+        break;
+    case static_cast<int>(TokenType::tok_while):
+        if (m_lexer.peekToken() == '(') {
+            Res = ParseWhileStmt();
+        } else {
+            Res = ParseWhileExpr();
+        }
+        break;
     case static_cast<int>(TokenType::tok_let):
     case static_cast<int>(TokenType::tok_var): Res = ParseLetExpr(); break;
     case static_cast<int>(TokenType::tok_fn): Res = ParseLambdaExpr(); break;

@@ -2,7 +2,7 @@
 
 ## Compiler Core
 - [x] **Full Module System**: Implement `import` logic to load, compile, and JIT-link other `.flux` files.
-- [ ] **Statement-based Control Flow**: Refactor control flow (If, For, While) from expression-based to true statement-based nodes where appropriate for better optimization.
+- [x] **Statement-based Control Flow**: Refactor control flow (If, For, While) from expression-based to true statement-based nodes where appropriate for better optimization.
 - [ ] **Complex Numbers Optimization**: Move from struct-based complex numbers to native LLVM IR support for complex impedance calculations.
 - [ ] **Try/Catch Enhancements**: Improve the simple flag-based exception handling with more robust stack unwinding or error propagation.
 - [ ] **Yield/Generators**: Full implementation of generator state saving for `YieldExprAST`.

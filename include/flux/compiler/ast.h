@@ -393,6 +393,55 @@ public:
     const ExprAST* getBody() const { return Body.get(); }
 };
 
+// ============================================================================
+// Statement-based Control Flow (void-returning, no PHI nodes)
+// Syntax: if (cond) { stmts } else { stmts }
+//         for (init; cond; step) { stmts }
+//         while (cond) { stmts }
+// ============================================================================
+
+class IfStmtAST : public ExprAST {
+    std::unique_ptr<ExprAST> Cond;
+    std::vector<std::unique_ptr<ExprAST>> ThenBody;
+    std::vector<std::unique_ptr<ExprAST>> ElseBody;
+public:
+    IfStmtAST(std::unique_ptr<ExprAST> Cond,
+              std::vector<std::unique_ptr<ExprAST>> ThenBody,
+              std::vector<std::unique_ptr<ExprAST>> ElseBody)
+        : Cond(std::move(Cond)), ThenBody(std::move(ThenBody)), ElseBody(std::move(ElseBody)) {}
+    TypedValue codegen(CodegenContext& context) override;
+    const ExprAST* getCond() const { return Cond.get(); }
+    const std::vector<std::unique_ptr<ExprAST>>& getThenBody() const { return ThenBody; }
+    const std::vector<std::unique_ptr<ExprAST>>& getElseBody() const { return ElseBody; }
+};
+
+class ForStmtAST : public ExprAST {
+    std::unique_ptr<ExprAST> Init;
+    std::unique_ptr<ExprAST> Cond;
+    std::unique_ptr<ExprAST> Step;
+    std::vector<std::unique_ptr<ExprAST>> Body;
+public:
+    ForStmtAST(std::unique_ptr<ExprAST> Init, std::unique_ptr<ExprAST> Cond,
+               std::unique_ptr<ExprAST> Step, std::vector<std::unique_ptr<ExprAST>> Body)
+        : Init(std::move(Init)), Cond(std::move(Cond)), Step(std::move(Step)), Body(std::move(Body)) {}
+    TypedValue codegen(CodegenContext& context) override;
+    const ExprAST* getInit() const { return Init.get(); }
+    const ExprAST* getCond() const { return Cond.get(); }
+    const ExprAST* getStep() const { return Step.get(); }
+    const std::vector<std::unique_ptr<ExprAST>>& getBody() const { return Body; }
+};
+
+class WhileStmtAST : public ExprAST {
+    std::unique_ptr<ExprAST> Cond;
+    std::vector<std::unique_ptr<ExprAST>> Body;
+public:
+    WhileStmtAST(std::unique_ptr<ExprAST> Cond, std::vector<std::unique_ptr<ExprAST>> Body)
+        : Cond(std::move(Cond)), Body(std::move(Body)) {}
+    TypedValue codegen(CodegenContext& context) override;
+    const ExprAST* getCond() const { return Cond.get(); }
+    const std::vector<std::unique_ptr<ExprAST>>& getBody() const { return Body; }
+};
+
 class LetExprAST : public ExprAST {
     std::string VarName;
     FluxType Type;

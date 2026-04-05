@@ -338,6 +338,7 @@ public:
     explicit Lexer(const std::string& input);
 
     int getNextToken();
+    int peekToken();  // Look ahead without consuming
 
     // Context for the current token
     std::string IdentifierStr; // Filled if tok_identifier

@@ -686,4 +686,25 @@ int Lexer::getNextToken() {
     return CurTok;
 }
 
+int Lexer::peekToken() {
+    // Save state
+    size_t savedPos = m_pos;
+    char savedLastChar = m_lastChar;
+    int savedLine = m_line;
+    int savedColumn = m_column;
+    size_t savedTokenStart = m_tokenStart;
+
+    // Advance and get next token
+    int nextTok = gettok();
+
+    // Restore state
+    m_pos = savedPos;
+    m_lastChar = savedLastChar;
+    m_line = savedLine;
+    m_column = savedColumn;
+    m_tokenStart = savedTokenStart;
+
+    return nextTok;
+}
+
 } // namespace Flux

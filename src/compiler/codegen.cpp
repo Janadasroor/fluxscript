@@ -1790,4 +1790,190 @@ TypedValue FFTExprAST::codegen(CodegenContext& context) {
     }), TypeKind::Int);
 }
 
+// ============================================================================
+// Statement-based Control Flow Codegen (void-returning, no PHI nodes)
+// ============================================================================
+
+TypedValue IfStmtAST::codegen(CodegenContext& context) {
+    llvm::Function* TheFunction = context.Builder.GetInsertBlock()->getParent();
+    llvm::LLVMContext& Ctx = context.TheContext;
+
+    // Generate condition
+    TypedValue CondTV = Cond->codegen(context);
+    if (!CondTV.Val) return TypedValue();
+
+    // If the condition is already a boolean (i1), use it directly
+    llvm::Value* IsTrue;
+    if (CondTV.Val->getType()->isIntegerTy(1)) {
+        IsTrue = CondTV.Val;
+    } else {
+        // Otherwise compare to non-zero
+        IsTrue = context.Builder.CreateFCmpONE(
+            CondTV.Val, llvm::ConstantFP::get(Ctx, llvm::APFloat(0.0)), "ifcond");
+    }
+
+    // Create basic blocks
+    llvm::BasicBlock* ThenBB = llvm::BasicBlock::Create(Ctx, "then", TheFunction);
+    llvm::BasicBlock* ElseBB = llvm::BasicBlock::Create(Ctx, "else", TheFunction);
+    llvm::BasicBlock* MergeBB = llvm::BasicBlock::Create(Ctx, "ifcont", TheFunction);
+
+    context.Builder.CreateCondBr(IsTrue, ThenBB, ElseBB);
+
+    // Generate then block
+    context.Builder.SetInsertPoint(ThenBB);
+    for (auto& Stmt : ThenBody) {
+        Stmt->codegen(context);
+    }
+    context.Builder.CreateBr(MergeBB);
+
+    // Generate else block
+    context.Builder.SetInsertPoint(ElseBB);
+    for (auto& Stmt : ElseBody) {
+        Stmt->codegen(context);
+    }
+    context.Builder.CreateBr(MergeBB);
+
+    // Continue at merge
+    context.Builder.SetInsertPoint(MergeBB);
+
+    return TypedValue(llvm::ConstantFP::get(Ctx, llvm::APFloat(0.0)), TypeKind::Double);
+}
+
+TypedValue ForStmtAST::codegen(CodegenContext& context) {
+    llvm::Function* TheFunction = context.Builder.GetInsertBlock()->getParent();
+    llvm::LLVMContext& Ctx = context.TheContext;
+
+    // Save loop context
+    llvm::BasicBlock* SavedLoopEnd = context.CurrentLoopEnd;
+    llvm::BasicBlock* SavedLoopCont = context.CurrentLoopCont;
+
+    // Generate init — handle "var = expr" pattern for auto-declaring loop vars
+    if (Init) {
+        if (auto* AssignInit = dynamic_cast<AssignExprAST*>(Init.get())) {
+            // Special case: for (i = 0.0; ...) — auto-declare the loop variable
+            if (auto* VarRef = dynamic_cast<VariableExprAST*>(const_cast<ExprAST*>(AssignInit->getLHS()))) {
+                std::string VarName = VarRef->getName();
+                // Check if already declared
+                if (context.NamedValues.find(VarName) == context.NamedValues.end()) {
+                    llvm::AllocaInst* Alloca = context.Builder.CreateAlloca(
+                        llvm::Type::getDoubleTy(context.TheContext), nullptr, VarName.c_str());
+                    context.NamedValues[VarName] = Alloca;
+                }
+                // Generate the assignment normally (will find the alloca we just created)
+                Init->codegen(context);
+            } else {
+                Init->codegen(context);
+            }
+        } else if (auto* VarRef = dynamic_cast<VariableExprAST*>(Init.get())) {
+            // Bare variable name: for (i; ...) — just ensure it exists
+            std::string VarName = VarRef->getName();
+            if (context.NamedValues.find(VarName) == context.NamedValues.end()) {
+                llvm::AllocaInst* Alloca = context.Builder.CreateAlloca(
+                    llvm::Type::getDoubleTy(context.TheContext), nullptr, VarName.c_str());
+                context.NamedValues[VarName] = Alloca;
+            }
+        } else {
+            Init->codegen(context);
+        }
+    }
+
+    // Create blocks
+    llvm::BasicBlock* CondBB = llvm::BasicBlock::Create(Ctx, "for.cond", TheFunction);
+    llvm::BasicBlock* BodyBB = llvm::BasicBlock::Create(Ctx, "for.body", TheFunction);
+    llvm::BasicBlock* StepBB = llvm::BasicBlock::Create(Ctx, "for.step", TheFunction);
+    llvm::BasicBlock* AfterBB = llvm::BasicBlock::Create(Ctx, "for.end", TheFunction);
+
+    context.Builder.CreateBr(CondBB);
+
+    // Condition
+    context.Builder.SetInsertPoint(CondBB);
+    TypedValue CondTV = Cond->codegen(context);
+    if (!CondTV.Val) return TypedValue();
+
+    // If the condition is already a boolean (i1), use it directly
+    llvm::Value* IsTrue;
+    if (CondTV.Val->getType()->isIntegerTy(1)) {
+        IsTrue = CondTV.Val;
+    } else {
+        // Otherwise compare to non-zero
+        IsTrue = context.Builder.CreateFCmpONE(
+            CondTV.Val, llvm::ConstantFP::get(Ctx, llvm::APFloat(0.0)), "forcond");
+    }
+    context.Builder.CreateCondBr(IsTrue, BodyBB, AfterBB);
+
+    // Body
+    context.CurrentLoopEnd = AfterBB;
+    context.CurrentLoopCont = StepBB;
+    context.Builder.SetInsertPoint(BodyBB);
+    for (auto& Stmt : Body) {
+        Stmt->codegen(context);
+    }
+    context.Builder.CreateBr(StepBB);
+
+    // Step
+    context.Builder.SetInsertPoint(StepBB);
+    if (Step) {
+        Step->codegen(context);
+    }
+    context.Builder.CreateBr(CondBB);
+
+    // After
+    context.Builder.SetInsertPoint(AfterBB);
+
+    // Restore loop context
+    context.CurrentLoopEnd = SavedLoopEnd;
+    context.CurrentLoopCont = SavedLoopCont;
+
+    return TypedValue(llvm::ConstantFP::get(Ctx, llvm::APFloat(0.0)), TypeKind::Double);
+}
+
+TypedValue WhileStmtAST::codegen(CodegenContext& context) {
+    llvm::Function* TheFunction = context.Builder.GetInsertBlock()->getParent();
+    llvm::LLVMContext& Ctx = context.TheContext;
+
+    // Save loop context
+    llvm::BasicBlock* SavedLoopEnd = context.CurrentLoopEnd;
+    llvm::BasicBlock* SavedLoopCont = context.CurrentLoopCont;
+
+    // Create blocks
+    llvm::BasicBlock* CondBB = llvm::BasicBlock::Create(Ctx, "while.cond", TheFunction);
+    llvm::BasicBlock* BodyBB = llvm::BasicBlock::Create(Ctx, "while.body", TheFunction);
+    llvm::BasicBlock* AfterBB = llvm::BasicBlock::Create(Ctx, "while.end", TheFunction);
+
+    context.Builder.CreateBr(CondBB);
+
+    // Condition
+    context.Builder.SetInsertPoint(CondBB);
+    TypedValue CondTV = Cond->codegen(context);
+    if (!CondTV.Val) return TypedValue();
+
+    // If the condition is already a boolean (i1), use it directly
+    llvm::Value* IsTrue;
+    if (CondTV.Val->getType()->isIntegerTy(1)) {
+        IsTrue = CondTV.Val;
+    } else {
+        IsTrue = context.Builder.CreateFCmpONE(
+            CondTV.Val, llvm::ConstantFP::get(Ctx, llvm::APFloat(0.0)), "whilecond");
+    }
+    context.Builder.CreateCondBr(IsTrue, BodyBB, AfterBB);
+
+    // Body
+    context.CurrentLoopEnd = AfterBB;
+    context.CurrentLoopCont = BodyBB;  // continue jumps to condition check
+    context.Builder.SetInsertPoint(BodyBB);
+    for (auto& Stmt : Body) {
+        Stmt->codegen(context);
+    }
+    context.Builder.CreateBr(CondBB);
+
+    // After
+    context.Builder.SetInsertPoint(AfterBB);
+
+    // Restore loop context
+    context.CurrentLoopEnd = SavedLoopEnd;
+    context.CurrentLoopCont = SavedLoopCont;
+
+    return TypedValue(llvm::ConstantFP::get(Ctx, llvm::APFloat(0.0)), TypeKind::Double);
+}
+
 } // namespace Flux

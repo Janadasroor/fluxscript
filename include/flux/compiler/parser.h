@@ -58,6 +58,12 @@ private:
     std::unique_ptr<ExprAST> ParseWhileExpr();
     std::unique_ptr<ExprAST> ParseLetExpr();
     std::unique_ptr<ExprAST> ParseLambdaExpr();
+
+    // Statement-based control flow parsers
+    std::unique_ptr<ExprAST> ParseIfStmt();
+    std::unique_ptr<ExprAST> ParseForStmt();
+    std::unique_ptr<ExprAST> ParseWhileStmt();
+    std::vector<std::unique_ptr<ExprAST>> ParseStmtBlock();
     std::unique_ptr<ExprAST> ParseUnaryExpr();
     std::unique_ptr<ExprAST> ParseVectorExpr();
     std::unique_ptr<ExprAST> ParseRangeExpr();
