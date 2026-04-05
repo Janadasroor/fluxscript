@@ -56,11 +56,8 @@ public:
             case TypeKind::Void:
                 return llvm::Type::getVoidTy(Context);
             case TypeKind::Complex:
-                // Complex numbers are represented as { double, double } structs
-                {
-                    llvm::Type* DoubleTy = llvm::Type::getDoubleTy(Context);
-                    return llvm::StructType::get(Context, {DoubleTy, DoubleTy});
-                }
+                // Complex numbers use native LLVM <2 x double> vector (SSE2 compatible)
+                return llvm::VectorType::get(llvm::Type::getDoubleTy(Context), 2, false);
             case TypeKind::Matrix:
                 // Matrix represented as { double*, i32, i32 }
                 return llvm::StructType::get(Context, {
@@ -88,14 +85,19 @@ public:
         if (T->isFloatTy()) return FluxType(TypeKind::Float);
         if (T->isIntegerTy(32)) return FluxType(TypeKind::Int);
         if (T->isVoidTy()) return FluxType(TypeKind::Void);
+        // Complex is now <2 x double> (vector, not struct)
+        if (T->isVectorTy()) {
+            auto* VT = llvm::cast<llvm::VectorType>(T);
+            if (VT->getElementCount().isScalar() &&
+                VT->getElementCount().getKnownMinValue() == 2 &&
+                VT->getElementType()->isDoubleTy())
+                return FluxType(TypeKind::Complex);
+        }
         if (T->isStructTy()) {
             if (T->getStructNumElements() == 3) return FluxType(TypeKind::Matrix);
             if (T->getStructNumElements() == 2) {
-                // Could be Vector or Complex. For now, distinguish by field type if possible,
-                // or default to Complex if both are double.
-                // Vector is { double*, i32 }, Complex is { double, double }.
+                // Vector is { double*, i32 }
                 if (T->getStructElementType(0)->isPointerTy()) return FluxType(TypeKind::Vector);
-                return FluxType(TypeKind::Complex);
             }
         }
         if (T->isPointerTy()) return FluxType(TypeKind::String);

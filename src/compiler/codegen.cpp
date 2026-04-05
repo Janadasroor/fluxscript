@@ -36,21 +36,28 @@ static FluxType typeFromLLVM(llvm::Type* Ty) {
     if (Ty->isFloatTy()) return FluxType(TypeKind::Float);
     if (Ty->isIntegerTy(32)) return FluxType(TypeKind::Int);
     if (Ty->isVoidTy()) return FluxType(TypeKind::Void);
+    // Complex is <2 x double>
+    if (Ty->isVectorTy()) {
+        auto* VT = llvm::cast<llvm::VectorType>(Ty);
+        if (VT->getElementCount().isScalar() &&
+            VT->getElementCount().getKnownMinValue() == 2 &&
+            VT->getElementType()->isDoubleTy())
+            return FluxType(TypeKind::Complex);
+    }
     if (Ty->isStructTy()) {
         if (Ty->getStructNumElements() == 3) return FluxType(TypeKind::Matrix);
-        return FluxType(TypeKind::Complex);
     }
     if (Ty->isPointerTy()) return FluxType(TypeKind::String);
     return FluxType(TypeKind::Double);
 }
 
-// Helper to promote double to complex
+// Helper to promote double to complex <2 x double>
 static TypedValue promoteToComplex(TypedValue V, CodegenContext& context) {
     if (isComplexType(V)) return V;
-    
+
     llvm::Type* DoubleTy = llvm::Type::getDoubleTy(context.TheContext);
-    llvm::StructType* ComplexTy = llvm::StructType::get(context.TheContext, {DoubleTy, DoubleTy});
-    
+    llvm::Type* ComplexTy = llvm::VectorType::get(DoubleTy, 2, false);
+
     llvm::Value* Val = V.Val;
     if (V.Type.Kind == TypeKind::Int) {
         Val = context.Builder.CreateSIToFP(Val, DoubleTy, "inttodouble");
@@ -58,9 +65,11 @@ static TypedValue promoteToComplex(TypedValue V, CodegenContext& context) {
         Val = context.Builder.CreateFPExt(Val, DoubleTy, "floattodouble");
     }
 
-    llvm::Value* ComplexVal = llvm::UndefValue::get(ComplexTy);
-    ComplexVal = context.Builder.CreateInsertValue(ComplexVal, Val, 0, "real");
-    ComplexVal = context.Builder.CreateInsertValue(ComplexVal, llvm::ConstantFP::get(context.TheContext, llvm::APFloat(0.0)), 1, "imag");
+    // Create <double_val, 0.0> vector using insertelement
+    llvm::Value* ZeroVec = llvm::ConstantVector::getSplat(
+        llvm::ElementCount::get(2, false),
+        llvm::ConstantFP::get(context.TheContext, llvm::APFloat(0.0)));
+    llvm::Value* ComplexVal = context.Builder.CreateInsertElement(ZeroVec, Val, (uint64_t)0, "to_complex");
     return TypedValue(ComplexVal, TypeKind::Complex);
 }
 
@@ -70,15 +79,13 @@ TypedValue NumberExprAST::codegen(CodegenContext& context) {
 
 TypedValue ComplexExprAST::codegen(CodegenContext& context) {
     llvm::Type* DoubleTy = llvm::Type::getDoubleTy(context.TheContext);
-    llvm::StructType* ComplexTy = llvm::StructType::get(context.TheContext, {DoubleTy, DoubleTy});
-    
-    llvm::Value* ComplexVal = llvm::UndefValue::get(ComplexTy);
-    llvm::Value* RealVal = llvm::ConstantFP::get(context.TheContext, llvm::APFloat(Real));
-    llvm::Value* ImagVal = llvm::ConstantFP::get(context.TheContext, llvm::APFloat(Imag));
-    
-    ComplexVal = context.Builder.CreateInsertValue(ComplexVal, RealVal, 0, "real");
-    ComplexVal = context.Builder.CreateInsertValue(ComplexVal, ImagVal, 1, "imag");
-    
+
+    // Create <2 x double> vector: <Real, Imag>
+    llvm::Constant* RealVal = llvm::ConstantFP::get(context.TheContext, llvm::APFloat(Real));
+    llvm::Constant* ImagVal = llvm::ConstantFP::get(context.TheContext, llvm::APFloat(Imag));
+    llvm::Constant* Elts[] = {RealVal, ImagVal};
+    llvm::Value* ComplexVal = llvm::ConstantVector::get(llvm::ArrayRef<llvm::Constant*>(Elts, 2));
+
     return TypedValue(ComplexVal, TypeKind::Complex);
 }
 
@@ -227,27 +234,30 @@ TypedValue AssignExprAST::codegen(CodegenContext& context) {
             TypedValue L = promoteToComplex(CurrentTV, context);
             TypedValue R = promoteToComplex(ValTV, context);
 
-            llvm::Value* LReal = context.Builder.CreateExtractValue(L.Val, 0, "lreal");
-            llvm::Value* LImag = context.Builder.CreateExtractValue(L.Val, 1, "limag");
-            llvm::Value* RReal = context.Builder.CreateExtractValue(R.Val, 0, "rreal");
-            llvm::Value* RImag = context.Builder.CreateExtractValue(R.Val, 1, "rimag");
+            llvm::Value* LReal = context.Builder.CreateExtractElement(L.Val, (uint64_t)0, "lreal");
+            llvm::Value* LImag = context.Builder.CreateExtractElement(L.Val, (uint64_t)1, "limag");
+            llvm::Value* RReal = context.Builder.CreateExtractElement(R.Val, (uint64_t)0, "rreal");
+            llvm::Value* RImag = context.Builder.CreateExtractElement(R.Val, (uint64_t)1, "rimag");
+
+            llvm::Type* DoubleTy = llvm::Type::getDoubleTy(context.TheContext);
+            llvm::Type* ComplexTy = llvm::VectorType::get(DoubleTy, 2, false);
 
             switch (Op) {
             case '+': {
                 llvm::Value* ResReal = context.Builder.CreateFAdd(LReal, RReal, "addre");
                 llvm::Value* ResImag = context.Builder.CreateFAdd(LImag, RImag, "addim");
-                llvm::Value* Res = llvm::UndefValue::get(L.Val->getType());
-                Res = context.Builder.CreateInsertValue(Res, ResReal, 0);
-                Res = context.Builder.CreateInsertValue(Res, ResImag, 1);
+                llvm::Value* Res = llvm::UndefValue::get(ComplexTy);
+                Res = context.Builder.CreateInsertElement(Res, ResReal, (uint64_t)0);
+                Res = context.Builder.CreateInsertElement(Res, ResImag, (uint64_t)1);
                 ValTV = TypedValue(Res, TypeKind::Complex);
                 break;
             }
             case '-': {
                 llvm::Value* ResReal = context.Builder.CreateFSub(LReal, RReal, "subre");
                 llvm::Value* ResImag = context.Builder.CreateFSub(LImag, RImag, "subim");
-                llvm::Value* Res = llvm::UndefValue::get(L.Val->getType());
-                Res = context.Builder.CreateInsertValue(Res, ResReal, 0);
-                Res = context.Builder.CreateInsertValue(Res, ResImag, 1);
+                llvm::Value* Res = llvm::UndefValue::get(ComplexTy);
+                Res = context.Builder.CreateInsertElement(Res, ResReal, (uint64_t)0);
+                Res = context.Builder.CreateInsertElement(Res, ResImag, (uint64_t)1);
                 ValTV = TypedValue(Res, TypeKind::Complex);
                 break;
             }
@@ -258,9 +268,9 @@ TypedValue AssignExprAST::codegen(CodegenContext& context) {
                 llvm::Value* bc = context.Builder.CreateFMul(LImag, RReal, "bc");
                 llvm::Value* ResReal = context.Builder.CreateFSub(ac, bd, "multre");
                 llvm::Value* ResImag = context.Builder.CreateFAdd(ad, bc, "multim");
-                llvm::Value* Res = llvm::UndefValue::get(L.Val->getType());
-                Res = context.Builder.CreateInsertValue(Res, ResReal, 0);
-                Res = context.Builder.CreateInsertValue(Res, ResImag, 1);
+                llvm::Value* Res = llvm::UndefValue::get(ComplexTy);
+                Res = context.Builder.CreateInsertElement(Res, ResReal, (uint64_t)0);
+                Res = context.Builder.CreateInsertElement(Res, ResImag, (uint64_t)1);
                 ValTV = TypedValue(Res, TypeKind::Complex);
                 break;
             }
@@ -276,9 +286,9 @@ TypedValue AssignExprAST::codegen(CodegenContext& context) {
                 llvm::Value* ResImagNum = context.Builder.CreateFSub(bc, ad, "numim");
                 llvm::Value* ResReal = context.Builder.CreateFDiv(ResRealNum, den, "divre");
                 llvm::Value* ResImag = context.Builder.CreateFDiv(ResImagNum, den, "divim");
-                llvm::Value* Res = llvm::UndefValue::get(L.Val->getType());
-                Res = context.Builder.CreateInsertValue(Res, ResReal, 0);
-                Res = context.Builder.CreateInsertValue(Res, ResImag, 1);
+                llvm::Value* Res = llvm::UndefValue::get(ComplexTy);
+                Res = context.Builder.CreateInsertElement(Res, ResReal, (uint64_t)0);
+                Res = context.Builder.CreateInsertElement(Res, ResImag, (uint64_t)1);
                 ValTV = TypedValue(Res, TypeKind::Complex);
                 break;
             }
@@ -450,63 +460,71 @@ TypedValue BinaryExprAST::codegen(CodegenContext& context) {
         L = promoteToComplex(L, context);
         R = promoteToComplex(R, context);
 
-        llvm::Value* LReal = context.Builder.CreateExtractValue(L.Val, 0, "lreal");
-        llvm::Value* LImag = context.Builder.CreateExtractValue(L.Val, 1, "limag");
-        llvm::Value* RReal = context.Builder.CreateExtractValue(R.Val, 0, "rreal");
-        llvm::Value* RImag = context.Builder.CreateExtractValue(R.Val, 1, "rimag");
-
         llvm::Type* DoubleTy = llvm::Type::getDoubleTy(context.TheContext);
-        llvm::StructType* ComplexTy = llvm::StructType::get(context.TheContext, {DoubleTy, DoubleTy});
+        llvm::Type* ComplexTy = llvm::VectorType::get(DoubleTy, 2, false);
 
         switch (Op) {
         case '+': {
-            llvm::Value* ResReal = context.Builder.CreateFAdd(LReal, RReal, "addre");
-            llvm::Value* ResImag = context.Builder.CreateFAdd(LImag, RImag, "addim");
-            llvm::Value* Res = llvm::UndefValue::get(ComplexTy);
-            Res = context.Builder.CreateInsertValue(Res, ResReal, 0);
-            return TypedValue(context.Builder.CreateInsertValue(Res, ResImag, 1), TypeKind::Complex);
+            return TypedValue(context.Builder.CreateFAdd(L.Val, R.Val, "caddtmp"), TypeKind::Complex);
         }
         case '-': {
-            llvm::Value* ResReal = context.Builder.CreateFSub(LReal, RReal, "subre");
-            llvm::Value* ResImagSub = context.Builder.CreateFSub(LImag, RImag, "subim");
-            llvm::Value* Res = llvm::UndefValue::get(ComplexTy);
-            Res = context.Builder.CreateInsertValue(Res, ResReal, 0);
-            return TypedValue(context.Builder.CreateInsertValue(Res, ResImagSub, 1), TypeKind::Complex);
+            // Complex subtract: single vector instruction
+            return TypedValue(context.Builder.CreateFSub(L.Val, R.Val, "csubtmp"), TypeKind::Complex);
         }
         case '*': {
-            llvm::Value* ac = context.Builder.CreateFMul(LReal, RReal, "ac");
-            llvm::Value* bd = context.Builder.CreateFMul(LImag, RImag, "bd");
-            llvm::Value* ad = context.Builder.CreateFMul(LReal, RImag, "ad");
-            llvm::Value* bc = context.Builder.CreateFMul(LImag, RReal, "bc");
-            llvm::Value* ResReal = context.Builder.CreateFSub(ac, bd, "multre");
-            llvm::Value* ResImag = context.Builder.CreateFAdd(ad, bc, "multim");
+            // Complex multiply: (a+bi)(c+di) = (ac-bd) + (ad+bc)i
+            llvm::Value* a = context.Builder.CreateExtractElement(L.Val, (uint64_t)0, "ca");
+            llvm::Value* b = context.Builder.CreateExtractElement(L.Val, (uint64_t)1, "cb");
+            llvm::Value* c = context.Builder.CreateExtractElement(R.Val, (uint64_t)0, "cc");
+            llvm::Value* d = context.Builder.CreateExtractElement(R.Val, (uint64_t)1, "cd");
+
+            llvm::Value* ac = context.Builder.CreateFMul(a, c, "cac");
+            llvm::Value* bd = context.Builder.CreateFMul(b, d, "cbd");
+            llvm::Value* ad = context.Builder.CreateFMul(a, d, "cad");
+            llvm::Value* bc = context.Builder.CreateFMul(b, c, "cbc");
+
+            llvm::Value* ResReal = context.Builder.CreateFSub(ac, bd, "cmultre");
+            llvm::Value* ResImag = context.Builder.CreateFAdd(ad, bc, "cmultim");
+
             llvm::Value* Res = llvm::UndefValue::get(ComplexTy);
-            Res = context.Builder.CreateInsertValue(Res, ResReal, 0);
-            return TypedValue(context.Builder.CreateInsertValue(Res, ResImag, 1), TypeKind::Complex);
+            Res = context.Builder.CreateInsertElement(Res, ResReal, (uint64_t)0);
+            return TypedValue(context.Builder.CreateInsertElement(Res, ResImag, (uint64_t)1), TypeKind::Complex);
         }
         case '/': {
-            llvm::Value* ac = context.Builder.CreateFMul(LReal, RReal, "ac");
-            llvm::Value* bd = context.Builder.CreateFMul(LImag, RImag, "bd");
-            llvm::Value* bc = context.Builder.CreateFMul(LImag, RReal, "bc");
-            llvm::Value* ad = context.Builder.CreateFMul(LReal, RImag, "ad");
-            llvm::Value* c2 = context.Builder.CreateFMul(RReal, RReal, "c2");
-            llvm::Value* d2 = context.Builder.CreateFMul(RImag, RImag, "d2");
-            llvm::Value* den = context.Builder.CreateFAdd(c2, d2, "den");
-            llvm::Value* ResRealNum = context.Builder.CreateFAdd(ac, bd, "numre");
-            llvm::Value* ResImagNum = context.Builder.CreateFSub(bc, ad, "numim");
-            llvm::Value* ResReal = context.Builder.CreateFDiv(ResRealNum, den, "divre");
-            llvm::Value* ResImag = context.Builder.CreateFDiv(ResImagNum, den, "divim");
+            // Complex division: (a+bi)/(c+di) = ((ac+bd) + (bc-ad)i) / (c^2+d^2)
+            llvm::Value* a = context.Builder.CreateExtractElement(L.Val, (uint64_t)0, "ca");
+            llvm::Value* b = context.Builder.CreateExtractElement(L.Val, (uint64_t)1, "cb");
+            llvm::Value* c = context.Builder.CreateExtractElement(R.Val, (uint64_t)0, "cc");
+            llvm::Value* d = context.Builder.CreateExtractElement(R.Val, (uint64_t)1, "cd");
+
+            llvm::Value* ac = context.Builder.CreateFMul(a, c, "cac");
+            llvm::Value* bd = context.Builder.CreateFMul(b, d, "cbd");
+            llvm::Value* bc = context.Builder.CreateFMul(b, c, "cbc");
+            llvm::Value* ad = context.Builder.CreateFMul(a, d, "cad");
+            llvm::Value* denom = context.Builder.CreateFAdd(context.Builder.CreateFMul(c, c), context.Builder.CreateFMul(d, d), "cdenom");
+
+            llvm::Value* ResReal = context.Builder.CreateFDiv(context.Builder.CreateFAdd(ac, bd), denom, "cdivre");
+            llvm::Value* ResImag = context.Builder.CreateFDiv(context.Builder.CreateFSub(bc, ad), denom, "cdivim");
+
             llvm::Value* Res = llvm::UndefValue::get(ComplexTy);
-            Res = context.Builder.CreateInsertValue(Res, ResReal, 0);
-            return TypedValue(context.Builder.CreateInsertValue(Res, ResImag, 1), TypeKind::Complex);
+            Res = context.Builder.CreateInsertElement(Res, ResReal, (uint64_t)0);
+            return TypedValue(context.Builder.CreateInsertElement(Res, ResImag, (uint64_t)1), TypeKind::Complex);
         }
         case static_cast<int>(TokenType::tok_equal): {
+            llvm::Value* LReal = context.Builder.CreateExtractElement(L.Val, (uint64_t)0, "lre");
+            llvm::Value* LImag = context.Builder.CreateExtractElement(L.Val, (uint64_t)1, "lim");
+            llvm::Value* RReal = context.Builder.CreateExtractElement(R.Val, (uint64_t)0, "rre");
+            llvm::Value* RImag = context.Builder.CreateExtractElement(R.Val, (uint64_t)1, "rim");
             llvm::Value* RealEq = context.Builder.CreateFCmpOEQ(LReal, RReal, "realeq");
             llvm::Value* ImagEq = context.Builder.CreateFCmpOEQ(LImag, RImag, "imageq");
             llvm::Value* And = context.Builder.CreateAnd(RealEq, ImagEq, "compeq");
             return TypedValue(context.Builder.CreateUIToFP(And, llvm::Type::getDoubleTy(context.TheContext), "booltmp"), TypeKind::Double);
         }
         case static_cast<int>(TokenType::tok_not_equal): {
+            llvm::Value* LReal = context.Builder.CreateExtractElement(L.Val, (uint64_t)0, "lre");
+            llvm::Value* LImag = context.Builder.CreateExtractElement(L.Val, (uint64_t)1, "lim");
+            llvm::Value* RReal = context.Builder.CreateExtractElement(R.Val, (uint64_t)0, "rre");
+            llvm::Value* RImag = context.Builder.CreateExtractElement(R.Val, (uint64_t)1, "rim");
             llvm::Value* RealNe = context.Builder.CreateFCmpUNE(LReal, RReal, "realne");
             llvm::Value* ImagNe = context.Builder.CreateFCmpUNE(LImag, RImag, "imagne");
             llvm::Value* Or = context.Builder.CreateOr(RealNe, ImagNe, "compne");
@@ -617,15 +635,16 @@ TypedValue UnaryExprAST::codegen(CodegenContext& context) {
     if (!OperandTV.Val) return TypedValue();
 
     if (isComplexType(OperandTV)) {
-        llvm::Value* Real = context.Builder.CreateExtractValue(OperandTV.Val, 0, "real");
-        llvm::Value* Imag = context.Builder.CreateExtractValue(OperandTV.Val, 1, "imag");
+        llvm::Value* Real = context.Builder.CreateExtractElement(OperandTV.Val, (uint64_t)0, "cre");
+        llvm::Value* Imag = context.Builder.CreateExtractElement(OperandTV.Val, (uint64_t)1, "cim");
         switch (Op) {
         case '-': {
             llvm::Value* ResReal = context.Builder.CreateFNeg(Real, "negre");
             llvm::Value* ResImag = context.Builder.CreateFNeg(Imag, "negim");
-            llvm::Value* Res = llvm::UndefValue::get(OperandTV.Val->getType());
-            Res = context.Builder.CreateInsertValue(Res, ResReal, 0);
-            return TypedValue(context.Builder.CreateInsertValue(Res, ResImag, 1), TypeKind::Complex);
+            llvm::Value* Res = llvm::UndefValue::get(
+                llvm::VectorType::get(llvm::Type::getDoubleTy(context.TheContext), 2, false));
+            Res = context.Builder.CreateInsertElement(Res, ResReal, (uint64_t)0);
+            return TypedValue(context.Builder.CreateInsertElement(Res, ResImag, (uint64_t)1), TypeKind::Complex);
         }
         case '+': return OperandTV;
         default: return TypedValue();
@@ -685,23 +704,24 @@ TypedValue CallExprAST::codegen(CodegenContext& context) {
     if (Args.size() == 1) {
         TypedValue Arg = Args[0]->codegen(context);
         if (isComplexType(Arg)) {
-            llvm::Value* Real = context.Builder.CreateExtractValue(Arg.Val, 0, "real");
-            llvm::Value* Imag = context.Builder.CreateExtractValue(Arg.Val, 1, "imag");
-            
+            llvm::Value* Real = context.Builder.CreateExtractElement(Arg.Val, (uint64_t)0, "cre");
+            llvm::Value* Imag = context.Builder.CreateExtractElement(Arg.Val, (uint64_t)1, "cim");
+
             if (Callee == "real") return TypedValue(Real, TypeKind::Double);
             if (Callee == "imag") return TypedValue(Imag, TypeKind::Double);
             if (Callee == "conj") {
                 llvm::Value* NegImag = context.Builder.CreateFNeg(Imag, "negimag");
-                llvm::Value* Res = llvm::UndefValue::get(Arg.Val->getType());
-                Res = context.Builder.CreateInsertValue(Res, Real, 0);
-                return TypedValue(context.Builder.CreateInsertValue(Res, NegImag, 1), TypeKind::Complex);
+                llvm::Value* Res = llvm::UndefValue::get(
+                    llvm::VectorType::get(llvm::Type::getDoubleTy(context.TheContext), 2, false));
+                Res = context.Builder.CreateInsertElement(Res, Real, (uint64_t)0);
+                return TypedValue(context.Builder.CreateInsertElement(Res, NegImag, (uint64_t)1), TypeKind::Complex);
             }
             if (Callee == "abs" || Callee == "mag") {
                 // sqrt(re*re + im*im)
                 llvm::Value* Re2 = context.Builder.CreateFMul(Real, Real, "re2");
                 llvm::Value* Im2 = context.Builder.CreateFMul(Imag, Imag, "im2");
                 llvm::Value* Sum = context.Builder.CreateFAdd(Re2, Im2, "sum2");
-                
+
                 llvm::Function* SqrtF = context.TheModule->getFunction("llvm.sqrt.f64");
                 if (!SqrtF) {
                     SqrtF = llvm::Function::Create(
@@ -932,12 +952,19 @@ TypedValue LetExprAST::codegen(CodegenContext& context) {
     
     FluxType ActualType = (Type.Kind == TypeKind::Auto) ? InitTV.Type : Type;
     llvm::Type* VarTy = ActualType.getLLVMType(context.TheContext);
-    
+
     llvm::Value* InitV = InitTV.Val;
     if (InitV->getType() != VarTy) {
         if (VarTy->isIntegerTy() && InitV->getType()->isFloatingPointTy()) InitV = context.Builder.CreateFPToSI(InitV, VarTy, "cast");
         else if (VarTy->isFloatingPointTy() && InitV->getType()->isIntegerTy()) InitV = context.Builder.CreateSIToFP(InitV, VarTy, "cast");
-        else if (VarTy->isStructTy() && !InitV->getType()->isStructTy()) InitV = promoteToComplex(InitTV, context).Val;
+        else if (VarTy->isFloatingPointTy() && InitV->getType()->isVectorTy()) {
+            // Declared as double but init is complex vector — use vector type
+            VarTy = InitV->getType();
+        }
+        else if ((VarTy->isStructTy() || VarTy->isVectorTy()) && InitV->getType() != VarTy) {
+            // Complex type: use the actual init value type
+            VarTy = InitV->getType();
+        }
     }
     llvm::AllocaInst* Alloca = context.Builder.CreateAlloca(VarTy, nullptr, VarName.c_str());
     context.Builder.CreateStore(InitV, Alloca);
@@ -1172,10 +1199,47 @@ llvm::Function* FunctionAST::codegen(CodegenContext& context) {
     if (TypedValue RetTV = Body->codegen(context)) {
         llvm::Value* RetVal = RetTV.Val;
         llvm::Type* RetTy = Proto->getReturnType().getLLVMType(context.TheContext);
+        
+        // Handle complex type mismatch: recreate function with correct return type
+        if (RetTy->isVectorTy() != RetVal->getType()->isVectorTy()) {
+            // Return type was scalar but body returns vector (complex)
+            // Need to recreate the function with the correct return type
+            TheFunction->eraseFromParent();
+            context.NamedValues.clear();
+            
+            // Update prototype return type and recreate function
+            llvm::Type* NewRetTy = RetVal->getType();
+            std::vector<llvm::Type*> ArgTypes;
+            for (const auto& Arg : Proto->getArgs()) {
+                ArgTypes.push_back(Arg.second.getLLVMType(context.TheContext));
+            }
+            llvm::FunctionType* FT = llvm::FunctionType::get(NewRetTy, ArgTypes, false);
+            TheFunction = llvm::Function::Create(FT, llvm::Function::ExternalLinkage, Proto->getName(), context.TheModule.get());
+            
+            llvm::BasicBlock* BB = llvm::BasicBlock::Create(context.TheContext, "entry", TheFunction);
+            context.Builder.SetInsertPoint(BB);
+            context.NamedValues.clear();
+            unsigned Idx = 0;
+            for (auto& Arg : TheFunction->args()) {
+                llvm::Type* ExpectedTy = Proto->getArgs()[Idx].second.getLLVMType(context.TheContext);
+                llvm::AllocaInst* Alloca = context.Builder.CreateAlloca(ExpectedTy, nullptr, std::string(Arg.getName()));
+                context.Builder.CreateStore(&Arg, Alloca);
+                context.NamedValues[std::string(Arg.getName())] = Alloca;
+                Idx++;
+            }
+            
+            // Regenerate the body
+            RetTV = Body->codegen(context);
+            if (!RetTV.Val) { TheFunction->eraseFromParent(); return nullptr; }
+            RetVal = RetTV.Val;
+            context.Builder.CreateRet(RetVal);
+            llvm::verifyFunction(*TheFunction);
+            return TheFunction;
+        }
+        
         if (RetVal->getType() != RetTy) {
             if (RetTy->isIntegerTy() && RetVal->getType()->isFloatingPointTy()) RetVal = context.Builder.CreateFPToSI(RetVal, RetTy, "cast");
             else if (RetTy->isFloatingPointTy() && RetVal->getType()->isIntegerTy()) RetVal = context.Builder.CreateSIToFP(RetVal, RetTy, "cast");
-            else if (RetTy->isStructTy() && !RetVal->getType()->isStructTy()) RetVal = promoteToComplex(RetTV, context).Val;
             else if (RetTy->isFloatingPointTy() && RetVal->getType()->isPointerTy()) {
                 llvm::Type* Int64Ty = llvm::Type::getInt64Ty(context.TheContext);
                 RetVal = context.Builder.CreatePtrToInt(RetVal, Int64Ty, "ptr_to_int");
