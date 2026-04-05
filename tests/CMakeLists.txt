@@ -138,6 +138,20 @@ add_test_entry(flux-test-waveform-extraction "Waveform Extraction")
 # └─────────────────────────────────────────────────────────────┘
 
 # ┌─────────────────────────────────────────────────────────────┐
+# │ Module System (import)                                      │
+# └─────────────────────────────────────────────────────────────┘
+add_test_executable(flux-test-module-system test_module_system.cpp)
+
+add_test(NAME flux-test-module-system
+    COMMAND flux-test-module-system
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}/examples
+)
+set_tests_properties(flux-test-module-system PROPERTIES
+    LABELS "module-system;import;compiler;unit"
+    TIMEOUT 60
+)
+
+# ┌─────────────────────────────────────────────────────────────┐
 # │ Inline .flux file tests                                     │
 # └─────────────────────────────────────────────────────────────┘
 # flux-test discovers and runs # TEST: assertions in .flux files
