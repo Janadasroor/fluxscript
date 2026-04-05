@@ -7,23 +7,20 @@ namespace Flux {
 
 std::unique_ptr<ExprAST> Parser::ParseTryCatchExpr() {
     getNextToken(); // eat try
-    
-    if (CurTok != '{') {
-        ReportError("expected '{' after try");
-        return nullptr;
-    }
-    
-    getNextToken(); // eat {
+
+    // ParseBlockExpr will eat the '{'
     auto tryBody = ParseBlockExpr();
     if (!tryBody) return nullptr;
-    
+
     auto expr = std::make_unique<TryCatchExprAST>(std::move(tryBody));
-    
+
     // Parse catch clauses
     while (CurTok == static_cast<int>(TokenType::tok_catch)) {
         getNextToken(); // eat catch
+
+        std::string varName = "e";  // default name
         
-        std::string varName;
+        // Support both `catch (e)` and `catch e` syntax
         if (CurTok == '(') {
             getNextToken(); // eat (
             if (CurTok == static_cast<int>(TokenType::tok_identifier)) {
@@ -35,32 +32,27 @@ std::unique_ptr<ExprAST> Parser::ParseTryCatchExpr() {
                 return nullptr;
             }
             getNextToken(); // eat )
+        } else if (CurTok == static_cast<int>(TokenType::tok_identifier)) {
+            varName = m_lexer.IdentifierStr;
+            getNextToken();
         }
-        
-        if (CurTok != '{') {
-            ReportError("expected '{' after catch");
-            return nullptr;
-        }
-        getNextToken(); // eat {
+
+        // ParseBlockExpr will eat the '{'
         auto handler = ParseBlockExpr();
         if (!handler) return nullptr;
-        
-        expr->addCatch(varName.empty() ? "e" : varName, std::move(handler));
+
+        expr->addCatch(varName, std::move(handler));
     }
-    
+
     // Parse finally
     if (CurTok == static_cast<int>(TokenType::tok_finally)) {
         getNextToken(); // eat finally
-        if (CurTok != '{') {
-            ReportError("expected '{' after finally");
-            return nullptr;
-        }
-        getNextToken(); // eat {
+        // ParseBlockExpr will eat the '{'
         auto finallyBody = ParseBlockExpr();
         if (!finallyBody) return nullptr;
         expr->setFinally(std::move(finallyBody));
     }
-    
+
     return expr;
 }
 

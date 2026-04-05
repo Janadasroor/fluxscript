@@ -1,6 +1,37 @@
 #include "flux/compiler/netlist_generator.h"
+#include <sstream>
 
 namespace Flux {
+
+static std::string analysisTypeToString(AnalysisType type) {
+    switch (type) {
+        case AnalysisType::TRAN:    return "tran";
+        case AnalysisType::DC:      return "dc";
+        case AnalysisType::AC:      return "ac";
+        case AnalysisType::NOISE:   return "noise";
+        case AnalysisType::OP:      return "op";
+        case AnalysisType::TF:      return "tf";
+        case AnalysisType::SENS:    return "sens";
+        case AnalysisType::FOURIER: return "fourier";
+        default: return "unknown";
+    }
+}
+
+static std::string measureTypeToString(MeasureType type) {
+    switch (type) {
+        case MeasureType::MAX:   return "MAX";
+        case MeasureType::MIN:   return "MIN";
+        case MeasureType::AVG:   return "AVG";
+        case MeasureType::RMS:   return "RMS";
+        case MeasureType::TRIG:  return "TRIG";
+        case MeasureType::TARG:  return "TARG";
+        case MeasureType::WHEN:  return "WHEN";
+        case MeasureType::FIND:  return "FIND";
+        case MeasureType::DERIV: return "DERIV";
+        case MeasureType::INTEG: return "INTEG";
+        default: return "UNKNOWN";
+    }
+}
 
 NetlistGenerator::NetlistGenerator() : m_nodeCounter(100) {}
 
@@ -62,8 +93,8 @@ std::string NetlistGenerator::generateAnalysisCard(const AnalysisDeclAST* analys
     if (!analysis) return "";
     
     std::ostringstream oss;
-    const std::string& type = analysis->getType();
-    const auto& params = analysis->getParams();
+    std::string type = analysisTypeToString(analysis->getAnalysisType());
+    const auto& params = analysis->getParameters();
     
     if (type == "tran") {
         oss << ".TRAN";
@@ -103,11 +134,11 @@ std::string NetlistGenerator::generateMeasureCard(const MeasureDeclAST* measure)
     if (!measure) return "";
     
     std::ostringstream oss;
-    oss << ".MEAS " << measure->getName() << " " << measure->getFunction() 
-        << " " << measure->getSignal();
+    oss << ".MEAS " << measure->getName() << " " << measureTypeToString(measure->getMeasureType()) 
+        << " " << expressionToSpice(measure->getExpression());
     
-    for (const auto& [key, value] : measure->Options) {
-        oss << " " << key << "=" << value;
+    for (const auto& [key, value] : measure->getParameters()) {
+        oss << " " << key << "=" << expressionToSpice(value.get());
     }
     
     oss << "\n";
@@ -118,13 +149,7 @@ std::string NetlistGenerator::generateProbeCard(const ProbeDeclAST* probe) {
     if (!probe) return "";
     
     std::ostringstream oss;
-    oss << ".PROBE";
-    
-    for (const auto& signal : probe->getSignals()) {
-        oss << " " << signal;
-    }
-    
-    oss << "\n";
+    oss << ".PROBE " << probe->getVariableName() << "\n";
     return oss.str();
 }
 
@@ -163,12 +188,12 @@ std::string NetlistGenerator::generateModelCard(const ModelAST* model) {
     if (!model) return "";
     
     std::ostringstream oss;
-    oss << ".MODEL " << model->getName() << " " << model->getType() << " (\n";
+    oss << ".MODEL " << model->getName() << " " << model->getModelType() << " (\n";
     
     bool first = true;
-    for (const auto& [name, value] : model->getParams()) {
+    for (const auto& [name, value] : model->getParameters()) {
         if (!first) oss << "\n";
-        oss << "  " << name << "=" << valueToSpice(value);
+        oss << "  " << name << "=" << expressionToSpice(value.get());
         first = false;
     }
     
@@ -320,36 +345,48 @@ std::string NetlistGenerator::getInternalNode(const std::string& name) {
     return "n" + std::to_string(nodeNum);
 }
 
-std::string NetlistGenerator::expressionToSpice(ExprAST* expr) {
-    // Simplified expression conversion
-    // Full implementation would recursively convert AST to SPICE expression
-    
+std::string NetlistGenerator::expressionToSpice(const ExprAST* expr) {
     if (!expr) return "0";
     
-    // Would need to handle different expression types
+    if (auto* num = dynamic_cast<const NumberExprAST*>(expr)) {
+        return valueToSpice(num->getValue());
+    }
+    
+    if (auto* var = dynamic_cast<const VariableExprAST*>(expr)) {
+        return var->getName();
+    }
+    
+    // For more complex expressions, return 0 as placeholder for now
     return "0";
 }
 
 std::string NetlistGenerator::valueToSpice(double value) {
-    std::ostringstream oss;
+    if (value == 0) return "0";
     
-    // Use engineering notation
-    if (value >= 1e9) {
-        oss << (value / 1e9) << "G";
-    } else if (value >= 1e6) {
-        oss << (value / 1e6) << "Meg";
-    } else if (value >= 1e3) {
-        oss << (value / 1e3) << "k";
-    } else if (value >= 1) {
-        oss << value;
-    } else if (value >= 1e-3) {
-        oss << (value * 1e3) << "m";
-    } else if (value >= 1e-6) {
-        oss << (value * 1e6) << "u";
-    } else if (value >= 1e-9) {
-        oss << (value * 1e9) << "n";
-    } else if (value >= 1e-12) {
-        oss << (value * 1e12) << "p";
+    std::ostringstream oss;
+    double absVal = std::abs(value);
+    std::string sign = (value < 0) ? "-" : "";
+    
+    if (absVal >= 1e12) {
+        oss << sign << (absVal / 1e12) << "T";
+    } else if (absVal >= 1e9) {
+        oss << sign << (absVal / 1e9) << "G";
+    } else if (absVal >= 1e6) {
+        oss << sign << (absVal / 1e6) << "Meg";
+    } else if (absVal >= 1e3) {
+        oss << sign << (absVal / 1e3) << "k";
+    } else if (absVal >= 1) {
+        oss << sign << absVal;
+    } else if (absVal >= 1e-3) {
+        oss << sign << (absVal * 1e3) << "m";
+    } else if (absVal >= 1e-6) {
+        oss << sign << (absVal * 1e6) << "u";
+    } else if (absVal >= 1e-9) {
+        oss << sign << (absVal * 1e9) << "n";
+    } else if (absVal >= 1e-12) {
+        oss << sign << (absVal * 1e12) << "p";
+    } else if (absVal >= 1e-15) {
+        oss << sign << (absVal * 1e15) << "f";
     } else {
         oss << value;
     }

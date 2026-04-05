@@ -37,7 +37,7 @@ OptimizationLevel JITEngine::getOptimizationLevel() const {
 
 void JITEngine::initialize() {
     if (m_initialized) return;
-    m_jit = std::make_unique<FluxJIT>();
+    m_jit = std::make_unique<FluxJIT>(OptimizationLevel::O0);
     m_compilerOptions.moduleName = "Flux JIT Core";
     m_compilerOptions.injectStdlib = true;
     if (m_cacheDirectory.empty())
@@ -195,6 +195,11 @@ FluxValue JITEngine::callFunction(const std::string& name, const std::vector<dou
     return 0.0;
 }
 #endif
+
+void* JITEngine::getFunctionPointer(const std::string& name) {
+    if (!m_initialized) return nullptr;
+    return m_jit->getPointerToFunction(name);
+}
 
 FluxValue JITEngine::callFunction(const std::string& name, const std::vector<double>& args, std::string* error) {
     if (!m_initialized) { if (error) *error = "JIT not initialized"; return 0.0; }

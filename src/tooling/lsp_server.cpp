@@ -1,0 +1,907 @@
+#include "flux/tooling/lsp_server.h"
+#include "flux/compiler/lexer.h"
+#include "flux/compiler/parser.h"
+#include "flux/compiler/ast.h"
+#include "flux/jit/flux_jit.h"
+#include <sstream>
+#include <algorithm>
+#include <iostream>
+#include <cstring>
+
+namespace Flux {
+namespace Tooling {
+
+// ============================================================================
+// TextDocument Utilities
+// ============================================================================
+
+Position TextDocument::offsetToPosition(size_t offset) const {
+    Position pos;
+    size_t current = 0;
+    while (current < offset && current < text.size()) {
+        if (text[current] == '\n') {
+            pos.line++;
+            pos.character = 0;
+        } else {
+            pos.character++;
+        }
+        current++;
+    }
+    return pos;
+}
+
+size_t TextDocument::positionToOffset(Position pos) const {
+    size_t offset = 0;
+    int currentLine = 0;
+    for (size_t i = 0; i < text.size(); ++i) {
+        if (currentLine == pos.line) {
+            offset = i;
+            break;
+        }
+        if (text[i] == '\n') currentLine++;
+        if (i == text.size() - 1) offset = text.size();
+    }
+    // Move to character position on the line
+    size_t lineStart = 0;
+    int l = 0;
+    for (size_t i = 0; i < text.size() && l < pos.line; ++i) {
+        if (text[i] == '\n') { l++; lineStart = i + 1; }
+    }
+    return lineStart + static_cast<size_t>(pos.character);
+}
+
+std::string TextDocument::getLine(size_t lineNum) const {
+    size_t start = 0;
+    int currentLine = 0;
+    for (size_t i = 0; i < text.size(); ++i) {
+        if (currentLine == static_cast<int>(lineNum)) {
+            start = i;
+            break;
+        }
+        if (text[i] == '\n') currentLine++;
+    }
+    size_t end = text.find('\n', start);
+    if (end == std::string::npos) end = text.size();
+    return text.substr(start, end - start);
+}
+
+std::string TextDocument::getWordAtPosition(Position pos) const {
+    size_t offset = positionToOffset(pos);
+    if (offset >= text.size()) return "";
+
+    // Find word boundaries
+    size_t start = offset;
+    while (start > 0 && (std::isalnum(text[start-1]) || text[start-1] == '_')) start--;
+    size_t end = offset;
+    while (end < text.size() && (std::isalnum(text[end]) || text[end] == '_')) end++;
+
+    return text.substr(start, end - start);
+}
+
+// ============================================================================
+// LSP Server Implementation
+// ============================================================================
+
+LspServer::LspServer() = default;
+LspServer::~LspServer() = default;
+
+std::string LspServer::processRequest(const std::string& jsonRequest) {
+    std::string method = jsonGet(jsonRequest, "method");
+    int id = jsonGetInt(jsonRequest, "id", -1);
+    std::string params = jsonRequest;  // Full request for nested extraction
+
+    if (method == "initialize") {
+        return makeResponse(id, handleInitialize(params));
+    } else if (method == "shutdown") {
+        return makeResponse(id, handleShutdown(params));
+    } else if (method == "exit") {
+        return "";  // No response needed
+    } else if (method == "textDocument/didOpen") {
+        handleTextDocumentDidOpen(params);
+        return "";  // Notification, no response
+    } else if (method == "textDocument/didChange") {
+        handleTextDocumentDidChange(params);
+        return "";
+    } else if (method == "textDocument/didClose") {
+        handleTextDocumentDidClose(params);
+        return "";
+    } else if (method == "textDocument/completion") {
+        return makeResponse(id, handleTextDocumentCompletion(params));
+    } else if (method == "textDocument/hover") {
+        return makeResponse(id, handleTextDocumentHover(params));
+    } else if (method == "textDocument/definition") {
+        return makeResponse(id, handleTextDocumentDefinition(params));
+    } else if (method == "textDocument/signatureHelp") {
+        return makeResponse(id, handleTextDocumentSignatureHelp(params));
+    } else if (method == "textDocument/documentSymbol") {
+        return makeResponse(id, handleTextDocumentDocumentSymbol(params));
+    } else if (method == "workspace/symbol") {
+        return makeResponse(id, handleWorkspaceSymbol(params));
+    } else if (method == "$/cancelRequest") {
+        return "";
+    }
+
+    if (id >= 0) {
+        return makeErrorResponse(id, -32601, "Method not found: " + method);
+    }
+    return "";
+}
+
+int LspServer::run() {
+    std::string line;
+    int contentLength = 0;
+
+    while (std::getline(std::cin, line)) {
+        // Strip CR if present
+        if (!line.empty() && line.back() == '\r') line.pop_back();
+
+        if (line.empty()) {
+            // End of headers, read content
+            if (contentLength <= 0) continue;
+
+            std::string content(contentLength, '\0');
+            std::cin.read(&content[0], contentLength);
+            // Consume the trailing CRLF if present
+            char buf[2];
+            std::cin.read(buf, 2);
+
+            std::string response = processRequest(content);
+            if (!response.empty()) {
+                std::cout << "Content-Length: " << response.size() << "\r\n\r\n" << response;
+                std::cout.flush();
+            }
+            contentLength = 0;
+        } else if (line.find("Content-Length:") == 0) {
+            contentLength = std::stoi(line.substr(15));
+        }
+    }
+    return 0;
+}
+
+void LspServer::openDocument(const std::string& uri, const std::string& languageId, int version, const std::string& text) {
+    TextDocument doc;
+    doc.uri = uri;
+    doc.languageId = languageId;
+    doc.version = version;
+    doc.text = text;
+    m_documents[uri] = doc;
+
+    // Analyze and publish diagnostics
+    auto diags = analyzeDocument(uri);
+    publishDiagnostics(uri, diags);
+}
+
+void LspServer::changeDocument(const std::string& uri, int version, const std::string& text) {
+    auto it = m_documents.find(uri);
+    if (it != m_documents.end()) {
+        it->second.version = version;
+        it->second.text = text;
+
+        // Re-analyze and publish diagnostics
+        auto diags = analyzeDocument(uri);
+        publishDiagnostics(uri, diags);
+    }
+}
+
+void LspServer::closeDocument(const std::string& uri) {
+    m_documents.erase(uri);
+    m_symbolTables.erase(uri);
+}
+
+TextDocument* LspServer::getDocument(const std::string& uri) {
+    auto it = m_documents.find(uri);
+    return (it != m_documents.end()) ? &it->second : nullptr;
+}
+
+// ============================================================================
+// Semantic Analysis
+// ============================================================================
+
+std::vector<Diagnostic> LspServer::analyzeDocument(const std::string& uri) {
+    std::vector<Diagnostic> diags;
+    auto* doc = getDocument(uri);
+    if (!doc) return diags;
+
+    // Lex and parse to find errors
+    Flux::Lexer lexer(doc->text);
+    Flux::Parser parser(doc->text);
+
+    // Try parsing the document
+    auto expr = parser.ParseExpression();
+
+    if (parser.hasError()) {
+        Diagnostic d;
+        d.severity = Diagnostic::Error;
+        d.message = "Parse error";
+        d.source = "fluxscript-compiler";
+        d.range.start = {0, 0};
+        d.range.end = {0, 1};
+        diags.push_back(d);
+    }
+
+    // Build symbol table for completions
+    m_symbolTables[uri] = buildSymbolTable(uri);
+
+    return diags;
+}
+
+std::vector<SymbolEntry> LspServer::buildSymbolTable(const std::string& uri) {
+    std::vector<SymbolEntry> symbols;
+    auto* doc = getDocument(uri);
+    if (!doc) return symbols;
+
+    Flux::Lexer lexer(doc->text);
+    int token;
+    int line = 0, col = 0;
+
+    while ((token = lexer.getNextToken()) != static_cast<int>(Flux::TokenType::tok_eof)) {
+        Position pos = {lexer.getCurrentLine() - 1, lexer.getCurrentColumn() - 1};
+
+        if (token == static_cast<int>(Flux::TokenType::tok_identifier)) {
+            SymbolEntry entry;
+            entry.name = lexer.IdentifierStr;
+            entry.uri = uri;
+            entry.range.start = pos;
+            entry.range.end = {pos.line, pos.character + static_cast<int>(entry.name.size())};
+
+            // Peek ahead to determine kind
+            std::string nextIdent;
+            int nextToken = lexer.CurTok;
+            if (nextToken == '(') {
+                entry.kind = SymbolEntry::Function;
+            } else if (entry.name == "def" || entry.name == "fn") {
+                entry.kind = SymbolEntry::Function;
+            } else if (entry.name == "let" || entry.name == "var") {
+                entry.kind = SymbolEntry::Variable;
+            } else {
+                entry.kind = SymbolEntry::Variable;
+            }
+
+            symbols.push_back(entry);
+        }
+    }
+
+    return symbols;
+}
+
+// ============================================================================
+// LSP Handlers
+// ============================================================================
+
+std::string LspServer::handleInitialize(const std::string& params) {
+    return R"({
+        "capabilities": {
+            "textDocumentSync": 1,
+            "completionProvider": {
+                "resolveProvider": false,
+                "triggerCharacters": [".", "(", ","]
+            },
+            "hoverProvider": true,
+            "definitionProvider": true,
+            "signatureHelpProvider": {
+                "triggerCharacters": ["(", ","]
+            },
+            "documentSymbolProvider": true,
+            "workspaceSymbolProvider": true
+        },
+        "serverInfo": {
+            "name": "fluxscript-lsp",
+            "version": "1.0.0"
+        }
+    })";
+}
+
+std::string LspServer::handleShutdown(const std::string& params) {
+    return "null";
+}
+
+std::string LspServer::handleTextDocumentDidOpen(const std::string& params) {
+    std::string uri = jsonGetNested(params, "textDocument", "uri");
+    std::string langId = jsonGetNested(params, "textDocument", "languageId");
+    int version = jsonGetInt(params, "textDocument.version");
+    std::string text = jsonGetNested(params, "textDocument", "text");
+    openDocument(uri, langId, version, text);
+    return "";
+}
+
+std::string LspServer::handleTextDocumentDidChange(const std::string& params) {
+    std::string uri = jsonGet(params, "textDocument.uri");
+    int version = jsonGetInt(params, "textDocument.version");
+
+    // Get full text from contentChanges[0].text
+    size_t arrStart = params.find("\"contentChanges\"");
+    if (arrStart != std::string::npos) {
+        size_t textStart = params.find("\"text\"", arrStart);
+        if (textStart != std::string::npos) {
+            size_t colonPos = params.find(':', textStart);
+            size_t quoteStart = params.find('"', colonPos);
+            size_t quoteEnd = quoteStart + 1;
+            std::string text;
+            while (quoteEnd < params.size()) {
+                if (params[quoteEnd] == '"' && params[quoteEnd-1] != '\\') break;
+                text += params[quoteEnd];
+                quoteEnd++;
+            }
+            changeDocument(uri, version, text);
+        }
+    }
+    return "";
+}
+
+std::string LspServer::handleTextDocumentDidClose(const std::string& params) {
+    std::string uri = jsonGet(params, "textDocument.uri");
+    closeDocument(uri);
+    return "";
+}
+
+std::string LspServer::handleTextDocumentCompletion(const std::string& params) {
+    std::string uri = jsonGet(params, "textDocument.uri");
+    int line = jsonGetInt(params, "position.line");
+    int col = jsonGetInt(params, "position.character");
+
+    auto items = getCompletions(uri, {line, col});
+
+    std::ostringstream oss;
+    oss << R"({"isIncomplete":false,"items":[)";
+    for (size_t i = 0; i < items.size(); ++i) {
+        if (i > 0) oss << ",";
+        oss << "{";
+        oss << R"("label":")" << jsonEscape(items[i].label) << "\",";
+        oss << R"("kind":)" << items[i].kind << ",";
+        if (!items[i].detail.empty()) {
+            oss << R"("detail":")" << jsonEscape(items[i].detail) << "\",";
+        }
+        if (!items[i].documentation.empty()) {
+            oss << R"("documentation":")" << jsonEscape(items[i].documentation) << "\",";
+        }
+        if (!items[i].insertText.empty()) {
+            oss << R"("insertText":")" << jsonEscape(items[i].insertText) << "\",";
+            oss << R"("insertTextFormat":)" << items[i].insertTextFormat << ",";
+        }
+        oss << "}";
+    }
+    oss << "]}";
+    return oss.str();
+}
+
+std::string LspServer::handleTextDocumentHover(const std::string& params) {
+    std::string uri = jsonGet(params, "textDocument.uri");
+    int line = jsonGetInt(params, "position.line");
+    int col = jsonGetInt(params, "position.character");
+
+    auto hover = getHover(uri, {line, col});
+
+    if (hover.contents.empty()) return "null";
+
+    std::ostringstream oss;
+    oss << R"({"contents":{"kind":"markdown","value":")" << jsonEscape(hover.contents) << "\"";
+    oss << R"(,"range":{"start":{"line":)" << hover.range.start.line << ",";
+    oss << R"("character":)" << hover.range.start.character << "},";
+    oss << R"("end":{"line":)" << hover.range.end.line << ",";
+    oss << R"("character":)" << hover.range.end.character << "}}}";
+    return oss.str();
+}
+
+std::string LspServer::handleTextDocumentDefinition(const std::string& params) {
+    std::string uri = jsonGet(params, "textDocument.uri");
+    int line = jsonGetInt(params, "position.line");
+    int col = jsonGetInt(params, "position.character");
+
+    auto* loc = getDefinition(uri, {line, col});
+    if (!loc) return "null";
+
+    std::ostringstream oss;
+    oss << R"({"uri":")" << jsonEscape(loc->uri) << "\",";
+    oss << R"("range":{"start":{"line":)" << loc->range.start.line << ",";
+    oss << R"("character":)" << loc->range.start.character << "},";
+    oss << R"("end":{"line":)" << loc->range.end.line << ",";
+    oss << R"("character":)" << loc->range.end.character << "}}";
+    delete loc;
+    return oss.str();
+}
+
+std::string LspServer::handleTextDocumentSignatureHelp(const std::string& params) {
+    std::string uri = jsonGet(params, "textDocument.uri");
+    int line = jsonGetInt(params, "position.line");
+    int col = jsonGetInt(params, "position.character");
+
+    auto sigHelp = getSignatureHelp(uri, {line, col});
+
+    std::ostringstream oss;
+    oss << R"({"signatures":[)";
+    for (size_t i = 0; i < sigHelp.signatures.size(); ++i) {
+        if (i > 0) oss << ",";
+        auto& sig = sigHelp.signatures[i];
+        oss << "{";
+        oss << R"("label":")" << jsonEscape(sig.label) << "\",";
+        oss << R"("documentation":")" << jsonEscape(sig.documentation) << "\",";
+        oss << R"("parameters":[)";
+        for (size_t j = 0; j < sig.parameters.size(); ++j) {
+            if (j > 0) oss << ",";
+            oss << R"({"label":")" << jsonEscape(sig.parameters[j].label) << "\"}";
+        }
+        oss << "]}";
+    }
+    oss << R"(],"activeSignature":)" << sigHelp.activeSignature << ",";
+    oss << R"("activeParameter":)" << sigHelp.activeParameter << "}";
+    return oss.str();
+}
+
+std::string LspServer::handleTextDocumentDocumentSymbol(const std::string& params) {
+    std::string uri = jsonGet(params, "textDocument.uri");
+    auto symbols = m_symbolTables.count(uri) ? m_symbolTables[uri] : buildSymbolTable(uri);
+
+    std::ostringstream oss;
+    oss << "[";
+    bool first = true;
+    for (auto& sym : symbols) {
+        if (sym.kind != SymbolEntry::Function && sym.kind != SymbolEntry::Variable) continue;
+        if (!first) oss << ",";
+        first = false;
+        oss << "{";
+        oss << R"("name":")" << jsonEscape(sym.name) << "\",";
+        oss << R"("kind":)" << (sym.kind == SymbolEntry::Function ? "12" : "13") << ",";
+        oss << R"("range":{"start":{"line":)" << sym.range.start.line << ",";
+        oss << R"("character":)" << sym.range.start.character << "},";
+        oss << R"("end":{"line":)" << sym.range.end.line << ",";
+        oss << R"("character":)" << sym.range.end.character << "}}";
+    }
+    oss << "]";
+    return oss.str();
+}
+
+std::string LspServer::handleWorkspaceSymbol(const std::string& params) {
+    std::string query = jsonGet(params, "query");
+    std::vector<SymbolEntry> allSymbols;
+    for (auto& [uri, symbols] : m_symbolTables) {
+        allSymbols.insert(allSymbols.end(), symbols.begin(), symbols.end());
+    }
+
+    std::ostringstream oss;
+    oss << "[";
+    bool first = true;
+    for (auto& sym : allSymbols) {
+        if (!query.empty() && sym.name.find(query) == std::string::npos) continue;
+        if (!first) oss << ",";
+        first = false;
+        oss << "{";
+        oss << R"("name":")" << jsonEscape(sym.name) << "\",";
+        oss << R"("kind":)" << (sym.kind == SymbolEntry::Function ? "12" : "13") << ",";
+        oss << R"("location":{"uri":")" << jsonEscape(sym.uri) << "\"}}";
+    }
+    oss << "]";
+    return oss.str();
+}
+
+// ============================================================================
+// Completion Engine
+// ============================================================================
+
+void LspServer::buildCompletions() {
+    if (m_completionsBuilt) return;
+    m_completionsBuilt = true;
+
+    auto keywords = getKeywordCompletions();
+    auto builtins = getBuiltinFunctionCompletions();
+    auto types = getTypeCompletions();
+    auto snippets = getSnippetCompletions();
+
+    m_allCompletions.insert(m_allCompletions.end(), keywords.begin(), keywords.end());
+    m_allCompletions.insert(m_allCompletions.end(), builtins.begin(), builtins.end());
+    m_allCompletions.insert(m_allCompletions.end(), types.begin(), types.end());
+    m_allCompletions.insert(m_allCompletions.end(), snippets.begin(), snippets.end());
+}
+
+std::vector<CompletionItem> LspServer::getKeywordCompletions() {
+    return {
+        {"def", CompletionItem::Keyword, "function definition", "Define a function", "def ${1:name}(${2:args}) ${3:body}", 2},
+        {"extern", CompletionItem::Keyword, "external declaration", "Declare an external function", "extern ${1:name}(${2:args})", 2},
+        {"let", CompletionItem::Keyword, "typed variable", "Declare a typed variable", "let ${1:name} : ${2:type} = ${3:value}", 2},
+        {"var", CompletionItem::Keyword, "type-inferred variable", "Declare a variable with inferred type", "var ${1:name} = ${2:value}", 2},
+        {"if", CompletionItem::Keyword, "conditional", "Conditional expression", "if ${1:cond} then ${2:then} else ${3:else}", 2},
+        {"then", CompletionItem::Keyword, "then branch", nullptr, "then", 1},
+        {"else", CompletionItem::Keyword, "else branch", nullptr, "else", 1},
+        {"for", CompletionItem::Keyword, "for loop", "For loop", "for ${1:i} in ${2:start}, ${3:end} do ${4:body}", 2},
+        {"while", CompletionItem::Keyword, "while loop", "While loop", "while ${1:cond} do ${2:body}", 2},
+        {"in", CompletionItem::Keyword, "binding", nullptr, "in", 1},
+        {"do", CompletionItem::Keyword, "loop body", nullptr, "do", 1},
+        {"return", CompletionItem::Keyword, "return statement", nullptr, "return", 1},
+        {"fn", CompletionItem::Keyword, "lambda", "Anonymous function", "fn(${1:args}) ${2:body}", 2},
+        {"import", CompletionItem::Keyword, "module import", "Import a module", "import \"${1:module}\"", 2},
+        {"switch", CompletionItem::Keyword, "switch statement", "Multi-way branch", "switch ${1:expr} { case ${2:val}: ${3:body} }", 2},
+        {"case", CompletionItem::Keyword, "case label", nullptr, "case", 1},
+        {"break", CompletionItem::Keyword, "break loop", nullptr, "break", 1},
+        {"continue", CompletionItem::Keyword, "continue loop", nullptr, "continue", 1},
+        {"try", CompletionItem::Keyword, "try block", "Exception handling", "try { ${1:body} } catch (e) { ${2:handler} }", 2},
+        {"catch", CompletionItem::Keyword, "catch block", nullptr, "catch", 1},
+        {"throw", CompletionItem::Keyword, "throw exception", nullptr, "throw", 1},
+        {"match", CompletionItem::Keyword, "pattern match", "Pattern matching", "match ${1:expr} { ${2:pattern} => ${3:result} }", 2},
+        {"parallel", CompletionItem::Keyword, "parallel loop", "Parallel for loop", "parallel for ${1:i} in ${2:start}, ${3:end} do ${4:body}", 2},
+    };
+}
+
+std::vector<CompletionItem> LspServer::getBuiltinFunctionCompletions() {
+    return {
+        {"sin", CompletionItem::Function, "(x) -> double", "Sine function", "sin(${1:x})", 2},
+        {"cos", CompletionItem::Function, "(x) -> double", "Cosine function", "cos(${1:x})", 2},
+        {"tan", CompletionItem::Function, "(x) -> double", "Tangent function", "tan(${1:x})", 2},
+        {"sqrt", CompletionItem::Function, "(x) -> double", "Square root", "sqrt(${1:x})", 2},
+        {"exp", CompletionItem::Function, "(x) -> double", "Exponential function", "exp(${1:x})", 2},
+        {"log", CompletionItem::Function, "(x) -> double", "Natural logarithm", "log(${1:x})", 2},
+        {"log10", CompletionItem::Function, "(x) -> double", "Base-10 logarithm", "log10(${1:x})", 2},
+        {"abs", CompletionItem::Function, "(x) -> double", "Absolute value", "abs(${1:x})", 2},
+        {"floor", CompletionItem::Function, "(x) -> double", "Floor function", "floor(${1:x})", 2},
+        {"ceil", CompletionItem::Function, "(x) -> double", "Ceiling function", "ceil(${1:x})", 2},
+        {"pow", CompletionItem::Function, "(x, y) -> double", "Power function", "pow(${1:x}, ${2:y})", 2},
+        {"atan2", CompletionItem::Function, "(y, x) -> double", "Two-argument arctangent", "atan2(${1:y}, ${2:x})", 2},
+        {"pi", CompletionItem::Function, "() -> double", "Pi constant", "pi()", 2},
+        {"cross", CompletionItem::Function, "(expr, [rise_fall]) -> double", "Zero-crossing detection", "cross(${1:expr})", 2},
+        {"above", CompletionItem::Function, "(expr, threshold) -> double", "Threshold detection", "above(${1:expr}, ${2:threshold})", 2},
+        {"timer", CompletionItem::Function, "() -> double", "Elapsed simulation time", "timer()", 2},
+        {"posedge", CompletionItem::Function, "(signal) -> double", "Positive edge detection", "posedge(${1:signal})", 2},
+        {"negedge", CompletionItem::Function, "(signal) -> double", "Negative edge detection", "negedge(${1:signal})", 2},
+        {"white_noise", CompletionItem::Function, "(amplitude) -> double", "Gaussian white noise", "white_noise(${1:amp})", 2},
+        {"flicker_noise", CompletionItem::Function, "(amplitude, corner_freq) -> double", "1/f noise", "flicker_noise(${1:amp}, ${2:freq})", 2},
+        {"thermal_noise", CompletionItem::Function, "(resistance, [temperature]) -> double", "Johnson-Nyquist thermal noise", "thermal_noise(${1:R}, ${2:300.15})", 2},
+        {"unit", CompletionItem::Function, "(value, unit_str)", "Annotate value with unit", "unit(${1:val}, \"${2:V}\")", 2},
+        {"convert", CompletionItem::Function, "(value, from, to) -> double", "Unit conversion", "convert(${1:val}, \"${2:V}\", \"${3:mV}\")", 2},
+        {"dimension", CompletionItem::Function, "(value) -> string", "Dimensional analysis", "dimension(${1:val})", 2},
+        {"has_unit", CompletionItem::Function, "(value, unit) -> double", "Check unit compatibility", "has_unit(${1:val}, \"${2:V}\")", 2},
+    };
+}
+
+std::vector<CompletionItem> LspServer::getTypeCompletions() {
+    return {
+        {"double", CompletionItem::Type, "type", "Double precision float", "double", 1},
+        {"float", CompletionItem::Type, "type", "Single precision float", "float", 1},
+        {"int", CompletionItem::Type, "type", "32-bit integer", "int", 1},
+        {"void", CompletionItem::Type, "type", "Void type", "void", 1},
+        {"complex", CompletionItem::Type, "type", "Complex number", "complex", 1},
+        {"string", CompletionItem::Type, "type", "String type", "string", 1},
+        {"vector", CompletionItem::Type, "type", "Dynamic vector", "vector", 1},
+        {"matrix", CompletionItem::Type, "type", "2D matrix", "matrix", 1},
+    };
+}
+
+std::vector<CompletionItem> LspServer::getSnippetCompletions() {
+    return {
+        {"func", CompletionItem::Snippet, "Function template", "def name(args) body", "def ${1:name}(${2:args}) ${3:body}", 2},
+        {"forloop", CompletionItem::Snippet, "For loop", "for i in start, end do body", "for ${1:i} in ${2:1}, ${3:10} do ${4:body}", 2},
+        {"whileloop", CompletionItem::Snippet, "While loop", "while cond do body", "while ${1:cond} do ${2:body}", 2},
+        {"ifelse", CompletionItem::Snippet, "If-else", "if cond then a else b", "if ${1:cond} then ${2:a} else ${3:b}", 2},
+        {"bsource", CompletionItem::Snippet, "Behavioral source", "bsource B name n+ n- V={expr}", "bsource ${1:B1} ${2:out} ${3:0} V={${4:expression}}", 2},
+        {"montecarlo", CompletionItem::Snippet, "Monte Carlo analysis", "montecarlo output iterations", "montecarlo ${1:output} ${2:1000}", 2},
+        {"piecewise", CompletionItem::Snippet, "Piecewise function", "piecewise(x1,y1, x2,y2, ...)", "piecewise(${1:0.0}, ${2:0.0}, ${3:1.0}, ${4:1.0}, ${5:x})", 2},
+        {"table", CompletionItem::Snippet, "Lookup table", "table(k1,v1, k2,v2, key)", "table(${1:0.0}, ${2:0.0}, ${3:1.0}, ${4:1.0}, ${5:key})", 2},
+    };
+}
+
+std::vector<CompletionItem> LspServer::getCompletions(const std::string& uri, Position pos) {
+    buildCompletions();
+
+    auto* doc = getDocument(uri);
+    if (!doc) return m_allCompletions;
+
+    std::string prefix = doc->getWordAtPosition(pos);
+
+    std::vector<CompletionItem> filtered;
+    for (auto& item : m_allCompletions) {
+        if (prefix.empty() || item.label.find(prefix) == 0) {
+            filtered.push_back(item);
+        }
+    }
+
+    // Also add symbols from current document
+    auto symbols = m_symbolTables.count(uri) ? m_symbolTables[uri] : buildSymbolTable(uri);
+    for (auto& sym : symbols) {
+        if (prefix.empty() || sym.name.find(prefix) == 0) {
+            CompletionItem ci;
+            ci.label = sym.name;
+            ci.kind = (sym.kind == SymbolEntry::Function) ? CompletionItem::Function : CompletionItem::Variable;
+            ci.detail = sym.typeStr;
+            filtered.push_back(ci);
+        }
+    }
+
+    return filtered;
+}
+
+// ============================================================================
+// Hover Engine
+// ============================================================================
+
+HoverContent LspServer::getHover(const std::string& uri, Position pos) {
+    HoverContent result;
+    auto* doc = getDocument(uri);
+    if (!doc) return result;
+
+    std::string word = doc->getWordAtPosition(pos);
+    if (word.empty()) return result;
+
+    // Check built-in functions
+    auto builtins = getBuiltinFunctionCompletions();
+    for (auto& b : builtins) {
+        if (b.label == word) {
+            result.contents = "```fluxscript\n" + b.detail + "\n```\n\n" + b.documentation;
+            result.range.start = pos;
+            result.range.end = {pos.line, pos.character + static_cast<int>(word.size())};
+            return result;
+        }
+    }
+
+    // Check types
+    auto types = getTypeCompletions();
+    for (auto& t : types) {
+        if (t.label == word) {
+            result.contents = "```fluxscript\n" + t.label + " (type)\n```\n\n" + t.documentation;
+            result.range.start = pos;
+            result.range.end = {pos.line, pos.character + static_cast<int>(word.size())};
+            return result;
+        }
+    }
+
+    // Check keywords
+    auto keywords = getKeywordCompletions();
+    for (auto& k : keywords) {
+        if (k.label == word) {
+            result.contents = "**" + k.label + "** (keyword)\n\n" + k.documentation;
+            result.range.start = pos;
+            result.range.end = {pos.line, pos.character + static_cast<int>(word.size())};
+            return result;
+        }
+    }
+
+    // Check local symbols
+    auto symbols = m_symbolTables.count(uri) ? m_symbolTables[uri] : buildSymbolTable(uri);
+    for (auto& sym : symbols) {
+        if (sym.name == word) {
+            std::string kindStr = (sym.kind == SymbolEntry::Function) ? "function" : "variable";
+            result.contents = "```fluxscript\n" + kindStr + " " + sym.name;
+            if (!sym.typeStr.empty()) result.contents += ": " + sym.typeStr;
+            result.contents += "\n```";
+            result.range = sym.range;
+            return result;
+        }
+    }
+
+    return result;
+}
+
+// ============================================================================
+// Go-to-Definition
+// ============================================================================
+
+Location* LspServer::getDefinition(const std::string& uri, Position pos) {
+    auto* doc = getDocument(uri);
+    if (!doc) return nullptr;
+
+    std::string word = doc->getWordAtPosition(pos);
+    if (word.empty()) return nullptr;
+
+    auto symbols = m_symbolTables.count(uri) ? m_symbolTables[uri] : buildSymbolTable(uri);
+    for (auto& sym : symbols) {
+        if (sym.name == word) {
+            auto* loc = new Location();
+            loc->uri = sym.uri;
+            loc->range = sym.range;
+            return loc;
+        }
+    }
+
+    return nullptr;
+}
+
+// ============================================================================
+// Signature Help
+// ============================================================================
+
+LspServer::SignatureHelpResult LspServer::getSignatureHelp(const std::string& uri, Position pos) {
+    SignatureHelpResult result;
+    auto* doc = getDocument(uri);
+    if (!doc) return result;
+
+    // Look backward from cursor to find the function being called
+    size_t offset = doc->positionToOffset(pos);
+    if (offset == 0 || offset > doc->text.size()) return result;
+
+    // Scan backward to find function name before '('
+    size_t parenPos = doc->text.rfind('(', offset - 1);
+    if (parenPos == std::string::npos || parenPos == 0) return result;
+
+    // Extract function name
+    size_t nameEnd = parenPos;
+    while (nameEnd > 0 && (doc->text[nameEnd-1] == ' ' || doc->text[nameEnd-1] == '\t')) nameEnd--;
+    size_t nameStart = nameEnd;
+    while (nameStart > 0 && (std::isalnum(doc->text[nameStart-1]) || doc->text[nameStart-1] == '_')) nameStart--;
+
+    std::string funcName = doc->text.substr(nameStart, nameEnd - nameStart);
+
+    // Count arguments
+    int argCount = 0;
+    int parenDepth = 0;
+    for (size_t i = nameEnd; i < offset; ++i) {
+        if (doc->text[i] == '(') parenDepth++;
+        else if (doc->text[i] == ')') parenDepth--;
+        else if (doc->text[i] == ',' && parenDepth == 1) argCount++;
+    }
+
+    // Look up function signature
+    auto builtins = getBuiltinFunctionCompletions();
+    for (auto& b : builtins) {
+        if (b.label == funcName) {
+            SignatureInfo sig;
+            sig.label = b.detail;
+            sig.documentation = b.documentation;
+
+            // Parse parameters from detail
+            size_t parenStart = b.detail.find('(');
+            size_t parenEnd = b.detail.find(')');
+            if (parenStart != std::string::npos && parenEnd != std::string::npos) {
+                std::string params = b.detail.substr(parenStart + 1, parenEnd - parenStart - 1);
+                size_t start = 0;
+                while (start < params.size()) {
+                    size_t comma = params.find(',', start);
+                    if (comma == std::string::npos) comma = params.size();
+                    std::string param = params.substr(start, comma - start);
+                    // Trim
+                    while (!param.empty() && param[0] == ' ') param.erase(0, 1);
+                    while (!param.empty() && param.back() == ' ') param.pop_back();
+                    if (!param.empty()) {
+                        sig.parameters.push_back({param, ""});
+                    }
+                    start = comma + 1;
+                }
+            }
+
+            result.signatures.push_back(sig);
+            result.activeParameter = std::min(argCount, static_cast<int>(sig.parameters.size()) - 1);
+            return result;
+        }
+    }
+
+    return result;
+}
+
+// ============================================================================
+// JSON Helpers
+// ============================================================================
+
+std::string LspServer::jsonGet(const std::string& json, const std::string& key) {
+    std::string searchKey = "\"" + key + "\"";
+    size_t keyPos = json.rfind(searchKey);  // Use rfind for nested keys
+    if (keyPos == std::string::npos) return "";
+
+    size_t colonPos = json.find(':', keyPos + searchKey.size());
+    if (colonPos == std::string::npos) return "";
+
+    size_t valueStart = colonPos + 1;
+    while (valueStart < json.size() && json[valueStart] == ' ') valueStart++;
+
+    if (valueStart >= json.size()) return "";
+
+    if (json[valueStart] == '"') {
+        size_t strStart = valueStart + 1;
+        std::string result;
+        for (size_t i = strStart; i < json.size(); ++i) {
+            if (json[i] == '"' && json[i-1] != '\\') break;
+            result += json[i];
+        }
+        return result;
+    } else if (json.substr(valueStart, 4) == "null") {
+        return "";
+    } else if (json.substr(valueStart, 4) == "true") {
+        return "true";
+    } else if (json.substr(valueStart, 5) == "false") {
+        return "false";
+    }
+
+    // Try to extract nested object
+    if (json[valueStart] == '{') {
+        int depth = 0;
+        size_t objStart = valueStart;
+        for (size_t i = valueStart; i < json.size(); ++i) {
+            if (json[i] == '{') depth++;
+            else if (json[i] == '}') { depth--; if (depth == 0) return json.substr(objStart, i - objStart + 1); }
+        }
+    }
+
+    return "";
+}
+
+std::string LspServer::jsonGetNested(const std::string& json, const std::string& key1, const std::string& key2) {
+    // Find key1, then within that object find key2
+    std::string searchKey = "\"" + key1 + "\"";
+    size_t keyPos = json.find(searchKey);
+    if (keyPos == std::string::npos) return "";
+
+    size_t colonPos = json.find(':', keyPos + searchKey.size());
+    if (colonPos == std::string::npos) return "";
+
+    size_t objStart = colonPos + 1;
+    while (objStart < json.size() && json[objStart] == ' ') objStart++;
+
+    if (objStart >= json.size() || json[objStart] != '{') {
+        // Try direct key2 lookup (flat structure)
+        return jsonGet(json, key2);
+    }
+
+    int depth = 0;
+    size_t objEnd = objStart;
+    for (size_t i = objStart; i < json.size(); ++i) {
+        if (json[i] == '{') depth++;
+        else if (json[i] == '}') { depth--; if (depth == 0) { objEnd = i; break; } }
+    }
+
+    std::string inner = json.substr(objStart, objEnd - objStart + 1);
+    return jsonGet(inner, key2);
+}
+
+int LspServer::jsonGetInt(const std::string& json, const std::string& key, int defaultVal) {
+    std::string searchKey = "\"" + key + "\"";
+    size_t keyPos = json.find(searchKey);
+    if (keyPos == std::string::npos) return defaultVal;
+
+    size_t colonPos = json.find(':', keyPos + searchKey.size());
+    if (colonPos == std::string::npos) return defaultVal;
+
+    size_t valueStart = colonPos + 1;
+    while (valueStart < json.size() && json[valueStart] == ' ') valueStart++;
+
+    try {
+        return std::stoi(json.substr(valueStart));
+    } catch (...) {
+        return defaultVal;
+    }
+}
+
+std::string LspServer::jsonEscape(const std::string& s) {
+    std::string result;
+    for (char c : s) {
+        switch (c) {
+            case '"': result += "\\\""; break;
+            case '\\': result += "\\\\"; break;
+            case '\n': result += "\\n"; break;
+            case '\r': result += "\\r"; break;
+            case '\t': result += "\\t"; break;
+            default: result += c;
+        }
+    }
+    return result;
+}
+
+std::string LspServer::makeResponse(int id, const std::string& result) {
+    return "{\"jsonrpc\":\"2.0\",\"id\":" + std::to_string(id) + ",\"result\":" + result + "}";
+}
+
+std::string LspServer::makeErrorResponse(int id, int code, const std::string& message) {
+    return "{\"jsonrpc\":\"2.0\",\"id\":" + std::to_string(id) + ",\"error\":{\"code\":" +
+           std::to_string(code) + ",\"message\":\"" + jsonEscape(message) + "\"}}";
+}
+
+std::string LspServer::makeNotification(const std::string& method, const std::string& params) {
+    return "{\"jsonrpc\":\"2.0\",\"method\":\"" + method + "\",\"params\":" + params + "}";
+}
+
+void LspServer::publishDiagnostics(const std::string& uri, const std::vector<Diagnostic>& diagnostics) {
+    std::ostringstream oss;
+    oss << R"({"uri":")" << jsonEscape(uri) << R"(","diagnostics":[)";
+    for (size_t i = 0; i < diagnostics.size(); ++i) {
+        if (i > 0) oss << ",";
+        auto& d = diagnostics[i];
+        oss << "{";
+        oss << R"("range":{"start":{"line":)" << d.range.start.line << ",";
+        oss << R"("character":)" << d.range.start.character << "},";
+        oss << R"("end":{"line":)" << d.range.end.line << ",";
+        oss << R"("character":)" << d.range.end.character << "},";
+        oss << R"("severity":)" << static_cast<int>(d.severity) << ",";
+        oss << R"("source":")" << jsonEscape(d.source) << "\",";
+        oss << R"("message":")" << jsonEscape(d.message) << "\"}";
+    }
+    oss << "]}";
+    std::string notification = makeNotification("textDocument/publishDiagnostics", oss.str());
+    std::cout << "Content-Length: " << notification.size() << "\r\n\r\n" << notification;
+    std::cout.flush();
+}
+
+} // namespace Tooling
+} // namespace Flux

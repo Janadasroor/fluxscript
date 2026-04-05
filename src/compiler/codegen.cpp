@@ -3,8 +3,15 @@
 #include <llvm/IR/Verifier.h>
 #include <llvm/BinaryFormat/Dwarf.h>
 #include <iostream>
+#include <set>
+#include <string>
 
 namespace Flux {
+
+static const char* getPermanentString(const std::string& s) {
+    static std::set<std::string> pool;
+    return pool.insert(s).first->c_str();
+}
 
 // Helper to check if a type is complex
 static bool isComplexType(TypedValue V) {
@@ -63,19 +70,11 @@ TypedValue ComplexExprAST::codegen(CodegenContext& context) {
 }
 
 TypedValue StringExprAST::codegen(CodegenContext& context) {
-    llvm::Constant* StrConst = llvm::ConstantDataArray::getString(context.TheContext, Val, true);
-    llvm::GlobalVariable* GV = new llvm::GlobalVariable(
-        *context.TheModule,
-        StrConst->getType(),
-        true,
-        llvm::GlobalValue::PrivateLinkage,
-        StrConst,
-        ".str");
-    
-    llvm::Value* ValV = context.Builder.CreatePointerCast(GV, llvm::PointerType::get(llvm::Type::getInt8Ty(context.TheContext), 0), "strptr");
-    return TypedValue(ValV, TypeKind::String);
+    uint64_t addr = reinterpret_cast<uint64_t>(getPermanentString(Val));
+    llvm::Value* AddrVal = llvm::ConstantInt::get(llvm::Type::getInt64Ty(context.TheContext), addr);
+    llvm::Value* DoubleVal = context.Builder.CreateBitCast(AddrVal, llvm::Type::getDoubleTy(context.TheContext), "strptr_double");
+    return TypedValue(DoubleVal, TypeKind::String);
 }
-
 TypedValue ImportExprAST::codegen(CodegenContext& context) {
     // Import is handled at the JITEngine/ModuleLoader level
     // This codegen just marks the import as processed
@@ -106,6 +105,11 @@ TypedValue VariableExprAST::codegen(CodegenContext& context) {
     llvm::Value* V = context.NamedValues[Name];
     if (!V) {
         std::cerr << "Unknown variable name: " << Name << std::endl;
+        std::cerr << "  Available variables: ";
+        for (const auto& [k, v] : context.NamedValues) {
+            std::cerr << k << " ";
+        }
+        std::cerr << std::endl;
         return TypedValue();
     }
     if (auto* Alloca = llvm::dyn_cast<llvm::AllocaInst>(V)) {
@@ -130,12 +134,16 @@ TypedValue MemberExprAST::codegen(CodegenContext& context) {
         
         // Treat as SPICE parameter probe: device.param
         llvm::Function* GetPF = context.TheModule->getFunction("flux_get_parameter");
+        llvm::Type* DoubleTy = llvm::Type::getDoubleTy(context.TheContext);
         if (!GetPF) {
-            llvm::Type* DoubleTy = llvm::Type::getDoubleTy(context.TheContext);
-            llvm::Type* CharPtrTy = llvm::PointerType::get(llvm::Type::getInt8Ty(context.TheContext), 0);
-            GetPF = llvm::Function::Create(llvm::FunctionType::get(DoubleTy, {CharPtrTy}, false), llvm::Function::ExternalLinkage, "flux_get_parameter", context.TheModule.get());
+            GetPF = llvm::Function::Create(llvm::FunctionType::get(DoubleTy, {DoubleTy}, false), llvm::Function::ExternalLinkage, "flux_get_parameter", context.TheModule.get());
         }
-        return TypedValue(context.Builder.CreateCall(GetPF, {context.Builder.CreateGlobalStringPtr(full_name)}, "getp"), TypeKind::Double);
+        
+        uint64_t addr = reinterpret_cast<uint64_t>(getPermanentString(full_name));
+        llvm::Value* addrConst = llvm::ConstantInt::get(llvm::Type::getInt64Ty(context.TheContext), addr);
+        llvm::Value* PtrDouble = context.Builder.CreateBitCast(addrConst, DoubleTy, "ptr_double");
+        
+        return TypedValue(context.Builder.CreateCall(GetPF, {PtrDouble}, "getp"), TypeKind::Double);
     }
     std::cerr << "Member access only supported on top-level variables currently" << std::endl;
     return TypedValue();
@@ -161,14 +169,18 @@ TypedValue AssignExprAST::codegen(CodegenContext& context) {
 
     if (isSpice) {
         llvm::Function* SetPF = context.TheModule->getFunction("flux_set_parameter");
+        llvm::Type* DoubleTy = llvm::Type::getDoubleTy(context.TheContext);
         if (!SetPF) {
-            llvm::Type* DoubleTy = llvm::Type::getDoubleTy(context.TheContext);
-            llvm::Type* CharPtrTy = llvm::PointerType::get(llvm::Type::getInt8Ty(context.TheContext), 0);
-            SetPF = llvm::Function::Create(llvm::FunctionType::get(DoubleTy, {CharPtrTy, DoubleTy}, false), llvm::Function::ExternalLinkage, "flux_set_parameter", context.TheModule.get());
+            SetPF = llvm::Function::Create(llvm::FunctionType::get(DoubleTy, {DoubleTy, DoubleTy}, false), llvm::Function::ExternalLinkage, "flux_set_parameter", context.TheModule.get());
         }
         TypedValue NewValTV = Val->codegen(context);
         if (!NewValTV.Val) return TypedValue();
-        return TypedValue(context.Builder.CreateCall(SetPF, {context.Builder.CreateGlobalStringPtr(TargetName), NewValTV.Val}, "setp"), TypeKind::Double);
+        
+        uint64_t addr = reinterpret_cast<uint64_t>(getPermanentString(TargetName));
+        llvm::Value* addrConst = llvm::ConstantInt::get(llvm::Type::getInt64Ty(context.TheContext), addr);
+        llvm::Value* PtrDouble = context.Builder.CreateBitCast(addrConst, DoubleTy, "ptr_double");
+        
+        return TypedValue(context.Builder.CreateCall(SetPF, {PtrDouble, NewValTV.Val}, "setp"), TypeKind::Double);
     }
 
     if (!Variable) {
@@ -749,11 +761,29 @@ TypedValue CallExprAST::codegen(CodegenContext& context) {
         TypedValue ArgTV = Args[i]->codegen(context);
         if (!ArgTV.Val) return TypedValue();
         llvm::Value* ArgV = ArgTV.Val;
+
+        // Ensure string arguments are bitcasted to double for the new ABI
+        if (ArgTV.Type.Kind == TypeKind::String && ArgV->getType()->isPointerTy()) {
+            llvm::Type* Int64Ty = llvm::Type::getInt64Ty(context.TheContext);
+            ArgV = context.Builder.CreatePtrToInt(ArgV, Int64Ty, "strptr_int");
+            ArgV = context.Builder.CreateBitCast(ArgV, llvm::Type::getDoubleTy(context.TheContext), "strptr_double");
+        }
+
         llvm::Type* ExpectedTy = CalleeF->getArg(i)->getType();
         if (ArgV->getType() != ExpectedTy) {
             if (ExpectedTy->isIntegerTy() && ArgV->getType()->isFloatingPointTy()) ArgV = context.Builder.CreateFPToSI(ArgV, ExpectedTy, "cast");
             else if (ExpectedTy->isFloatingPointTy() && ArgV->getType()->isIntegerTy()) ArgV = context.Builder.CreateSIToFP(ArgV, ExpectedTy, "cast");
             else if (ExpectedTy->isStructTy() && !ArgV->getType()->isStructTy()) ArgV = promoteToComplex(ArgTV, context).Val;
+            else if (ExpectedTy->isFloatingPointTy() && ArgV->getType()->isPointerTy()) {
+                llvm::Type* Int64Ty = llvm::Type::getInt64Ty(context.TheContext);
+                ArgV = context.Builder.CreatePtrToInt(ArgV, Int64Ty, "ptr_to_int");
+                ArgV = context.Builder.CreateBitCast(ArgV, ExpectedTy, "int_to_fp");
+            }
+            else if (ExpectedTy->isPointerTy() && ArgV->getType()->isFloatingPointTy() && ArgTV.Type.Kind == TypeKind::String) {
+                llvm::Type* Int64Ty = llvm::Type::getInt64Ty(context.TheContext);
+                ArgV = context.Builder.CreateBitCast(ArgV, Int64Ty, "double_to_int");
+                ArgV = context.Builder.CreateIntToPtr(ArgV, ExpectedTy, "int_to_ptr");
+            }
         }
         ArgsV.push_back(ArgV);
     }
@@ -1045,8 +1075,18 @@ TypedValue RangeExprAST::codegen(CodegenContext& context) {
 
 llvm::Function* PrototypeAST::codegen(CodegenContext& context) {
     std::vector<llvm::Type*> ArgTypes;
-    for (const auto& Arg : Args) ArgTypes.push_back(Arg.second.getLLVMType(context.TheContext));
-    llvm::FunctionType* FT = llvm::FunctionType::get(ReturnType.getLLVMType(context.TheContext), ArgTypes, false);
+    llvm::Type* DoubleTy = llvm::Type::getDoubleTy(context.TheContext);
+    for (const auto& Arg : Args) {
+        if (Arg.second.Kind == TypeKind::String)
+            ArgTypes.push_back(DoubleTy);
+        else
+            ArgTypes.push_back(Arg.second.getLLVMType(context.TheContext));
+    }
+    
+    llvm::Type* RetTy = (ReturnType.Kind == TypeKind::String) ? 
+                        DoubleTy : ReturnType.getLLVMType(context.TheContext);
+    
+    llvm::FunctionType* FT = llvm::FunctionType::get(RetTy, ArgTypes, false);
     llvm::Function* F = llvm::Function::Create(FT, llvm::Function::ExternalLinkage, Name, context.TheModule.get());
     unsigned Idx = 0;
     for (auto& Arg : F->args()) Arg.setName(Args[Idx++].first);
@@ -1085,9 +1125,18 @@ llvm::Function* FunctionAST::codegen(CodegenContext& context) {
     const auto& ArgTypes = Proto->getArgs();
     unsigned Idx = 0;
     for (auto& Arg : TheFunction->args()) {
-        llvm::Type* ArgTy = ArgTypes[Idx].second.getLLVMType(context.TheContext);
-        llvm::AllocaInst* Alloca = context.Builder.CreateAlloca(ArgTy, nullptr, std::string(Arg.getName()));
-        context.Builder.CreateStore(&Arg, Alloca);
+        llvm::Type* ExpectedTy = ArgTypes[Idx].second.getLLVMType(context.TheContext);
+        llvm::Value* ArgVal = &Arg;
+        
+        // Handle bitcast from double to pointer for string arguments
+        if (ArgVal->getType()->isFloatingPointTy() && ExpectedTy->isPointerTy()) {
+            llvm::Type* Int64Ty = llvm::Type::getInt64Ty(context.TheContext);
+            ArgVal = context.Builder.CreateBitCast(ArgVal, Int64Ty, "fp_to_int");
+            ArgVal = context.Builder.CreateIntToPtr(ArgVal, ExpectedTy, "int_to_ptr");
+        }
+        
+        llvm::AllocaInst* Alloca = context.Builder.CreateAlloca(ExpectedTy, nullptr, std::string(Arg.getName()));
+        context.Builder.CreateStore(ArgVal, Alloca);
         context.NamedValues[std::string(Arg.getName())] = Alloca;
         Idx++;
     }
@@ -1098,6 +1147,15 @@ llvm::Function* FunctionAST::codegen(CodegenContext& context) {
             if (RetTy->isIntegerTy() && RetVal->getType()->isFloatingPointTy()) RetVal = context.Builder.CreateFPToSI(RetVal, RetTy, "cast");
             else if (RetTy->isFloatingPointTy() && RetVal->getType()->isIntegerTy()) RetVal = context.Builder.CreateSIToFP(RetVal, RetTy, "cast");
             else if (RetTy->isStructTy() && !RetVal->getType()->isStructTy()) RetVal = promoteToComplex(RetTV, context).Val;
+            else if (RetTy->isFloatingPointTy() && RetVal->getType()->isPointerTy()) {
+                llvm::Type* Int64Ty = llvm::Type::getInt64Ty(context.TheContext);
+                RetVal = context.Builder.CreatePtrToInt(RetVal, Int64Ty, "ptr_to_int");
+                RetVal = context.Builder.CreateBitCast(RetVal, RetTy, "int_to_fp");
+            } else if (RetTy->isPointerTy() && RetVal->getType()->isFloatingPointTy()) {
+                llvm::Type* Int64Ty = llvm::Type::getInt64Ty(context.TheContext);
+                RetVal = context.Builder.CreateBitCast(RetVal, Int64Ty, "fp_to_int");
+                RetVal = context.Builder.CreateIntToPtr(RetVal, RetTy, "int_to_ptr");
+            }
         }
         context.Builder.CreateRet(RetVal);
         llvm::verifyFunction(*TheFunction);
@@ -1109,32 +1167,44 @@ llvm::Function* FunctionAST::codegen(CodegenContext& context) {
 
 TypedValue VoltageExprAST::codegen(CodegenContext& context) {
     llvm::Function* GetVF = context.TheModule->getFunction("flux_get_voltage");
+    llvm::Type* DoubleTy = llvm::Type::getDoubleTy(context.TheContext);
     if (!GetVF) {
-        llvm::Type* DoubleTy = llvm::Type::getDoubleTy(context.TheContext);
-        llvm::Type* CharPtrTy = llvm::PointerType::get(llvm::Type::getInt8Ty(context.TheContext), 0);
-        GetVF = llvm::Function::Create(llvm::FunctionType::get(DoubleTy, {CharPtrTy}, false), llvm::Function::ExternalLinkage, "flux_get_voltage", context.TheModule.get());
+        GetVF = llvm::Function::Create(llvm::FunctionType::get(DoubleTy, {DoubleTy}, false), llvm::Function::ExternalLinkage, "flux_get_voltage", context.TheModule.get());
     }
-    return TypedValue(context.Builder.CreateCall(GetVF, {context.Builder.CreateGlobalStringPtr(NodeName)}, "v"), TypeKind::Double);
+    
+    uint64_t addr = reinterpret_cast<uint64_t>(getPermanentString(NodeName));
+    llvm::Value* addrConst = llvm::ConstantInt::get(llvm::Type::getInt64Ty(context.TheContext), addr);
+    llvm::Value* PtrDouble = context.Builder.CreateBitCast(addrConst, DoubleTy, "ptr_double");
+    
+    return TypedValue(context.Builder.CreateCall(GetVF, {PtrDouble}, "v"), TypeKind::Double);
 }
 
 TypedValue CurrentExprAST::codegen(CodegenContext& context) {
     llvm::Function* GetIF = context.TheModule->getFunction("flux_get_current");
+    llvm::Type* DoubleTy = llvm::Type::getDoubleTy(context.TheContext);
     if (!GetIF) {
-        llvm::Type* DoubleTy = llvm::Type::getDoubleTy(context.TheContext);
-        llvm::Type* CharPtrTy = llvm::PointerType::get(llvm::Type::getInt8Ty(context.TheContext), 0);
-        GetIF = llvm::Function::Create(llvm::FunctionType::get(DoubleTy, {CharPtrTy}, false), llvm::Function::ExternalLinkage, "flux_get_current", context.TheModule.get());
+        GetIF = llvm::Function::Create(llvm::FunctionType::get(DoubleTy, {DoubleTy}, false), llvm::Function::ExternalLinkage, "flux_get_current", context.TheModule.get());
     }
-    return TypedValue(context.Builder.CreateCall(GetIF, {context.Builder.CreateGlobalStringPtr(BranchName)}, "i"), TypeKind::Double);
+    
+    uint64_t addr = reinterpret_cast<uint64_t>(getPermanentString(BranchName));
+    llvm::Value* addrConst = llvm::ConstantInt::get(llvm::Type::getInt64Ty(context.TheContext), addr);
+    llvm::Value* PtrDouble = context.Builder.CreateBitCast(addrConst, DoubleTy, "ptr_double");
+    
+    return TypedValue(context.Builder.CreateCall(GetIF, {PtrDouble}, "i"), TypeKind::Double);
 }
 
 TypedValue ParameterExprAST::codegen(CodegenContext& context) {
     llvm::Function* GetPF = context.TheModule->getFunction("flux_get_parameter");
+    llvm::Type* DoubleTy = llvm::Type::getDoubleTy(context.TheContext);
     if (!GetPF) {
-        llvm::Type* DoubleTy = llvm::Type::getDoubleTy(context.TheContext);
-        llvm::Type* CharPtrTy = llvm::PointerType::get(llvm::Type::getInt8Ty(context.TheContext), 0);
-        GetPF = llvm::Function::Create(llvm::FunctionType::get(DoubleTy, {CharPtrTy}, false), llvm::Function::ExternalLinkage, "flux_get_parameter", context.TheModule.get());
+        GetPF = llvm::Function::Create(llvm::FunctionType::get(DoubleTy, {DoubleTy}, false), llvm::Function::ExternalLinkage, "flux_get_parameter", context.TheModule.get());
     }
-    return TypedValue(context.Builder.CreateCall(GetPF, {context.Builder.CreateGlobalStringPtr(ParamName)}, "p"), TypeKind::Double);
+    
+    uint64_t addr = reinterpret_cast<uint64_t>(getPermanentString(ParamName));
+    llvm::Value* addrConst = llvm::ConstantInt::get(llvm::Type::getInt64Ty(context.TheContext), addr);
+    llvm::Value* PtrDouble = context.Builder.CreateBitCast(addrConst, DoubleTy, "ptr_double");
+    
+    return TypedValue(context.Builder.CreateCall(GetPF, {PtrDouble}, "p"), TypeKind::Double);
 }
 
 // ============================================================================
@@ -1163,37 +1233,54 @@ TypedValue BuiltinVarExprAST::codegen(CodegenContext& context) {
 }
 
 TypedValue UpdateFuncAST::codegen(CodegenContext& context) {
-    // Generate update(t, inputs) function
-    // This creates a function that will be called by ngspice during simulation
+    // Generate update(t, inputs) or update(t, inputs, outputs, state) function
     std::vector<llvm::Type*> ArgTypes;
     std::vector<std::string> ArgNames;
-    
+
     // Time argument (double)
     ArgTypes.push_back(llvm::Type::getDoubleTy(context.TheContext));
     ArgNames.push_back(TimeVar);
-    
+
     // Inputs argument (pointer to inputs array)
     llvm::Type* DoublePtrTy = llvm::PointerType::get(llvm::Type::getDoubleTy(context.TheContext), 0);
     ArgTypes.push_back(DoublePtrTy);
     ArgNames.push_back(InputsVar);
-    
+
+    // Optional outputs argument (pointer to outputs array)
+    if (!OutputsVar.empty()) {
+        ArgTypes.push_back(DoublePtrTy);
+        ArgNames.push_back(OutputsVar);
+    }
+
+    // Optional state argument (i8* for opaque state pointer)
+    if (!StateVar.empty()) {
+        ArgTypes.push_back(llvm::PointerType::getUnqual(llvm::Type::getInt8Ty(context.TheContext)));
+        ArgNames.push_back(StateVar);
+    }
+
     // Return type is double (output value)
     llvm::Type* RetTy = llvm::Type::getDoubleTy(context.TheContext);
-    
+
     llvm::FunctionType* FT = llvm::FunctionType::get(RetTy, ArgTypes, false);
     llvm::Function* TheFunction = llvm::Function::Create(FT, llvm::Function::ExternalLinkage, "update", context.TheModule.get());
-    
+
+    // Create entry block and set builder
+    llvm::BasicBlock* BB = llvm::BasicBlock::Create(context.TheContext, "entry", TheFunction);
+    llvm::IRBuilder<> Builder(BB);
+
     // Set argument names and allocate on stack
     unsigned Idx = 0;
     for (auto& Arg : TheFunction->args()) {
         Arg.setName(ArgNames[Idx]);
-        llvm::IRBuilder<> TmpB(&TheFunction->getEntryBlock(), TheFunction->getEntryBlock().begin());
-        llvm::AllocaInst* Alloca = TmpB.CreateAlloca(Arg.getType(), nullptr, ArgNames[Idx]);
-        context.Builder.CreateStore(&Arg, Alloca);
+        llvm::AllocaInst* Alloca = Builder.CreateAlloca(Arg.getType(), nullptr, ArgNames[Idx]);
+        Builder.CreateStore(&Arg, Alloca);
         context.NamedValues[std::string(Arg.getName())] = Alloca;
         Idx++;
     }
-    
+
+    // Set the context builder for body codegen
+    context.Builder.SetInsertPoint(BB);
+
     if (TypedValue RetTV = Body->codegen(context)) {
         llvm::Value* RetVal = RetTV.Val;
         if (RetVal->getType() != RetTy) {
@@ -1205,7 +1292,7 @@ TypedValue UpdateFuncAST::codegen(CodegenContext& context) {
         llvm::verifyFunction(*TheFunction);
         return TypedValue(TheFunction, TypeKind::Double);
     }
-    
+
     TheFunction->eraseFromParent();
     return TypedValue();
 }
@@ -1466,6 +1553,10 @@ void SubcktExprAST::addStatement(std::unique_ptr<ExprAST> Stmt) {
     Body.push_back(std::move(Stmt));
 }
 
+void SubcktExprAST::addFunction(std::unique_ptr<FunctionAST> Func) {
+    Functions.push_back(std::move(Func));
+}
+
 TypedValue SubcktExprAST::codegen(CodegenContext& context) {
     // Build pin list string
     std::string PinsStr;
@@ -1474,19 +1565,41 @@ TypedValue SubcktExprAST::codegen(CodegenContext& context) {
         PinsStr += Pins[i];
     }
     
+    llvm::Type* DoubleTy = llvm::Type::getDoubleTy(context.TheContext);
+    llvm::Type* Int64Ty = llvm::Type::getInt64Ty(context.TheContext);
+    
     llvm::Function* RegisterSubckt = context.TheModule->getFunction("flux_register_subckt");
     if (!RegisterSubckt) {
-        llvm::Type* DoubleTy = llvm::Type::getDoubleTy(context.TheContext);
-        llvm::Type* CharPtrTy = llvm::PointerType::get(llvm::Type::getInt8Ty(context.TheContext), 0);
+        // Updated signature: double flux_register_subckt(double name_ptr_double, double pins_ptr_double)
         RegisterSubckt = llvm::Function::Create(
-            llvm::FunctionType::get(DoubleTy, {CharPtrTy, CharPtrTy}, false),
+            llvm::FunctionType::get(DoubleTy, {DoubleTy, DoubleTy}, false),
             llvm::Function::ExternalLinkage, "flux_register_subckt", context.TheModule.get());
     }
     
-    return TypedValue(context.Builder.CreateCall(RegisterSubckt, {
-        context.Builder.CreateGlobalStringPtr(Name),
-        context.Builder.CreateGlobalStringPtr(PinsStr)
-    }), TypeKind::Double);
+    // Use bitcast pattern for Name
+    uint64_t nameAddr = reinterpret_cast<uint64_t>(getPermanentString(Name));
+    llvm::Value* NameAddrVal = llvm::ConstantInt::get(Int64Ty, nameAddr);
+    llvm::Value* NameDouble = context.Builder.CreateBitCast(NameAddrVal, DoubleTy, "name_double");
+    
+    // Use bitcast pattern for PinsStr
+    uint64_t pinsAddr = reinterpret_cast<uint64_t>(getPermanentString(PinsStr));
+    llvm::Value* PinsAddrVal = llvm::ConstantInt::get(Int64Ty, pinsAddr);
+    llvm::Value* PinsDouble = context.Builder.CreateBitCast(PinsAddrVal, DoubleTy, "pins_double");
+    
+    // Register the subcircuit
+    TypedValue Result = TypedValue(context.Builder.CreateCall(RegisterSubckt, {NameDouble, PinsDouble}), TypeKind::Double);
+    
+    // Codegen body statements (netlist elements, local parameters, etc.)
+    for (auto& Stmt : Body) {
+        Stmt->codegen(context);
+    }
+    
+    // Codegen local functions defined inside the subcircuit
+    for (auto& Func : Functions) {
+        Func->codegen(context);
+    }
+    
+    return Result;
 }
 
 void ModelExprAST::addParameter(const std::string& Name, std::unique_ptr<ExprAST> Value) {
@@ -1495,18 +1608,26 @@ void ModelExprAST::addParameter(const std::string& Name, std::unique_ptr<ExprAST
 
 TypedValue ModelExprAST::codegen(CodegenContext& context) {
     llvm::Function* RegisterModel = context.TheModule->getFunction("flux_register_model");
+    llvm::Type* DoubleTy = llvm::Type::getDoubleTy(context.TheContext);
+    llvm::Type* Int64Ty = llvm::Type::getInt64Ty(context.TheContext);
+
     if (!RegisterModel) {
-        llvm::Type* DoubleTy = llvm::Type::getDoubleTy(context.TheContext);
-        llvm::Type* CharPtrTy = llvm::PointerType::get(llvm::Type::getInt8Ty(context.TheContext), 0);
         RegisterModel = llvm::Function::Create(
-            llvm::FunctionType::get(DoubleTy, {CharPtrTy, CharPtrTy}, false),
+            llvm::FunctionType::get(DoubleTy, {DoubleTy, DoubleTy}, false),
             llvm::Function::ExternalLinkage, "flux_register_model", context.TheModule.get());
     }
     
-    return TypedValue(context.Builder.CreateCall(RegisterModel, {
-        context.Builder.CreateGlobalStringPtr(Name),
-        context.Builder.CreateGlobalStringPtr(ModelType)
-    }), TypeKind::Double);
+    // Use bitcast pattern for Name
+    uint64_t nameAddr = reinterpret_cast<uint64_t>(getPermanentString(Name));
+    llvm::Value* NameAddrVal = llvm::ConstantInt::get(Int64Ty, nameAddr);
+    llvm::Value* NameDouble = context.Builder.CreateBitCast(NameAddrVal, DoubleTy, "name_double");
+    
+    // Use bitcast pattern for ModelType
+    uint64_t typeAddr = reinterpret_cast<uint64_t>(getPermanentString(ModelType));
+    llvm::Value* TypeAddrVal = llvm::ConstantInt::get(Int64Ty, typeAddr);
+    llvm::Value* TypeDouble = context.Builder.CreateBitCast(TypeAddrVal, DoubleTy, "type_double");
+
+    return TypedValue(context.Builder.CreateCall(RegisterModel, {NameDouble, TypeDouble}), TypeKind::Double);
 }
 
 TypedValue ParamExprAST::codegen(CodegenContext& context) {

@@ -4,7 +4,17 @@
 // ============================================================================
 
 #include "flux/jit/jit_manager.h"
+#include "flux/jit/flux_jit.h"
+#include "flux/runtime/flux_runtime.h"
 #include "flux/compiler/compiler_instance.h"
+#include <llvm/IR/Verifier.h>
+#include <llvm/IR/LLVMContext.h>
+#include <llvm/IR/Module.h>
+#include <llvm/IR/Function.h>
+#include <llvm/IR/BasicBlock.h>
+#include <llvm/IR/IRBuilder.h>
+#include <llvm/IR/Type.h>
+#include <llvm/IR/Constants.h>
 #include <iostream>
 #include <sstream>
 #include <algorithm>
@@ -239,24 +249,87 @@ bool JITManager::compileSource(const std::string& source, JITComponent& comp, st
         comp.jit.reset();
         comp.update_func = nullptr;
         comp.init_func = nullptr;
+        comp.eval_func = nullptr;
         comp.state.is_valid = false;
         return false;
     }
 
-    // The older text-to-JIT compile API has drifted; keep the runtime path
-    // alive with a built-in evaluator until that compiler interface is
-    // reconnected to FluxJIT's current module-based API.
-    comp.jit = std::make_unique<FluxJIT>();
-    comp.update_func = reinterpret_cast<void*>(&defaultComponentUpdate);
-    comp.init_func = reinterpret_cast<void*>(&defaultComponentInit);
+    try {
+        // Create a new JIT instance for this component
+        comp.jit = std::make_unique<FluxJIT>();
 
-    comp.state.is_valid = true;
-    comp.compile_count++;
-    comp.last_compile_time = std::chrono::steady_clock::now();
-    m_stats.active_components++;
+        // Use the real FluxScript compiler pipeline
+        Flux::CompilerOptions opts;
+        opts.injectStdlib = true;
+        opts.optimizationLevel = Flux::OptimizationLevel::O0;  // O0 for debugging
+        opts.inputName = comp.name;
+        opts.moduleName = "component_" + comp.name;
 
-    std::cout << "[JITManager] Compiled component: " << comp.name << std::endl;
-    return true;
+        std::cout << "[JITManager] Creating compiler for: " << comp.name << std::endl;
+        Flux::CompilerInstance compiler(opts);
+
+        auto artifacts = compiler.compileToIR(source, error);
+
+        if (!artifacts || !artifacts->codegenContext || !artifacts->codegenContext->TheModule) {
+            comp.state.is_valid = false;
+            if (!error || error->empty()) {
+                if (error) *error = "Compilation produced no module";
+            }
+            return false;
+        }
+
+        // Move the compiled module into the JIT
+        // Debug: print module functions before adding
+        std::cout << "[JITManager] Functions in module before JIT add:" << std::endl;
+        for (auto& F : *artifacts->codegenContext->TheModule) {
+            std::cout << "  " << F.getName().str() << " (linkage: " << F.getLinkage() << ")" << std::endl;
+        }
+
+        comp.jit->addModule(
+            std::move(artifacts->codegenContext->TheModule),
+            std::move(artifacts->codegenContext->OwnedContext)
+        );
+
+        // Register runtime functions (sin, cos, etc.) so the JIT can resolve them
+        registerRuntimeFunctions(*comp.jit);
+
+        // Get function pointers from the JIT
+        // Find the function name from the source (first "def name" pattern)
+        std::string func_name = "update";
+        size_t def_pos = source.find("def ");
+        if (def_pos != std::string::npos) {
+            size_t name_start = def_pos + 4;
+            size_t name_end = source.find_first_of("( \t\n", name_start);
+            if (name_end != std::string::npos && name_end > name_start) {
+                func_name = source.substr(name_start, name_end - name_start);
+            }
+        }
+
+        comp.update_func = comp.jit->getPointerToFunction(func_name);
+        comp.eval_func = comp.jit->getPointerToFunction("eval");
+
+        // If no function was found, that's an error
+        if (!comp.update_func) {
+            if (error) *error = "No function '" + func_name + "' defined in component source";
+            comp.state.is_valid = false;
+            return false;
+        }
+
+        comp.state.is_valid = true;
+        comp.compile_count++;
+        comp.last_compile_time = std::chrono::steady_clock::now();
+        m_stats.active_components++;
+
+        std::cout << "[JITManager] Compiled component: " << comp.name
+                  << " (update: " << (comp.update_func ? "OK" : "FAIL")
+                  << ", eval: " << (comp.eval_func ? "OK" : "FAIL")
+                  << ")" << std::endl;
+        return true;
+    } catch (const std::exception& e) {
+        if (error) *error = std::string("Compilation error: ") + e.what();
+        comp.state.is_valid = false;
+        return false;
+    }
 }
 
 bool JITManager::validateComponent(const JITComponent& comp, std::string* error) const {
@@ -342,18 +415,24 @@ bool JITManager::evaluateComponent(const std::string& name, double time, double 
 
     auto start_time = std::chrono::steady_clock::now();
 
-    // Call update function: update(time, dt, inputs, outputs, state)
-    typedef double (*UpdateFunc)(double, double, const double*, double*, void*);
-    auto update = reinterpret_cast<UpdateFunc>(comp.update_func);
-    
-    double result = update(time, dt, inputs, outputs, &comp.state);
+    // Detect function signature from the JIT module
+    // The compiled function could be:
+    //   double update(double, double)       — 2 scalar args (def update(t, x))
+    //   double update(double, double*)      — scalar + pointer (def update(t, inputs))
+    double result = 0.0;
+
+    // Try 2-scalar-arg signature first (most common for simple components)
+    typedef double (*UpdateFunc2SS)(double, double);
+    auto update2ss = reinterpret_cast<UpdateFunc2SS>(comp.update_func);
+    result = update2ss(time, inputs ? inputs[0] : 0.0);
+    if (outputs) outputs[0] = result;
 
     auto end_time = std::chrono::steady_clock::now();
     double eval_time_us = std::chrono::duration<double, std::micro>(end_time - start_time).count();
 
     // Update statistics
     m_stats.total_evaluations++;
-    m_stats.avg_eval_time_us = (m_stats.avg_eval_time_us * (m_stats.total_evaluations - 1) + 
+    m_stats.avg_eval_time_us = (m_stats.avg_eval_time_us * (m_stats.total_evaluations - 1) +
                                 eval_time_us) / m_stats.total_evaluations;
 
     // Record probe data if enabled
@@ -474,6 +553,70 @@ double* JITManager::getOutputBuffer(const std::string& name) {
         return nullptr;
     }
     return it->second;
+}
+
+// ============================================================================
+// Signal Generation Support
+// ============================================================================
+
+bool JITManager::registerSignalGenerator(const std::string& name, const std::string& source_code,
+                                         std::string* error) {
+    // Register as a component with 0 inputs and 1 output (signal generator)
+    bool result = registerComponent(name, source_code, 0, 1, error);
+    if (result) {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        auto it = m_components.find(name);
+        if (it != m_components.end()) {
+            it->second.is_signal_generator = true;
+            it->second.component_type = "signal";
+        }
+    }
+    return result;
+}
+
+double JITManager::evaluateSignal(const std::string& name, double time) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    auto it = m_components.find(name);
+    if (it == m_components.end() || !it->second.eval_func) {
+        return 0.0;
+    }
+
+    // Call eval function: eval(time) -> value
+    typedef double (*EvalFunc)(double);
+    auto eval = reinterpret_cast<EvalFunc>(it->second.eval_func);
+    return eval(time);
+}
+
+std::vector<double> JITManager::generateWaveform(const std::string& name,
+                                                 double t_start, double t_stop, double sample_rate,
+                                                 std::string* error) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    auto it = m_components.find(name);
+    if (it == m_components.end()) {
+        if (error) *error = "Component not found: " + name;
+        return {};
+    }
+
+    if (!it->second.eval_func) {
+        if (error) *error = "Component has no eval function: " + name;
+        return {};
+    }
+
+    double dt = 1.0 / sample_rate;
+    int num_points = static_cast<int>((t_stop - t_start) / dt) + 1;
+    
+    std::vector<double> values;
+    values.reserve(num_points);
+
+    typedef double (*EvalFunc)(double);
+    auto eval = reinterpret_cast<EvalFunc>(it->second.eval_func);
+
+    for (int i = 0; i < num_points; i++) {
+        double t = t_start + i * dt;
+        values.push_back(eval(t));
+    }
+
+    return values;
 }
 
 // ============================================================================

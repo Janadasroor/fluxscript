@@ -81,6 +81,7 @@ public:
 
     // Call a compiled function.
     FluxValue callFunction(const std::string& name, const std::vector<double>& args, std::string* error = nullptr);
+    void* getFunctionPointer(const std::string& name);
 #ifdef FLUX_HAS_QT
     // Qt overload (only available when Qt is enabled)
     FluxValue callFunction(const std::string& name, const std::vector<double>& args, QString* error);

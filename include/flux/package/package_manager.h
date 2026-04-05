@@ -28,7 +28,9 @@ struct PackageVersion {
     
     bool operator<(const PackageVersion& other) const;
     bool operator==(const PackageVersion& other) const;
+    bool operator>(const PackageVersion& other) const { return other < *this; }
     bool operator>=(const PackageVersion& other) const;
+    bool operator<=(const PackageVersion& other) const { return !(*this > other); }
 };
 
 struct PackageDependency {
@@ -175,6 +177,15 @@ private:
     bool extractPackage(const std::string& archive, const std::string& dest);
     bool runInstallScript(const std::string& packagePath);
     void updateLockFile();
+    void loadInstalled();
+    void saveInstalled();
+    bool satisfiesConstraint(const PackageVersion& version, const std::string& constraint);
+    bool resolveDependency(const PackageDependency& dep,
+                           std::map<std::string, std::vector<PackageDependency>>& depGraph);
+    void buildDependencyTree(const std::string& packageName, const std::string& prefix,
+                             std::vector<std::string>& tree);
+    InstalledPackage* findInstalled(const std::string& name);
+    const InstalledPackage* findInstalled(const std::string& name) const;
 };
 
 // ============================================================================

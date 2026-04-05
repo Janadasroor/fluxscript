@@ -8,6 +8,15 @@
 #include <string>
 #include <vector>
 #include <mutex>
+#include <cstdint>
+
+template <typename To, typename From>
+inline To bit_cast(const From& src) noexcept {
+    static_assert(sizeof(To) == sizeof(From), "bit_cast sizes must match");
+    To dst;
+    std::memcpy(&dst, &src, sizeof(To));
+    return dst;
+}
 
 // ============================================================================
 // Global Simulation State
@@ -227,8 +236,11 @@ double flux_register_save(const char* var_name) {
 // Subcircuits and Models
 // ============================================================================
 
-double flux_register_subckt(const char* name, const char* pins) {
+double flux_register_subckt(double name_ptr_double, double pins_ptr_double) {
     std::lock_guard<std::mutex> lock(g_sim_mutex);
+    
+    const char* name = bit_cast<const char*>(name_ptr_double);
+    const char* pins = bit_cast<const char*>(pins_ptr_double);
     
     SubcktInfo info;
     info.name = name;
@@ -247,8 +259,12 @@ double flux_register_subckt(const char* name, const char* pins) {
     return 0.0;
 }
 
-double flux_register_model(const char* name, const char* model_type) {
+double flux_register_model(double name_ptr_double, double model_type_ptr_double) {
     std::lock_guard<std::mutex> lock(g_sim_mutex);
+    
+    const char* name = bit_cast<const char*>(name_ptr_double);
+    const char* model_type = bit_cast<const char*>(model_type_ptr_double);
+    
     g_models[name] = {name, model_type};
     printf("[SPICE] Registered model: %s (type: %s)\n", name, model_type);
     return 0.0;

@@ -157,8 +157,8 @@ void FluxEditor::setupEditor()
     // Create line number area
     m_lineNumberArea = new LineNumberArea(this);
 
-    // Set monospace font
-    QFont font("Fira Code", 12);
+    // Set monospace font (standard code editor size)
+    QFont font("Fira Code", 13);
     font.setStyleHint(QFont::Monospace);
     setFont(font);
 

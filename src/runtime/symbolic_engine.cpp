@@ -10,40 +10,40 @@ namespace Flux {
 // ============ SymbolicExpr Implementation ============
 
 std::shared_ptr<SymbolicExpr> SymbolicExpr::makeSymbol(const std::string& name) {
-    auto expr = std::make_shared<SymbolicExpr>(Symbol);
+    auto expr = std::make_shared<SymbolicExpr>(SymbolicExpr::Symbol);
     expr->name = name;
     return expr;
 }
 
 std::shared_ptr<SymbolicExpr> SymbolicExpr::makeNumber(double val) {
-    auto expr = std::make_shared<SymbolicExpr>(Number);
+    auto expr = std::make_shared<SymbolicExpr>(SymbolicExpr::Number);
     expr->value = val;
     return expr;
 }
 
 std::shared_ptr<SymbolicExpr> SymbolicExpr::makeAdd(std::shared_ptr<SymbolicExpr> a, std::shared_ptr<SymbolicExpr> b) {
-    auto expr = std::make_shared<SymbolicExpr>(Add);
+    auto expr = std::make_shared<SymbolicExpr>(SymbolicExpr::Add);
     expr->children.push_back(a);
     expr->children.push_back(b);
     return expr;
 }
 
 std::shared_ptr<SymbolicExpr> SymbolicExpr::makeMul(std::shared_ptr<SymbolicExpr> a, std::shared_ptr<SymbolicExpr> b) {
-    auto expr = std::make_shared<SymbolicExpr>(Mul);
+    auto expr = std::make_shared<SymbolicExpr>(SymbolicExpr::Mul);
     expr->children.push_back(a);
     expr->children.push_back(b);
     return expr;
 }
 
 std::shared_ptr<SymbolicExpr> SymbolicExpr::makePower(std::shared_ptr<SymbolicExpr> base, std::shared_ptr<SymbolicExpr> exp) {
-    auto expr = std::make_shared<SymbolicExpr>(Power);
+    auto expr = std::make_shared<SymbolicExpr>(SymbolicExpr::Power);
     expr->children.push_back(base);
     expr->children.push_back(exp);
     return expr;
 }
 
 std::shared_ptr<SymbolicExpr> SymbolicExpr::makeFunc(const std::string& func, std::shared_ptr<SymbolicExpr> arg) {
-    auto expr = std::make_shared<SymbolicExpr>(Function);
+    auto expr = std::make_shared<SymbolicExpr>(SymbolicExpr::Function);
     expr->func_name = func;
     expr->children.push_back(arg);
     return expr;
@@ -51,19 +51,19 @@ std::shared_ptr<SymbolicExpr> SymbolicExpr::makeFunc(const std::string& func, st
 
 std::string SymbolicExpr::toString() const {
     switch (type) {
-        case SymbolicExpr::Type::Symbol: return name;
-        case SymbolicExpr::Type::Number: {
+        case SymbolicExpr::Symbol: return name;
+        case SymbolicExpr::Number: {
             std::ostringstream oss;
             oss << value;
             return oss.str();
         }
-        case SymbolicExpr::Type::Add:
+        case SymbolicExpr::Add:
             return "(" + children[0]->toString() + " + " + children[1]->toString() + ")";
-        case SymbolicExpr::Type::Mul:
+        case SymbolicExpr::Mul:
             return "(" + children[0]->toString() + " * " + children[1]->toString() + ")";
-        case SymbolicExpr::Type::Power:
+        case SymbolicExpr::Power:
             return children[0]->toString() + "^" + children[1]->toString();
-        case SymbolicExpr::Type::Function:
+        case SymbolicExpr::Function:
             return func_name + "(" + children[0]->toString() + ")";
         default: return "?";
     }
@@ -92,13 +92,13 @@ std::shared_ptr<SymbolicExpr> SymbolicEngine::simplify(std::shared_ptr<SymbolicE
     }
     
     // Constant folding
-    if (expr->type == SymbolicExpr::Type::Add || expr->type == SymbolicExpr::Type::Mul) {
+    if (expr->type == SymbolicExpr::Add || expr->type == SymbolicExpr::Mul) {
         if (expr->children.size() == 2) {
             auto a = expr->children[0];
             auto b = expr->children[1];
             
-            if (a->type == SymbolicExpr::Type::Number && b->type == SymbolicExpr::Type::Number) {
-                if (expr->type == SymbolicExpr::Type::Add) {
+            if (a->type == SymbolicExpr::Number && b->type == SymbolicExpr::Number) {
+                if (expr->type == SymbolicExpr::Add) {
                     return SymbolicExpr::makeNumber(a->value + b->value);
                 } else {
                     return SymbolicExpr::makeNumber(a->value * b->value);
@@ -106,12 +106,12 @@ std::shared_ptr<SymbolicExpr> SymbolicEngine::simplify(std::shared_ptr<SymbolicE
             }
             
             // Identity: x + 0 = x, x * 1 = x
-            if (a->type == SymbolicExpr::Type::Number && a->value == 0 && expr->type == SymbolicExpr::Type::Add) return b;
-            if (b->type == SymbolicExpr::Type::Number && b->value == 0 && expr->type == SymbolicExpr::Type::Add) return a;
-            if (a->type == SymbolicExpr::Type::Number && a->value == 1 && expr->type == SymbolicExpr::Type::Mul) return b;
-            if (b->type == SymbolicExpr::Type::Number && b->value == 1 && expr->type == SymbolicExpr::Type::Mul) return a;
-            if (a->type == SymbolicExpr::Type::Number && a->value == 0 && expr->type == SymbolicExpr::Type::Mul) return a;
-            if (b->type == SymbolicExpr::Type::Number && b->value == 0 && expr->type == SymbolicExpr::Type::Mul) return b;
+            if (a->type == SymbolicExpr::Number && a->value == 0 && expr->type == SymbolicExpr::Add) return b;
+            if (b->type == SymbolicExpr::Number && b->value == 0 && expr->type == SymbolicExpr::Add) return a;
+            if (a->type == SymbolicExpr::Number && a->value == 1 && expr->type == SymbolicExpr::Mul) return b;
+            if (b->type == SymbolicExpr::Number && b->value == 1 && expr->type == SymbolicExpr::Mul) return a;
+            if (a->type == SymbolicExpr::Number && a->value == 0 && expr->type == SymbolicExpr::Mul) return a;
+            if (b->type == SymbolicExpr::Number && b->value == 0 && expr->type == SymbolicExpr::Mul) return b;
         }
     }
     
@@ -122,18 +122,18 @@ std::shared_ptr<SymbolicExpr> SymbolicEngine::expand(std::shared_ptr<SymbolicExp
     // Expand (a+b)*c = a*c + b*c
     if (!expr) return nullptr;
     
-    if (expr->type == SymbolicExpr::Type::Mul && expr->children.size() == 2) {
+    if (expr->type == SymbolicExpr::Mul && expr->children.size() == 2) {
         auto a = expr->children[0];
         auto b = expr->children[1];
         
-        if (a->type == Add) {
+        if (a->type == SymbolicExpr::Add) {
             // (a1+a2)*b = a1*b + a2*b
             auto term1 = SymbolicExpr::makeMul(expand(a->children[0]), expand(b));
             auto term2 = SymbolicExpr::makeMul(expand(a->children[1]), expand(b));
             return simplify(SymbolicExpr::makeAdd(term1, term2));
         }
         
-        if (b->type == Add) {
+        if (b->type == SymbolicExpr::Add) {
             // a*(b1+b2) = a*b1 + a*b2
             auto term1 = SymbolicExpr::makeMul(expand(a), expand(b->children[0]));
             auto term2 = SymbolicExpr::makeMul(expand(a), expand(b->children[1]));
@@ -146,12 +146,12 @@ std::shared_ptr<SymbolicExpr> SymbolicEngine::expand(std::shared_ptr<SymbolicExp
 
 std::shared_ptr<SymbolicExpr> SymbolicEngine::factor(std::shared_ptr<SymbolicExpr> expr) {
     // Basic factoring: a*c + b*c = (a+b)*c
-    if (!expr || expr->type != Add) return expr;
+    if (!expr || expr->type != SymbolicExpr::Add) return expr;
     
     auto a = expr->children[0];
     auto b = expr->children[1];
     
-    if (a->type == Mul && b->type == Mul && a->children.size() == 2 && b->children.size() == 2) {
+    if (a->type == SymbolicExpr::Mul && b->type == SymbolicExpr::Mul && a->children.size() == 2 && b->children.size() == 2) {
         // Check for common factor
         if (a->children[1]->toString() == b->children[1]->toString()) {
             auto common = a->children[1];
@@ -173,20 +173,20 @@ std::shared_ptr<SymbolicExpr> SymbolicEngine::differentiate(std::shared_ptr<Symb
     if (!expr) return nullptr;
     
     switch (expr->type) {
-        case SymbolicExpr::Type::Symbol:
+        case SymbolicExpr::Symbol:
             if (expr->name == var) return SymbolicExpr::makeNumber(1);
             return SymbolicExpr::makeNumber(0);
             
-        case SymbolicExpr::Type::Number:
+        case SymbolicExpr::Number:
             return SymbolicExpr::makeNumber(0);
             
-        case SymbolicExpr::Type::Add:
+        case SymbolicExpr::Add:
             return SymbolicExpr::makeAdd(
                 differentiate(expr->children[0], var),
                 differentiate(expr->children[1], var)
             );
             
-        case SymbolicExpr::Type::Mul: {
+        case SymbolicExpr::Mul: {
             // Product rule: (uv)' = u'v + uv'
             auto u = expr->children[0];
             auto v = expr->children[1];
@@ -197,11 +197,11 @@ std::shared_ptr<SymbolicExpr> SymbolicEngine::differentiate(std::shared_ptr<Symb
             return SymbolicExpr::makeAdd(term1, term2);
         }
             
-        case SymbolicExpr::Type::Power: {
-            // Power rule: (x^n)' = n*x^(n-1) (for constant n)
+        case SymbolicExpr::Power: {
+            // SymbolicExpr::Power rule: (x^n)' = n*x^(n-1) (for constant n)
             auto base = expr->children[0];
             auto exp = expr->children[1];
-            if (exp->type == Number) {
+            if (exp->type == SymbolicExpr::Number) {
                 auto n = exp->value;
                 auto new_exp = SymbolicExpr::makeNumber(n - 1);
                 auto new_base = SymbolicExpr::makePower(base, new_exp);
@@ -237,7 +237,7 @@ std::shared_ptr<SymbolicExpr> SymbolicEngine::substitute(std::shared_ptr<Symboli
                                                         const std::map<std::string, double>& vars) {
     if (!expr) return nullptr;
     
-    if (expr->type == Symbol && vars.count(expr->name)) {
+    if (expr->type == SymbolicExpr::Symbol && vars.count(expr->name)) {
         return SymbolicExpr::makeNumber(vars.at(expr->name));
     }
     
@@ -282,7 +282,7 @@ std::shared_ptr<SymbolicExpr> SymbolicEngine::denominator(std::shared_ptr<Symbol
 
 double SymbolicEngine::evaluate(std::shared_ptr<SymbolicExpr> expr, const std::map<std::string, double>& vars) {
     auto substituted = substitute(expr, vars);
-    if (substituted->type == Number) {
+    if (substituted->type == SymbolicExpr::Number) {
         return substituted->value;
     }
     return 0.0;

@@ -106,7 +106,7 @@ private:
     std::map<std::string, int> m_nodeMap;
     
     std::string getInternalNode(const std::string& name);
-    std::string expressionToSpice(ExprAST* expr);
+    std::string expressionToSpice(const ExprAST* expr);
     std::string valueToSpice(double value);
 };
 

@@ -1,6 +1,8 @@
 #include "flux/runtime/flux_runtime.h"
 
 #include "flux/jit/flux_jit.h"
+#include "flux/runtime/symbolic_engine.h"
+#include "flux/runtime/mixed_signal_runtime.h"
 
 #include <Eigen/Dense>
 
@@ -28,12 +30,37 @@
 
 
 #include "flux/runtime/flux_sim_service.h"
+#include "flux/runtime/mixed_signal_runtime.h"
+#include "flux/runtime/time_domain_api.h"
 
 // Global service pointer definition
 extern "C" FluxSimulationService* g_flux_sim_service = nullptr;
 
+// Symbolic function declarations (must be before registerRuntimeFunctions)
+extern "C" double flux_sym_decl(const char* name);
+extern "C" double flux_sym_simplify(double expr_ptr);
+extern "C" double flux_sym_differentiate(double expr_ptr, const char* var);
+extern "C" double flux_sym_substitute(double expr_ptr, double var_count, double var_names_ptr, double var_values_ptr);
+extern "C" double flux_sym_solve(double lhs_ptr, double rhs_ptr, const char* var);
+extern "C" double flux_sym_evaluate(double expr_ptr, double var_count, double var_names_ptr, double var_values_ptr);
+extern "C" double flux_sym_expand(double expr_ptr);
+extern "C" double flux_sym_factor(double expr_ptr);
+extern "C" double flux_sym_laplace(double expr_ptr, const char* t_var, const char* s_var);
+extern "C" double flux_sym_inverse_laplace(double expr_ptr, const char* s_var, const char* t_var);
+extern "C" double flux_sym_poles(double expr_ptr);
+extern "C" double flux_sym_zeros(double expr_ptr);
+extern "C" double flux_sym_to_string(double expr_ptr);
+extern "C" void flux_parallel_for(int64_t start, int64_t end, int64_t chunk_size, void* body_func_ptr);
+
 namespace Flux {
 
+template <typename To, typename From>
+inline To bit_cast(const From& src) noexcept {
+    static_assert(sizeof(To) == sizeof(From), "bit_cast sizes must match");
+    To dst;
+    std::memcpy(&dst, &src, sizeof(To));
+    return dst;
+}
 
 void registerRuntimeFunctions(FluxJIT& jit) {
     jit.registerFunction("flux_create_vector_sum", reinterpret_cast<void*>(&flux_create_vector_sum));
@@ -139,6 +166,60 @@ void registerRuntimeFunctions(FluxJIT& jit) {
     jit.registerFunction("array_to_image", reinterpret_cast<void*>(&flux_array_to_image));
     jit.registerFunction("image_save", reinterpret_cast<void*>(&flux_image_save));
     jit.registerFunction("image_display", reinterpret_cast<void*>(&flux_image_display));
+
+    // Mixed-signal and modeling extensions
+    jit.registerFunction("flux_cross_detect", reinterpret_cast<void*>(&flux_cross_detect));
+    jit.registerFunction("flux_above_detect", reinterpret_cast<void*>(&flux_above_detect));
+    jit.registerFunction("flux_timer_get", reinterpret_cast<void*>(&flux_timer_get));
+    jit.registerFunction("flux_fsm_create", reinterpret_cast<void*>(&flux_fsm_create));
+    jit.registerFunction("flux_fsm_add_transition", reinterpret_cast<void*>(&flux_fsm_add_transition));
+    jit.registerFunction("flux_edge_detect", reinterpret_cast<void*>(&flux_edge_detect));
+    jit.registerFunction("flux_noise_generate", reinterpret_cast<void*>(&flux_noise_generate));
+    jit.registerFunction("flux_white_noise", reinterpret_cast<void*>(&flux_white_noise));
+    jit.registerFunction("flux_flicker_noise", reinterpret_cast<void*>(&flux_flicker_noise));
+    jit.registerFunction("flux_thermal_noise", reinterpret_cast<void*>(&flux_thermal_noise));
+    jit.registerFunction("flux_piecewise_create", reinterpret_cast<void*>(&flux_piecewise_create));
+    jit.registerFunction("flux_piecewise_add_point", reinterpret_cast<void*>(&flux_piecewise_add_point));
+    jit.registerFunction("flux_piecewise_eval", reinterpret_cast<void*>(&flux_piecewise_eval));
+    jit.registerFunction("flux_table_create", reinterpret_cast<void*>(&flux_table_create));
+    jit.registerFunction("flux_table_add_entry", reinterpret_cast<void*>(&flux_table_add_entry));
+    jit.registerFunction("flux_table_set_default", reinterpret_cast<void*>(&flux_table_set_default));
+    jit.registerFunction("flux_table_lookup", reinterpret_cast<void*>(&flux_table_lookup));
+    jit.registerFunction("flux_csv_import", reinterpret_cast<void*>(&flux_csv_import));
+    jit.registerFunction("flux_unit_create", reinterpret_cast<void*>(&flux_unit_create));
+    jit.registerFunction("flux_dimension", reinterpret_cast<void*>(&flux_dimension));
+    jit.registerFunction("flux_convert", reinterpret_cast<void*>(&flux_convert));
+    jit.registerFunction("flux_has_unit", reinterpret_cast<void*>(&flux_has_unit));
+
+    // Symbolic math functions
+    jit.registerFunction("flux_sym_decl", reinterpret_cast<void*>(&flux_sym_decl));
+    jit.registerFunction("flux_sym_simplify", reinterpret_cast<void*>(&flux_sym_simplify));
+    jit.registerFunction("flux_sym_differentiate", reinterpret_cast<void*>(&flux_sym_differentiate));
+    jit.registerFunction("flux_sym_substitute", reinterpret_cast<void*>(&flux_sym_substitute));
+    jit.registerFunction("flux_sym_solve", reinterpret_cast<void*>(&flux_sym_solve));
+    jit.registerFunction("flux_sym_evaluate", reinterpret_cast<void*>(&flux_sym_evaluate));
+    jit.registerFunction("flux_sym_expand", reinterpret_cast<void*>(&flux_sym_expand));
+    jit.registerFunction("flux_sym_factor", reinterpret_cast<void*>(&flux_sym_factor));
+    jit.registerFunction("flux_sym_laplace", reinterpret_cast<void*>(&flux_sym_laplace));
+    jit.registerFunction("flux_sym_inverse_laplace", reinterpret_cast<void*>(&flux_sym_inverse_laplace));
+    jit.registerFunction("flux_sym_poles", reinterpret_cast<void*>(&flux_sym_poles));
+    jit.registerFunction("flux_sym_zeros", reinterpret_cast<void*>(&flux_sym_zeros));
+    jit.registerFunction("flux_sym_to_string", reinterpret_cast<void*>(&flux_sym_to_string));
+
+    // Parallel runtime function
+    jit.registerFunction("flux_parallel_for", reinterpret_cast<void*>(&flux_parallel_for));
+
+    // State management functions
+    jit.registerFunction("state_get", reinterpret_cast<void*>(&flux_state_get));
+    jit.registerFunction("state_set", reinterpret_cast<void*>(&flux_state_set));
+
+    // Initial conditions
+    jit.registerFunction("flux_set_initial_condition", reinterpret_cast<void*>(&flux_set_initial_condition));
+    jit.registerFunction("flux_get_initial_condition", reinterpret_cast<void*>(&flux_get_initial_condition));
+
+    // Outputs
+    jit.registerFunction("flux_set_output", reinterpret_cast<void*>(&flux_set_output));
+    jit.registerFunction("flux_get_output", reinterpret_cast<void*>(&flux_get_output));
 }
 
 // extern "C" runtime functions
@@ -149,7 +230,8 @@ extern "C" double flux_print_string(const char* str) {
     return 0.0;
 }
 
-extern "C" double flux_get_voltage(const char* node) {
+extern "C" double flux_get_voltage(double node_ptr_double) {
+    const char* node = reinterpret_cast<const char*>(bit_cast<uint64_t>(node_ptr_double));
     if (g_flux_sim_service && g_flux_sim_service->get_voltage)
         return g_flux_sim_service->get_voltage(node);
     if (std::string(node) == "0")
@@ -157,19 +239,22 @@ extern "C" double flux_get_voltage(const char* node) {
     return 0.0; // Default if no solver
 }
 
-extern "C" double flux_get_current(const char* branch) {
+extern "C" double flux_get_current(double branch_ptr_double) {
+    const char* branch = reinterpret_cast<const char*>(bit_cast<uint64_t>(branch_ptr_double));
     if (g_flux_sim_service && g_flux_sim_service->get_current)
         return g_flux_sim_service->get_current(branch);
     return 0.0;
 }
 
-extern "C" double flux_get_parameter(const char* name) {
+extern "C" double flux_get_parameter(double name_ptr_double) {
+    const char* name = reinterpret_cast<const char*>(bit_cast<uint64_t>(name_ptr_double));
     if (g_flux_sim_service && g_flux_sim_service->get_parameter)
         return g_flux_sim_service->get_parameter(name);
     return 0.0;
 }
 
-extern "C" double flux_set_parameter(const char* name, double value) {
+extern "C" double flux_set_parameter(double name_ptr_double, double value) {
+    const char* name = reinterpret_cast<const char*>(bit_cast<uint64_t>(name_ptr_double));
     if (g_flux_sim_service && g_flux_sim_service->set_parameter) {
         g_flux_sim_service->set_parameter(name, value);
         return value;
@@ -836,6 +921,177 @@ extern "C" void flux_stack_leave() {
     if (g_stackDepth > 0) {
         --g_stackDepth;
     }
+}
+
+// ============================================================================
+// Symbolic Math Runtime Functions
+// ============================================================================
+
+extern "C" double flux_sym_decl(const char* name) {
+    auto& engine = SymbolicEngine::instance();
+    auto sym = engine.sym(std::string(name));
+    return (double)(uintptr_t)sym.get();
+}
+
+extern "C" double flux_sym_simplify(double expr_ptr) {
+    auto expr = std::shared_ptr<SymbolicExpr>((SymbolicExpr*)(uintptr_t)expr_ptr);
+    auto& engine = SymbolicEngine::instance();
+    auto result = engine.simplify(expr);
+    return (double)(uintptr_t)result.get();
+}
+
+extern "C" double flux_sym_differentiate(double expr_ptr, const char* var) {
+    auto expr = std::shared_ptr<SymbolicExpr>((SymbolicExpr*)(uintptr_t)expr_ptr);
+    auto& engine = SymbolicEngine::instance();
+    auto result = engine.differentiate(expr, std::string(var));
+    return (double)(uintptr_t)result.get();
+}
+
+extern "C" double flux_sym_substitute(double expr_ptr, double var_count, double var_names_ptr, double var_values_ptr) {
+    auto expr = std::shared_ptr<SymbolicExpr>((SymbolicExpr*)(uintptr_t)expr_ptr);
+    auto& engine = SymbolicEngine::instance();
+    
+    // Reconstruct map from arrays
+    int count = (int)var_count;
+    auto* names = (const char**) (uintptr_t)var_names_ptr;
+    auto* values = (double*) (uintptr_t)var_values_ptr;
+    
+    std::map<std::string, double> vars;
+    for (int i = 0; i < count; i++) {
+        vars[std::string(names[i])] = values[i];
+    }
+    
+    auto result = engine.substitute(expr, vars);
+    return (double)(uintptr_t)result.get();
+}
+
+extern "C" double flux_sym_solve(double lhs_ptr, double rhs_ptr, const char* var) {
+    auto lhs = std::shared_ptr<SymbolicExpr>((SymbolicExpr*)(uintptr_t)lhs_ptr);
+    auto rhs = std::shared_ptr<SymbolicExpr>((SymbolicExpr*)(uintptr_t)rhs_ptr);
+    auto& engine = SymbolicEngine::instance();
+    auto solutions = engine.solve(lhs, rhs, std::string(var));
+    // Return first solution or 0.0 if none found
+    return solutions.empty() ? 0.0 : solutions[0];
+}
+
+extern "C" double flux_sym_evaluate(double expr_ptr, double var_count, double var_names_ptr, double var_values_ptr) {
+    auto expr = std::shared_ptr<SymbolicExpr>((SymbolicExpr*)(uintptr_t)expr_ptr);
+    auto& engine = SymbolicEngine::instance();
+    
+    // Reconstruct map from arrays
+    int count = (int)var_count;
+    auto* names = (const char**) (uintptr_t)var_names_ptr;
+    auto* values = (double*) (uintptr_t)var_values_ptr;
+    
+    std::map<std::string, double> vars;
+    for (int i = 0; i < count; i++) {
+        vars[std::string(names[i])] = values[i];
+    }
+    
+    return engine.evaluate(expr, vars);
+}
+
+extern "C" double flux_sym_expand(double expr_ptr) {
+    auto expr = std::shared_ptr<SymbolicExpr>((SymbolicExpr*)(uintptr_t)expr_ptr);
+    auto& engine = SymbolicEngine::instance();
+    auto result = engine.expand(expr);
+    return (double)(uintptr_t)result.get();
+}
+
+extern "C" double flux_sym_factor(double expr_ptr) {
+    auto expr = std::shared_ptr<SymbolicExpr>((SymbolicExpr*)(uintptr_t)expr_ptr);
+    auto& engine = SymbolicEngine::instance();
+    auto result = engine.factor(expr);
+    return (double)(uintptr_t)result.get();
+}
+
+extern "C" double flux_sym_laplace(double expr_ptr, const char* t_var, const char* s_var) {
+    auto expr = std::shared_ptr<SymbolicExpr>((SymbolicExpr*)(uintptr_t)expr_ptr);
+    auto& engine = SymbolicEngine::instance();
+    auto result = engine.laplace(expr, std::string(t_var), std::string(s_var));
+    return (double)(uintptr_t)result.get();
+}
+
+extern "C" double flux_sym_inverse_laplace(double expr_ptr, const char* s_var, const char* t_var) {
+    auto expr = std::shared_ptr<SymbolicExpr>((SymbolicExpr*)(uintptr_t)expr_ptr);
+    auto& engine = SymbolicEngine::instance();
+    auto result = engine.inverseLaplace(expr, std::string(s_var), std::string(t_var));
+    return (double)(uintptr_t)result.get();
+}
+
+extern "C" double flux_sym_poles(double expr_ptr) {
+    auto expr = std::shared_ptr<SymbolicExpr>((SymbolicExpr*)(uintptr_t)expr_ptr);
+    auto& engine = SymbolicEngine::instance();
+    auto poles = engine.poles(expr);
+    // Return count of poles (actual data would be stored elsewhere)
+    return (double)poles.size();
+}
+
+extern "C" double flux_sym_zeros(double expr_ptr) {
+    auto expr = std::shared_ptr<SymbolicExpr>((SymbolicExpr*)(uintptr_t)expr_ptr);
+    auto& engine = SymbolicEngine::instance();
+    auto zeros = engine.zeros(expr);
+    return (double)zeros.size();
+}
+
+extern "C" double flux_sym_to_string(double expr_ptr) {
+    auto expr = std::shared_ptr<SymbolicExpr>((SymbolicExpr*)(uintptr_t)expr_ptr);
+    // This would normally return a string pointer, but we return 0 for now
+    // A full implementation would store the string and return its pointer
+    return 0.0;
+}
+
+// ============================================================================
+// Parallel Runtime Function
+// ============================================================================
+
+// Function pointer type for parallel body: void body(int index, void* user_data)
+typedef void (*ParallelBodyFunc)(int64_t, void*);
+
+extern "C" void flux_parallel_for(int64_t start, int64_t end, int64_t chunk_size, void* body_func_ptr) {
+    if (start >= end || !body_func_ptr) return;
+    
+    auto body_func = reinterpret_cast<ParallelBodyFunc>(body_func_ptr);
+    int64_t num_threads = std::thread::hardware_concurrency();
+    if (num_threads < 2) num_threads = 2;
+    
+    // Calculate actual chunk size
+    int64_t range = end - start;
+    int64_t actual_chunk = chunk_size > 0 ? chunk_size : (range + num_threads - 1) / num_threads;
+    if (actual_chunk < 1) actual_chunk = 1;
+    
+    // Create thread pool
+    std::vector<std::thread> threads;
+    std::atomic<int64_t> current(start);
+    
+    for (int64_t t = 0; t < num_threads; t++) {
+        threads.emplace_back([&current, end, actual_chunk, body_func]() {
+            while (true) {
+                int64_t chunk_start = current.fetch_add(actual_chunk);
+                if (chunk_start >= end) break;
+                
+                int64_t chunk_end = std::min(chunk_start + actual_chunk, end);
+                for (int64_t i = chunk_start; i < chunk_end; i++) {
+                    body_func(i, nullptr);
+                }
+            }
+        });
+    }
+    
+    // Wait for all threads
+    for (auto& t : threads) {
+        t.join();
+    }
+}
+
+// ============================================================================
+// Exception Handling Runtime
+// ============================================================================
+
+extern "C" void flux_throw_error(double error_code, const char* message) {
+    std::cerr << "[FLUX ERROR] " << message << " (code: " << error_code << ")" << std::endl;
+    std::cerr << "[FLUX ERROR] Aborting execution" << std::endl;
+    std::abort();
 }
 
 } // namespace Flux

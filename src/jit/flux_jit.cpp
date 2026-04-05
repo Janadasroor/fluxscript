@@ -1,6 +1,9 @@
 #include "flux/jit/flux_jit.h"
 #include <llvm/Support/TargetSelect.h>
+#include <llvm/Support/CodeGen.h>
 #include <llvm/ExecutionEngine/Orc/ThreadSafeModule.h>
+#include <llvm/ExecutionEngine/Orc/RTDyldObjectLinkingLayer.h>
+#include <llvm/ExecutionEngine/SectionMemoryManager.h>
 #include <llvm/ExecutionEngine/Orc/ExecutorProcessControl.h>
 #include <llvm/IR/LLVMContext.h>
 #include <llvm/IR/Verifier.h>
@@ -63,7 +66,14 @@ FluxJIT::FluxJIT(OptimizationLevel optLevel)
     // Load the process's dynamic library symbols for external function resolution
     llvm::sys::DynamicLibrary::LoadLibraryPermanently(nullptr);
 
-    auto JIT = llvm::orc::LLJITBuilder().create();
+    auto JTMB = llvm::orc::JITTargetMachineBuilder::detectHost();
+    if (!JTMB) {
+        logError(JTMB.takeError(), "Failed to detect host");
+        return;
+    }
+    JTMB->setCodeModel(llvm::CodeModel::Large);
+    JTMB->setRelocationModel(llvm::Reloc::PIC_);
+    auto JIT = llvm::orc::LLJITBuilder().setJITTargetMachineBuilder(std::move(*JTMB)).create();
     if (!JIT) {
         logError(JIT.takeError(), "Failed to create LLJIT");
         return;
@@ -188,6 +198,7 @@ void FluxJIT::prepareModule(llvm::Module& M) {
 
     M.setDataLayout(m_dataLayout);
     M.setTargetTriple(m_targetTriple);
+    M.setCodeModel(llvm::CodeModel::Large);
 }
 
 void FluxJIT::addModule(std::unique_ptr<llvm::Module> M,

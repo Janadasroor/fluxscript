@@ -48,7 +48,26 @@ void ProjectTree::setupTree()
     setSortingEnabled(true);
     setExpandsOnDoubleClick(false); // We handle double-click ourselves
     setContextMenuPolicy(Qt::CustomContextMenu);
-    setIconSize(QSize(16, 16));
+    setIconSize(QSize(18, 18));
+    setStyleSheet(
+        "QTreeView { "
+        "    background-color: #252526; "
+        "    color: #cccccc; "
+        "    border: none; "
+        "    outline: none; "
+        "    font-size: 12px; "
+        "}"
+        "QTreeView::item { "
+        "    padding: 3px; "
+        "    border: none; "
+        "}"
+        "QTreeView::item:hover { "
+        "    background-color: #2a2d2e; "
+        "}"
+        "QTreeView::item:selected { "
+        "    background-color: #37373d; "
+        "}"
+    );
 
     // Hide size and type columns, keep only name
     hideColumn(1); // Size

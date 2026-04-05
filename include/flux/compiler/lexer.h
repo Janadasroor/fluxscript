@@ -260,6 +260,64 @@ enum class TokenType {
     tok_map = -205,                // map keyword
     tok_endsymbol = -206,          // end symbol
     tok_contributor_op = -207,     // <+ contributor operator
+    
+    /* Section 7.1: Model Quality & Verification */
+    tok_golden = -212,               // golden waveform reference
+    tok_compare = -213,              // waveform comparison
+    tok_tolerance = -214,            // tolerance specification
+    tok_converge = -215,             // convergence check
+    tok_diagnostic = -216,           // diagnostic directive
+    tok_discontinuity = -217,        // discontinuity detection
+    tok_state = -218,                // hidden state detection
+    tok_settle = -219,               // settling time analysis
+    tok_verify = -220,               // verification block
+
+    /* Section 7.2: Mixed-Signal & Modeling Extensions */
+    // Event-driven constructs
+    tok_cross = -221,                // cross() zero-crossing detection
+    tok_above = -222,                // above() threshold detection
+    tok_timer = -223,                // timer() event timer
+
+    // Real-valued digital modeling
+    tok_fsm = -224,                  // finite state machine
+    tok_edge = -225,                 // edge trigger (posedge, negedge)
+    tok_triggered = -226,            // triggered block
+    tok_state_machine = -227,        // state machine declaration
+
+    // Noise modeling primitives
+    tok_noise_fn = -228,             // noise() function
+    tok_white_noise = -229,          // white noise
+    tok_flicker_noise = -230,        // flicker (1/f) noise
+    tok_thermal_noise = -231,        // thermal noise
+
+    // Piecewise and table-based models
+    tok_piecewise = -232,            // piecewise function
+    tok_table = -233,                // table lookup
+    tok_interpolate = -234,          // interpolation mode
+    tok_csv_import = -235,           // CSV import
+
+    // Units and dimensional analysis
+    tok_unit = -236,                 // unit annotation
+    tok_dimension = -237,            // dimension check
+    tok_convert = -238,              // unit conversion
+    tok_has_unit = -239,             // has_unit() predicate
+
+    // Advanced features tokens
+    tok_title = -240,
+    tok_color = -241,
+    tok_grid = -242,
+    tok_autoscale = -243,
+    tok_metric = -244,
+    tok_goals = -245,
+    tok_tune = -246,
+    tok_algorithm = -247,
+    tok_runs = -248,
+    tok_gpu = -249,
+    tok_controls = -250,
+    tok_slider = -251,
+    tok_knob = -252,
+    tok_sections = -253,
+    tok_include = -254,
 };
 
 class Lexer {

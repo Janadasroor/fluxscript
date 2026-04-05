@@ -1,0 +1,242 @@
+#include "flux/compiler/model_quality_ast.h"
+#include "flux/runtime/model_quality_engine.h"
+#include <iostream>
+#include <sstream>
+#include <cmath>
+
+namespace Flux {
+
+// ============================================================================
+// Transient Assertion Codegen
+// ============================================================================
+
+TypedValue AssertDeclAST::codegen(CodegenContext& context) {
+    std::cout << "[CodeGen] Assert: V(" << Node << ") " << Operator 
+              << " " << Bound;
+    if (WithinTime > 0) std::cout << " within " << WithinTime << "s";
+    if (!Message.empty()) std::cout << " \"" << Message << "\"";
+    std::cout << std::endl;
+    
+    // Generate call to assertion runtime
+    llvm::Value* NodePtr = context.Builder.CreateGlobalStringPtr(Node, "assert_node");
+    llvm::Value* OpPtr = context.Builder.CreateGlobalStringPtr(Operator, "assert_op");
+    llvm::Value* BoundVal = llvm::ConstantFP::get(context.TheContext, llvm::APFloat(Bound));
+    llvm::Value* WithinVal = llvm::ConstantFP::get(context.TheContext, llvm::APFloat(WithinTime));
+    llvm::Value* MsgPtr = context.Builder.CreateGlobalStringPtr(Message, "assert_msg");
+    
+    llvm::Function* AssertF = context.TheModule->getFunction("flux_assert_voltage");
+    if (!AssertF) {
+        llvm::Type* CharPtrTy = llvm::PointerType::get(llvm::Type::getInt8Ty(context.TheContext), 0);
+        AssertF = llvm::Function::Create(
+            llvm::FunctionType::get(llvm::Type::getInt1Ty(context.TheContext), 
+                                   {CharPtrTy, CharPtrTy, llvm::Type::getDoubleTy(context.TheContext),
+                                    llvm::Type::getDoubleTy(context.TheContext), CharPtrTy}, false),
+            llvm::Function::ExternalLinkage,
+            "flux_assert_voltage",
+            context.TheModule.get());
+    }
+    
+    auto call = context.Builder.CreateCall(AssertF, {NodePtr, OpPtr, BoundVal, WithinVal, MsgPtr}, "assert_result");
+    
+    return TypedValue(call, TypeKind::Int);
+}
+
+TypedValue SettleDeclAST::codegen(CodegenContext& context) {
+    std::cout << "[CodeGen] Settle: V(" << Node << ") tol=" << TolerancePercent 
+              << "% after " << AfterTime << "s" << std::endl;
+    
+    llvm::Value* NodePtr = context.Builder.CreateGlobalStringPtr(Node, "settle_node");
+    llvm::Value* TolVal = llvm::ConstantFP::get(context.TheContext, llvm::APFloat(TolerancePercent));
+    llvm::Value* AfterVal = llvm::ConstantFP::get(context.TheContext, llvm::APFloat(AfterTime));
+    
+    llvm::Function* SettleF = context.TheModule->getFunction("flux_check_settling");
+    if (!SettleF) {
+        llvm::Type* CharPtrTy = llvm::PointerType::get(llvm::Type::getInt8Ty(context.TheContext), 0);
+        SettleF = llvm::Function::Create(
+            llvm::FunctionType::get(llvm::Type::getDoubleTy(context.TheContext), 
+                                   {CharPtrTy, llvm::Type::getDoubleTy(context.TheContext),
+                                    llvm::Type::getDoubleTy(context.TheContext)}, false),
+            llvm::Function::ExternalLinkage,
+            "flux_check_settling",
+            context.TheModule.get());
+    }
+    
+    auto call = context.Builder.CreateCall(SettleF, {NodePtr, TolVal, AfterVal}, "settle_time");
+    
+    return TypedValue(call, TypeKind::Double);
+}
+
+// ============================================================================
+// Golden Waveform Codegen
+// ============================================================================
+
+TypedValue GoldenDeclAST::codegen(CodegenContext& context) {
+    std::cout << "[CodeGen] Golden: " << Name;
+    if (!Filename.empty()) std::cout << " from " << Filename;
+    std::cout << " (" << Values.size() << " points)" << std::endl;
+    
+    // Load waveform if filename provided
+    if (!Filename.empty()) {
+        // Would call flux_load_golden() at runtime
+        std::cout << "  Will load from: " << Filename << std::endl;
+    }
+    
+    llvm::Value* NamePtr = context.Builder.CreateGlobalStringPtr(Name, "golden_name");
+    llvm::Function* RegisterF = context.TheModule->getFunction("flux_register_golden");
+    if (!RegisterF) {
+        llvm::Type* CharPtrTy = llvm::PointerType::get(llvm::Type::getInt8Ty(context.TheContext), 0);
+        RegisterF = llvm::Function::Create(
+            llvm::FunctionType::get(llvm::Type::getVoidTy(context.TheContext), {CharPtrTy}, false),
+            llvm::Function::ExternalLinkage,
+            "flux_register_golden",
+            context.TheModule.get());
+    }
+    
+    context.Builder.CreateCall(RegisterF, {NamePtr});
+    
+    return TypedValue(llvm::ConstantFP::get(context.TheContext, llvm::APFloat(1.0)), TypeKind::Double);
+}
+
+TypedValue CompareDeclAST::codegen(CodegenContext& context) {
+    std::cout << "[CodeGen] Compare: V(" << Node << ") vs golden '" << GoldenName 
+              << "' tol=" << TolerancePercent << "%" << std::endl;
+    
+    llvm::Value* NodePtr = context.Builder.CreateGlobalStringPtr(Node, "compare_node");
+    llvm::Value* GoldenPtr = context.Builder.CreateGlobalStringPtr(GoldenName, "golden_name");
+    llvm::Value* TolVal = llvm::ConstantFP::get(context.TheContext, llvm::APFloat(TolerancePercent));
+    
+    llvm::Function* CompareF = context.TheModule->getFunction("flux_compare_waveform");
+    if (!CompareF) {
+        llvm::Type* CharPtrTy = llvm::PointerType::get(llvm::Type::getInt8Ty(context.TheContext), 0);
+        CompareF = llvm::Function::Create(
+            llvm::FunctionType::get(llvm::Type::getInt1Ty(context.TheContext), 
+                                   {CharPtrTy, CharPtrTy, llvm::Type::getDoubleTy(context.TheContext)}, false),
+            llvm::Function::ExternalLinkage,
+            "flux_compare_waveform",
+            context.TheModule.get());
+    }
+    
+    auto call = context.Builder.CreateCall(CompareF, {NodePtr, GoldenPtr, TolVal}, "compare_result");
+    
+    return TypedValue(call, TypeKind::Int);
+}
+
+// ============================================================================
+// Convergence Diagnostics Codegen
+// ============================================================================
+
+TypedValue ConvergeDeclAST::codegen(CodegenContext& context) {
+    std::cout << "[CodeGen] Converge: V(" << Node << ") max_iter=" << MaxIterations 
+              << " eps=" << Epsilon << std::endl;
+    
+    llvm::Value* NodePtr = context.Builder.CreateGlobalStringPtr(Node, "converge_node");
+    llvm::Value* MaxIterVal = llvm::ConstantInt::get(context.TheContext, llvm::APInt(32, MaxIterations));
+    llvm::Value* EpsVal = llvm::ConstantFP::get(context.TheContext, llvm::APFloat(Epsilon));
+    
+    llvm::Function* ConvergeF = context.TheModule->getFunction("flux_check_convergence");
+    if (!ConvergeF) {
+        llvm::Type* CharPtrTy = llvm::PointerType::get(llvm::Type::getInt8Ty(context.TheContext), 0);
+        ConvergeF = llvm::Function::Create(
+            llvm::FunctionType::get(llvm::Type::getInt1Ty(context.TheContext), 
+                                   {CharPtrTy, llvm::Type::getInt32Ty(context.TheContext),
+                                    llvm::Type::getDoubleTy(context.TheContext)}, false),
+            llvm::Function::ExternalLinkage,
+            "flux_check_convergence",
+            context.TheModule.get());
+    }
+    
+    auto call = context.Builder.CreateCall(ConvergeF, {NodePtr, MaxIterVal, EpsVal}, "converged");
+    
+    return TypedValue(call, TypeKind::Int);
+}
+
+TypedValue DiscontinuityDeclAST::codegen(CodegenContext& context) {
+    std::cout << "[CodeGen] Discontinuity: V(" << Node << ") threshold=" << Threshold << std::endl;
+    
+    llvm::Value* NodePtr = context.Builder.CreateGlobalStringPtr(Node, "disc_node");
+    llvm::Value* ThreshVal = llvm::ConstantFP::get(context.TheContext, llvm::APFloat(Threshold));
+    
+    llvm::Function* DiscF = context.TheModule->getFunction("flux_detect_discontinuity");
+    if (!DiscF) {
+        llvm::Type* CharPtrTy = llvm::PointerType::get(llvm::Type::getInt8Ty(context.TheContext), 0);
+        DiscF = llvm::Function::Create(
+            llvm::FunctionType::get(llvm::Type::getInt1Ty(context.TheContext), 
+                                   {CharPtrTy, llvm::Type::getDoubleTy(context.TheContext)}, false),
+            llvm::Function::ExternalLinkage,
+            "flux_detect_discontinuity",
+            context.TheModule.get());
+    }
+    
+    auto call = context.Builder.CreateCall(DiscF, {NodePtr, ThreshVal}, "discontinuity_found");
+    
+    return TypedValue(call, TypeKind::Int);
+}
+
+TypedValue StateDeclAST::codegen(CodegenContext& context) {
+    std::cout << "[CodeGen] State: V(" << Node << ") depth=" << HistoryDepth << std::endl;
+    
+    llvm::Value* NodePtr = context.Builder.CreateGlobalStringPtr(Node, "state_node");
+    llvm::Value* DepthVal = llvm::ConstantInt::get(context.TheContext, llvm::APInt(32, HistoryDepth));
+    
+    llvm::Function* StateF = context.TheModule->getFunction("flux_detect_hidden_state");
+    if (!StateF) {
+        llvm::Type* CharPtrTy = llvm::PointerType::get(llvm::Type::getInt8Ty(context.TheContext), 0);
+        StateF = llvm::Function::Create(
+            llvm::FunctionType::get(llvm::Type::getInt1Ty(context.TheContext), 
+                                   {CharPtrTy, llvm::Type::getInt32Ty(context.TheContext)}, false),
+            llvm::Function::ExternalLinkage,
+            "flux_detect_hidden_state",
+            context.TheModule.get());
+    }
+    
+    auto call = context.Builder.CreateCall(StateF, {NodePtr, DepthVal}, "hidden_state_found");
+    
+    return TypedValue(call, TypeKind::Int);
+}
+
+TypedValue VerifyBlockAST::codegen(CodegenContext& context) {
+    std::cout << "[CodeGen] Verify block: " << Checks.size() << " checks, "
+              << Comparisons.size() << " comparisons, " << Diagnostics.size() << " diagnostics" << std::endl;
+    
+    // Codegen all checks
+    for (const auto& check : Checks) {
+        check->codegen(context);
+    }
+    
+    // Codegen all comparisons
+    for (const auto& comp : Comparisons) {
+        comp->codegen(context);
+    }
+    
+    // Codegen all diagnostics
+    for (const auto& diag : Diagnostics) {
+        diag->codegen(context);
+    }
+    
+    return TypedValue(llvm::ConstantFP::get(context.TheContext, llvm::APFloat(1.0)), TypeKind::Double);
+}
+
+TypedValue ToleranceDeclAST::codegen(CodegenContext& context) {
+    std::cout << "[CodeGen] Tolerance: abs=" << AbsoluteTolerance 
+              << " rel=" << RelativeTolerancePercent << "%" << std::endl;
+    
+    llvm::Value* AbsVal = llvm::ConstantFP::get(context.TheContext, llvm::APFloat(AbsoluteTolerance));
+    llvm::Value* RelVal = llvm::ConstantFP::get(context.TheContext, llvm::APFloat(RelativeTolerancePercent));
+    
+    llvm::Function* TolF = context.TheModule->getFunction("flux_set_tolerance");
+    if (!TolF) {
+        TolF = llvm::Function::Create(
+            llvm::FunctionType::get(llvm::Type::getVoidTy(context.TheContext), 
+                                   {llvm::Type::getDoubleTy(context.TheContext),
+                                    llvm::Type::getDoubleTy(context.TheContext)}, false),
+            llvm::Function::ExternalLinkage,
+            "flux_set_tolerance",
+            context.TheModule.get());
+    }
+    
+    context.Builder.CreateCall(TolF, {AbsVal, RelVal});
+    
+    return TypedValue(llvm::ConstantFP::get(context.TheContext, llvm::APFloat(1.0)), TypeKind::Double);
+}
+
+} // namespace Flux

@@ -22,6 +22,7 @@ public:
     std::unique_ptr<AskExprAST> ParseAskExpr();
     std::unique_ptr<ExplainExprAST> ParseExplainExpr();
     std::unique_ptr<SubstituteStmtAST> ParseSubstituteStmt();
+    std::unique_ptr<ExprAST> ParseUpdateFunc();
 
     int CurTok;
     int getNextToken();
@@ -92,7 +93,6 @@ private:
 
     // SPICE Time-Domain Simulation
     std::unique_ptr<ExprAST> ParseBuiltinVar();
-    std::unique_ptr<ExprAST> ParseUpdateFunc();
     std::unique_ptr<ExprAST> ParseBSource();
     std::unique_ptr<ExprAST> ParseESource();
     std::unique_ptr<ExprAST> ParseFSource();
@@ -122,8 +122,54 @@ private:
     /* Symbol Pin Mapping */
     std::unique_ptr<ExprAST> ParseSymbolDecl();
     std::unique_ptr<ExprAST> ParsePinMap();
+    
+    /* Section 7.1: Model Quality & Verification */
+    std::unique_ptr<ExprAST> ParseAssertDecl();
+    std::unique_ptr<ExprAST> ParseSettleDecl();
+    std::unique_ptr<ExprAST> ParseGoldenDecl();
+    std::unique_ptr<ExprAST> ParseCompareDecl();
+    std::unique_ptr<ExprAST> ParseConvergeDecl();
+    std::unique_ptr<ExprAST> ParseDiscontinuityDecl();
+    std::unique_ptr<ExprAST> ParseStateDecl();
+    std::unique_ptr<ExprAST> ParseVerifyBlock();
     std::unique_ptr<ExprAST> ParseParam();
     std::unique_ptr<ExprAST> ParseIC();
+
+    /* Section 7.2: Mixed-Signal & Modeling Extensions */
+    // Event-driven constructs
+    std::unique_ptr<ExprAST> ParseCrossExpr();
+    std::unique_ptr<ExprAST> ParseAboveExpr();
+    std::unique_ptr<ExprAST> ParseTimerExpr();
+    std::unique_ptr<ExprAST> ParseToleranceExpr();
+
+    // Real-valued digital modeling
+    std::unique_ptr<ExprAST> ParseFSMExpr();
+    std::unique_ptr<ExprAST> ParseEdgeExpr();
+    std::unique_ptr<ExprAST> ParseTriggeredExpr();
+
+    // Noise modeling primitives
+    std::unique_ptr<ExprAST> ParseNoiseExpr();
+    std::unique_ptr<ExprAST> ParseWhiteNoiseExpr();
+    std::unique_ptr<ExprAST> ParseFlickerNoiseExpr();
+    std::unique_ptr<ExprAST> ParseThermalNoiseExpr();
+
+    // Piecewise and table-based models
+    std::unique_ptr<ExprAST> ParsePiecewiseExpr();
+    std::unique_ptr<ExprAST> ParseTableExpr();
+    std::unique_ptr<ExprAST> ParseCsvImportExpr();
+
+    // Units and dimensional analysis
+    std::unique_ptr<ExprAST> ParseUnitExpr();
+    std::unique_ptr<ExprAST> ParseDimensionExpr();
+    std::unique_ptr<ExprAST> ParseConvertExpr();
+    std::unique_ptr<ExprAST> ParseHasUnitExpr();
+
+    // Advanced features
+    std::unique_ptr<ExprAST> ParsePlotDecl();
+    std::unique_ptr<ExprAST> ParseBenchmarkDecl();
+    std::unique_ptr<ExprAST> ParseOptimizeDecl();
+    std::unique_ptr<ExprAST> ParseSweepDecl();
+    std::unique_ptr<ExprAST> ParseReportDecl();
 
     int GetTokPrecedence();
 

@@ -78,7 +78,7 @@ int Lexer::gettok() {
     }
     m_tokenStart = m_pos > 0 ? m_pos - 1 : 0;
 
-    if (isalpha(m_lastChar)) { // identifier: [a-zA-Z][a-zA-Z0-9]*
+    if (isalpha(m_lastChar)) { // identifier: [a-zA-Z][a-zA-Z0-9_]*
         IdentifierStr = m_lastChar;
         while (isalnum(advance()) || m_lastChar == '_') {
             IdentifierStr += m_lastChar;
@@ -199,6 +199,66 @@ int Lexer::gettok() {
         if (IdentifierStr == "idt") return static_cast<int>(TokenType::tok_idt);
         if (IdentifierStr == "abstol") return static_cast<int>(TokenType::tok_abstol);
         if (IdentifierStr == "reltol") return static_cast<int>(TokenType::tok_reltol);
+        
+        /* Section 7.1: Model Quality & Verification */
+        if (IdentifierStr == "settle") return static_cast<int>(TokenType::tok_settle);
+        if (IdentifierStr == "golden") return static_cast<int>(TokenType::tok_golden);
+        if (IdentifierStr == "compare") return static_cast<int>(TokenType::tok_compare);
+        if (IdentifierStr == "tolerance") return static_cast<int>(TokenType::tok_tolerance);
+        if (IdentifierStr == "converge") return static_cast<int>(TokenType::tok_converge);
+        if (IdentifierStr == "diagnostic") return static_cast<int>(TokenType::tok_diagnostic);
+        if (IdentifierStr == "discontinuity") return static_cast<int>(TokenType::tok_discontinuity);
+        if (IdentifierStr == "state") return static_cast<int>(TokenType::tok_state);
+        if (IdentifierStr == "verify") return static_cast<int>(TokenType::tok_verify);
+
+        /* Section 7.2: Mixed-Signal & Modeling Extensions */
+        // Event-driven constructs
+        if (IdentifierStr == "cross") return static_cast<int>(TokenType::tok_cross);
+        if (IdentifierStr == "above") return static_cast<int>(TokenType::tok_above);
+        if (IdentifierStr == "timer") return static_cast<int>(TokenType::tok_timer);
+
+        // Real-valued digital modeling
+        if (IdentifierStr == "fsm") return static_cast<int>(TokenType::tok_fsm);
+        if (IdentifierStr == "edge") return static_cast<int>(TokenType::tok_edge);
+        if (IdentifierStr == "triggered") return static_cast<int>(TokenType::tok_triggered);
+        if (IdentifierStr == "state_machine") return static_cast<int>(TokenType::tok_state_machine);
+        if (IdentifierStr == "posedge") return static_cast<int>(TokenType::tok_edge);  // Reuse edge token
+        if (IdentifierStr == "negedge") return static_cast<int>(TokenType::tok_edge);  // Reuse edge token
+
+        // Noise modeling primitives
+        if (IdentifierStr == "noise") return static_cast<int>(TokenType::tok_noise_fn);
+        if (IdentifierStr == "white_noise") return static_cast<int>(TokenType::tok_white_noise);
+        if (IdentifierStr == "flicker_noise") return static_cast<int>(TokenType::tok_flicker_noise);
+        if (IdentifierStr == "thermal_noise") return static_cast<int>(TokenType::tok_thermal_noise);
+
+        // Piecewise and table-based models
+        if (IdentifierStr == "piecewise") return static_cast<int>(TokenType::tok_piecewise);
+        if (IdentifierStr == "table") return static_cast<int>(TokenType::tok_table);
+        if (IdentifierStr == "interpolate") return static_cast<int>(TokenType::tok_interpolate);
+        if (IdentifierStr == "csv_import") return static_cast<int>(TokenType::tok_csv_import);
+
+        // Units and dimensional analysis
+        if (IdentifierStr == "unit") return static_cast<int>(TokenType::tok_unit);
+        if (IdentifierStr == "dimension") return static_cast<int>(TokenType::tok_dimension);
+        if (IdentifierStr == "convert") return static_cast<int>(TokenType::tok_convert);
+        if (IdentifierStr == "has_unit") return static_cast<int>(TokenType::tok_has_unit);
+        
+        /* Advanced Features Keywords */
+        if (IdentifierStr == "title") return static_cast<int>(TokenType::tok_title);
+        if (IdentifierStr == "color") return static_cast<int>(TokenType::tok_color);
+        if (IdentifierStr == "grid") return static_cast<int>(TokenType::tok_grid);
+        if (IdentifierStr == "autoscale") return static_cast<int>(TokenType::tok_autoscale);
+        if (IdentifierStr == "metric") return static_cast<int>(TokenType::tok_metric);
+        if (IdentifierStr == "goals") return static_cast<int>(TokenType::tok_goals);
+        if (IdentifierStr == "tune") return static_cast<int>(TokenType::tok_tune);
+        if (IdentifierStr == "algorithm") return static_cast<int>(TokenType::tok_algorithm);
+        if (IdentifierStr == "runs") return static_cast<int>(TokenType::tok_runs);
+        if (IdentifierStr == "gpu") return static_cast<int>(TokenType::tok_gpu);
+        if (IdentifierStr == "controls") return static_cast<int>(TokenType::tok_controls);
+        if (IdentifierStr == "slider") return static_cast<int>(TokenType::tok_slider);
+        if (IdentifierStr == "knob") return static_cast<int>(TokenType::tok_knob);
+        if (IdentifierStr == "sections") return static_cast<int>(TokenType::tok_sections);
+        if (IdentifierStr == "include") return static_cast<int>(TokenType::tok_include);
         
         /* Symbol Pin Mapping */
         if (IdentifierStr == "symbol") return static_cast<int>(TokenType::tok_symbol);

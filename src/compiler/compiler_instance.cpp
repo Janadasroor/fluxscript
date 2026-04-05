@@ -11,6 +11,7 @@
 #include "flux/compiler/parser.h"
 
 #include <sstream>
+#include <iostream>
 
 namespace Flux {
 
@@ -134,7 +135,7 @@ void CompilerInstance::injectStandardLibrary(CodegenContext& context,
     auto injectStr = [&](const std::string& name, int args) {
         std::vector<std::pair<std::string, FluxType>> params;
         for (int i = 0; i < args; ++i)
-            params.push_back({"arg" + std::to_string(i), FluxType(TypeKind::String)});
+            params.push_back({"arg" + std::to_string(i), FluxType(TypeKind::Double)});
         PrototypeAST proto(name, params, FluxType(TypeKind::Double));
         proto.codegen(context);
         returnTypes[name] = FluxType(TypeKind::Double);
@@ -143,6 +144,10 @@ void CompilerInstance::injectStandardLibrary(CodegenContext& context,
     injectStr("net", 1);
     injectStr("branch", 1);
     injectStr("p", 1); // Alias for get_parameter if needed, but we have MemberExpr
+    injectStr("state_get", 2);
+    injectStr("state_set", 2);
+    injectStr("print", 1);
+    injectStr("println", 1);
 
     inject("sim_run", 0);
     inject("sim_stop", 0);
@@ -197,8 +202,27 @@ bool CompilerInstance::compileParser(Parser& parser,
     while (parser.CurTok != static_cast<int>(TokenType::tok_eof)) {
         std::unique_ptr<FunctionAST> functionAst;
 
+        // Handle stray closing brace (end of block without matching open)
+        if (parser.CurTok == static_cast<int>(TokenType::tok_rbrace)) {
+            parser.getNextToken();
+            continue;
+        }
+
         if (parser.CurTok == static_cast<int>(TokenType::tok_def)) {
             functionAst = parser.ParseDefinition();
+        } else if (parser.CurTok == static_cast<int>(TokenType::tok_update)) {
+            // Handle update function at top level
+            auto updateAst = parser.ParseUpdateFunc();
+            if (!updateAst) {
+                error = "Failed to parse update function";
+                return false;
+            }
+            returnTypes["update"] = FluxType(TypeKind::Double);
+            if (!updateAst->codegen(context)) {
+                error = "Code generation failed for update function";
+                return false;
+            }
+            continue;
         } else if (parser.CurTok == static_cast<int>(TokenType::tok_import)) {
             auto importAst = parser.ParseImport();
             if (!importAst) {
@@ -229,7 +253,7 @@ bool CompilerInstance::compileParser(Parser& parser,
         const std::string functionName = functionAst->getProto()->getName();
         returnTypes[functionName] = functionAst->getProto()->getReturnType();
         if (!functionAst->codegen(context)) {
-            error = "Code generation failed.";
+            error = "Code generation failed for function: " + functionName;
             return false;
         }
     }
@@ -270,7 +294,7 @@ std::unique_ptr<CompileArtifacts> CompilerInstance::compileToIR(const std::strin
     if (m_options.injectStdlib)
         injectStandardLibrary(*artifacts->codegenContext, artifacts->functionReturnTypes);
 
-    Parser parser(code);
+    Parser parser(code); // Constructor primes the lexer with getNextToken()
     std::map<std::string, bool> importedModules;
     std::string compileError;
     if (!compileParser(parser, *artifacts->codegenContext, artifacts->functionReturnTypes, compileError, importedModules)) {

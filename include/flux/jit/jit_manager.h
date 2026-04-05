@@ -37,12 +37,15 @@ struct JITComponent {
     std::unique_ptr<FluxJIT> jit;
     void* update_func = nullptr;           // update(t, inputs, outputs, state)
     void* init_func = nullptr;             // init(state)
+    void* eval_func = nullptr;             // eval(t) -> single value (for signal generation)
     ComponentState state;
     int num_inputs = 0;
     int num_outputs = 0;
     std::chrono::steady_clock::time_point last_compile_time;
     int compile_count = 0;
     bool is_hot_reloadable = false;
+    bool is_signal_generator = false;      // True if component generates waveforms
+    std::string component_type = "generic"; // "generic", "signal", "behavioral_source"
 };
 
 // Simulation statistics
@@ -99,6 +102,14 @@ public:
     bool bindOutputBuffer(const std::string& name, double* buffer, int size);
     double* getInputBuffer(const std::string& name);
     double* getOutputBuffer(const std::string& name);
+
+    // Signal generation support
+    bool registerSignalGenerator(const std::string& name, const std::string& source_code,
+                                std::string* error = nullptr);
+    double evaluateSignal(const std::string& name, double time);
+    std::vector<double> generateWaveform(const std::string& name, 
+                                        double t_start, double t_stop, double sample_rate,
+                                        std::string* error = nullptr);
 
     // Probing
     bool enableProbe(const std::string& component_name, const std::string& signal_name);

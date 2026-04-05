@@ -63,8 +63,8 @@ double flux_register_save(const char* var_name);
 // Subcircuits and Models
 // ============================================================================
 
-double flux_register_subckt(const char* name, const char* pins);
-double flux_register_model(const char* name, const char* model_type);
+double flux_register_subckt(double name_ptr_double, double pins_ptr_double);
+double flux_register_model(double name_ptr_double, double model_type_ptr_double);
 double flux_register_param(const char* name, double value);
 double flux_register_ic(const char* node_name, double value);
 

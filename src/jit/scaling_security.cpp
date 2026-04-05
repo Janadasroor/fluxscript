@@ -5,12 +5,22 @@
 
 #include "flux/jit/scaling_security.h"
 #include "flux/jit/jit_manager.h"
+#include "flux/jit_engine.h"
 #include <iostream>
 #include <sstream>
 #include <algorithm>
 #include <fstream>
 #include <numeric>
 #include <cmath>
+
+#ifdef __linux__
+#include <unistd.h>
+#include <sys/wait.h>
+#include <sys/resource.h>
+#include <sys/prctl.h>
+#include <linux/seccomp.h>
+#include <string.h>
+#endif
 
 namespace Flux {
 
@@ -649,11 +659,102 @@ bool JITSandbox::executeSandboxed(const std::string& source_code,
         return false;
     }
 
-    // TODO: Implement actual sandboxed execution
-    // This would use seccomp-bpf, namespaces, or other OS-level sandboxing
-    
-    std::cout << "[JITSandbox] Executing sandboxed code" << std::endl;
-    return true;
+#ifdef __linux__
+    int pipefd[2];
+    if (pipe(pipefd) == -1) {
+        if (error) *error = "Failed to create pipe";
+        return false;
+    }
+
+    pid_t pid = fork();
+    if (pid < 0) {
+        if (error) *error = "Fork failed";
+        return false;
+    }
+
+    if (pid == 0) {
+        // Child process
+        close(pipefd[0]); // Close read end
+        
+        // Setup resource limits
+        struct rlimit rl;
+        
+        // Memory limit
+        rl.rlim_cur = m_config.max_memory_mb * 1024 * 1024;
+        rl.rlim_max = rl.rlim_cur;
+        setrlimit(RLIMIT_AS, &rl);
+        
+        // CPU limit (seconds)
+        rl.rlim_cur = (m_config.max_execution_time_ms + 999) / 1000;
+        rl.rlim_max = rl.rlim_cur;
+        setrlimit(RLIMIT_CPU, &rl);
+        
+        // Setup basic seccomp if strict config requested
+        // Note: Strict seccomp breaks LLVM JIT due to mmap/mprotect, 
+        // so we rely primarily on rlimit and process isolation for now.
+        
+        // Execute the code
+        std::string result_str;
+        std::string exec_error;
+        try {
+            bool success = JITEngine::instance().executeString(source_code, &exec_error);
+            if (!success) {
+                result_str = std::string("ERROR: ") + exec_error;
+            } else {
+                result_str = "Success"; // Actual output should be handled differently, but this works for basic execution
+            }
+        } catch (const std::exception& e) {
+            result_str = std::string("ERROR: ") + e.what();
+        } catch (...) {
+            result_str = "ERROR: Unknown exception";
+        }
+        
+        // Write result to pipe
+        ssize_t written = write(pipefd[1], result_str.c_str(), result_str.length());
+        (void)written; // Ignore write error in child
+        close(pipefd[1]);
+        _exit(0);
+    } else {
+        // Parent process
+        close(pipefd[1]); // Close write end
+        
+        char buffer[4096];
+        ssize_t bytes_read = read(pipefd[0], buffer, sizeof(buffer) - 1);
+        if (bytes_read > 0) {
+            buffer[bytes_read] = '\0';
+            std::string res(buffer);
+            if (res.length() >= 6 && res.substr(0, 6) == "ERROR:") {
+                if (error) *error = res.substr(7);
+            } else {
+                if (output) *output = res;
+            }
+        }
+        close(pipefd[0]);
+        
+        int status;
+        waitpid(pid, &status, 0);
+        
+        if (WIFSIGNALED(status)) {
+            int sig = WTERMSIG(status);
+            if (error) {
+                if (sig == SIGKILL || sig == SIGXCPU) {
+                    *error = "Sandbox violation: Timeout or resource limit exceeded";
+                } else if (sig == SIGSEGV) {
+                    *error = "Sandbox violation: Segmentation fault (memory limit?)";
+                } else {
+                    *error = "Sandbox violation: Killed by signal " + std::to_string(sig);
+                }
+            }
+            return false;
+        }
+        
+        std::cout << "[JITSandbox] Executed sandboxed code" << std::endl;
+        return WIFEXITED(status) && WEXITSTATUS(status) == 0;
+    }
+#else
+    if (error) *error = "Actual sandboxing only supported on Linux";
+    return false;
+#endif
 }
 
 bool JITSandbox::validateSource(const std::string& source_code, std::string* error) const {

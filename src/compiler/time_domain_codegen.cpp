@@ -9,37 +9,64 @@ namespace Flux {
 
 TypedValue BSourceDeclAST::codegen(CodegenContext& context) {
     // Generate a function that will be called by the time-domain engine
-    // The function signature: double bsource_name(double time, double* inputs)
-    
+    // The function signature: double bsource_name(double time, double* inputs, int num_inputs)
+
     llvm::Type* DoubleTy = llvm::Type::getDoubleTy(context.TheContext);
     llvm::Type* DoublePtrTy = llvm::PointerType::get(DoubleTy, 0);
-    
+
     // Create function: double bsource_name(double time, double* inputs, int num_inputs)
     std::vector<llvm::Type*> paramTypes = {DoubleTy, DoublePtrTy, llvm::Type::getInt32Ty(context.TheContext)};
     auto funcType = llvm::FunctionType::get(DoubleTy, paramTypes, false);
-    auto func = llvm::Function::Create(funcType, llvm::Function::ExternalLinkage, 
+    auto func = llvm::Function::Create(funcType, llvm::Function::ExternalLinkage,
                                        "bsource_" + Name, context.TheModule.get());
-    
+
     // Set up basic block
     llvm::BasicBlock* BB = llvm::BasicBlock::Create(context.TheContext, "entry", func);
     context.Builder.SetInsertPoint(BB);
-    
-    // Name arguments
+
+    // Name arguments and add to NamedValues so body can reference them
     auto args = func->arg_begin();
     args->setName("time");
     llvm::Value* timeArg = &*args++;
     args->setName("inputs");
     llvm::Value* inputsArg = &*args++;
     args->setName("num_inputs");
+    llvm::Value* numInputsArg = &*args++;
+
+    // Save existing NamedValues
+    auto SavedNamedValues = context.NamedValues;
+
+    // Add function arguments to NamedValues so the body expression can use them
+    context.NamedValues["time"] = timeArg;
+    context.NamedValues["inputs"] = inputsArg;
+    context.NamedValues["num_inputs"] = numInputsArg;
+
+    // Compile the body expression
+    TypedValue BodyTV = Body->codegen(context);
+    if (!BodyTV.Val) {
+        std::cerr << "[CodeGen] B-source body codegen failed: " << Name << std::endl;
+        context.NamedValues = SavedNamedValues;
+        return TypedValue();
+    }
+
+    // Return the result of the body expression
+    llvm::Value* ResultVal = BodyTV.Val;
     
-    std::cout << "[CodeGen] B-source function generated: bsource_" << Name << std::endl;
-    
-    // For now, return 0.0 (actual implementation would compile the Body expression)
-    context.Builder.CreateRet(llvm::ConstantFP::get(context.TheContext, llvm::APFloat(0.0)));
-    
+    // Convert to double if needed
+    if (BodyTV.Type.Kind == TypeKind::Int) {
+        ResultVal = context.Builder.CreateSIToFP(ResultVal, DoubleTy, "int_to_double");
+    }
+
+    context.Builder.CreateRet(ResultVal);
+
+    // Restore NamedValues
+    context.NamedValues = SavedNamedValues;
+
+    std::cout << "[CodeGen] B-source compiled successfully: bsource_" << Name << std::endl;
+
     // Register with time-domain engine
     std::cout << "[CodeGen] Registered B-source: " << Name << std::endl;
-    
+
     return TypedValue(llvm::ConstantFP::get(context.TheContext, llvm::APFloat(1.0)), TypeKind::Double);
 }
 
@@ -92,27 +119,117 @@ TypedValue TempExprAST::codegen(CodegenContext& context) {
 // ============ Inputs Dictionary Codegen ============
 
 TypedValue InputsExprAST::codegen(CodegenContext& context) {
-    // For now, return 0.0 - actual implementation would access node voltage
-    std::cout << "[CodeGen] Inputs access: " << NodeName << std::endl;
-    return TypedValue(llvm::ConstantFP::get(context.TheContext, llvm::APFloat(0.0)), TypeKind::Double);
+    // Access input node voltage from the inputs array
+    // The inputs parameter is a double* passed as the second argument
+    // NodeName would be something like "in[0]" or we use a runtime lookup
+    
+    llvm::Type* DoubleTy = llvm::Type::getDoubleTy(context.TheContext);
+    
+    // Get the inputs pointer from NamedValues
+    llvm::Value* InputsPtr = context.NamedValues["inputs"];
+    if (!InputsPtr) {
+        std::cerr << "[CodeGen] Error: 'inputs' variable not available in context" << std::endl;
+        return TypedValue(llvm::ConstantFP::get(context.TheContext, llvm::APFloat(0.0)), TypeKind::Double);
+    }
+    
+    // For now, assume NodeName contains an index like "in0", "in1", etc.
+    // Extract index from node name (simple parsing)
+    int nodeIndex = 0;
+    std::string idxStr;
+    for (char c : NodeName) {
+        if (std::isdigit(c)) {
+            idxStr += c;
+        }
+    }
+    if (!idxStr.empty()) {
+        nodeIndex = std::stoi(idxStr);
+    }
+    
+    // Create GEP to access inputs[nodeIndex]
+    llvm::Value* IndexVal = llvm::ConstantInt::get(context.TheContext, llvm::APInt(32, nodeIndex));
+    llvm::Value* ElemPtr = context.Builder.CreateGEP(DoubleTy, InputsPtr, IndexVal, "input_ptr");
+    
+    // Load the voltage value
+    llvm::Value* VoltageVal = context.Builder.CreateLoad(DoubleTy, ElemPtr, "input_voltage");
+    
+    std::cout << "[CodeGen] Inputs access: node '" << NodeName << "' at index " << nodeIndex << std::endl;
+    
+    return TypedValue(VoltageVal, TypeKind::Double);
 }
 
 // ============ Outputs Dictionary Codegen ============
 
 TypedValue OutputsExprAST::codegen(CodegenContext& context) {
     // Generate code to set output node voltage
-    std::cout << "[CodeGen] Outputs set: " << NodeName << " = ..." << std::endl;
-    return Value->codegen(context);
+    // First, evaluate the value expression
+    TypedValue ValueTV = Value->codegen(context);
+    if (!ValueTV.Val) return TypedValue();
+
+    // Generate call to flux_set_output(name_ptr, value)
+    llvm::Type* DoubleTy = llvm::Type::getDoubleTy(context.TheContext);
+    llvm::Type* Int64Ty = llvm::Type::getInt64Ty(context.TheContext);
+    
+    llvm::Function* setOutputF = context.TheModule->getFunction("flux_set_output");
+    if (!setOutputF) {
+        auto funcType = llvm::FunctionType::get(
+            llvm::Type::getVoidTy(context.TheContext),
+            {DoubleTy, DoubleTy}, false);
+        setOutputF = llvm::Function::Create(funcType, llvm::Function::ExternalLinkage,
+                                            "flux_set_output", context.TheModule.get());
+    }
+
+    // Convert node name string pointer to double (for JIT calling convention)
+    uint64_t nameAddr = reinterpret_cast<uint64_t>(NodeName.c_str());
+    llvm::Value* NameAsDouble = llvm::ConstantInt::get(context.TheContext, llvm::APInt(64, nameAddr));
+    llvm::Value* NameLLVM = context.Builder.CreateBitCast(NameAsDouble, DoubleTy);
+
+    // Convert value to double if needed
+    llvm::Value* ValueLLVM = ValueTV.Val;
+    if (ValueTV.Type.Kind == TypeKind::Int) {
+        ValueLLVM = context.Builder.CreateSIToFP(ValueLLVM, DoubleTy, "int_to_double");
+    }
+
+    context.Builder.CreateCall(setOutputF, {NameLLVM, ValueLLVM});
+
+    std::cout << "[CodeGen] Output set: " << NodeName << " = value" << std::endl;
+
+    return TypedValue(ValueLLVM, TypeKind::Double);
 }
 
 // ============ Initial Condition Codegen ============
 
 TypedValue InitialCondAST::codegen(CodegenContext& context) {
+    // Evaluate the value expression
     auto valTV = Value->codegen(context);
     if (!valTV.Val) return TypedValue();
+
+    // Generate call to flux_set_initial_condition(node_ptr, voltage)
+    llvm::Type* DoubleTy = llvm::Type::getDoubleTy(context.TheContext);
     
-    std::cout << "[CodeGen] Initial condition: " << Node << " = " << valTV.Val << std::endl;
-    
+    llvm::Function* setICF = context.TheModule->getFunction("flux_set_initial_condition");
+    if (!setICF) {
+        auto funcType = llvm::FunctionType::get(
+            llvm::Type::getVoidTy(context.TheContext),
+            {DoubleTy, DoubleTy}, false);
+        setICF = llvm::Function::Create(funcType, llvm::Function::ExternalLinkage,
+                                        "flux_set_initial_condition", context.TheModule.get());
+    }
+
+    // Convert node name string pointer to double (for JIT calling convention)
+    uint64_t nameAddr = reinterpret_cast<uint64_t>(Node.c_str());
+    llvm::Value* NameAsDouble = llvm::ConstantInt::get(context.TheContext, llvm::APInt(64, nameAddr));
+    llvm::Value* NameLLVM = context.Builder.CreateBitCast(NameAsDouble, DoubleTy);
+
+    // Convert value to double if needed
+    llvm::Value* ValueLLVM = valTV.Val;
+    if (valTV.Type.Kind == TypeKind::Int) {
+        ValueLLVM = context.Builder.CreateSIToFP(ValueLLVM, DoubleTy, "int_to_double");
+    }
+
+    context.Builder.CreateCall(setICF, {NameLLVM, ValueLLVM});
+
+    std::cout << "[CodeGen] Initial condition set: " << Node << " = value" << std::endl;
+
     return TypedValue(llvm::ConstantFP::get(context.TheContext, llvm::APFloat(1.0)), TypeKind::Double);
 }
 

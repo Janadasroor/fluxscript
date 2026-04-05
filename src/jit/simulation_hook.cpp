@@ -4,9 +4,11 @@
 
 #include "flux/jit/simulation_hook.h"
 #include "flux/jit/jit_manager.h"
+#include "flux/runtime/ngspice_bridge.h"
 #include <iostream>
 #include <sstream>
 #include <algorithm>
+#include <chrono>
 
 namespace Flux {
 
@@ -133,9 +135,10 @@ void NgspiceSimulationHook::setBranchCurrent(const std::string& branch_name, dou
 bool NgspiceSimulationHook::bindNode(const std::string& node_name, double* voltage_ptr, double* current_ptr) {
     std::lock_guard<std::mutex> lock(m_mutex);
     NgspiceNodeData data;
-    data.node_name = node_name.c_str();
+    data.node_name = node_name;  // Copy the string
     data.voltage_ptr = voltage_ptr;
     data.current_ptr = current_ptr;
+    data.node_index = -1;
     m_bound_nodes[node_name] = data;
     return true;
 }
@@ -157,8 +160,106 @@ bool NgspiceSimulationHook::integrateJITComponent(const std::string& component_n
     std::lock_guard<std::mutex> lock(m_mutex);
     m_component_inputs[component_name] = input_nodes;
     m_component_outputs[component_name] = output_nodes;
-    std::cout << "[NgspiceHook] Integrated JIT component: " << component_name << std::endl;
+    std::cout << "[NgspiceHook] Integrated JIT component: " << component_name 
+              << " (inputs: " << input_nodes.size() << ", outputs: " << output_nodes.size() << ")" << std::endl;
     return true;
+}
+
+bool NgspiceSimulationHook::onTransientTimestep(const TimestepData& timestep_data) {
+    auto start_time = std::chrono::steady_clock::now();
+    
+    // Update all JIT components with current time step
+    auto& jit_manager = JITManager::instance();
+
+    for (const auto& [comp_name, input_nodes] : m_component_inputs) {
+        // Read input voltages from ngspice nodes
+        std::vector<double> inputs;
+        inputs.reserve(input_nodes.size());
+        for (const auto& node : input_nodes) {
+            inputs.push_back(getNodeVoltage(node));
+        }
+
+        // Evaluate component
+        std::vector<double> outputs(m_component_outputs[comp_name].size(), 0.0);
+        bool success = jit_manager.evaluateComponent(comp_name, 
+                                                     timestep_data.current_time, 
+                                                     timestep_data.dt, 
+                                                     inputs.data(), 
+                                                     outputs.data());
+        
+        if (!success) {
+            std::cerr << "[NgspiceHook] Failed to evaluate component: " << comp_name << std::endl;
+            return false;
+        }
+
+        // Write outputs to ngspice nodes
+        const auto& output_nodes = m_component_outputs[comp_name];
+        for (size_t i = 0; i < output_nodes.size() && i < outputs.size(); i++) {
+            setNodeVoltage(output_nodes[i], outputs[i]);
+        }
+    }
+    
+    auto end_time = std::chrono::steady_clock::now();
+    double eval_time = std::chrono::duration<double, std::micro>(end_time - start_time).count();
+    m_total_eval_time += eval_time;
+    m_timestep_count++;
+
+    return true;
+}
+
+bool NgspiceSimulationHook::bindNgspiceVector(const std::string& node_name, int vector_index) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    auto it = m_bound_nodes.find(node_name);
+    if (it == m_bound_nodes.end()) {
+        return false;
+    }
+    it->second.node_index = vector_index;
+    return true;
+}
+
+double NgspiceSimulationHook::readFromVector(int vector_index) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    if (vector_index < 0 || vector_index >= static_cast<int>(m_ngspice_voltages.size())) {
+        return 0.0;
+    }
+    return m_ngspice_voltages[vector_index];
+}
+
+void NgspiceSimulationHook::writeToVector(int vector_index, double value) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    if (vector_index >= 0 && vector_index < static_cast<int>(m_ngspice_voltages.size())) {
+        m_ngspice_voltages[vector_index] = value;
+    }
+}
+
+std::vector<double> NgspiceSimulationHook::getAllInputVoltages() const {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    std::vector<double> voltages;
+    for (const auto& [name, node_data] : m_bound_nodes) {
+        if (node_data.voltage_ptr) {
+            voltages.push_back(*node_data.voltage_ptr);
+        } else {
+            voltages.push_back(0.0);
+        }
+    }
+    return voltages;
+}
+
+void NgspiceSimulationHook::setAllOutputVoltages(const std::vector<double>& voltages) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    size_t idx = 0;
+    for (auto& [name, node_data] : m_bound_nodes) {
+        if (idx < voltages.size() && node_data.voltage_ptr) {
+            *node_data.voltage_ptr = voltages[idx];
+        }
+        idx++;
+    }
+}
+
+void NgspiceSimulationHook::resetStatistics() {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    m_timestep_count = 0;
+    m_total_eval_time = 0.0;
 }
 
 // ============================================================================
@@ -341,15 +442,22 @@ bool SimulationController::startSimulation(const std::string& netlist) {
         return false;
     }
 
+    // Initialize ngspice with netlist
+    int rc = flux_ngspice_init(netlist.c_str());
+    if (rc != 0) {
+        if (m_error_callback) {
+            m_error_callback("Failed to initialize ngspice");
+        }
+        return false;
+    }
+
     // Start simulation
     m_running = true;
     m_paused = false;
     m_current_time = 0.0;
 
-    // Call ngspice simulation
-    // This would integrate with actual ngspice API
     std::cout << "[SimController] Simulation started" << std::endl;
-    
+
     if (m_progress_callback) {
         m_progress_callback(0.0, 0.0);
     }
@@ -403,6 +511,18 @@ bool SimulationController::stepSimulation(double time_step) {
 
     m_current_time += time_step;
 
+    // Prepare timestep data for JIT components
+    TimestepData timestep_data;
+    timestep_data.current_time = m_current_time;
+    timestep_data.dt = time_step;
+    timestep_data.iteration = static_cast<int>(m_current_time / time_step);
+    timestep_data.converged = true;
+
+    // Update ngspice voltages from JIT components
+    if (m_hook) {
+        m_hook->onTransientTimestep(timestep_data);
+    }
+
     // Update JIT components
     m_jit_manager->stepSimulation(m_current_time, time_step);
 
@@ -412,6 +532,53 @@ bool SimulationController::stepSimulation(double time_step) {
         m_progress_callback(m_current_time, percent);
     }
 
+    return true;
+}
+
+bool SimulationController::runTransientSimulation(double tstart, double tstop, double tstep) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    if (!m_running || m_paused) {
+        return false;
+    }
+
+    std::cout << "[SimController] Running transient: " << tstart << " to " << tstop 
+              << " (step: " << tstep << ")" << std::endl;
+
+    // Start ngspice transient simulation
+    int rc = flux_ngspice_run_transient(tstart, tstop, tstep);
+    if (rc != 0) {
+        if (m_error_callback) {
+            m_error_callback("ngspice transient simulation failed");
+        }
+        return false;
+    }
+
+    // Run simulation loop, calling JIT components at each timestep
+    for (double t = tstart; t <= tstop && m_running && !m_paused; t += tstep) {
+        m_current_time = t;
+
+        TimestepData timestep_data;
+        timestep_data.current_time = t;
+        timestep_data.dt = tstep;
+        timestep_data.iteration = static_cast<int>((t - tstart) / tstep);
+        timestep_data.converged = true;
+
+        // Call JIT components through simulation hook
+        if (m_hook) {
+            m_hook->onTransientTimestep(timestep_data);
+        }
+
+        // Update statistics in JIT manager
+        m_jit_manager->stepSimulation(t, tstep);
+
+        // Report progress
+        if (m_progress_callback && m_end_time > 0) {
+            double percent = (t / m_end_time) * 100.0;
+            m_progress_callback(t, percent);
+        }
+    }
+
+    std::cout << "[SimController] Transient simulation completed at t=" << m_current_time << std::endl;
     return true;
 }
 

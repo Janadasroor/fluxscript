@@ -1,8 +1,18 @@
 #include "flux/runtime/time_domain_api.h"
 #include <iostream>
 #include <algorithm>
+#include <cstring>
+#include <cstdint>
 
 namespace Flux {
+
+template <typename To, typename From>
+inline To bit_cast(const From& src) noexcept {
+    static_assert(sizeof(To) == sizeof(From), "bit_cast sizes must match");
+    To dst;
+    std::memcpy(&dst, &src, sizeof(To));
+    return dst;
+}
 
 // ============================================================================
 // TimeDomainEngine Implementation
@@ -66,6 +76,47 @@ double TimeDomainEngine::getBuiltinVariable(const std::string& name) const {
     return 0.0;
 }
 
+double TimeDomainEngine::stateGet(const std::string& name, double defaultValue) const {
+    auto it = m_stateVariables.find(name);
+    if (it == m_stateVariables.end()) {
+        return defaultValue;
+    }
+    return it->second;
+}
+
+void TimeDomainEngine::stateSet(const std::string& name, double value) {
+    m_stateVariables[name] = value;
+}
+
+// Initial conditions
+void TimeDomainEngine::setInitialCondition(const std::string& node, double voltage) {
+    m_initialConditions[node] = voltage;
+    std::cout << "[TimeDomain] Initial condition: " << node << " = " << voltage << "V" << std::endl;
+}
+
+double TimeDomainEngine::getInitialCondition(const std::string& node) const {
+    auto it = m_initialConditions.find(node);
+    return (it != m_initialConditions.end()) ? it->second : 0.0;
+}
+
+std::map<std::string, double> TimeDomainEngine::getAllInitialConditions() const {
+    return m_initialConditions;
+}
+
+// Output management
+void TimeDomainEngine::setOutput(const std::string& name, double value) {
+    m_outputs[name] = value;
+}
+
+double TimeDomainEngine::getOutput(const std::string& name) const {
+    auto it = m_outputs.find(name);
+    return (it != m_outputs.end()) ? it->second : 0.0;
+}
+
+std::map<std::string, double> TimeDomainEngine::getAllOutputs() const {
+    return m_outputs;
+}
+
 // ============================================================================
 // C API Implementation
 // ============================================================================
@@ -114,12 +165,57 @@ double flux_get_temp() {
     return TimeDomainEngine::instance().getTemperature();
 }
 
+double flux_state_get(double name_ptr, double defaultValue) {
+    const char* name = reinterpret_cast<const char*>(bit_cast<uint64_t>(name_ptr));
+    if (!name) return defaultValue;
+    return TimeDomainEngine::instance().stateGet(name, defaultValue);
+}
+
+void flux_state_set(double name_ptr, double value) {
+    const char* name = reinterpret_cast<const char*>(bit_cast<uint64_t>(name_ptr));
+    if (name) {
+        TimeDomainEngine::instance().stateSet(name, value);
+    }
+}
+
 void flux_set_simtime(double time) {
     TimeDomainEngine::instance().setSimulationTime(time);
 }
 
 void flux_set_timestep(double dt) {
     TimeDomainEngine::instance().setTimestep(dt);
+}
+
+// Initial conditions
+void flux_set_initial_condition(double node_ptr, double voltage) {
+    const char* node = reinterpret_cast<const char*>(bit_cast<uint64_t>(node_ptr));
+    if (node) {
+        TimeDomainEngine::instance().setInitialCondition(node, voltage);
+    }
+}
+
+double flux_get_initial_condition(double node_ptr) {
+    const char* node = reinterpret_cast<const char*>(bit_cast<uint64_t>(node_ptr));
+    if (node) {
+        return TimeDomainEngine::instance().getInitialCondition(node);
+    }
+    return 0.0;
+}
+
+// Outputs
+void flux_set_output(double name_ptr, double value) {
+    const char* name = reinterpret_cast<const char*>(bit_cast<uint64_t>(name_ptr));
+    if (name) {
+        TimeDomainEngine::instance().setOutput(name, value);
+    }
+}
+
+double flux_get_output(double name_ptr) {
+    const char* name = reinterpret_cast<const char*>(bit_cast<uint64_t>(name_ptr));
+    if (name) {
+        return TimeDomainEngine::instance().getOutput(name);
+    }
+    return 0.0;
 }
 
 } // extern "C"

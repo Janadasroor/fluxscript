@@ -14,10 +14,10 @@ void registerRuntimeFunctions(FluxJIT& jit);
 extern "C" {
 double flux_print_string(const char* str);
 
-double flux_get_voltage(const char* node);
-double flux_get_current(const char* branch);
-double flux_get_parameter(const char* name);
-double flux_set_parameter(const char* name, double value);
+double flux_get_voltage(double node);
+double flux_get_current(double branch);
+double flux_get_parameter(double name);
+double flux_set_parameter(double name, double value);
 
 double flux_sim_run();
 double flux_sim_stop();

@@ -1,0 +1,201 @@
+#ifndef FLUX_TOOLING_LSP_SERVER_H
+#define FLUX_TOOLING_LSP_SERVER_H
+
+#include <string>
+#include <map>
+#include <vector>
+#include <memory>
+#include <functional>
+
+namespace Flux {
+
+// Forward declarations
+class Lexer;
+class Parser;
+
+namespace Tooling {
+
+// ============================================================================
+// LSP Types (subset of LSP 3.17 spec)
+// ============================================================================
+
+struct Position {
+    int line = 0;       // 0-based
+    int character = 0;  // 0-based UTF-16 code units
+    bool operator==(const Position& other) const { return line == other.line && character == other.character; }
+    bool operator!=(const Position& other) const { return !(*this == other); }
+    bool operator<(const Position& other) const { return line < other.line || (line == other.line && character < other.character); }
+};
+
+struct Range {
+    Position start;
+    Position end;
+};
+
+struct Location {
+    std::string uri;
+    Range range;
+};
+
+struct Diagnostic {
+    enum Severity { Error = 1, Warning = 2, Info = 3, Hint = 4 };
+    Range range;
+    Severity severity = Error;
+    std::string message;
+    std::string source = "fluxscript";
+};
+
+struct CompletionItem {
+    enum Kind {
+        Text = 1, Method = 2, Function = 3, Constructor = 4,
+        Field = 5, Variable = 6, Class = 7, Interface = 8,
+        Module = 9, Property = 10, Unit = 12, Value = 13,
+        Enum = 14, Keyword = 15, Snippet = 16, Color = 16,
+        File = 17, Reference = 18, Folder = 19, EnumMember = 20,
+        Constant = 21, Struct = 22, Event = 23, Operator = 24,
+        TypeParameter = 25, Type = 26
+    };
+    std::string label;
+    Kind kind = Text;
+    std::string detail;       // e.g., "(x: double) -> double"
+    std::string documentation;
+    std::string insertText;
+    int insertTextFormat = 1; // 1=plaintext, 2=snippet
+};
+
+struct ParameterInfo {
+    std::string label;
+    std::string documentation;
+};
+
+struct SignatureInfo {
+    std::string label;         // e.g., "sin(x: double)"
+    std::string documentation;
+    std::vector<ParameterInfo> parameters;
+};
+
+struct HoverContent {
+    std::string contents;      // Markdown
+    Range range;
+};
+
+// ============================================================================
+// Document State
+// ============================================================================
+
+struct TextDocument {
+    std::string uri;
+    std::string languageId;
+    int version = 0;
+    std::string text;
+
+    Position offsetToPosition(size_t offset) const;
+    size_t positionToOffset(Position pos) const;
+    std::string getLine(size_t line) const;
+    std::string getWordAtPosition(Position pos) const;
+};
+
+// ============================================================================
+// Symbol Table Entry
+// ============================================================================
+
+struct SymbolEntry {
+    enum Kind { Variable, Function, Parameter, Builtin, Keyword, Type };
+    std::string name;
+    Kind kind = Variable;
+    std::string typeStr;       // e.g., "double", "(double) -> double"
+    std::string documentation;
+    Range range;
+    std::string uri;
+};
+
+// ============================================================================
+// LSP Server
+// ============================================================================
+
+class LspServer {
+public:
+    LspServer();
+    ~LspServer();
+
+    // Main entry point: process one JSON-RPC request from stdin
+    // Returns the JSON-RPC response string
+    std::string processRequest(const std::string& jsonRequest);
+
+    // Run the server loop (reads from stdin, writes to stdout)
+    int run();
+
+    // Document management
+    void openDocument(const std::string& uri, const std::string& languageId, int version, const std::string& text);
+    void changeDocument(const std::string& uri, int version, const std::string& text);
+    void closeDocument(const std::string& uri);
+    TextDocument* getDocument(const std::string& uri);
+
+    // Semantic analysis
+    std::vector<Diagnostic> analyzeDocument(const std::string& uri);
+    std::vector<SymbolEntry> buildSymbolTable(const std::string& uri);
+
+    // LSP handlers
+    std::string handleInitialize(const std::string& params);
+    std::string handleShutdown(const std::string& params);
+    std::string handleTextDocumentDidOpen(const std::string& params);
+    std::string handleTextDocumentDidChange(const std::string& params);
+    std::string handleTextDocumentDidClose(const std::string& params);
+    std::string handleTextDocumentCompletion(const std::string& params);
+    std::string handleTextDocumentHover(const std::string& params);
+    std::string handleTextDocumentDefinition(const std::string& params);
+    std::string handleTextDocumentSignatureHelp(const std::string& params);
+    std::string handleTextDocumentDocumentSymbol(const std::string& params);
+    std::string handleWorkspaceSymbol(const std::string& params);
+
+    // Completion engine
+    std::vector<CompletionItem> getCompletions(const std::string& uri, Position pos);
+    std::vector<CompletionItem> getKeywordCompletions();
+    std::vector<CompletionItem> getBuiltinFunctionCompletions();
+    std::vector<CompletionItem> getTypeCompletions();
+    std::vector<CompletionItem> getSnippetCompletions();
+
+    // Hover engine
+    HoverContent getHover(const std::string& uri, Position pos);
+
+    // Definition provider
+    Location* getDefinition(const std::string& uri, Position pos);
+
+    // Signature help
+    struct SignatureHelpResult {
+        std::vector<SignatureInfo> signatures;
+        int activeSignature = 0;
+        int activeParameter = 0;
+    };
+    SignatureHelpResult getSignatureHelp(const std::string& uri, Position pos);
+
+private:
+    // JSON helpers
+    std::string jsonGet(const std::string& json, const std::string& key);
+    int jsonGetInt(const std::string& json, const std::string& key, int defaultVal = 0);
+    std::string jsonGetNested(const std::string& json, const std::string& key1, const std::string& key2);
+    std::string jsonEscape(const std::string& s);
+
+    // Response builder
+    std::string makeResponse(int id, const std::string& result);
+    std::string makeErrorResponse(int id, int code, const std::string& message);
+    std::string makeNotification(const std::string& method, const std::string& params);
+
+    // Publish diagnostics to client
+    void publishDiagnostics(const std::string& uri, const std::vector<Diagnostic>& diagnostics);
+
+    std::map<std::string, TextDocument> m_documents;
+    std::map<std::string, std::vector<SymbolEntry>> m_symbolTables;
+    int m_requestId = 0;
+
+    // Completion cache
+    std::vector<CompletionItem> m_allCompletions;
+    bool m_completionsBuilt = false;
+
+    void buildCompletions();
+};
+
+} // namespace Tooling
+} // namespace Flux
+
+#endif // FLUX_TOOLING_LSP_SERVER_H

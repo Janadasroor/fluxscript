@@ -19,9 +19,18 @@ namespace Flux {
 
 // Ngspice node data (zero-copy interface)
 struct NgspiceNodeData {
-    const char* node_name;
-    double* voltage_ptr;      // Pointer to ngspice node voltage
-    double* current_ptr;      // Pointer to ngspice branch current
+    std::string node_name;
+    double* voltage_ptr;      // Pointer to ngspice node voltage (zero-copy)
+    double* current_ptr;      // Pointer to ngspice branch current (zero-copy)
+    int node_index = -1;      // Index in ngspice vector for direct access
+};
+
+// Timestep callback data
+struct TimestepData {
+    double current_time;
+    double dt;
+    int iteration;
+    bool converged;
 };
 
 // Simulation hook interface
@@ -72,6 +81,23 @@ public:
                               const std::vector<std::string>& input_nodes,
                               const std::vector<std::string>& output_nodes);
 
+    // Transient loop integration - called at each timestep by ngspice
+    bool onTransientTimestep(const TimestepData& timestep_data);
+    
+    // Direct ngspice vector access (for zero-copy operation)
+    bool bindNgspiceVector(const std::string& node_name, int vector_index);
+    double readFromVector(int vector_index);
+    void writeToVector(int vector_index, double value);
+    
+    // Get all bound node voltages as array (for bulk operations)
+    std::vector<double> getAllInputVoltages() const;
+    void setAllOutputVoltages(const std::vector<double>& voltages);
+
+    // Statistics
+    int getTimestepCount() const { return m_timestep_count; }
+    double getTotalEvalTime() const { return m_total_eval_time; }
+    void resetStatistics();
+
 private:
     NgspiceSimulationHook() = default;
     ~NgspiceSimulationHook() = default;
@@ -83,6 +109,14 @@ private:
     mutable std::mutex m_mutex;
     bool m_initialized = false;
     bool m_simulation_active = false;
+    
+    // ngspice vector storage (for zero-copy access)
+    std::vector<double> m_ngspice_voltages;    // Cached node voltages
+    std::vector<double> m_ngspice_currents;    // Cached branch currents
+    
+    // Statistics
+    int m_timestep_count = 0;
+    double m_total_eval_time = 0.0;
 };
 
 // Behavioral source interface for ngspice
@@ -140,6 +174,7 @@ public:
     bool pauseSimulation();
     bool resumeSimulation();
     bool stepSimulation(double time_step);
+    bool runTransientSimulation(double tstart, double tstop, double tstep);
 
     // Status
     bool isSimulationRunning() const;

@@ -52,7 +52,7 @@ void DebugPanel::setupUI()
     
     auto* continueBtn = new QToolButton();
     continueBtn->setIcon(QIcon(":/icons/tool_play.svg"));
-    continueBtn->setIconSize(QSize(14, 14));
+    continueBtn->setIconSize(QSize(18, 18));
     continueBtn->setText("Continue");
     continueBtn->setToolTip("Continue (F5)");
     continueBtn->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
@@ -60,7 +60,7 @@ void DebugPanel::setupUI()
     
     auto* stopBtn = new QToolButton();
     stopBtn->setIcon(QIcon(":/icons/tool_stop.svg"));
-    stopBtn->setIconSize(QSize(14, 14));
+    stopBtn->setIconSize(QSize(18, 18));
     stopBtn->setText("Stop");
     stopBtn->setToolTip("Stop Debugging");
     stopBtn->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
@@ -70,7 +70,7 @@ void DebugPanel::setupUI()
     
     auto* stepOverBtn = new QToolButton();
     stepOverBtn->setIcon(QIcon(":/icons/tool_step_over.svg"));
-    stepOverBtn->setIconSize(QSize(14, 14));
+    stepOverBtn->setIconSize(QSize(18, 18));
     stepOverBtn->setText("Over");
     stepOverBtn->setToolTip("Step Over (F10)");
     stepOverBtn->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
@@ -78,7 +78,7 @@ void DebugPanel::setupUI()
     
     auto* stepIntoBtn = new QToolButton();
     stepIntoBtn->setIcon(QIcon(":/icons/tool_step_into.svg"));
-    stepIntoBtn->setIconSize(QSize(14, 14));
+    stepIntoBtn->setIconSize(QSize(18, 18));
     stepIntoBtn->setText("Into");
     stepIntoBtn->setToolTip("Step Into (F11)");
     stepIntoBtn->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
@@ -86,7 +86,7 @@ void DebugPanel::setupUI()
     
     auto* stepOutBtn = new QToolButton();
     stepOutBtn->setIcon(QIcon(":/icons/tool_step_out.svg"));
-    stepOutBtn->setIconSize(QSize(14, 14));
+    stepOutBtn->setIconSize(QSize(18, 18));
     stepOutBtn->setText("Out");
     stepOutBtn->setToolTip("Step Out (Shift+F11)");
     stepOutBtn->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
@@ -112,8 +112,8 @@ void DebugPanel::setupUI()
     
     // Variables tree
     auto* variablesLabel = new QLabel(" Variables");
-    variablesLabel->setPixmap(QIcon(":/icons/variables.svg").pixmap(14, 14));
-    variablesLabel->setStyleSheet("color: #cccccc; font-weight: bold; padding: 4px; background-color: #2d2d2d;");
+    variablesLabel->setPixmap(QIcon(":/icons/variables.svg").pixmap(16, 16));
+    variablesLabel->setStyleSheet("color: #cccccc; font-weight: bold; font-size: 12px; padding: 4px; background-color: #2d2d2d;");
     panelsLayout->addWidget(variablesLabel);
     
     m_variablesTree = new QTreeWidget();
@@ -133,7 +133,7 @@ void DebugPanel::setupUI()
     
     // Watch tree
     auto* watchLabel = new QLabel(" Watch");
-    watchLabel->setPixmap(QIcon(":/icons/watch.svg").pixmap(14, 14));
+    watchLabel->setPixmap(QIcon(":/icons/watch.svg").pixmap(16, 16));
     watchLabel->setStyleSheet("color: #cccccc; font-weight: bold; padding: 4px; background-color: #2d2d2d;");
     panelsLayout->addWidget(watchLabel);
     
@@ -146,7 +146,7 @@ void DebugPanel::setupUI()
     
     // Call stack
     auto* stackLabel = new QLabel(" Call Stack");
-    stackLabel->setPixmap(QIcon(":/icons/call_stack.svg").pixmap(14, 14));
+    stackLabel->setPixmap(QIcon(":/icons/call_stack.svg").pixmap(16, 16));
     stackLabel->setStyleSheet("color: #cccccc; font-weight: bold; padding: 4px; background-color: #2d2d2d;");
     panelsLayout->addWidget(stackLabel);
     
@@ -159,7 +159,7 @@ void DebugPanel::setupUI()
     
     // Breakpoints
     auto* bpLabel = new QLabel(" Breakpoints");
-    bpLabel->setPixmap(QIcon(":/icons/breakpoint.svg").pixmap(14, 14));
+    bpLabel->setPixmap(QIcon(":/icons/breakpoint.svg").pixmap(16, 16));
     bpLabel->setStyleSheet("color: #cccccc; font-weight: bold; padding: 4px; background-color: #2d2d2d;");
     panelsLayout->addWidget(bpLabel);
     

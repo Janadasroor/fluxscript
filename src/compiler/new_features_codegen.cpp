@@ -1,5 +1,4 @@
 // Codegen for New Features (Debug, Sensitivity, Ask, Explain, Substitute)
-#include "flux/compiler/codegen.h"
 #include "flux/compiler/ast.h"
 #include "flux/runtime/flux_runtime.h"
 #include <llvm/IR/Function.h>
@@ -27,7 +26,7 @@ TypedValue DebugStmtAST::codegen(CodegenContext& context) {
         llvm::Function* loadFunc = context.TheModule->getFunction("flux_debug_load");
         if (!loadFunc) {
             llvm::FunctionType* FT = llvm::FunctionType::get(llvm::Type::getVoidTy(context.TheContext),
-                                                              {VoidPtrTy, llvm::Type::getInt8PtrTy(context.TheContext)}, false);
+                                                              llvm::ArrayRef<llvm::Type*>{VoidPtrTy, VoidPtrTy}, false);
             loadFunc = llvm::Function::Create(FT, llvm::Function::ExternalLinkage, "flux_debug_load", context.TheModule.get());
         }
         
@@ -40,8 +39,8 @@ TypedValue DebugStmtAST::codegen(CodegenContext& context) {
         llvm::Function* addSymptomFunc = context.TheModule->getFunction("flux_debug_add_symptom");
         if (!addSymptomFunc) {
             llvm::FunctionType* FT = llvm::FunctionType::get(llvm::Type::getVoidTy(context.TheContext),
-                                                              {VoidPtrTy, llvm::Type::getInt8PtrTy(context.TheContext),
-                                                               llvm::Type::getInt8PtrTy(context.TheContext)}, false);
+                                                              llvm::ArrayRef<llvm::Type*>{VoidPtrTy, VoidPtrTy,
+                                                               VoidPtrTy}, false);
             addSymptomFunc = llvm::Function::Create(FT, llvm::Function::ExternalLinkage, "flux_debug_add_symptom", context.TheModule.get());
         }
         
@@ -53,8 +52,8 @@ TypedValue DebugStmtAST::codegen(CodegenContext& context) {
     // Run diagnosis
     llvm::Function* diagnoseFunc = context.TheModule->getFunction("flux_debug_diagnose");
     if (!diagnoseFunc) {
-        llvm::FunctionType* FT = llvm::FunctionType::get(llvm::Type::getInt8PtrTy(context.TheContext),
-                                                          {VoidPtrTy}, false);
+        llvm::FunctionType* FT = llvm::FunctionType::get(VoidPtrTy,
+                                                          llvm::ArrayRef<llvm::Type*>{VoidPtrTy}, false);
         diagnoseFunc = llvm::Function::Create(FT, llvm::Function::ExternalLinkage, "flux_debug_diagnose", context.TheModule.get());
     }
     
@@ -82,7 +81,7 @@ TypedValue SensitivityStmtAST::codegen(CodegenContext& context) {
         llvm::Function* loadFunc = context.TheModule->getFunction("flux_sens_load");
         if (!loadFunc) {
             llvm::FunctionType* FT = llvm::FunctionType::get(llvm::Type::getVoidTy(context.TheContext),
-                                                              {VoidPtrTy, llvm::Type::getInt8PtrTy(context.TheContext)}, false);
+                                                              llvm::ArrayRef<llvm::Type*>{VoidPtrTy, VoidPtrTy}, false);
             loadFunc = llvm::Function::Create(FT, llvm::Function::ExternalLinkage, "flux_sens_load", context.TheModule.get());
         }
         
@@ -94,7 +93,7 @@ TypedValue SensitivityStmtAST::codegen(CodegenContext& context) {
     llvm::Function* setOutputFunc = context.TheModule->getFunction("flux_sens_set_output");
     if (!setOutputFunc) {
         llvm::FunctionType* FT = llvm::FunctionType::get(llvm::Type::getVoidTy(context.TheContext),
-                                                          {VoidPtrTy, llvm::Type::getInt8PtrTy(context.TheContext)}, false);
+                                                          llvm::ArrayRef<llvm::Type*>{VoidPtrTy, VoidPtrTy}, false);
         setOutputFunc = llvm::Function::Create(FT, llvm::Function::ExternalLinkage, "flux_sens_set_output", context.TheModule.get());
     }
     
@@ -105,7 +104,7 @@ TypedValue SensitivityStmtAST::codegen(CodegenContext& context) {
     llvm::Function* setParamFunc = context.TheModule->getFunction("flux_sens_set_parameter");
     if (!setParamFunc) {
         llvm::FunctionType* FT = llvm::FunctionType::get(llvm::Type::getVoidTy(context.TheContext),
-                                                          {VoidPtrTy, llvm::Type::getInt8PtrTy(context.TheContext),
+                                                          llvm::ArrayRef<llvm::Type*>{VoidPtrTy, VoidPtrTy,
                                                            llvm::Type::getDoubleTy(context.TheContext),
                                                            llvm::Type::getDoubleTy(context.TheContext)}, false);
         setParamFunc = llvm::Function::Create(FT, llvm::Function::ExternalLinkage, "flux_sens_set_parameter", context.TheModule.get());
@@ -122,7 +121,7 @@ TypedValue SensitivityStmtAST::codegen(CodegenContext& context) {
     llvm::Function* analyzeFunc = context.TheModule->getFunction("flux_sens_analyze");
     if (!analyzeFunc) {
         llvm::FunctionType* FT = llvm::FunctionType::get(llvm::Type::getVoidTy(context.TheContext),
-                                                          {VoidPtrTy}, false);
+                                                          llvm::ArrayRef<llvm::Type*>{VoidPtrTy}, false);
         analyzeFunc = llvm::Function::Create(FT, llvm::Function::ExternalLinkage, "flux_sens_analyze", context.TheModule.get());
     }
     
@@ -131,8 +130,8 @@ TypedValue SensitivityStmtAST::codegen(CodegenContext& context) {
     // Get results
     llvm::Function* getResultsFunc = context.TheModule->getFunction("flux_sens_get_results");
     if (!getResultsFunc) {
-        llvm::FunctionType* FT = llvm::FunctionType::get(llvm::Type::getInt8PtrTy(context.TheContext),
-                                                          {VoidPtrTy}, false);
+        llvm::FunctionType* FT = llvm::FunctionType::get(VoidPtrTy,
+                                                          llvm::ArrayRef<llvm::Type*>{VoidPtrTy}, false);
         getResultsFunc = llvm::Function::Create(FT, llvm::Function::ExternalLinkage, "flux_sens_get_results", context.TheModule.get());
     }
     
@@ -158,7 +157,7 @@ TypedValue AskExprAST::codegen(CodegenContext& context) {
     llvm::Function* initFunc = context.TheModule->getFunction("flux_nlp_initialize");
     if (!initFunc) {
         llvm::FunctionType* FT = llvm::FunctionType::get(llvm::Type::getVoidTy(context.TheContext),
-                                                          {VoidPtrTy, llvm::Type::getInt8PtrTy(context.TheContext)}, false);
+                                                          llvm::ArrayRef<llvm::Type*>{VoidPtrTy, VoidPtrTy}, false);
         initFunc = llvm::Function::Create(FT, llvm::Function::ExternalLinkage, "flux_nlp_initialize", context.TheModule.get());
     }
     
@@ -168,8 +167,8 @@ TypedValue AskExprAST::codegen(CodegenContext& context) {
     // Query
     llvm::Function* queryFunc = context.TheModule->getFunction("flux_nlp_query");
     if (!queryFunc) {
-        llvm::FunctionType* FT = llvm::FunctionType::get(llvm::Type::getInt8PtrTy(context.TheContext),
-                                                          {VoidPtrTy, llvm::Type::getInt8PtrTy(context.TheContext)}, false);
+        llvm::FunctionType* FT = llvm::FunctionType::get(VoidPtrTy,
+                                                          llvm::ArrayRef<llvm::Type*>{VoidPtrTy, VoidPtrTy}, false);
         queryFunc = llvm::Function::Create(FT, llvm::Function::ExternalLinkage, "flux_nlp_query", context.TheModule.get());
     }
     
@@ -197,7 +196,7 @@ TypedValue ExplainExprAST::codegen(CodegenContext& context) {
         llvm::Function* loadFunc = context.TheModule->getFunction("flux_explainer_load");
         if (!loadFunc) {
             llvm::FunctionType* FT = llvm::FunctionType::get(llvm::Type::getVoidTy(context.TheContext),
-                                                              {VoidPtrTy, llvm::Type::getInt8PtrTy(context.TheContext)}, false);
+                                                              llvm::ArrayRef<llvm::Type*>{VoidPtrTy, VoidPtrTy}, false);
             loadFunc = llvm::Function::Create(FT, llvm::Function::ExternalLinkage, "flux_explainer_load", context.TheModule.get());
         }
         
@@ -208,8 +207,8 @@ TypedValue ExplainExprAST::codegen(CodegenContext& context) {
     // Get explanation
     llvm::Function* explainFunc = context.TheModule->getFunction("flux_explainer_explain");
     if (!explainFunc) {
-        llvm::FunctionType* FT = llvm::FunctionType::get(llvm::Type::getInt8PtrTy(context.TheContext),
-                                                          {VoidPtrTy}, false);
+        llvm::FunctionType* FT = llvm::FunctionType::get(VoidPtrTy,
+                                                          llvm::ArrayRef<llvm::Type*>{VoidPtrTy}, false);
         explainFunc = llvm::Function::Create(FT, llvm::Function::ExternalLinkage, "flux_explainer_explain", context.TheModule.get());
     }
     
@@ -234,8 +233,8 @@ TypedValue SubstituteStmtAST::codegen(CodegenContext& context) {
     // Find substitutes
     llvm::Function* findFunc = context.TheModule->getFunction("flux_sub_find");
     if (!findFunc) {
-        llvm::FunctionType* FT = llvm::FunctionType::get(llvm::Type::getInt8PtrTy(context.TheContext),
-                                                          {VoidPtrTy, llvm::Type::getInt8PtrTy(context.TheContext)}, false);
+        llvm::FunctionType* FT = llvm::FunctionType::get(VoidPtrTy,
+                                                          llvm::ArrayRef<llvm::Type*>{VoidPtrTy, VoidPtrTy}, false);
         findFunc = llvm::Function::Create(FT, llvm::Function::ExternalLinkage, "flux_sub_find", context.TheModule.get());
     }
     

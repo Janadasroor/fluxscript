@@ -77,14 +77,31 @@ public:
     
     // Get built-in variable: time, dt, temp
     double getBuiltinVariable(const std::string& name) const;
-    
+
+    // State management
+    double stateGet(const std::string& name, double defaultValue) const;
+    void stateSet(const std::string& name, double value);
+
+    // Initial conditions
+    void setInitialCondition(const std::string& node, double voltage);
+    double getInitialCondition(const std::string& node) const;
+    std::map<std::string, double> getAllInitialConditions() const;
+
+    // Output management
+    void setOutput(const std::string& name, double value);
+    double getOutput(const std::string& name) const;
+    std::map<std::string, double> getAllOutputs() const;
+
 private:
     TimeDomainEngine() : m_simTime(0.0), m_timestep(1e-9), m_temperature(300.0) {}
-    
+
     double m_simTime;
     double m_timestep;
     double m_temperature;
     std::map<std::string, UpdateFunction> m_bsources;
+    std::map<std::string, double> m_stateVariables;
+    std::map<std::string, double> m_initialConditions;
+    std::map<std::string, double> m_outputs;
 };
 
 // ============================================================================
@@ -104,9 +121,21 @@ extern "C" {
     double flux_get_dt();
     double flux_get_temp();
     
+    // State variables
+    double flux_state_get(double name_ptr, double defaultValue);
+    void flux_state_set(double name_ptr, double value);
+    
     // Set simulation state
     void flux_set_simtime(double time);
     void flux_set_timestep(double dt);
+
+    // Initial conditions
+    void flux_set_initial_condition(double node_ptr, double voltage);
+    double flux_get_initial_condition(double node_ptr);
+
+    // Outputs
+    void flux_set_output(double name_ptr, double value);
+    double flux_get_output(double name_ptr);
 }
 
 } // namespace Flux
