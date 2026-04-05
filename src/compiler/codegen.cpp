@@ -117,6 +117,14 @@ TypedValue BlockExprAST::codegen(CodegenContext& context) {
 TypedValue VariableExprAST::codegen(CodegenContext& context) {
     llvm::Value* V = context.NamedValues[Name];
     if (!V) {
+        // Handle namespaced variables: math::pi -> try unqualified lookup
+        auto sepPos = Name.rfind("::");
+        if (sepPos != std::string::npos) {
+            std::string unqualified = Name.substr(sepPos + 2);
+            V = context.NamedValues[unqualified];
+        }
+    }
+    if (!V) {
         std::cerr << "Unknown variable name: " << Name << std::endl;
         std::cerr << "  Available variables: ";
         for (const auto& [k, v] : context.NamedValues) {
@@ -715,6 +723,14 @@ TypedValue CallExprAST::codegen(CodegenContext& context) {
     }
 
     llvm::Function* CalleeF = context.TheModule->getFunction(Callee);
+    if (!CalleeF) {
+        // Handle namespaced calls: math::sqrt -> try lookup as just "sqrt"
+        auto sepPos = Callee.rfind("::");
+        if (sepPos != std::string::npos) {
+            std::string unqualified = Callee.substr(sepPos + 2);
+            CalleeF = context.TheModule->getFunction(unqualified);
+        }
+    }
     if (!CalleeF) {
         llvm::Value* VarVal = context.NamedValues[Callee];
         if (VarVal) {

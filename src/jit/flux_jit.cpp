@@ -107,7 +107,8 @@ FluxJIT::FluxJIT(OptimizationLevel optLevel)
         return;
     }
 
-    m_lljit->getMainJITDylib().addGenerator(std::move(*ProcessSymbols));
+    // Note: Disabled process symbol generator to avoid conflicts with JIT-defined functions
+    // m_lljit->getMainJITDylib().addGenerator(std::move(*ProcessSymbols));
     
     // Register complex number helper functions with the JIT
     registerComplexHelpers();

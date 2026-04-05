@@ -1,0 +1,32 @@
+# FluxScript Features to Implement
+
+## Compiler Core
+- [x] **Full Module System**: Implement `import` logic to load, compile, and JIT-link other `.flux` files.
+- [ ] **Statement-based Control Flow**: Refactor control flow (If, For, While) from expression-based to true statement-based nodes where appropriate for better optimization.
+- [ ] **Complex Numbers Optimization**: Move from struct-based complex numbers to native LLVM IR support for complex impedance calculations.
+- [ ] **Try/Catch Enhancements**: Improve the simple flag-based exception handling with more robust stack unwinding or error propagation.
+- [ ] **Yield/Generators**: Full implementation of generator state saving for `YieldExprAST`.
+
+## VioSpice Integration
+- [ ] **vio-cmd Dispatch**: Add the `flux` command to `viospice/cli/main.cpp` to enable CLI access to FluxScript.
+- [ ] **Dynamic Netlist Generation**: Replace the hardcoded netlist in `FluxCommand::generateNetlist` with real AST-to-SPICE translation using `NetlistGenerator`.
+- [ ] **SPICE Directive Validation**: Implement conflict detection (duplicate analysis) and nesting validation (`.subckt`/`.ends`) for FluxScript-embedded SPICE.
+- [ ] **Symbol Generation**: Auto-generate VioSpice symbols from pastes or imported `.subckt` blocks.
+- [ ] **LTspice Compatibility**: Expand support for `.param`, `.func`, `.ic`, and behavioral functions matching LTspice behavior.
+
+## Performance & Optimization
+- [ ] **Native Matrix Primitives**: Integrate `Eigen` or use raw buffers with SIMD-enabled LLVM IR for high-performance 2D array operations.
+- [ ] **True Parallel Execution**: Upgrade `ParallelForExprAST` from sequential to multi-threaded execution using a runtime thread pool/closure capture.
+- [ ] **Auto-Vectorization**: Add LLVM optimization hints to automatically vectorize user-defined loops for AVX/NEON.
+- [ ] **GPU Acceleration**: Implement the `GPU` flag in `OptimizeDeclAST` to offload heavy mathematical tasks.
+
+## Advanced Language Features
+- [ ] **Pattern Matching**: Refine `MatchExprAST` to support complex destructuring beyond simple equality.
+- [ ] **Dimensional Analysis**: Fully integrate unit-aware calculations into the type system to prevent mixed-unit errors at compile time.
+- [ ] **Symbolic Solver**: Complete the implementation of `SolveExprAST` and `DifferentiateExprAST` for automated sensitivity analysis.
+- [ ] **FSM Optimizations**: Generate more efficient jump tables for `FSMExprAST` transitions.
+
+## Tooling & UI
+- [ ] **Interactive REPL**: Add history support and tab-completion to the `flux repl` command.
+- [ ] **Documentation Generator**: Auto-generate documentation from FluxScript comments and types.
+- [ ] **Debugger Integration**: Map LLVM IR debug locations back to FluxScript source for use in the `flux_debugger_panel`.

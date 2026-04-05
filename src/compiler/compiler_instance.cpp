@@ -13,6 +13,8 @@
 
 #include "flux/compiler/compiler_instance.h"
 
+#include <cstdlib>
+
 #include <llvm/IR/Verifier.h>
 #include <llvm/IR/DebugInfoMetadata.h>
 #include <llvm/Support/MemoryBuffer.h>
@@ -170,14 +172,38 @@ void CompilerInstance::injectStandardLibrary(CodegenContext& context,
 
 std::string CompilerInstance::resolveImportPath(const std::string& moduleName) const {
     namespace path = llvm::sys::path;
+    namespace fs = llvm::sys::fs;
 
     llvm::SmallString<256> resolved;
+
+    // Try 1: Same directory as input file
     if (!m_options.inputName.empty() && m_options.inputName != "-") {
         resolved = m_options.inputName;
         path::remove_filename(resolved);
+        path::append(resolved, moduleName + ".flux");
+        if (fs::exists(resolved)) return std::string(resolved.str());
     }
 
+    // Try 2: Current working directory
+    resolved.clear();
     path::append(resolved, moduleName + ".flux");
+    if (fs::exists(resolved)) return std::string(resolved.str());
+
+    // Try 3: FLUX_MODULE_PATH environment variable
+    if (const char* modPath = std::getenv("FLUX_MODULE_PATH")) {
+        resolved.clear();
+        path::append(resolved, modPath, moduleName + ".flux");
+        if (fs::exists(resolved)) return std::string(resolved.str());
+    }
+
+    // Fallback: original behavior (will produce error message)
+    if (!m_options.inputName.empty() && m_options.inputName != "-") {
+        resolved = m_options.inputName;
+        path::remove_filename(resolved);
+        path::append(resolved, moduleName + ".flux");
+    } else {
+        resolved = moduleName + ".flux";
+    }
     return std::string(resolved.str());
 }
 
@@ -242,6 +268,20 @@ bool CompilerInstance::compileParser(Parser& parser,
                 error = "Failed to parse import statement";
                 return false;
             }
+            // Extract import details from the AST
+            auto* importExpr = dynamic_cast<ImportExprAST*>(importAst.get());
+            if (!importExpr) {
+                error = "Failed to extract import information";
+                return false;
+            }
+            const std::string& moduleName = importExpr->getModuleName();
+            if (!importModule(moduleName, context, returnTypes, &error, importedModules)) {
+                return false;
+            }
+            // Register namespace alias marker so module.func lookups work
+            const std::string& alias = importExpr->getAlias().empty() ? moduleName : importExpr->getAlias();
+            context.NamedValues[alias + ".*"] = llvm::ConstantPointerNull::get(
+                llvm::PointerType::get(context.TheContext, 0));
             continue;
         } else if (parser.CurTok == static_cast<int>(TokenType::tok_extern)) {
             auto proto = parser.ParseExtern();

@@ -13,6 +13,10 @@
 
 #include "flux/compiler/module_loader.h"
 
+#include "flux/compiler/compiler_instance.h"
+
+#include <llvm/Bitcode/BitcodeWriter.h>
+
 #include <fstream>
 #include <sstream>
 #include <iostream>
@@ -252,21 +256,52 @@ bool ModuleLoader::parseModuleFile(const std::filesystem::path& path, ModuleInfo
     return true;
 }
 
-bool ModuleLoader::compileModule(const std::filesystem::path& sourcePath, 
-                                  const std::filesystem::path& outputPath, 
+bool ModuleLoader::compileModule(const std::filesystem::path& sourcePath,
+                                  const std::filesystem::path& outputPath,
                                   std::string* error) {
-    // Note: Actual compilation would use CompilerInstance
-    // This is a stub that would integrate with the existing compiler
-    
-    std::cout << "[ModuleLoader] Compiling: " << sourcePath.string() 
+    // Read source file
+    std::ifstream ifs(sourcePath);
+    if (!ifs.is_open()) {
+        if (error) *error = "Cannot open source file: " + sourcePath.string();
+        return false;
+    }
+    std::string source((std::istreambuf_iterator<char>(ifs)),
+                        std::istreambuf_iterator<char>());
+    ifs.close();
+
+    // Compile using CompilerInstance
+    CompilerOptions opts;
+    opts.inputName = sourcePath.string();
+    ModuleInfo info;
+    opts.moduleName = parseModuleFile(sourcePath, info, nullptr);
+    CompilerInstance compiler(opts);
+
+    std::string compileError;
+    auto artifacts = compiler.compileToIR(source, &compileError);
+    if (!artifacts) {
+        if (error) *error = "Compilation failed: " + compileError;
+        return false;
+    }
+
+    // Get the LLVM module and write bitcode
+    llvm::Module* mod = artifacts->codegenContext->TheModule.get();
+    if (!mod) {
+        if (error) *error = "No LLVM module after compilation";
+        return false;
+    }
+
+    std::error_code EC;
+    llvm::raw_fd_ostream os(outputPath.string(), EC, llvm::sys::fs::OF_None);
+    if (EC) {
+        if (error) *error = "Cannot open output file: " + outputPath.string();
+        return false;
+    }
+
+    llvm::WriteBitcodeToFile(*mod, os);
+    os.close();
+
+    std::cout << "[ModuleLoader] Compiled: " << sourcePath.string()
               << " -> " << outputPath.string() << std::endl;
-    
-    // For now, just create a placeholder
-    // In production, this would:
-    // 1. Read source file
-    // 2. Parse and compile to LLVM IR
-    // 3. Write bitcode to outputPath
-    
     return true;
 }
 
