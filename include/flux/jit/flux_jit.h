@@ -81,6 +81,7 @@ private:
 
     std::unique_ptr<llvm::orc::LLJIT> m_lljit;
     std::unique_ptr<llvm::PassBuilder> m_passBuilder;
+    llvm::orc::JITDylib* m_runtimeDylib = nullptr;
     llvm::DataLayout m_dataLayout;
     std::string m_targetTriple;
     OptimizationLevel m_optLevel;

@@ -107,35 +107,45 @@ FluxJIT::FluxJIT(OptimizationLevel optLevel)
         return;
     }
 
-    // Note: Disabled process symbol generator to avoid conflicts with JIT-defined functions
-    // m_lljit->getMainJITDylib().addGenerator(std::move(*ProcessSymbols));
-    
+    // Create a separate runtime dylib for built-in functions.
+    // The main dylib falls back to runtime dylib, so user-defined functions
+    // in the main dylib override runtime symbols with the same name.
+    llvm::Expected<llvm::orc::JITDylib&> runtimeJDE =
+        m_lljit->createJITDylib("flux_runtime");
+    if (!runtimeJDE) {
+        logError(runtimeJDE.takeError(), "Failed to create runtime JIT dylib");
+        return;
+    }
+    m_runtimeDylib = &runtimeJDE.get();
+
+    // Main dylib searches runtime dylib for unresolved symbols
+    auto& mainJD = m_lljit->getMainJITDylib();
+    mainJD.addToLinkOrder(*m_runtimeDylib);
+
     // Register complex number helper functions with the JIT
     registerComplexHelpers();
 }
 
 void FluxJIT::registerComplexHelpers() {
-    if (!m_lljit) return;
-
-    auto& mainJD = m_lljit->getMainJITDylib();
+    if (!m_lljit || !m_runtimeDylib) return;
 
     // Register complex_real helper
     llvm::orc::SymbolMap realSym;
     realSym[m_lljit->mangleAndIntern("complex_real")] =
         { llvm::orc::ExecutorAddr::fromPtr(&complex_real), llvm::JITSymbolFlags::Exported };
-    (void)mainJD.define(llvm::orc::absoluteSymbols(std::move(realSym)));
+    (void)m_runtimeDylib->define(llvm::orc::absoluteSymbols(std::move(realSym)));
 
     // Register complex_imag helper
     llvm::orc::SymbolMap imagSym;
     imagSym[m_lljit->mangleAndIntern("complex_imag")] =
         { llvm::orc::ExecutorAddr::fromPtr(&complex_imag), llvm::JITSymbolFlags::Exported };
-    (void)mainJD.define(llvm::orc::absoluteSymbols(std::move(imagSym)));
+    (void)m_runtimeDylib->define(llvm::orc::absoluteSymbols(std::move(imagSym)));
 
     // Register println_string function
     llvm::orc::SymbolMap printlnSym;
     printlnSym[m_lljit->mangleAndIntern("println_string")] =
         { llvm::orc::ExecutorAddr::fromPtr(&println_string), llvm::JITSymbolFlags::Exported };
-    (void)mainJD.define(llvm::orc::absoluteSymbols(std::move(printlnSym)));
+    (void)m_runtimeDylib->define(llvm::orc::absoluteSymbols(std::move(printlnSym)));
 }
 
 FluxJIT::~FluxJIT() = default;
@@ -259,13 +269,12 @@ void* FluxJIT::getPointerToFunction(const std::string& Name) {
 }
 
 void FluxJIT::registerFunction(const std::string& Name, void* FuncPtr) {
-    if (!m_lljit) return;
+    if (!m_lljit || !m_runtimeDylib) return;
 
-    auto& mainJD = m_lljit->getMainJITDylib();
     llvm::orc::SymbolMap symMap;
-    symMap[m_lljit->mangleAndIntern(Name)] = 
+    symMap[m_lljit->mangleAndIntern(Name)] =
         { llvm::orc::ExecutorAddr::fromPtr(FuncPtr), llvm::JITSymbolFlags::Exported };
-    if (auto Err = mainJD.define(llvm::orc::absoluteSymbols(std::move(symMap)))) {
+    if (auto Err = m_runtimeDylib->define(llvm::orc::absoluteSymbols(std::move(symMap)))) {
         logError(std::move(Err), "Failed to register JIT symbol: " + Name);
     }
 }
