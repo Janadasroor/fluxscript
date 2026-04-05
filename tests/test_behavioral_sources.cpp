@@ -1,4 +1,4 @@
-# Behavioral Source Tests
+// Behavioral Source Tests
 #include <iostream>
 #include <cassert>
 #include <sstream>
