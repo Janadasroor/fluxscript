@@ -2,7 +2,15 @@
 # FluxScript Integration Test Runner
 # Tests features with syntax that actually works
 
-FLUX_BIN="/home/jnd/qt_projects/fluxscript/build/flux-minimal"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
+FLUX_BIN="$PROJECT_DIR/build/flux-minimal"
+
+if [ ! -x "$FLUX_BIN" ]; then
+    echo "flux-minimal not found at $FLUX_BIN"
+    echo "Run 'make flux-minimal' first"
+    exit 1
+fi
 
 GREEN='\033[0;32m'
 RED='\033[0;31m'
