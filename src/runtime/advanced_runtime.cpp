@@ -31,38 +31,38 @@ namespace Flux {
 int flux_plot_waveforms(const PlotConfig& config,
                         const std::vector<double>& xData,
                         const std::vector<std::vector<double>>& yData) {
-    std::cout << "\n╔════════════════════════════════════════════════════════╗" << std::endl;
-    std::cout << "║           FLUXSCRIPT WAVEFORM PLOTTING                 ║" << std::endl;
-    std::cout << "╠════════════════════════════════════════════════════════╣" << std::endl;
+    std::cout << "\n" << std::endl;
+    std::cout << "           FLUXSCRIPT WAVEFORM PLOTTING                 " << std::endl;
+    std::cout << "" << std::endl;
     
     if (!config.title.empty()) {
-        std::cout << "║ Title: " << std::left << std::setw(51) << config.title << "║" << std::endl;
+        std::cout << " Title: " << std::left << std::setw(51) << config.title << "" << std::endl;
     }
     
-    std::cout << "║ Signals: " << std::left << std::setw(47) << "" << "║" << std::endl;
+    std::cout << " Signals: " << std::left << std::setw(47) << "" << "" << std::endl;
     for (size_t i = 0; i < config.signals.size() && i < yData.size(); ++i) {
         std::string signalInfo = config.signals[i];
         if (i < config.colors.size()) {
             signalInfo += " (" + config.colors[i] + ")";
         }
-        std::cout << "║   - " << std::left << std::setw(43) << signalInfo << "║" << std::endl;
+        std::cout << "   - " << std::left << std::setw(43) << signalInfo << "" << std::endl;
     }
     
     if (config.gridEnabled) {
-        std::cout << "║ Grid: ON                                         ║" << std::endl;
+        std::cout << " Grid: ON                                         " << std::endl;
     }
     if (config.autoScale) {
-        std::cout << "║ Auto Scale: ON                                   ║" << std::endl;
+        std::cout << " Auto Scale: ON                                   " << std::endl;
     }
     
-    std::cout << "║ Data Points: " << std::setw(43) << xData.size() << "║" << std::endl;
+    std::cout << " Data Points: " << std::setw(43) << xData.size() << "" << std::endl;
     
     if (!xData.empty()) {
-        std::cout << "║ X Range: " << std::setw(20) << xData.front() << " to " 
-                  << std::setw(20) << xData.back() << "  ║" << std::endl;
+        std::cout << " X Range: " << std::setw(20) << xData.front() << " to " 
+                  << std::setw(20) << xData.back() << "  " << std::endl;
     }
     
-    std::cout << "╚════════════════════════════════════════════════════════╝" << std::endl;
+    std::cout << "" << std::endl;
     
     // ASCII plot preview (simple version)
     if (!xData.empty() && !yData.empty() && yData[0].size() > 0) {
@@ -122,33 +122,33 @@ OptimizationResult flux_run_optimization(const OptimizationConfig& config) {
     result.iterations = 0;
     result.fitness = 0.0;
     
-    std::cout << "\n╔════════════════════════════════════════════════════════╗" << std::endl;
-    std::cout << "║          FLUXSCRIPT OPTIMIZATION ENGINE                ║" << std::endl;
-    std::cout << "╠════════════════════════════════════════════════════════╣" << std::endl;
-    std::cout << "║ Circuit: " << std::left << std::setw(47) << config.circuit << "║" << std::endl;
-    std::cout << "║ Algorithm: " << std::left << std::setw(45) << config.algorithm << "║" << std::endl;
-    std::cout << "║ Max Iterations: " << std::setw(40) << config.maxIterations << "║" << std::endl;
+    std::cout << "\n" << std::endl;
+    std::cout << "          FLUXSCRIPT OPTIMIZATION ENGINE                " << std::endl;
+    std::cout << "" << std::endl;
+    std::cout << " Circuit: " << std::left << std::setw(47) << config.circuit << "" << std::endl;
+    std::cout << " Algorithm: " << std::left << std::setw(45) << config.algorithm << "" << std::endl;
+    std::cout << " Max Iterations: " << std::setw(40) << config.maxIterations << "" << std::endl;
     
     if (config.gpuAccelerated) {
-        std::cout << "║ GPU Acceleration: ENABLED                            ║" << std::endl;
+        std::cout << " GPU Acceleration: ENABLED                            " << std::endl;
     }
     
-    std::cout << "╠════════════════════════════════════════════════════════╣" << std::endl;
-    std::cout << "║ Goals:                                                 ║" << std::endl;
+    std::cout << "" << std::endl;
+    std::cout << " Goals:                                                 " << std::endl;
     
     for (const auto& goal : config.goals) {
         std::string goalStr = goal.name + " = " + goal.target;
-        std::cout << "║   • " << std::left << std::setw(48) << goalStr << "║" << std::endl;
+        std::cout << "    " << std::left << std::setw(48) << goalStr << "" << std::endl;
     }
     
-    std::cout << "╠════════════════════════════════════════════════════════╣" << std::endl;
-    std::cout << "║ Tunable Parameters:                                    ║" << std::endl;
+    std::cout << "" << std::endl;
+    std::cout << " Tunable Parameters:                                    " << std::endl;
     
     for (const auto& param : config.tuneParams) {
-        std::cout << "║   - " << std::left << std::setw(48) << param << "║" << std::endl;
+        std::cout << "   - " << std::left << std::setw(48) << param << "" << std::endl;
     }
     
-    std::cout << "╚════════════════════════════════════════════════════════╝" << std::endl;
+    std::cout << "" << std::endl;
     
     // Simulate optimization progress
     std::cout << "\nStarting optimization..." << std::endl;
@@ -201,38 +201,38 @@ OptimizationResult flux_run_optimization(const OptimizationConfig& config) {
     result.success = (result.fitness < 10.0);  // Success threshold
     
     // Print results
-    std::cout << "\n╔════════════════════════════════════════════════════════╗" << std::endl;
-    std::cout << "║          OPTIMIZATION COMPLETE                         ║" << std::endl;
-    std::cout << "╠════════════════════════════════════════════════════════╣" << std::endl;
+    std::cout << "\n" << std::endl;
+    std::cout << "          OPTIMIZATION COMPLETE                         " << std::endl;
+    std::cout << "" << std::endl;
     
     if (result.success) {
-        std::cout << "║ Status: SUCCESS                                      ║" << std::endl;
+        std::cout << " Status: SUCCESS                                      " << std::endl;
     } else {
-        std::cout << "║ Status: CONVERGED (may need more iterations)         ║" << std::endl;
+        std::cout << " Status: CONVERGED (may need more iterations)         " << std::endl;
     }
     
-    std::cout << "║ Iterations: " << std::setw(44) << result.iterations << "║" << std::endl;
-    std::cout << "║ Final Fitness: " << std::setw(41) << result.fitness << "║" << std::endl;
+    std::cout << " Iterations: " << std::setw(44) << result.iterations << "" << std::endl;
+    std::cout << " Final Fitness: " << std::setw(41) << result.fitness << "" << std::endl;
     
-    std::cout << "╠════════════════════════════════════════════════════════╣" << std::endl;
-    std::cout << "║ Optimal Parameters:                                    ║" << std::endl;
+    std::cout << "" << std::endl;
+    std::cout << " Optimal Parameters:                                    " << std::endl;
     
     for (const auto& [name, value] : result.bestParams) {
         std::ostringstream oss;
         oss << name << " = " << std::setw(10) << std::fixed << std::setprecision(2) << value;
-        std::cout << "║   " << std::left << std::setw(52) << oss.str() << "║" << std::endl;
+        std::cout << "   " << std::left << std::setw(52) << oss.str() << "" << std::endl;
     }
     
-    std::cout << "╠════════════════════════════════════════════════════════╣" << std::endl;
-    std::cout << "║ Achieved Goals:                                        ║" << std::endl;
+    std::cout << "" << std::endl;
+    std::cout << " Achieved Goals:                                        " << std::endl;
     
     for (const auto& [name, value] : result.achievedGoals) {
         std::ostringstream oss;
         oss << name << " = " << std::setw(10) << std::fixed << std::setprecision(2) << value;
-        std::cout << "║   " << std::left << std::setw(52) << oss.str() << "║" << std::endl;
+        std::cout << "   " << std::left << std::setw(52) << oss.str() << "" << std::endl;
     }
     
-    std::cout << "╚════════════════════════════════════════════════════════╝" << std::endl;
+    std::cout << "" << std::endl;
     
     return result;
 }
@@ -251,13 +251,13 @@ void flux_optimization_cancel() {
 std::vector<BenchmarkResult> flux_run_benchmark(const BenchmarkConfig& config) {
     std::vector<BenchmarkResult> results;
     
-    std::cout << "\n╔════════════════════════════════════════════════════════╗" << std::endl;
-    std::cout << "║          FLUXSCRIPT BENCHMARK ENGINE                   ║" << std::endl;
-    std::cout << "╠════════════════════════════════════════════════════════╣" << std::endl;
-    std::cout << "║ Circuit: " << std::left << std::setw(47) << config.circuit << "║" << std::endl;
-    std::cout << "╠════════════════════════════════════════════════════════╣" << std::endl;
-    std::cout << "║ Running benchmarks..." << std::endl;
-    std::cout << "╚════════════════════════════════════════════════════════╝" << std::endl;
+    std::cout << "\n" << std::endl;
+    std::cout << "          FLUXSCRIPT BENCHMARK ENGINE                   " << std::endl;
+    std::cout << "" << std::endl;
+    std::cout << " Circuit: " << std::left << std::setw(47) << config.circuit << "" << std::endl;
+    std::cout << "" << std::endl;
+    std::cout << " Running benchmarks..." << std::endl;
+    std::cout << "" << std::endl;
     
     std::mt19937 rng(42);
     std::uniform_real_distribution<double> timeDist(10.0, 200.0);
@@ -288,20 +288,20 @@ std::vector<BenchmarkResult> flux_run_benchmark(const BenchmarkConfig& config) {
               });
     
     // Print comparison table
-    std::cout << "\n╔════════════════════════════════════════════════════════╗" << std::endl;
-    std::cout << "║          BENCHMARK RESULTS                             ║" << std::endl;
-    std::cout << "╠═══════════════╦══════════╦══════════╦══════════════════╣" << std::endl;
-    std::cout << "║ Tool          ║ Time(ms) ║ Mem(MB)  ║ Accuracy (%)     ║" << std::endl;
-    std::cout << "╠═══════════════╬══════════╬══════════╬══════════════════╣" << std::endl;
+    std::cout << "\n" << std::endl;
+    std::cout << "          BENCHMARK RESULTS                             " << std::endl;
+    std::cout << "" << std::endl;
+    std::cout << " Tool           Time(ms)  Mem(MB)   Accuracy (%)     " << std::endl;
+    std::cout << "" << std::endl;
     
     for (const auto& r : results) {
-        std::cout << "║ " << std::left << std::setw(14) << r.tool
-                  << "║ " << std::right << std::setw(7) << std::fixed << std::setprecision(1) << r.simulationTimeMs
-                  << " ║ " << std::setw(7) << r.memoryUsageMB
-                  << " ║ " << std::setw(15) << r.accuracyPercent << " ║" << std::endl;
+        std::cout << " " << std::left << std::setw(14) << r.tool
+                  << " " << std::right << std::setw(7) << std::fixed << std::setprecision(1) << r.simulationTimeMs
+                  << "  " << std::setw(7) << r.memoryUsageMB
+                  << "  " << std::setw(15) << r.accuracyPercent << " " << std::endl;
     }
     
-    std::cout << "╚═══════════════╩══════════╩══════════╩══════════════════╝" << std::endl;
+    std::cout << "" << std::endl;
     
     // Speedup calculation
     if (results.size() > 1) {
@@ -346,13 +346,13 @@ int flux_benchmark_export_csv(const std::vector<BenchmarkResult>& results,
 // ============ Interactive Sweep Runtime Implementation ============
 
 int flux_sweep_init(const SweepConfig& config) {
-    std::cout << "\n╔════════════════════════════════════════════════════════╗" << std::endl;
-    std::cout << "║       INTERACTIVE PARAMETER SWEEPER                    ║" << std::endl;
-    std::cout << "╠════════════════════════════════════════════════════════╣" << std::endl;
-    std::cout << "║ Signal: " << std::left << std::setw(48) << config.signal << "║" << std::endl;
-    std::cout << "║ Update Rate: " << std::setw(43) << config.updateRateFPS << " FPS" << "║" << std::endl;
-    std::cout << "╠════════════════════════════════════════════════════════╣" << std::endl;
-    std::cout << "║ Controls:                                              ║" << std::endl;
+    std::cout << "\n" << std::endl;
+    std::cout << "       INTERACTIVE PARAMETER SWEEPER                    " << std::endl;
+    std::cout << "" << std::endl;
+    std::cout << " Signal: " << std::left << std::setw(48) << config.signal << "" << std::endl;
+    std::cout << " Update Rate: " << std::setw(43) << config.updateRateFPS << " FPS" << "" << std::endl;
+    std::cout << "" << std::endl;
+    std::cout << " Controls:                                              " << std::endl;
     
     for (const auto& ctrl : config.controls) {
         std::string ctrlStr = ctrl.name + " (" + ctrl.type + ")";
@@ -360,10 +360,10 @@ int flux_sweep_init(const SweepConfig& config) {
             ctrlStr += " [" + std::to_string(static_cast<int>(ctrl.minValue)) + 
                        " to " + std::to_string(static_cast<int>(ctrl.maxValue)) + "]";
         }
-        std::cout << "║   • " << std::left << std::setw(48) << ctrlStr << "║" << std::endl;
+        std::cout << "    " << std::left << std::setw(48) << ctrlStr << "" << std::endl;
     }
     
-    std::cout << "╚════════════════════════════════════════════════════════╝" << std::endl;
+    std::cout << "" << std::endl;
     std::cout << "\nInteractive mode started. Adjust controls to see real-time updates." << std::endl;
     std::cout << "(In full implementation, Qt widgets would appear here)" << std::endl;
     
@@ -391,27 +391,27 @@ void flux_sweep_close() {
 // ============ Report Generation Runtime Implementation ============
 
 int flux_generate_report(const ReportConfig& config) {
-    std::cout << "\n╔════════════════════════════════════════════════════════╗" << std::endl;
-    std::cout << "║          REPORT GENERATOR                              ║" << std::endl;
-    std::cout << "╠════════════════════════════════════════════════════════╣" << std::endl;
-    std::cout << "║ Filename: " << std::left << std::setw(46) << config.filename << "║" << std::endl;
-    std::cout << "║ Format: " << std::left << std::setw(48) << config.format << "║" << std::endl;
-    std::cout << "╠════════════════════════════════════════════════════════╣" << std::endl;
-    std::cout << "║ Sections:                                              ║" << std::endl;
+    std::cout << "\n" << std::endl;
+    std::cout << "          REPORT GENERATOR                              " << std::endl;
+    std::cout << "" << std::endl;
+    std::cout << " Filename: " << std::left << std::setw(46) << config.filename << "" << std::endl;
+    std::cout << " Format: " << std::left << std::setw(48) << config.format << "" << std::endl;
+    std::cout << "" << std::endl;
+    std::cout << " Sections:                                              " << std::endl;
     
     for (const auto& section : config.sections) {
-        std::cout << "║   • " << std::left << std::setw(48) << section << "║" << std::endl;
+        std::cout << "    " << std::left << std::setw(48) << section << "" << std::endl;
     }
     
-    std::cout << "╠════════════════════════════════════════════════════════╣" << std::endl;
-    std::cout << "║ Includes:                                              ║" << std::endl;
+    std::cout << "" << std::endl;
+    std::cout << " Includes:                                              " << std::endl;
     
-    if (config.includePNG) std::cout << "║   ✓ PNG Images                                         ║" << std::endl;
-    if (config.includeCSV) std::cout << "║   ✓ CSV Data                                            ║" << std::endl;
-    if (config.includeNetlist) std::cout << "║   ✓ SPICE Netlist                                     ║" << std::endl;
-    if (config.includeBOM) std::cout << "║   ✓ Bill of Materials                                   ║" << std::endl;
+    if (config.includePNG) std::cout << "    PNG Images                                         " << std::endl;
+    if (config.includeCSV) std::cout << "    CSV Data                                            " << std::endl;
+    if (config.includeNetlist) std::cout << "    SPICE Netlist                                     " << std::endl;
+    if (config.includeBOM) std::cout << "    Bill of Materials                                   " << std::endl;
     
-    std::cout << "╚════════════════════════════════════════════════════════╝" << std::endl;
+    std::cout << "" << std::endl;
     
     // Generate HTML report
     if (config.format == "html" || config.format == "HTML") {
@@ -445,7 +445,7 @@ int flux_generate_report(const ReportConfig& config) {
         file << "</body>\n</html>\n";
         file.close();
         
-        std::cout << "\n✓ Report generated: " << config.filename << std::endl;
+        std::cout << "\n Report generated: " << config.filename << std::endl;
     }
     
     return 0;

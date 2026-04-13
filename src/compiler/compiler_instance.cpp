@@ -45,35 +45,8 @@ std::string tokenSpelling(const Lexer& lexer, int token) {
             os << "j";
         return os.str();
     }
-    if (token >= 0 && token < 128)
-        return std::string(1, static_cast<char>(token));
-
-    switch (static_cast<TokenType>(token)) {
-        case TokenType::tok_eof: return "eof";
-        case TokenType::tok_def: return "def";
-        case TokenType::tok_extern: return "extern";
-        case TokenType::tok_return: return "return";
-        case TokenType::tok_var: return "var";
-        case TokenType::tok_if: return "if";
-        case TokenType::tok_then: return "then";
-        case TokenType::tok_else: return "else";
-        case TokenType::tok_for: return "for";
-        case TokenType::tok_in: return "in";
-        case TokenType::tok_do: return "do";
-        case TokenType::tok_while: return "while";
-        case TokenType::tok_let: return "let";
-        case TokenType::tok_fn: return "fn";
-        case TokenType::tok_import: return "import";
-        case TokenType::tok_type_float: return "float";
-        case TokenType::tok_type_double: return "double";
-        case TokenType::tok_type_int: return "int";
-        case TokenType::tok_type_void: return "void";
-        case TokenType::tok_type_complex: return "complex";
-        case TokenType::tok_type_string: return "string";
-        case TokenType::tok_type_vector: return "vector";
-        case TokenType::tok_type_matrix: return "matrix";
-        default: return "token(" + std::to_string(token) + ")";
-    }
+    
+    return Lexer::tokenSpelling(token);
 }
 
 } // namespace
@@ -146,6 +119,25 @@ void CompilerInstance::injectStandardLibrary(CodegenContext& context,
     inject("pi", 0);
     inject("e", 0);
 
+    auto injectRet = [&](const std::string& name, int args, TypeKind retKind) {
+        std::vector<std::pair<std::string, FluxType>> params;
+        for (int i = 0; i < args; ++i)
+            params.push_back({"arg" + std::to_string(i), FluxType(TypeKind::Double)});
+        PrototypeAST proto(name, params, FluxType(retKind));
+        proto.codegen(context);
+        returnTypes[name] = FluxType(retKind);
+    };
+
+    // Matrix/Vector math
+    injectRet("det", 1, TypeKind::Double);
+    injectRet("inv", 1, TypeKind::Matrix);
+    injectRet("eig", 1, TypeKind::Matrix);
+    injectRet("dot", 2, TypeKind::Double);
+    injectRet("cross", 2, TypeKind::Matrix);
+    injectRet("norm", 1, TypeKind::Double);
+    injectRet("rows", 1, TypeKind::Double);
+    injectRet("cols", 1, TypeKind::Double);
+
     // EDA functions (strings as arguments)
     auto injectStr = [&](const std::string& name, int args) {
         std::vector<std::pair<std::string, FluxType>> params;
@@ -161,8 +153,7 @@ void CompilerInstance::injectStandardLibrary(CodegenContext& context,
     injectStr("p", 1); // Alias for get_parameter if needed, but we have MemberExpr
     injectStr("state_get", 2);
     injectStr("state_set", 2);
-    injectStr("print", 1);
-    injectStr("println", 1);
+    // print and println are handled in codegen.cpp
 
     inject("sim_run", 0);
     inject("sim_stop", 0);
@@ -233,6 +224,81 @@ bool CompilerInstance::importModule(const std::string& moduleName,
     return result;
 }
 
+std::unique_ptr<ParsedAST> CompilerInstance::parse(const std::string& code, std::string* error) const {
+    auto ast = std::make_unique<ParsedAST>();
+    Parser parser(code);
+
+    while (parser.CurTok != static_cast<int>(TokenType::tok_eof)) {
+        if (parser.CurTok == static_cast<int>(TokenType::tok_rbrace)) {
+            parser.getNextToken();
+            continue;
+        }
+
+        if (parser.CurTok == static_cast<int>(TokenType::tok_def)) {
+            if (auto fn = parser.ParseDefinition()) {
+                ast->functions.push_back(std::move(fn));
+            }
+        } else if (parser.CurTok == static_cast<int>(TokenType::tok_subckt)) {
+            if (auto sub = parser.ParseSubckt()) {
+                ast->subckts.push_back(std::move(sub));
+            }
+        } else if (parser.CurTok == static_cast<int>(TokenType::tok_model)) {
+            if (auto mod = parser.ParseModel()) {
+                ast->models.push_back(std::move(mod));
+            }
+        } else if (parser.CurTok == static_cast<int>(TokenType::tok_analysis)) {
+            if (auto an = parser.ParseAnalysis()) {
+                ast->analyses.push_back(std::move(an));
+            }
+        } else if (parser.CurTok == static_cast<int>(TokenType::tok_measure)) {
+            if (auto meas = parser.ParseMeasure()) {
+                ast->measures.push_back(std::move(meas));
+            }
+        } else if (parser.CurTok == static_cast<int>(TokenType::tok_import)) {
+            parser.ParseImport(); // Just consume for now
+        } else if (parser.CurTok == static_cast<int>(TokenType::tok_extern)) {
+            parser.ParseExtern(); // Just consume
+        } else if (parser.CurTok == static_cast<int>(TokenType::tok_semicolon)) {
+            parser.getNextToken();
+        } else {
+            // Collect expressions into anonymous function
+            std::vector<std::unique_ptr<ExprAST>> Exprs;
+            while (parser.CurTok != static_cast<int>(TokenType::tok_eof) &&
+                   parser.CurTok != static_cast<int>(TokenType::tok_def) &&
+                   parser.CurTok != static_cast<int>(TokenType::tok_subckt) &&
+                   parser.CurTok != static_cast<int>(TokenType::tok_model) &&
+                   parser.CurTok != static_cast<int>(TokenType::tok_analysis) &&
+                   parser.CurTok != static_cast<int>(TokenType::tok_measure) &&
+                   parser.CurTok != static_cast<int>(TokenType::tok_extern) &&
+                   parser.CurTok != static_cast<int>(TokenType::tok_import) &&
+                   parser.CurTok != static_cast<int>(TokenType::tok_rbrace)) {
+                
+                if (parser.CurTok == static_cast<int>(TokenType::tok_semicolon)) {
+                    parser.getNextToken();
+                    continue;
+                }
+                
+                if (auto E = parser.ParseExpression()) {
+                    Exprs.push_back(std::move(E));
+                } else {
+                    break;
+                }
+            }
+            
+            if (!Exprs.empty()) {
+                auto Block = std::make_unique<BlockExprAST>(std::move(Exprs));
+                auto Proto = std::make_unique<PrototypeAST>("__anon_expr", std::vector<std::pair<std::string, FluxType>>(), FluxType(TypeKind::Double));
+                ast->functions.push_back(std::make_unique<FunctionAST>(std::move(Proto), std::move(Block)));
+            }
+        }
+
+        if (parser.hasError()) break;
+    }
+
+    if (error && parser.hasError()) *error = "Parsing failed";
+    return ast;
+}
+
 bool CompilerInstance::compileParser(Parser& parser,
                                      CodegenContext& context,
                                      std::map<std::string, FluxType>& returnTypes,
@@ -294,7 +360,34 @@ bool CompilerInstance::compileParser(Parser& parser,
             parser.getNextToken();
             continue;
         } else {
-            functionAst = parser.ParseTopLevelExpr();
+            // Collect consecutive expressions into a single anonymous function
+            // This ensures top-level variables declared with 'let' are in the same scope
+            std::vector<std::unique_ptr<ExprAST>> Exprs;
+            while (parser.CurTok != static_cast<int>(TokenType::tok_eof) &&
+                   parser.CurTok != static_cast<int>(TokenType::tok_def) &&
+                   parser.CurTok != static_cast<int>(TokenType::tok_extern) &&
+                   parser.CurTok != static_cast<int>(TokenType::tok_import) &&
+                   parser.CurTok != static_cast<int>(TokenType::tok_update) &&
+                   parser.CurTok != static_cast<int>(TokenType::tok_rbrace)) {
+                
+                if (parser.CurTok == static_cast<int>(TokenType::tok_semicolon)) {
+                    parser.getNextToken();
+                    continue;
+                }
+                
+                if (auto E = parser.ParseExpression()) {
+                    Exprs.push_back(std::move(E));
+                } else {
+                    // Parser already reported error
+                    break;
+                }
+            }
+            
+            if (!Exprs.empty()) {
+                auto Block = std::make_unique<BlockExprAST>(std::move(Exprs));
+                auto Proto = std::make_unique<PrototypeAST>("__anon_expr", std::vector<std::pair<std::string, FluxType>>(), FluxType(TypeKind::Double));
+                functionAst = std::make_unique<FunctionAST>(std::move(Proto), std::move(Block));
+            }
         }
 
         if (!functionAst) {

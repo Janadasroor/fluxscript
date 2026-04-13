@@ -48,7 +48,7 @@ void flux_plot_clear();
 
 struct OptimizationGoal {
     std::string name;
-    std::string target;      // e.g., "2.4G", "<1dB", "±5%"
+    std::string target;      // e.g., "2.4G", "<1dB", "5%"
     double targetValue;
     double tolerance;
     std::string constraint;  // "min", "max", "exact"

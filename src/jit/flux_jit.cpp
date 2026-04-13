@@ -49,7 +49,26 @@ extern "C" {
         return i;
     }
 
-    // Print string with newline
+    // Print string without newline
+    void print_string(const char* str);
+    
+    // Print double
+    void print_double(double d);
+    
+    // Print matrix
+    void print_matrix(double* data, int rows, int cols);
+
+    // String concatenation helpers
+    const char* flux_string_concat_double(const char* s, double d);
+    const char* flux_string_concat_matrix(const char* s, double* data, int rows, int cols);
+    const char* flux_string_concat_string(const char* s1, const char* s2);
+
+    // Matrix math helpers
+    double flux_matrix_det(double* data, int rows, int cols);
+    void* flux_matrix_inv(double* data, int rows, int cols);
+    void* flux_matrix_eig(double* data, int rows, int cols);
+
+    // Print string with newline (legacy, aliasing it)
     void println_string(const char* str) {
         printf("%s\n", str);
     }
@@ -98,15 +117,6 @@ FluxJIT::FluxJIT(OptimizationLevel optLevel)
     // Initialize pass builder for optimization
     m_passBuilder = std::make_unique<llvm::PassBuilder>();
 
-    auto ProcessSymbols =
-        llvm::orc::DynamicLibrarySearchGenerator::GetForCurrentProcess(
-            m_lljit->getDataLayout().getGlobalPrefix());
-    if (!ProcessSymbols) {
-        logError(ProcessSymbols.takeError(),
-                 "Failed to create current-process symbol generator");
-        return;
-    }
-
     // Create a separate runtime dylib for built-in functions.
     // The main dylib falls back to runtime dylib, so user-defined functions
     // in the main dylib override runtime symbols with the same name.
@@ -117,6 +127,16 @@ FluxJIT::FluxJIT(OptimizationLevel optLevel)
         return;
     }
     m_runtimeDylib = &runtimeJDE.get();
+
+    auto ProcessSymbols =
+        llvm::orc::DynamicLibrarySearchGenerator::GetForCurrentProcess(
+            m_lljit->getDataLayout().getGlobalPrefix());
+    if (!ProcessSymbols) {
+        logError(ProcessSymbols.takeError(),
+                 "Failed to create current-process symbol generator");
+        return;
+    }
+    m_runtimeDylib->addGenerator(std::move(*ProcessSymbols));
 
     // Main dylib searches runtime dylib for unresolved symbols
     auto& mainJD = m_lljit->getMainJITDylib();
@@ -129,23 +149,18 @@ FluxJIT::FluxJIT(OptimizationLevel optLevel)
 void FluxJIT::registerComplexHelpers() {
     if (!m_lljit || !m_runtimeDylib) return;
 
-    // Register complex_real helper
-    llvm::orc::SymbolMap realSym;
-    realSym[m_lljit->mangleAndIntern("complex_real")] =
-        { llvm::orc::ExecutorAddr::fromPtr(&complex_real), llvm::JITSymbolFlags::Exported };
-    (void)m_runtimeDylib->define(llvm::orc::absoluteSymbols(std::move(realSym)));
+    auto registerSym = [&](const std::string& name, void* ptr) {
+        llvm::orc::SymbolMap sym;
+        sym[m_lljit->mangleAndIntern(name)] =
+            { llvm::orc::ExecutorAddr::fromPtr(ptr), llvm::JITSymbolFlags::Exported };
+        (void)m_runtimeDylib->define(llvm::orc::absoluteSymbols(std::move(sym)));
+    };
 
-    // Register complex_imag helper
-    llvm::orc::SymbolMap imagSym;
-    imagSym[m_lljit->mangleAndIntern("complex_imag")] =
-        { llvm::orc::ExecutorAddr::fromPtr(&complex_imag), llvm::JITSymbolFlags::Exported };
-    (void)m_runtimeDylib->define(llvm::orc::absoluteSymbols(std::move(imagSym)));
-
-    // Register println_string function
-    llvm::orc::SymbolMap printlnSym;
-    printlnSym[m_lljit->mangleAndIntern("println_string")] =
-        { llvm::orc::ExecutorAddr::fromPtr(&println_string), llvm::JITSymbolFlags::Exported };
-    (void)m_runtimeDylib->define(llvm::orc::absoluteSymbols(std::move(printlnSym)));
+    // Only register helpers defined locally in this file
+    // Runtime functions from flux_runtime.cpp are found via ProcessSymbols generator
+    registerSym("complex_real", reinterpret_cast<void*>(&complex_real));
+    registerSym("complex_imag", reinterpret_cast<void*>(&complex_imag));
+    registerSym("println_string", reinterpret_cast<void*>(&println_string));
 }
 
 FluxJIT::~FluxJIT() = default;

@@ -20,14 +20,14 @@ using namespace Flux;
 
 void test_smith_chart() {
     std::cout << "\n";
-    std::cout << "╔══════════════════════════════════════════════════════════╗\n";
-    std::cout << "║  Feature #31: Smith Chart & Impedance Matching          ║\n";
-    std::cout << "╚══════════════════════════════════════════════════════════╝\n";
+    std::cout << "\n";
+    std::cout << "  Feature #31: Smith Chart & Impedance Matching          \n";
+    std::cout << "\n";
     std::cout << "\n";
     
     // Test 1: Create Smith chart and plot data
     std::cout << "Test 1: Smith Chart Plotting\n";
-    std::cout << "────────────────────────────────────────────────────────────\n";
+    std::cout << "\n";
     
     Visualization::SmithChart chart(50.0);
     
@@ -53,11 +53,11 @@ void test_smith_chart() {
     
     std::cout << "  Smith chart generated: " << svg.length() << " bytes\n";
     std::cout << "  Data points plotted: " << data.s11.size() << "\n";
-    std::cout << "\n✅ Test 1 PASSED\n";
+    std::cout << "\n Test 1 PASSED\n";
     
     // Test 2: Impedance matching
     std::cout << "\n\nTest 2: L-Network Impedance Matching\n";
-    std::cout << "────────────────────────────────────────────────────────────\n";
+    std::cout << "\n";
     
     Visualization::MatchingDesigner designer(50.0);
     
@@ -66,8 +66,8 @@ void test_smith_chart() {
     
     auto network = designer.designLNetwork();
     
-    std::cout << "  Load: 100 + j50 Ω\n";
-    std::cout << "  Source: 50 Ω\n";
+    std::cout << "  Load: 100 + j50 \n";
+    std::cout << "  Source: 50 \n";
     std::cout << "  Frequency: 2.4 GHz\n";
     std::cout << "  L1: " << (network.L1 * 1e9) << " nH\n";
     std::cout << "  C1: " << (network.C1 * 1e12) << " pF\n";
@@ -76,11 +76,11 @@ void test_smith_chart() {
     assert(network.L1 > 0 && "Inductor should be positive!");
     assert(network.C1 > 0 && "Capacitor should be positive!");
     
-    std::cout << "\n✅ Test 2 PASSED\n";
+    std::cout << "\n Test 2 PASSED\n";
     
     // Test 3: S-parameter utilities
     std::cout << "\n\nTest 3: S-Parameter Calculations\n";
-    std::cout << "────────────────────────────────────────────────────────────\n";
+    std::cout << "\n";
     
     std::complex<double> s11(0.3, -0.4);
     
@@ -88,19 +88,19 @@ void test_smith_chart() {
     double returnLoss = Visualization::SParameterUtils::calculateReturnLoss(s11);
     
     std::cout << "  S11: " << std::abs(s11) << " @ " 
-              << (std::arg(s11) * 180 / M_PI) << "°\n";
+              << (std::arg(s11) * 180 / M_PI) << "\n";
     std::cout << "  VSWR: " << std::setprecision(2) << vswr << "\n";
     std::cout << "  Return Loss: " << (-returnLoss) << " dB\n";
     
     assert(vswr > 1.0 && "VSWR should be > 1");
     assert(returnLoss < 0 && "Return loss should be negative (dB)");
     
-    std::cout << "\n✅ Test 3 PASSED\n";
+    std::cout << "\n Test 3 PASSED\n";
     
     std::cout << "\n";
-    std::cout << "╔══════════════════════════════════════════════════════════╗\n";
-    std::cout << "║     Feature #31: ALL TESTS PASSED ✅                     ║\n";
-    std::cout << "╚══════════════════════════════════════════════════════════╝\n";
+    std::cout << "\n";
+    std::cout << "     Feature #31: ALL TESTS PASSED                      \n";
+    std::cout << "\n";
 }
 
 // ============================================================================
@@ -109,14 +109,14 @@ void test_smith_chart() {
 
 void test_neural_surrogate() {
     std::cout << "\n";
-    std::cout << "╔══════════════════════════════════════════════════════════╗\n";
-    std::cout << "║  Feature #26: Neural Network Surrogate Model            ║\n";
-    std::cout << "╚══════════════════════════════════════════════════════════╝\n";
+    std::cout << "\n";
+    std::cout << "  Feature #26: Neural Network Surrogate Model            \n";
+    std::cout << "\n";
     std::cout << "\n";
     
     // Test 1: Create and train simple network
     std::cout << "Test 1: Neural Network Training\n";
-    std::cout << "────────────────────────────────────────────────────────────\n";
+    std::cout << "\n";
     
     AI::NetworkArchitecture arch;
     arch.layers = {2, 16, 16, 1};  // 2 inputs, 2 hidden layers, 1 output
@@ -164,11 +164,11 @@ void test_neural_surrogate() {
     assert(result.success && "Training should succeed!");
     assert(std::abs(prediction.prediction[0] - expected) < 0.1 && "Prediction error too large!");
     
-    std::cout << "\n✅ Test 1 PASSED\n";
+    std::cout << "\n Test 1 PASSED\n";
     
     // Test 2: Model evaluation metrics
     std::cout << "\n\nTest 2: Model Evaluation Metrics\n";
-    std::cout << "────────────────────────────────────────────────────────────\n";
+    std::cout << "\n";
     
     // Generate test data
     AI::TrainingData testData;
@@ -187,16 +187,16 @@ void test_neural_surrogate() {
     
     std::cout << "  RMSE: " << std::setprecision(4) << rmse << "\n";
     std::cout << "  MAE: " << mae << "\n";
-    std::cout << "  R²: " << r2 << "\n";
+    std::cout << "  R: " << r2 << "\n";
     
     assert(rmse < 1.0 && "RMSE too high!");
-    // R² check removed for stub implementation
+    // R check removed for stub implementation
     
-    std::cout << "\n✅ Test 2 PASSED\n";
+    std::cout << "\n Test 2 PASSED\n";
     
     // Test 3: Circuit surrogate (conceptual)
     std::cout << "\n\nTest 3: Circuit Simulation Surrogate\n";
-    std::cout << "────────────────────────────────────────────────────────────\n";
+    std::cout << "\n";
     
     // Simulate training surrogate for circuit simulation
     // y = gain, x = [R1, R2, C1, Vcc]
@@ -238,12 +238,12 @@ void test_neural_surrogate() {
     
     assert(circuitResult.success && "Circuit surrogate training failed!");
     
-    std::cout << "\n✅ Test 3 PASSED\n";
+    std::cout << "\n Test 3 PASSED\n";
     
     std::cout << "\n";
-    std::cout << "╔══════════════════════════════════════════════════════════╗\n";
-    std::cout << "║     Feature #26: ALL TESTS PASSED ✅                     ║\n";
-    std::cout << "╚══════════════════════════════════════════════════════════╝\n";
+    std::cout << "\n";
+    std::cout << "     Feature #26: ALL TESTS PASSED                      \n";
+    std::cout << "\n";
 }
 
 // ============================================================================
@@ -252,14 +252,14 @@ void test_neural_surrogate() {
 
 void test_monte_carlo_enhanced() {
     std::cout << "\n";
-    std::cout << "╔══════════════════════════════════════════════════════════╗\n";
-    std::cout << "║  Feature #11: Enhanced Monte Carlo Analysis             ║\n";
-    std::cout << "╚══════════════════════════════════════════════════════════╝\n";
+    std::cout << "\n";
+    std::cout << "  Feature #11: Enhanced Monte Carlo Analysis             \n";
+    std::cout << "\n";
     std::cout << "\n";
     
     // Test 1: Multiple distributions
     std::cout << "Test 1: Component Variation Distributions\n";
-    std::cout << "────────────────────────────────────────────────────────────\n";
+    std::cout << "\n";
     
     Simulation::MonteCarloEngine engine;
     engine.setSeed(42);
@@ -300,11 +300,11 @@ void test_monte_carlo_enhanced() {
         std::cout << "  Vout StdDev: " << voutStats.std_dev << " V\n";
     }
     
-    std::cout << "\n✅ Test 1 PASSED\n";
+    std::cout << "\n Test 1 PASSED\n";
     
     // Test 2: Yield analysis
     std::cout << "\n\nTest 2: Yield Analysis with Specifications\n";
-    std::cout << "────────────────────────────────────────────────────────────\n";
+    std::cout << "\n";
     
     Simulation::MonteCarloEngine engine2;
     engine2.setSeed(123);
@@ -327,7 +327,7 @@ void test_monte_carlo_enhanced() {
         return result;
     });
     
-    // Add specification: Vout should be 2.5V ± 5%
+    // Add specification: Vout should be 2.5V  5%
     Simulation::SpecLimits spec;
     spec.measurement = "vout";
     spec.lower = 2.375;  // 2.5 * 0.95
@@ -342,19 +342,19 @@ void test_monte_carlo_enhanced() {
     double cp = engine2.getCp();
     double cpk = engine2.getCpk();
     
-    std::cout << "  Specification: 2.5V ± 5%\n";
+    std::cout << "  Specification: 2.5V  5%\n";
     std::cout << "  Yield: " << std::setprecision(1) << (yield * 100) << "%\n";
     std::cout << "  Cp: " << std::setprecision(2) << cp << "\n";
     std::cout << "  Cpk: " << cpk << "\n";
     
     assert(yield > 0.5 && "Yield should be > 50% for 1% resistors!");
     
-    std::cout << "\n✅ Test 2 PASSED\n";
+    std::cout << "\n Test 2 PASSED\n";
     
     std::cout << "\n";
-    std::cout << "╔══════════════════════════════════════════════════════════╗\n";
-    std::cout << "║     Feature #11: ALL TESTS PASSED ✅                     ║\n";
-    std::cout << "╚══════════════════════════════════════════════════════════╝\n";
+    std::cout << "\n";
+    std::cout << "     Feature #11: ALL TESTS PASSED                      \n";
+    std::cout << "\n";
 }
 
 // ============================================================================
@@ -363,9 +363,9 @@ void test_monte_carlo_enhanced() {
 
 int main(int argc, char** argv) {
     std::cout << "\n";
-    std::cout << "╔══════════════════════════════════════════════════════════╗\n";
-    std::cout << "║          FluxScript Feature Test Suite - Phase 2         ║\n";
-    std::cout << "╚══════════════════════════════════════════════════════════╝\n";
+    std::cout << "\n";
+    std::cout << "          FluxScript Feature Test Suite - Phase 2         \n";
+    std::cout << "\n";
     
     try {
         // Test Feature #31: Smith Chart
@@ -378,14 +378,14 @@ int main(int argc, char** argv) {
         test_monte_carlo_enhanced();
         
         std::cout << "\n";
-        std::cout << "╔══════════════════════════════════════════════════════════╗\n";
-        std::cout << "║          ALL PHASE 2 FEATURES TESTED SUCCESSFULLY ✅     ║\n";
-        std::cout << "╚══════════════════════════════════════════════════════════╝\n";
+        std::cout << "\n";
+        std::cout << "          ALL PHASE 2 FEATURES TESTED SUCCESSFULLY      \n";
+        std::cout << "\n";
         std::cout << "\n";
         
         return 0;
     } catch (const std::exception& e) {
-        std::cerr << "\n❌ TEST FAILED: " << e.what() << "\n";
+        std::cerr << "\n TEST FAILED: " << e.what() << "\n";
         return 1;
     }
 }

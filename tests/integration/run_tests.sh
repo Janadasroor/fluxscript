@@ -35,10 +35,10 @@ run_test() {
     echo "$test_code" > /tmp/flux_test.flux
     
     if timeout 5 "$FLUX_BIN" /tmp/flux_test.flux > /dev/null 2>&1; then
-        echo -e "${GREEN}✅ PASSED${NC}"
+        echo -e "${GREEN} PASSED${NC}"
         PASSED=$((PASSED + 1))
     else
-        echo -e "${RED}❌ FAILED${NC}"
+        echo -e "${RED} FAILED${NC}"
         FAILED=$((FAILED + 1))
     fi
     
@@ -83,10 +83,10 @@ run_check_test() {
     echo "$test_code" > /tmp/flux_test.flux
 
     if timeout 5 "$FLUX_BIN" --emit=check /tmp/flux_test.flux 2>&1 | grep -q "OK"; then
-        echo -e "${GREEN}✅ PASSED${NC}"
+        echo -e "${GREEN} PASSED${NC}"
         PASSED=$((PASSED + 1))
     else
-        echo -e "${RED}❌ FAILED${NC}"
+        echo -e "${RED} FAILED${NC}"
         FAILED=$((FAILED + 1))
     fi
 
@@ -130,9 +130,9 @@ echo "  Results: $PASSED/$TOTAL passed"
 echo "========================================"
 
 if [ $FAILED -eq 0 ]; then
-    echo -e "${GREEN}✅ ALL TESTS PASSED${NC}"
+    echo -e "${GREEN} ALL TESTS PASSED${NC}"
     exit 0
 else
-    echo -e "${RED}❌ $FAILED TESTS FAILED${NC}"
+    echo -e "${RED} $FAILED TESTS FAILED${NC}"
     exit 1
 fi

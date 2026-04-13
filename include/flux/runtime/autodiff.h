@@ -57,7 +57,7 @@ struct Dual {
     }
     
     Dual operator/(const Dual& other) const {
-        // Quotient rule: (u/v)' = (u'v - uv') / v²
+        // Quotient rule: (u/v)' = (u'v - uv') / v
         return Dual(
             value / other.value,
             (dual * other.value - value * other.dual) / (other.value * other.value)

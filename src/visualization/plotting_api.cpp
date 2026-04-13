@@ -599,7 +599,7 @@ std::string formatDB(double db) {
 }
 
 std::string formatPhase(double phase) {
-    return formatNumber(phase, 2) + "°";
+    return formatNumber(phase, 2) + "";
 }
 
 std::vector<double> generateTimeAxis(double tstart, double tstop, double dt) {

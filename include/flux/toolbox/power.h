@@ -57,25 +57,25 @@ struct ComponentValues {
     double L;             // Inductance (H)
     double L_Irms;        // RMS current rating (A)
     double L_Isat;        // Saturation current (A)
-    double L_DCR;         // DC resistance (Ω)
+    double L_DCR;         // DC resistance ()
     
     // Output capacitor
     double Cout;          // Capacitance (F)
     double Cout_Vrating;  // Voltage rating (V)
-    double Cout_ESR;      // Equivalent series resistance (Ω)
+    double Cout_ESR;      // Equivalent series resistance ()
     
     // Input capacitor
     double Cin;           // Capacitance (F)
     double Cin_Vrating;   // Voltage rating (V)
     
     // Switching elements
-    double Rds_on;        // MOSFET on-resistance (Ω)
+    double Rds_on;        // MOSFET on-resistance ()
     double Qg;            // Gate charge (C)
     double Vf_diode;      // Diode forward voltage (V)
     
     // Feedback
-    double R1;            // Feedback resistor 1 (Ω)
-    double R2;            // Feedback resistor 2 (Ω)
+    double R1;            // Feedback resistor 1 ()
+    double R2;            // Feedback resistor 2 ()
     
     ComponentValues() : L(0), L_Irms(0), L_Isat(0), L_DCR(0),
                         Cout(0), Cout_Vrating(0), Cout_ESR(0),

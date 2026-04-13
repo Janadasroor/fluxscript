@@ -32,7 +32,8 @@ public:
         const std::vector<std::unique_ptr<FunctionAST>>& functions,
         const std::vector<std::unique_ptr<SubcktAST>>& subckts,
         const std::vector<std::unique_ptr<ModelAST>>& models,
-        const std::vector<std::unique_ptr<AnalysisDeclAST>>& analyses);
+        const std::vector<std::unique_ptr<AnalysisDeclAST>>& analyses,
+        const std::vector<std::unique_ptr<MeasureDeclAST>>& measures);
     
     // Generate specific SPICE cards
     std::string generateTitle(const std::string& title);

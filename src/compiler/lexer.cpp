@@ -58,6 +58,56 @@ std::string Lexer::getCurrentLineText() const {
     return m_input.substr(m_lineStart, end - m_lineStart);
 }
 
+std::string Lexer::tokenSpelling(int token) {
+    if (token >= 0 && token < 128)
+        return std::string(1, static_cast<char>(token));
+
+    switch (static_cast<TokenType>(token)) {
+        case TokenType::tok_eof: return "eof";
+        case TokenType::tok_def: return "def";
+        case TokenType::tok_extern: return "extern";
+        case TokenType::tok_return: return "return";
+        case TokenType::tok_var: return "var";
+        case TokenType::tok_if: return "if";
+        case TokenType::tok_then: return "then";
+        case TokenType::tok_else: return "else";
+        case TokenType::tok_for: return "for";
+        case TokenType::tok_in: return "in";
+        case TokenType::tok_do: return "do";
+        case TokenType::tok_while: return "while";
+        case TokenType::tok_let: return "let";
+        case TokenType::tok_fn: return "fn";
+        case TokenType::tok_import: return "import";
+        case TokenType::tok_type_float: return "float";
+        case TokenType::tok_type_double: return "double";
+        case TokenType::tok_type_int: return "int";
+        case TokenType::tok_type_void: return "void";
+        case TokenType::tok_type_complex: return "complex";
+        case TokenType::tok_type_string: return "string";
+        case TokenType::tok_type_vector: return "vector";
+        case TokenType::tok_type_matrix: return "matrix";
+        case TokenType::tok_tran: return "tran";
+        case TokenType::tok_dc: return "dc";
+        case TokenType::tok_ac: return "ac";
+        case TokenType::tok_noise: return "noise";
+        case TokenType::tok_op: return "op";
+        case TokenType::tok_tf: return "tf";
+        case TokenType::tok_sens: return "sens";
+        case TokenType::tok_fourier: return "fourier";
+        case TokenType::tok_max: return "MAX";
+        case TokenType::tok_min: return "MIN";
+        case TokenType::tok_avg: return "AVG";
+        case TokenType::tok_rms: return "RMS";
+        case TokenType::tok_trig: return "TRIG";
+        case TokenType::tok_targ: return "TARG";
+        case TokenType::tok_meas_when: return "WHEN";
+        case TokenType::tok_find: return "FIND";
+        case TokenType::tok_deriv: return "DERIV";
+        case TokenType::tok_integ: return "INTEG";
+        default: return "token(" + std::to_string(token) + ")";
+    }
+}
+
 std::string Lexer::getCurrentTokenText() const {
     if (m_currentTokenOffset >= m_input.size())
         return {};
@@ -111,6 +161,15 @@ int Lexer::gettok() {
         if (IdentifierStr == "do") return static_cast<int>(TokenType::tok_do);
         if (IdentifierStr == "while") return static_cast<int>(TokenType::tok_while);
         if (IdentifierStr == "import") return static_cast<int>(TokenType::tok_import);
+        if (IdentifierStr == "analysis") return static_cast<int>(TokenType::tok_analysis);
+        if (IdentifierStr == "measure") return static_cast<int>(TokenType::tok_measure);
+        if (IdentifierStr == "subckt") return static_cast<int>(TokenType::tok_subckt);
+        if (IdentifierStr == "model") return static_cast<int>(TokenType::tok_model);
+        if (IdentifierStr == "tran") return static_cast<int>(TokenType::tok_tran);
+        if (IdentifierStr == "dc") return static_cast<int>(TokenType::tok_dc);
+        if (IdentifierStr == "ac") return static_cast<int>(TokenType::tok_ac);
+        if (IdentifierStr == "MAX") return static_cast<int>(TokenType::tok_max);
+        if (IdentifierStr == "MIN") return static_cast<int>(TokenType::tok_min);
         if (IdentifierStr == "debug") return static_cast<int>(TokenType::tok_debug);
         if (IdentifierStr == "sensitivity") return static_cast<int>(TokenType::tok_sensitivity);
         if (IdentifierStr == "ask") return static_cast<int>(TokenType::tok_ask);
@@ -122,8 +181,6 @@ int Lexer::gettok() {
         if (IdentifierStr == "void") return static_cast<int>(TokenType::tok_type_void);
         if (IdentifierStr == "complex") return static_cast<int>(TokenType::tok_type_complex);
         if (IdentifierStr == "string") return static_cast<int>(TokenType::tok_type_string);
-        if (IdentifierStr == "vector") return static_cast<int>(TokenType::tok_type_vector);
-        if (IdentifierStr == "matrix") return static_cast<int>(TokenType::tok_type_matrix);
         if (IdentifierStr == "xor") return static_cast<int>(TokenType::tok_bitwise_xor);
         if (IdentifierStr == "break") return static_cast<int>(TokenType::tok_break);
         if (IdentifierStr == "continue") return static_cast<int>(TokenType::tok_continue);
@@ -171,6 +228,7 @@ int Lexer::gettok() {
         if (IdentifierStr == "integrate") return static_cast<int>(TokenType::tok_integrate);
         if (IdentifierStr == "laplace") return static_cast<int>(TokenType::tok_laplace);
         if (IdentifierStr == "inverse_laplace") return static_cast<int>(TokenType::tok_inverse_laplace);
+        if (IdentifierStr == "evaluate") return static_cast<int>(TokenType::tok_evaluate);
         if (IdentifierStr == "substitute") return static_cast<int>(TokenType::tok_substitute);
         if (IdentifierStr == "expand") return static_cast<int>(TokenType::tok_expand);
         if (IdentifierStr == "factor") return static_cast<int>(TokenType::tok_factor);
@@ -226,7 +284,6 @@ int Lexer::gettok() {
 
         /* Section 7.2: Mixed-Signal & Modeling Extensions */
         // Event-driven constructs
-        if (IdentifierStr == "cross") return static_cast<int>(TokenType::tok_cross);
         if (IdentifierStr == "above") return static_cast<int>(TokenType::tok_above);
         if (IdentifierStr == "timer") return static_cast<int>(TokenType::tok_timer);
 
@@ -403,10 +460,22 @@ int Lexer::gettok() {
             multiplier = 1e12; hasSuffix = true;
         }
 
+        StringVal = "";
         if (hasSuffix) {
+            char suffix = m_lastChar;
             advance(); // consume the suffix
-            // SPICE ignores any characters after the unit suffix (e.g. 10kOhm = 10k)
-            while (isalpha(m_lastChar)) {
+            // Capture unit name (e.g. "V", "A", "Ohm")
+            while (isalpha(m_lastChar) || (unsigned char)m_lastChar > 127) { // Support , , etc.
+                StringVal += m_lastChar;
+                advance();
+            }
+            // If StringVal is empty, the suffix itself might be the unit (if not a SPICE multiplier)
+            // But SPICE multipliers are usually single chars. 
+            // We'll let the parser handle the mapping.
+        } else {
+            // Check if a unit follows even without a SPICE suffix (e.g., 5V)
+            while (isalpha(m_lastChar) || (unsigned char)m_lastChar > 127) {
+                StringVal += m_lastChar;
                 advance();
             }
         }

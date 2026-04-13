@@ -460,8 +460,8 @@ namespace CircuitTestGenerators {
 
 std::map<std::string, double> generateRCTestCase(RandomParameterGenerator& gen) {
     std::map<std::string, double> params;
-    params["R"] = gen.generateLogNormal(1e3, 1.0);    // 1kΩ typical
-    params["C"] = gen.generateLogNormal(1e-6, 1.0);   // 1μF typical
+    params["R"] = gen.generateLogNormal(1e3, 1.0);    // 1k typical
+    params["C"] = gen.generateLogNormal(1e-6, 1.0);   // 1F typical
     params["Vin"] = gen.generateUniform(0.1, 10.0);    // Input voltage
     params["freq"] = gen.generateLogNormal(1e3, 2.0);  // Frequency
     return params;

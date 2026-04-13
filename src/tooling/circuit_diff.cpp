@@ -80,7 +80,7 @@ std::string CircuitDiffResult::toText() const {
     if (!recommendations.empty()) {
         oss << "Recommendations:\n";
         for (const auto& rec : recommendations) {
-            oss << "  • " << rec << "\n";
+            oss << "   " << rec << "\n";
         }
         oss << "\n";
     }

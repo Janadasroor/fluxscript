@@ -5,14 +5,14 @@
 
 using namespace Flux::Instruments;
 
-// ┌─────────────────────────────────────────────────────┐
-// │ Test 1: Basic Connection (Simulated)                │
-// └─────────────────────────────────────────────────────┘
+// 
+//  Test 1: Basic Connection (Simulated)                
+// 
 void test_instrument_basics() {
     std::cout << "\n";
-    std::cout << "╔══════════════════════════════════════════════════════════╗\n";
-    std::cout << "║  Test 1: Instrument Basics                               ║\n";
-    std::cout << "╚══════════════════════════════════════════════════════════╝\n";
+    std::cout << "\n";
+    std::cout << "  Test 1: Instrument Basics                               \n";
+    std::cout << "\n";
     std::cout << "\n";
 
     Instrument inst;
@@ -28,17 +28,17 @@ void test_instrument_basics() {
     inst.disconnect();
     assert(!inst.isConnected());
 
-    std::cout << "\n✅ Test 1 PASSED\n";
+    std::cout << "\n Test 1 PASSED\n";
 }
 
-// ┌─────────────────────────────────────────────────────┐
-// │ Test 2: C Interface                                 │
-// └─────────────────────────────────────────────────────┘
+// 
+//  Test 2: C Interface                                 
+// 
 void test_c_interface() {
     std::cout << "\n";
-    std::cout << "╔══════════════════════════════════════════════════════════╗\n";
-    std::cout << "║  Test 2: C Interface for Power Supply                    ║\n";
-    std::cout << "╚══════════════════════════════════════════════════════════╝\n";
+    std::cout << "\n";
+    std::cout << "  Test 2: C Interface for Power Supply                    \n";
+    std::cout << "\n";
     std::cout << "\n";
 
     void* ps = flux_ps_create();
@@ -58,31 +58,31 @@ void test_c_interface() {
     flux_ps_disconnect(ps);
     flux_ps_destroy(ps);
 
-    std::cout << "\n✅ Test 2 PASSED\n";
+    std::cout << "\n Test 2 PASSED\n";
 }
 
-// ┌─────────────────────────────────────────────────────┐
-// │ Main Test Runner                                    │
-// └─────────────────────────────────────────────────────┘
+// 
+//  Main Test Runner                                    
+// 
 int main() {
     std::cout << "\n";
-    std::cout << "╔══════════════════════════════════════════════════════════╗\n";
-    std::cout << "║          Instrument Control - Test Suite                 ║\n";
-    std::cout << "╚══════════════════════════════════════════════════════════╝\n";
+    std::cout << "\n";
+    std::cout << "          Instrument Control - Test Suite                 \n";
+    std::cout << "\n";
 
     try {
         test_instrument_basics();
         test_c_interface();
 
         std::cout << "\n";
-        std::cout << "╔══════════════════════════════════════════════════════════╗\n";
-        std::cout << "║          ALL INSTRUMENT TESTS PASSED ✅                  ║\n";
-        std::cout << "╚══════════════════════════════════════════════════════════╝\n";
+        std::cout << "\n";
+        std::cout << "          ALL INSTRUMENT TESTS PASSED                   \n";
+        std::cout << "\n";
         std::cout << "\n";
 
         return 0;
     } catch (const std::exception& e) {
-        std::cerr << "\n❌ TEST FAILED: " << e.what() << "\n";
+        std::cerr << "\n TEST FAILED: " << e.what() << "\n";
         return 1;
     }
 }

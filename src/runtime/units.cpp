@@ -86,44 +86,44 @@ void UnitRegistry::initializeSIUnits() {
     registerUnit("C", ScaledUnit(Dimension::Charge, 1.0, "coulomb", "C"));
     registerUnit("V", ScaledUnit(Dimension::Voltage, 1.0, "volt", "V"));
     registerUnit("F", ScaledUnit(Dimension::Capacitance, 1.0, "farad", "F"));
-    registerUnit("Ω", ScaledUnit(Dimension::Resistance, 1.0, "ohm", "Ω"));
+    registerUnit("", ScaledUnit(Dimension::Resistance, 1.0, "ohm", ""));
     registerUnit("ohm", ScaledUnit(Dimension::Resistance, 1.0, "ohm", "ohm"));  // Alternative
-    registerUnit("S", ScaledUnit(Dimension::Resistance, 1.0, "siemens", "S"));  // 1/Ω
+    registerUnit("S", ScaledUnit(Dimension::Resistance, 1.0, "siemens", "S"));  // 1/
     registerUnit("H", ScaledUnit(Dimension::Inductance, 1.0, "henry", "H"));
-    registerUnit("T", ScaledUnit({1, 0, -2, -1, 0, 0, 0}, 1.0, "tesla", "T"));  // Wb/m²
-    registerUnit("Wb", ScaledUnit({1, 2, -2, -1, 0, 0, 0}, 1.0, "weber", "Wb"));  // V·s
+    registerUnit("T", ScaledUnit({1, 0, -2, -1, 0, 0, 0}, 1.0, "tesla", "T"));  // Wb/m
+    registerUnit("Wb", ScaledUnit({1, 2, -2, -1, 0, 0, 0}, 1.0, "weber", "Wb"));  // Vs
     registerUnit("lm", ScaledUnit({0, 2, -3, 0, 0, 0, 1}, 1.0, "lumen", "lm"));
     registerUnit("lx", ScaledUnit({0, 0, -3, 0, 0, 0, 1}, 1.0, "lux", "lx"));
     
     // Common prefixes for electrical units
     // Voltage
     registerUnit("mV", ScaledUnit(Dimension::Voltage, 0.001, "millivolt", "mV"));
-    registerUnit("μV", ScaledUnit(Dimension::Voltage, 1e-6, "microvolt", "μV"));
+    registerUnit("V", ScaledUnit(Dimension::Voltage, 1e-6, "microvolt", "V"));
     registerUnit("uV", ScaledUnit(Dimension::Voltage, 1e-6, "microvolt", "uV"));  // ASCII alt
     registerUnit("kV", ScaledUnit(Dimension::Voltage, 1000.0, "kilovolt", "kV"));
     registerUnit("MV", ScaledUnit(Dimension::Voltage, 1e6, "megavolt", "MV"));
     
     // Resistance
-    registerUnit("mΩ", ScaledUnit(Dimension::Resistance, 0.001, "milliohm", "mΩ"));
-    registerUnit("kΩ", ScaledUnit(Dimension::Resistance, 1000.0, "kiloohm", "kΩ"));
-    registerUnit("MΩ", ScaledUnit(Dimension::Resistance, 1e6, "megaohm", "MΩ"));
+    registerUnit("m", ScaledUnit(Dimension::Resistance, 0.001, "milliohm", "m"));
+    registerUnit("k", ScaledUnit(Dimension::Resistance, 1000.0, "kiloohm", "k"));
+    registerUnit("M", ScaledUnit(Dimension::Resistance, 1e6, "megaohm", "M"));
     
     // Capacitance
     registerUnit("mF", ScaledUnit(Dimension::Capacitance, 0.001, "millifarad", "mF"));
-    registerUnit("μF", ScaledUnit(Dimension::Capacitance, 1e-6, "microfarad", "μF"));
+    registerUnit("F", ScaledUnit(Dimension::Capacitance, 1e-6, "microfarad", "F"));
     registerUnit("uF", ScaledUnit(Dimension::Capacitance, 1e-6, "microfarad", "uF"));
     registerUnit("nF", ScaledUnit(Dimension::Capacitance, 1e-9, "nanofarad", "nF"));
     registerUnit("pF", ScaledUnit(Dimension::Capacitance, 1e-12, "picofarad", "pF"));
     
     // Inductance
     registerUnit("mH", ScaledUnit(Dimension::Inductance, 0.001, "millihenry", "mH"));
-    registerUnit("μH", ScaledUnit(Dimension::Inductance, 1e-6, "microhenry", "μH"));
+    registerUnit("H", ScaledUnit(Dimension::Inductance, 1e-6, "microhenry", "H"));
     registerUnit("uH", ScaledUnit(Dimension::Inductance, 1e-6, "microhenry", "uH"));
     registerUnit("nH", ScaledUnit(Dimension::Inductance, 1e-9, "nanohenry", "nH"));
     
     // Current
     registerUnit("mA", ScaledUnit(Dimension::Current, 0.001, "milliampere", "mA"));
-    registerUnit("μA", ScaledUnit(Dimension::Current, 1e-6, "microampere", "μA"));
+    registerUnit("A", ScaledUnit(Dimension::Current, 1e-6, "microampere", "A"));
     registerUnit("uA", ScaledUnit(Dimension::Current, 1e-6, "microampere", "uA"));
     registerUnit("nA", ScaledUnit(Dimension::Current, 1e-9, "nanoampere", "nA"));
     registerUnit("kA", ScaledUnit(Dimension::Current, 1000.0, "kiloampere", "kA"));
@@ -136,7 +136,7 @@ void UnitRegistry::initializeSIUnits() {
     
     // Time
     registerUnit("ms", ScaledUnit(Dimension::Time, 0.001, "millisecond", "ms"));
-    registerUnit("μs", ScaledUnit(Dimension::Time, 1e-6, "microsecond", "μs"));
+    registerUnit("s", ScaledUnit(Dimension::Time, 1e-6, "microsecond", "s"));
     registerUnit("us", ScaledUnit(Dimension::Time, 1e-6, "microsecond", "us"));
     registerUnit("ns", ScaledUnit(Dimension::Time, 1e-9, "nanosecond", "ns"));
     registerUnit("ps", ScaledUnit(Dimension::Time, 1e-12, "picosecond", "ps"));
@@ -145,7 +145,7 @@ void UnitRegistry::initializeSIUnits() {
     
     // Power
     registerUnit("mW", ScaledUnit(Dimension::Power, 0.001, "milliwatt", "mW"));
-    registerUnit("μW", ScaledUnit(Dimension::Power, 1e-6, "microwatt", "μW"));
+    registerUnit("W", ScaledUnit(Dimension::Power, 1e-6, "microwatt", "W"));
     registerUnit("uW", ScaledUnit(Dimension::Power, 1e-6, "microwatt", "uW"));
     registerUnit("kW", ScaledUnit(Dimension::Power, 1000.0, "kilowatt", "kW"));
     registerUnit("MW", ScaledUnit(Dimension::Power, 1e6, "megawatt", "MW"));
@@ -158,20 +158,20 @@ void UnitRegistry::initializeSIUnits() {
     
     // Charge
     registerUnit("mC", ScaledUnit(Dimension::Charge, 0.001, "millicoulomb", "mC"));
-    registerUnit("μC", ScaledUnit(Dimension::Charge, 1e-6, "microcoulomb", "μC"));
+    registerUnit("C", ScaledUnit(Dimension::Charge, 1e-6, "microcoulomb", "C"));
     registerUnit("nC", ScaledUnit(Dimension::Charge, 1e-9, "nanocoulomb", "nC"));
     
     // Length
     registerUnit("mm", ScaledUnit(Dimension::Length, 0.001, "millimeter", "mm"));
     registerUnit("cm", ScaledUnit(Dimension::Length, 0.01, "centimeter", "cm"));
-    registerUnit("μm", ScaledUnit(Dimension::Length, 1e-6, "micrometer", "μm"));
+    registerUnit("m", ScaledUnit(Dimension::Length, 1e-6, "micrometer", "m"));
     registerUnit("nm", ScaledUnit(Dimension::Length, 1e-9, "nanometer", "nm"));
     registerUnit("km", ScaledUnit(Dimension::Length, 1000.0, "kilometer", "km"));
     
     // Mass
     registerUnit("g", ScaledUnit(Dimension::Mass, 0.001, "gram", "g"));
     registerUnit("mg", ScaledUnit(Dimension::Mass, 1e-6, "milligram", "mg"));
-    registerUnit("μg", ScaledUnit(Dimension::Mass, 1e-9, "microgram", "μg"));
+    registerUnit("g", ScaledUnit(Dimension::Mass, 1e-9, "microgram", "g"));
     registerUnit("tonne", ScaledUnit(Dimension::Mass, 1000.0, "tonne", "tonne"));
     
     // Pressure
@@ -182,17 +182,17 @@ void UnitRegistry::initializeSIUnits() {
     registerUnit("psi", ScaledUnit(Dimension::Pressure, 6894.76, "psi", "psi"));
     
     // Area and Volume
-    registerUnit("m²", ScaledUnit(Dimension::Area, 1.0, "square meter", "m²"));
-    registerUnit("cm²", ScaledUnit(Dimension::Area, 1e-4, "square centimeter", "cm²"));
-    registerUnit("mm²", ScaledUnit(Dimension::Area, 1e-6, "square millimeter", "mm²"));
-    registerUnit("m³", ScaledUnit(Dimension::Volume, 1.0, "cubic meter", "m³"));
+    registerUnit("m", ScaledUnit(Dimension::Area, 1.0, "square meter", "m"));
+    registerUnit("cm", ScaledUnit(Dimension::Area, 1e-4, "square centimeter", "cm"));
+    registerUnit("mm", ScaledUnit(Dimension::Area, 1e-6, "square millimeter", "mm"));
+    registerUnit("m", ScaledUnit(Dimension::Volume, 1.0, "cubic meter", "m"));
     registerUnit("L", ScaledUnit(Dimension::Volume, 0.001, "liter", "L"));
     registerUnit("mL", ScaledUnit(Dimension::Volume, 1e-6, "milliliter", "mL"));
-    registerUnit("μL", ScaledUnit(Dimension::Volume, 1e-9, "microliter", "μL"));
+    registerUnit("L", ScaledUnit(Dimension::Volume, 1e-9, "microliter", "L"));
     
     // Temperature (with offset for Celsius)
-    registerUnit("°C", ScaledUnit(Dimension::Temperature, 1.0, "degree Celsius", "°C"));
-    registerUnit("°F", ScaledUnit(Dimension::Temperature, 5.0/9.0, "degree Fahrenheit", "°F"));
+    registerUnit("C", ScaledUnit(Dimension::Temperature, 1.0, "degree Celsius", "C"));
+    registerUnit("F", ScaledUnit(Dimension::Temperature, 5.0/9.0, "degree Fahrenheit", "F"));
 }
 
 void UnitRegistry::registerUnit(const std::string& symbol, const ScaledUnit& unit) {
@@ -218,7 +218,7 @@ ScaledUnit UnitRegistry::parseUnitString(const std::string& str) const {
         return *unit;
     }
     
-    // Try to parse compound units (e.g., "m/s", "N·m")
+    // Try to parse compound units (e.g., "m/s", "Nm")
     size_t slashPos = str.find('/');
     if (slashPos != std::string::npos) {
         std::string numStr = str.substr(0, slashPos);
@@ -235,7 +235,7 @@ ScaledUnit UnitRegistry::parseUnitString(const std::string& str) const {
         );
     }
     
-    // Try to parse with powers (e.g., "m²", "m^2")
+    // Try to parse with powers (e.g., "m", "m^2")
     size_t powerPos = str.find_first_of("^");
     if (powerPos != std::string::npos) {
         std::string baseStr = str.substr(0, powerPos);
@@ -251,8 +251,8 @@ ScaledUnit UnitRegistry::parseUnitString(const std::string& str) const {
     }
     
     // Check for unicode superscripts
-    if (str.find("²") != std::string::npos) {
-        size_t pos = str.find("²");
+    if (str.find("") != std::string::npos) {
+        size_t pos = str.find("");
         std::string baseStr = str.substr(0, pos);
         ScaledUnit baseUnit = parseUnitString(baseStr);
         return ScaledUnit(
@@ -262,8 +262,8 @@ ScaledUnit UnitRegistry::parseUnitString(const std::string& str) const {
             str
         );
     }
-    if (str.find("³") != std::string::npos) {
-        size_t pos = str.find("³");
+    if (str.find("") != std::string::npos) {
+        size_t pos = str.find("");
         std::string baseStr = str.substr(0, pos);
         ScaledUnit baseUnit = parseUnitString(baseStr);
         return ScaledUnit(
@@ -281,7 +281,7 @@ std::string UnitRegistry::getCanonicalUnit(const UnitDimensions& dims) const {
     // Return the most common unit for these dimensions
     if (dims == Dimension::Voltage) return "V";
     if (dims == Dimension::Current) return "A";
-    if (dims == Dimension::Resistance) return "Ω";
+    if (dims == Dimension::Resistance) return "";
     if (dims == Dimension::Capacitance) return "F";
     if (dims == Dimension::Inductance) return "H";
     if (dims == Dimension::Frequency) return "Hz";
@@ -339,8 +339,8 @@ QuantifiedValue QuantifiedValue::operator*(const QuantifiedValue& other) const {
     ScaledUnit resultUnit(
         m_unit.dimensions * other.m_unit.dimensions,
         m_unit.scale * other.m_unit.scale,
-        m_unit.name + "·" + other.m_unit.name,
-        m_unit.symbol + "·" + other.m_unit.symbol
+        m_unit.name + "" + other.m_unit.name,
+        m_unit.symbol + "" + other.m_unit.symbol
     );
     return QuantifiedValue(m_value * other.m_value, resultUnit);
 }

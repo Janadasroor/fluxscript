@@ -15,14 +15,14 @@ using namespace Flux;
 
 void test_component_substitution() {
     std::cout << "\n";
-    std::cout << "╔══════════════════════════════════════════════════════════╗\n";
-    std::cout << "║  Feature #1: Component Substitution Engine               ║\n";
-    std::cout << "╚══════════════════════════════════════════════════════════╝\n";
+    std::cout << "\n";
+    std::cout << "  Feature #1: Component Substitution Engine               \n";
+    std::cout << "\n";
     std::cout << "\n";
     
     // Test 1: Database search
     std::cout << "Test 1: Component Database Search\n";
-    std::cout << "────────────────────────────────────────────────────────────\n";
+    std::cout << "\n";
     
     auto& db = Substitution::ComponentDatabase::instance();
     
@@ -38,11 +38,11 @@ void test_component_substitution() {
     assert(resistors.size() > 0 && "Should have resistors!");
     assert(capacitors.size() > 0 && "Should have capacitors!");
     
-    std::cout << "\n✅ Test 1 PASSED\n";
+    std::cout << "\n Test 1 PASSED\n";
     
     // Test 2: Find substitutes
     std::cout << "\n\nTest 2: Find Component Substitutes\n";
-    std::cout << "────────────────────────────────────────────────────────────\n";
+    std::cout << "\n";
     
     Substitution::SubstitutionEngine engine;
     
@@ -57,11 +57,11 @@ void test_component_substitution() {
                   << " (Score: " << std::setprecision(2) << sug.compatibilityScore << ")\n";
     }
     
-    std::cout << "\n✅ Test 2 PASSED\n";
+    std::cout << "\n Test 2 PASSED\n";
     
     // Test 3: BOM Analysis
     std::cout << "\n\nTest 3: BOM Analysis\n";
-    std::cout << "────────────────────────────────────────────────────────────\n";
+    std::cout << "\n";
     
     Substitution::BOMAnalyzer bomAnalyzer;
     
@@ -88,11 +88,11 @@ void test_component_substitution() {
     std::cout << "  New cost: $" << result.newCost << "\n";
     std::cout << "  Savings: $" << result.savings << "\n";
     
-    std::cout << "\n✅ Test 3 PASSED\n";
+    std::cout << "\n Test 3 PASSED\n";
     
     // Test 4: Compatibility checking
     std::cout << "\n\nTest 4: Compatibility Checking\n";
-    std::cout << "────────────────────────────────────────────────────────────\n";
+    std::cout << "\n";
     
     Substitution::ComponentSpec original;
     original.type = "resistor";
@@ -120,12 +120,12 @@ void test_component_substitution() {
     
     assert(goodCompatible && "Good substitute should be compatible!");
     
-    std::cout << "\n✅ Test 4 PASSED\n";
+    std::cout << "\n Test 4 PASSED\n";
     
     std::cout << "\n";
-    std::cout << "╔══════════════════════════════════════════════════════════╗\n";
-    std::cout << "║     Component Substitution: ALL TESTS PASSED ✅          ║\n";
-    std::cout << "╚══════════════════════════════════════════════════════════╝\n";
+    std::cout << "\n";
+    std::cout << "     Component Substitution: ALL TESTS PASSED           \n";
+    std::cout << "\n";
 }
 
 // ============================================================================
@@ -134,21 +134,21 @@ void test_component_substitution() {
 
 void test_version_control() {
     std::cout << "\n";
-    std::cout << "╔══════════════════════════════════════════════════════════╗\n";
-    std::cout << "║  Feature #2: Circuit Version Control                     ║\n";
-    std::cout << "╚══════════════════════════════════════════════════════════╝\n";
+    std::cout << "\n";
+    std::cout << "  Feature #2: Circuit Version Control                     \n";
+    std::cout << "\n";
     std::cout << "\n";
     
     std::cout << "Test 1: Version Control Initialization\n";
-    std::cout << "────────────────────────────────────────────────────────────\n";
-    std::cout << "  ✅ Version control system initialized\n";
-    std::cout << "  ✅ Repository created\n";
-    std::cout << "\n✅ Test 1 PASSED (Stub)\n";
+    std::cout << "\n";
+    std::cout << "   Version control system initialized\n";
+    std::cout << "   Repository created\n";
+    std::cout << "\n Test 1 PASSED (Stub)\n";
     
     std::cout << "\n";
-    std::cout << "╔══════════════════════════════════════════════════════════╗\n";
-    std::cout << "║     Version Control: IMPLEMENTATION IN PROGRESS ⏳       ║\n";
-    std::cout << "╚══════════════════════════════════════════════════════════╝\n";
+    std::cout << "\n";
+    std::cout << "     Version Control: IMPLEMENTATION IN PROGRESS        \n";
+    std::cout << "\n";
 }
 
 // ============================================================================
@@ -157,21 +157,21 @@ void test_version_control() {
 
 void test_live_preview() {
     std::cout << "\n";
-    std::cout << "╔══════════════════════════════════════════════════════════╗\n";
-    std::cout << "║  Feature #3: Live Waveform Preview                       ║\n";
-    std::cout << "╚══════════════════════════════════════════════════════════╝\n";
+    std::cout << "\n";
+    std::cout << "  Feature #3: Live Waveform Preview                       \n";
+    std::cout << "\n";
     std::cout << "\n";
     
     std::cout << "Test 1: Live Preview Engine\n";
-    std::cout << "────────────────────────────────────────────────────────────\n";
-    std::cout << "  ✅ Preview engine initialized\n";
-    std::cout << "  ✅ Real-time simulation ready\n";
-    std::cout << "\n✅ Test 1 PASSED (Stub)\n";
+    std::cout << "\n";
+    std::cout << "   Preview engine initialized\n";
+    std::cout << "   Real-time simulation ready\n";
+    std::cout << "\n Test 1 PASSED (Stub)\n";
     
     std::cout << "\n";
-    std::cout << "╔══════════════════════════════════════════════════════════╗\n";
-    std::cout << "║     Live Preview: IMPLEMENTATION IN PROGRESS ⏳          ║\n";
-    std::cout << "╚══════════════════════════════════════════════════════════╝\n";
+    std::cout << "\n";
+    std::cout << "     Live Preview: IMPLEMENTATION IN PROGRESS           \n";
+    std::cout << "\n";
 }
 
 // ============================================================================
@@ -180,9 +180,9 @@ void test_live_preview() {
 
 int main(int argc, char** argv) {
     std::cout << "\n";
-    std::cout << "╔══════════════════════════════════════════════════════════╗\n";
-    std::cout << "║          FluxScript Phase 5 - New Features Test          ║\n";
-    std::cout << "╚══════════════════════════════════════════════════════════╝\n";
+    std::cout << "\n";
+    std::cout << "          FluxScript Phase 5 - New Features Test          \n";
+    std::cout << "\n";
     
     try {
         // Test Feature 1: Component Substitution (FULLY IMPLEMENTED)
@@ -195,14 +195,14 @@ int main(int argc, char** argv) {
         test_live_preview();
         
         std::cout << "\n";
-        std::cout << "╔══════════════════════════════════════════════════════════╗\n";
-        std::cout << "║          PHASE 5 FEATURES TESTED SUCCESSFULLY ✅         ║\n";
-        std::cout << "╚══════════════════════════════════════════════════════════╝\n";
+        std::cout << "\n";
+        std::cout << "          PHASE 5 FEATURES TESTED SUCCESSFULLY          \n";
+        std::cout << "\n";
         std::cout << "\n";
         
         return 0;
     } catch (const std::exception& e) {
-        std::cerr << "\n❌ TEST FAILED: " << e.what() << "\n";
+        std::cerr << "\n TEST FAILED: " << e.what() << "\n";
         return 1;
     }
 }

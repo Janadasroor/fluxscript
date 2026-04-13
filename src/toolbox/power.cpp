@@ -80,7 +80,7 @@ void BuckConverter::selectInductor() {
     m_components.L_Isat = Ipeak * 1.3;  // 30% margin
     m_components.L_DCR = 0.01;  // Estimate, will be refined from database
     
-    std::cout << "[Buck] Inductor: L = " << (L * 1e6) << " μH, "
+    std::cout << "[Buck] Inductor: L = " << (L * 1e6) << " H, "
               << "Isat = " << m_components.L_Isat << "A, "
               << "Irms = " << m_components.L_Irms << "A\n";
 }
@@ -96,9 +96,9 @@ void BuckConverter::selectCapacitors() {
     m_components.Cin = Cin;
     m_components.Cin_Vrating = m_specs.Vin * 1.5;
     
-    std::cout << "[Buck] Output Cap: Cout = " << (Cout * 1e6) << " μF, "
+    std::cout << "[Buck] Output Cap: Cout = " << (Cout * 1e6) << " F, "
               << "Vrating = " << m_components.Cout_Vrating << "V\n";
-    std::cout << "[Buck] Input Cap: Cin = " << (Cin * 1e6) << " μF, "
+    std::cout << "[Buck] Input Cap: Cin = " << (Cin * 1e6) << " F, "
               << "Vrating = " << m_components.Cin_Vrating << "V\n";
 }
 
@@ -125,7 +125,7 @@ void BuckConverter::selectMOSFET() {
     
     std::cout << "[Buck] MOSFET: Vds = " << Vds_rating << "V, "
               << "Id = " << Id_rating << "A, "
-              << "Rds_on = " << (m_components.Rds_on * 1000) << " mΩ\n";
+              << "Rds_on = " << (m_components.Rds_on * 1000) << " m\n";
 }
 
 void BuckConverter::selectFeedbackResistors() {
@@ -137,8 +137,8 @@ void BuckConverter::selectFeedbackResistors() {
     m_components.R2 = 10000;
     m_components.R1 = m_components.R2 * (m_specs.Vout / Vref - 1);
     
-    std::cout << "[Buck] Feedback: R1 = " << m_components.R1 << "Ω, "
-              << "R2 = " << m_components.R2 << "Ω\n";
+    std::cout << "[Buck] Feedback: R1 = " << m_components.R1 << ", "
+              << "R2 = " << m_components.R2 << "\n";
 }
 
 void BuckConverter::selectComponents() {
@@ -201,7 +201,7 @@ PowerSimulationResult BuckConverter::simulate() {
     
     // Temperature rise (simplified)
     double totalLoss = result.conduction_loss + result.switch_loss + result.core_loss;
-    result.max_temp = 25 + totalLoss * 50;  // °C/W estimate
+    result.max_temp = 25 + totalLoss * 50;  // C/W estimate
     
     // Generate waveforms (simplified)
     int nPoints = 1000;
@@ -222,8 +222,8 @@ PowerSimulationResult BuckConverter::simulate() {
     std::cout << "Efficiency: " << (result.efficiency * 100) << "%\n";
     std::cout << "Output Ripple: " << (result.vout_ripple * 1000) << " mV\n";
     std::cout << "Peak Current: " << result.peak_current << " A\n";
-    std::cout << "Phase Margin: " << result.phase_margin << "°\n";
-    std::cout << "Max Temperature: " << result.max_temp << "°C\n";
+    std::cout << "Phase Margin: " << result.phase_margin << "\n";
+    std::cout << "Max Temperature: " << result.max_temp << "C\n";
     
     return result;
 }

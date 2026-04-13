@@ -21,18 +21,18 @@
 namespace Flux {
 namespace Doctor {
 
-// ┌─────────────────────────────────────────────────────┐
-// │ Diagnostic Severity Levels                          │
-// └─────────────────────────────────────────────────────┘
+// 
+//  Diagnostic Severity Levels                          
+// 
 enum class Severity {
     Info,       // Helpful tips
     Warning,    // Potential issues
     Error       // Critical problems
 };
 
-// ┌─────────────────────────────────────────────────────┐
-// │ Diagnostic Issue Structure                          │
-// └─────────────────────────────────────────────────────┘
+// 
+//  Diagnostic Issue Structure                          
+// 
 struct DiagnosticIssue {
     std::string rule;           // Rule name (e.g., "FloatingNode")
     Severity severity;          // Info, Warning, or Error
@@ -47,9 +47,9 @@ struct DiagnosticIssue {
     std::string toMarkdown() const;
 };
 
-// ┌─────────────────────────────────────────────────────┐
-// │ Diagnostic Report                                   │
-// └─────────────────────────────────────────────────────┘
+// 
+//  Diagnostic Report                                   
+// 
 struct DiagnosticReport {
     std::string circuitFile;
     std::vector<DiagnosticIssue> issues;
@@ -67,9 +67,9 @@ struct DiagnosticReport {
     std::string toJSON() const;
 };
 
-// ┌─────────────────────────────────────────────────────┐
-// │ Circuit Doctor Class                                │
-// └─────────────────────────────────────────────────────┘
+// 
+//  Circuit Doctor Class                                
+// 
 class CircuitDoctor {
 public:
     CircuitDoctor();
@@ -114,14 +114,14 @@ private:
     std::string getComponentType(char prefix);
 };
 
-// ┌─────────────────────────────────────────────────────┐
-// │ Convenience Functions                                │
-// └─────────────────────────────────────────────────────┘
+// 
+//  Convenience Functions                                
+// 
 DiagnosticReport circuit_doctor(const std::string& circuitFile);
 
-// ┌─────────────────────────────────────────────────────┐
-// │ C Interface for JIT                                  │
-// └─────────────────────────────────────────────────────┘
+// 
+//  C Interface for JIT                                  
+// 
 extern "C" {
     void* flux_doctor_create();
     void flux_doctor_destroy(void* doctor);

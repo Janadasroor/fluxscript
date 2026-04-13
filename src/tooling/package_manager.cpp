@@ -68,16 +68,16 @@ void PackageManager::initialize(const std::string& registryUrl) {
     
     m_initialized = true;
     
-    std::cout << "╔════════════════════════════════════════════════════════╗" << std::endl;
-    std::cout << "║       FLUXSCRIPT PACKAGE MANAGER                       ║" << std::endl;
-    std::cout << "╠════════════════════════════════════════════════════════╣" << std::endl;
-    std::cout << "║ Registry: " << std::left << std::setw(46) << m_registryUrl << "║" << std::endl;
-    std::cout << "║ Packages Dir: " << std::left << std::setw(42) << m_packagesDir << "║" << std::endl;
-    std::cout << "║ Repositories:                                          ║" << std::endl;
+    std::cout << "" << std::endl;
+    std::cout << "       FLUXSCRIPT PACKAGE MANAGER                       " << std::endl;
+    std::cout << "" << std::endl;
+    std::cout << " Registry: " << std::left << std::setw(46) << m_registryUrl << "" << std::endl;
+    std::cout << " Packages Dir: " << std::left << std::setw(42) << m_packagesDir << "" << std::endl;
+    std::cout << " Repositories:                                          " << std::endl;
     for (const auto& [name, url] : m_repositories) {
-        std::cout << "║   • " << std::left << std::setw(48) << name << "║" << std::endl;
+        std::cout << "    " << std::left << std::setw(48) << name << "" << std::endl;
     }
-    std::cout << "╚════════════════════════════════════════════════════════╝" << std::endl;
+    std::cout << "" << std::endl;
 }
 
 void PackageManager::finalize() {
@@ -124,17 +124,17 @@ std::vector<PackageSearchResult> PackageManager::search(const std::string& query
     }
     
     // Print results
-    std::cout << "\n╔════════════════════════════════════════════════════════╗" << std::endl;
-    std::cout << "║          SEARCH RESULTS                                ║" << std::endl;
-    std::cout << "╠════════════════════════════════════════════════════════╣" << std::endl;
+    std::cout << "\n" << std::endl;
+    std::cout << "          SEARCH RESULTS                                " << std::endl;
+    std::cout << "" << std::endl;
     
     for (const auto& result : results) {
         std::string line = result.info.name + " v" + result.info.version;
-        std::cout << "║ " << std::left << std::setw(51) << line << "║" << std::endl;
-        std::cout << "║   " << std::left << std::setw(48) << result.info.description << "║" << std::endl;
+        std::cout << " " << std::left << std::setw(51) << line << "" << std::endl;
+        std::cout << "   " << std::left << std::setw(48) << result.info.description << "" << std::endl;
     }
     
-    std::cout << "╚════════════════════════════════════════════════════════╝" << std::endl;
+    std::cout << "" << std::endl;
     std::cout << "Found " << results.size() << " package(s)" << std::endl;
     
     return results;
@@ -161,14 +161,14 @@ PackageInfo PackageManager::getPackageInfo(const std::string& name) {
 
 InstallStatus PackageManager::install(const std::string& name,
                                       const std::string& version) {
-    std::cout << "\n╔════════════════════════════════════════════════════════╗" << std::endl;
-    std::cout << "║          INSTALLING PACKAGE                            ║" << std::endl;
-    std::cout << "╠════════════════════════════════════════════════════════╣" << std::endl;
-    std::cout << "║ Package: " << std::left << std::setw(47) << name << "║" << std::endl;
+    std::cout << "\n" << std::endl;
+    std::cout << "          INSTALLING PACKAGE                            " << std::endl;
+    std::cout << "" << std::endl;
+    std::cout << " Package: " << std::left << std::setw(47) << name << "" << std::endl;
     if (!version.empty()) {
-        std::cout << "║ Version: " << std::left << std::setw(47) << version << "║" << std::endl;
+        std::cout << " Version: " << std::left << std::setw(47) << version << "" << std::endl;
     }
-    std::cout << "╚════════════════════════════════════════════════════════╝" << std::endl;
+    std::cout << "" << std::endl;
     
     std::vector<std::string> installed;
     return installInternal(name, version, installed);
@@ -216,7 +216,7 @@ InstallStatus PackageManager::installInternal(const std::string& name,
     m_installedPackages[name] = info;
     installed.push_back(name);
     
-    std::cout << "  ✓ Successfully installed " << name << " v" << info.version << std::endl;
+    std::cout << "   Successfully installed " << name << " v" << info.version << std::endl;
     
     return InstallStatus::InstallSuccess;
 }
@@ -282,14 +282,14 @@ bool PackageManager::uninstall(const std::string& name) {
     // Remove from installed list
     m_installedPackages.erase(it);
     
-    std::cout << "  ✓ Successfully uninstalled " << name << std::endl;
+    std::cout << "   Successfully uninstalled " << name << std::endl;
     return true;
 }
 
 int PackageManager::update(const std::string& name) {
-    std::cout << "\n╔════════════════════════════════════════════════════════╗" << std::endl;
-    std::cout << "║          CHECKING FOR UPDATES                          ║" << std::endl;
-    std::cout << "╠════════════════════════════════════════════════════════╣" << std::endl;
+    std::cout << "\n" << std::endl;
+    std::cout << "          CHECKING FOR UPDATES                          " << std::endl;
+    std::cout << "" << std::endl;
     
     int updated = 0;
     
@@ -307,7 +307,7 @@ int PackageManager::update(const std::string& name) {
         std::cout << "    " << name << " is up to date." << std::endl;
     }
     
-    std::cout << "╚════════════════════════════════════════════════════════╝" << std::endl;
+    std::cout << "" << std::endl;
     std::cout << "Updated " << updated << " package(s)" << std::endl;
     
     return updated;

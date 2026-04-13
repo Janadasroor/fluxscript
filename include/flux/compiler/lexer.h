@@ -184,6 +184,7 @@ enum class TokenType {
     tok_integrate = -169,         // integral
     tok_laplace = -170,           // Laplace transform
     tok_inverse_laplace = -171,   // Inverse Laplace
+    tok_evaluate = -172,          // Evaluate symbolic expression
     tok_expand = -173,            // expand expression
     tok_factor = -174,            // factor expression
     tok_numerator = -175,         // get numerator
@@ -339,6 +340,8 @@ public:
 
     int getNextToken();
     int peekToken();  // Look ahead without consuming
+
+    static std::string tokenSpelling(int token);
 
     // Context for the current token
     std::string IdentifierStr; // Filled if tok_identifier

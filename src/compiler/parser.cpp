@@ -82,7 +82,7 @@ bool Parser::IsSynchronizationToken(int token) {
 }
 
 std::unique_ptr<ExprAST> Parser::ParseNumberExpr() {
-    auto Result = std::make_unique<NumberExprAST>(m_lexer.NumVal);
+    auto Result = std::make_unique<NumberExprAST>(m_lexer.NumVal, m_lexer.StringVal);
     getNextToken();
     return Result;
 }
@@ -189,6 +189,13 @@ std::unique_ptr<ExprAST> Parser::ParseParenExpr() {
 
 std::unique_ptr<ExprAST> Parser::ParseIdentifierExpr() {
     std::string IdName = m_lexer.IdentifierStr;
+    
+    // Explicit check for statement keywords that might be misparsed as identifiers
+    if (IdName == "analysis") return ParseAnalysis();
+    if (IdName == "measure") return ParseMeasure();
+    if (IdName == "model") return ParseModel();
+    if (IdName == "subckt") return ParseSubckt();
+
     getNextToken();
 
     // Handle namespace qualifier: math::fft
@@ -248,9 +255,9 @@ std::unique_ptr<ExprAST> Parser::ParseIdentifierExpr() {
         }
         getNextToken(); // eat )
 
-        if (IdName == "V") {
+        if (IdName == "V" || IdName == "v") {
             return std::make_unique<VoltageExprAST>(name);
-        } else if (IdName == "I") {
+        } else if (IdName == "I" || IdName == "i") {
             return std::make_unique<CurrentExprAST>(name);
         } else {
             return std::make_unique<ParameterExprAST>(name);
@@ -378,7 +385,7 @@ std::unique_ptr<ExprAST> Parser::ParseIfStmt() {
     if (CurTok == static_cast<int>(TokenType::tok_else)) {
         getNextToken(); // eat else
         if (CurTok == static_cast<int>(TokenType::tok_if)) {
-            // else if — wrap as a nested IfStmt
+            // else if  wrap as a nested IfStmt
             auto ElseIf = ParseIfStmt();
             if (!ElseIf) return nullptr;
             ElseBody.push_back(std::move(ElseIf));
@@ -460,7 +467,7 @@ std::unique_ptr<ExprAST> Parser::ParseLetExpr() {
     if (CurTok != static_cast<int>(TokenType::tok_identifier)) { ReportError("expected identifier after let/var"); return nullptr; }
     std::string IdName = m_lexer.IdentifierStr;
     getNextToken();
-    FluxType Type(TypeKind::Double);
+    FluxType Type(TypeKind::Auto);
     if (CurTok == static_cast<int>(TokenType::tok_colon)) {
         getNextToken(); // eat :
         Type = FluxType::fromToken(CurTok);
@@ -508,14 +515,16 @@ std::unique_ptr<ExprAST> Parser::ParseLambdaExpr() {
 
 std::unique_ptr<ExprAST> Parser::ParseUnaryExpr() {
     bool isUnary = false;
-    if (isascii(CurTok)) {
-        if (CurTok == '-' || CurTok == '+' || CurTok == static_cast<int>(TokenType::tok_logical_not) || CurTok == static_cast<int>(TokenType::tok_bitwise_not)) isUnary = true;
-    } else {
-        if (CurTok == static_cast<int>(TokenType::tok_bitwise_not) ||
-            CurTok == static_cast<int>(TokenType::tok_logical_not)) isUnary = true;
+    if (CurTok == '-' || CurTok == '+' || 
+        CurTok == static_cast<int>(TokenType::tok_logical_not) || 
+        CurTok == static_cast<int>(TokenType::tok_bitwise_not)) {
+        isUnary = true;
     }
 
-    if (!isUnary || CurTok == '(' || CurTok == ',' || CurTok == '[' || CurTok == static_cast<int>(TokenType::tok_lbrace)) return ParsePrimary();
+    if (!isUnary || CurTok == '(' || CurTok == '[' || CurTok == static_cast<int>(TokenType::tok_lbrace)) {
+        return ParsePrimary();
+    }
+    
     int Opc = CurTok;
     getNextToken();
     if (auto Operand = ParseUnaryExpr()) return std::make_unique<UnaryExprAST>(Opc, std::move(Operand));
@@ -603,6 +612,21 @@ std::unique_ptr<ExprAST> Parser::ParsePrimary() {
         break;
     case static_cast<int>(TokenType::tok_let):
     case static_cast<int>(TokenType::tok_var): Res = ParseLetExpr(); break;
+    case static_cast<int>(TokenType::tok_type_matrix):
+    case static_cast<int>(TokenType::tok_type_vector):
+        getNextToken(); // eat keyword
+        if (CurTok != '(') {
+            ReportError("expected '(' after matrix/vector");
+            return nullptr;
+        }
+        getNextToken(); // eat (
+        Res = ParseExpression();
+        if (CurTok != ')') {
+            ReportError("expected ')' after matrix/vector constructor");
+            return nullptr;
+        }
+        getNextToken(); // eat )
+        break;
     case static_cast<int>(TokenType::tok_fn): Res = ParseLambdaExpr(); break;
     case static_cast<int>(TokenType::tok_import): Res = ParseImport(); break;
     case static_cast<int>(TokenType::tok_debug): Res = ParseDebugStmt(); break;
@@ -611,7 +635,6 @@ std::unique_ptr<ExprAST> Parser::ParsePrimary() {
     case static_cast<int>(TokenType::tok_explain): Res = ParseExplainExpr(); break;
     case static_cast<int>(TokenType::tok_inputs): Res = ParseInputsExpr(); break;
     case static_cast<int>(TokenType::tok_outputs): Res = ParseOutputsExpr(); break;
-    case static_cast<int>(TokenType::tok_substitute): Res = ParseSubstituteStmt(); break;
     case static_cast<int>(TokenType::tok_return):
         getNextToken(); // eat return
         Res = ParseExpression();
@@ -626,6 +649,21 @@ std::unique_ptr<ExprAST> Parser::ParsePrimary() {
     case static_cast<int>(TokenType::tok_try): Res = ParseTryCatchExpr(); break;
     case static_cast<int>(TokenType::tok_throw): Res = ParseThrowExpr(); break;
     case static_cast<int>(TokenType::tok_assert): Res = ParseAssertExpr(); break;
+    
+    // Symbolic math
+    case static_cast<int>(TokenType::tok_sym): Res = ParseSymDecl(); break;
+    case static_cast<int>(TokenType::tok_solve): Res = ParseSolveExpr(); break;
+    case static_cast<int>(TokenType::tok_simplify): Res = ParseSimplifyExpr(); break;
+    case static_cast<int>(TokenType::tok_differentiate): Res = ParseDifferentiateExpr(); break;
+    case static_cast<int>(TokenType::tok_substitute): Res = ParseSubstituteExpr(); break;
+    case static_cast<int>(TokenType::tok_evaluate): Res = ParseEvaluateExpr(); break;
+    
+    // Analysis and Measurements
+    case static_cast<int>(TokenType::tok_analysis): Res = ParseAnalysis(); break;
+    case static_cast<int>(TokenType::tok_measure): Res = ParseMeasure(); break;
+    case static_cast<int>(TokenType::tok_model): Res = ParseModel(); break;
+    case static_cast<int>(TokenType::tok_subckt): Res = ParseSubckt(); break;
+    
     case static_cast<int>(TokenType::tok_settle): Res = ParseSettleDecl(); break;
     case static_cast<int>(TokenType::tok_golden): Res = ParseGoldenDecl(); break;
     case static_cast<int>(TokenType::tok_compare): Res = ParseCompareDecl(); break;
@@ -635,6 +673,15 @@ std::unique_ptr<ExprAST> Parser::ParsePrimary() {
     case static_cast<int>(TokenType::tok_verify): Res = ParseVerifyBlock(); break;
     case static_cast<int>(TokenType::tok_yield): Res = ParseYieldExpr(); break;
     case static_cast<int>(TokenType::tok_corner): Res = ParseCornerExpr(); break;
+    
+    // Explicit SPICE-like keywords
+    case static_cast<int>(TokenType::tok_tran):
+    case static_cast<int>(TokenType::tok_dc):
+    case static_cast<int>(TokenType::tok_ac):
+    case static_cast<int>(TokenType::tok_max):
+    case static_cast<int>(TokenType::tok_min):
+        Res = ParseIdentifierExpr(); break;
+        
     case static_cast<int>(TokenType::tok_match): Res = ParseMatchExpr(); break;
     case static_cast<int>(TokenType::tok_foreach): Res = ParseForeachExpr(); break;
     case static_cast<int>(TokenType::tok_repeat): Res = ParseRepeatUntil(); break;
@@ -643,12 +690,6 @@ std::unique_ptr<ExprAST> Parser::ParsePrimary() {
     // Schematic generation
     case static_cast<int>(TokenType::tok_schematic): Res = ParseSchematicExpr(); break;
     case static_cast<int>(TokenType::tok_export): Res = ParseExportSchematic(); break;
-    
-    // Symbolic math
-    case static_cast<int>(TokenType::tok_sym): Res = ParseSymDecl(); break;
-    case static_cast<int>(TokenType::tok_solve): Res = ParseSolveExpr(); break;
-    case static_cast<int>(TokenType::tok_simplify): Res = ParseSimplifyExpr(); break;
-    case static_cast<int>(TokenType::tok_differentiate): Res = ParseDifferentiateExpr(); break;
 
     // SPICE Time-Domain Simulation
     case static_cast<int>(TokenType::tok_time):
@@ -665,17 +706,12 @@ std::unique_ptr<ExprAST> Parser::ParsePrimary() {
     case static_cast<int>(TokenType::tok_hsource): Res = ParseHSource(); break;
 
     // SPICE Analysis Control
-    case static_cast<int>(TokenType::tok_analysis): Res = ParseAnalysis(); break;
-    case static_cast<int>(TokenType::tok_measure): Res = ParseMeasure(); break;
     case static_cast<int>(TokenType::tok_probe): Res = ParseProbe(); break;
     case static_cast<int>(TokenType::tok_save): Res = ParseSave(); break;
-    case static_cast<int>(TokenType::tok_subckt): Res = ParseSubckt(); break;
-    case static_cast<int>(TokenType::tok_model): Res = ParseModel(); break;
     case static_cast<int>(TokenType::tok_param): Res = ParseParam(); break;
     case static_cast<int>(TokenType::tok_ic): Res = ParseIC(); break;
 
     /* Section 7.2: Mixed-Signal & Modeling Extensions */
-    case static_cast<int>(TokenType::tok_cross): Res = ParseCrossExpr(); break;
     case static_cast<int>(TokenType::tok_above): Res = ParseAboveExpr(); break;
     case static_cast<int>(TokenType::tok_timer): Res = ParseTimerExpr(); break;
     case static_cast<int>(TokenType::tok_fsm): Res = ParseFSMExpr(); break;
@@ -1275,103 +1311,93 @@ std::unique_ptr<ExprAST> Parser::ParseHSource() {
     
     return std::make_unique<HSourceExprAST>(Name, PosNode, NegNode, VSourceName, std::move(Transres));
 }
-
 // Parse analysis directive: analysis tran { tstop, tstart, tstep }
-std::unique_ptr<ExprAST> Parser::ParseAnalysis() {
+std::unique_ptr<AnalysisExprAST> Parser::ParseAnalysis() {
     getNextToken(); // eat analysis
-    
-    if (CurTok != static_cast<int>(TokenType::tok_identifier)) {
-        ReportError("expected analysis type");
-        return nullptr;
-    }
-    
-    std::string AnalysisTypeStr = m_lexer.IdentifierStr;
-    getNextToken();
-    
+
+    std::string typeStr = Lexer::tokenSpelling(CurTok);
     AnalysisType AType;
-    if (AnalysisTypeStr == "tran") AType = AnalysisType::TRAN;
-    else if (AnalysisTypeStr == "dc") AType = AnalysisType::DC;
-    else if (AnalysisTypeStr == "ac") AType = AnalysisType::AC;
-    else if (AnalysisTypeStr == "noise") AType = AnalysisType::NOISE;
-    else if (AnalysisTypeStr == "op") AType = AnalysisType::OP;
-    else if (AnalysisTypeStr == "tf") AType = AnalysisType::TF;
-    else if (AnalysisTypeStr == "sens") AType = AnalysisType::SENS;
-    else if (AnalysisTypeStr == "fourier") AType = AnalysisType::FOURIER;
+
+    if (typeStr == "tran") AType = AnalysisType::TRAN;
+    else if (typeStr == "dc") AType = AnalysisType::DC;
+    else if (typeStr == "ac") AType = AnalysisType::AC;
+    else if (typeStr == "noise") AType = AnalysisType::NOISE;
+    else if (typeStr == "op") AType = AnalysisType::OP;
+    else if (typeStr == "tf") AType = AnalysisType::TF;
+    else if (typeStr == "sens") AType = AnalysisType::SENS;
+    else if (typeStr == "fourier") AType = AnalysisType::FOURIER;
     else {
-        ReportError("unknown analysis type: " + AnalysisTypeStr);
+        ReportError("expected analysis type, found: " + typeStr);
         return nullptr;
     }
-    
+
+    getNextToken(); // eat type
+
     auto Analysis = std::make_unique<AnalysisExprAST>(AType);
-    
+
     // Parse parameters in braces
     if (CurTok == static_cast<int>(TokenType::tok_lbrace)) {
         getNextToken(); // eat {
-        
+
         while (CurTok != static_cast<int>(TokenType::tok_rbrace) && CurTok != static_cast<int>(TokenType::tok_eof)) {
-            if (CurTok == static_cast<int>(TokenType::tok_identifier)) {
-                std::string ParamName = m_lexer.IdentifierStr;
+            if (CurTok == static_cast<int>(TokenType::tok_identifier) || CurTok < 0) {
+                std::string ParamName = Lexer::tokenSpelling(CurTok);
                 getNextToken();
-                
+
                 if (CurTok != '=') {
                     ReportError("expected '=' after parameter name");
                     return nullptr;
                 }
                 getNextToken(); // eat =
-                
+
                 auto ParamValue = ParseExpression();
                 if (!ParamValue) return nullptr;
-                
+
                 Analysis->addParameter(ParamName, std::move(ParamValue));
             }
-            
+
             if (CurTok == ',') getNextToken();
         }
-        
+
         if (CurTok == static_cast<int>(TokenType::tok_rbrace)) {
             getNextToken(); // eat }
         }
     }
-    
+
     return Analysis;
 }
-
 // Parse measure directive: measure name MAX { expression, params }
-std::unique_ptr<ExprAST> Parser::ParseMeasure() {
+std::unique_ptr<MeasureExprAST> Parser::ParseMeasure() {
     getNextToken(); // eat measure
-    
+
     if (CurTok != static_cast<int>(TokenType::tok_identifier)) {
         ReportError("expected measurement name");
         return nullptr;
     }
     std::string Name = m_lexer.IdentifierStr;
     getNextToken();
-    
+
+    // CurTok now points to the measurement type (MAX, MIN, etc.)
     // Parse measurement type
-    if (CurTok != static_cast<int>(TokenType::tok_identifier)) {
-        ReportError("expected measurement type (MAX, MIN, AVG, RMS, etc.)");
-        return nullptr;
-    }
-    
-    std::string MeasureTypeStr = m_lexer.IdentifierStr;
-    getNextToken();
-    
+    std::string typeStr = Lexer::tokenSpelling(CurTok);
     MeasureType MType;
-    if (MeasureTypeStr == "MAX") MType = MeasureType::MAX;
-    else if (MeasureTypeStr == "MIN") MType = MeasureType::MIN;
-    else if (MeasureTypeStr == "AVG") MType = MeasureType::AVG;
-    else if (MeasureTypeStr == "RMS") MType = MeasureType::RMS;
-    else if (MeasureTypeStr == "TRIG") MType = MeasureType::TRIG;
-    else if (MeasureTypeStr == "TARG") MType = MeasureType::TARG;
-    else if (MeasureTypeStr == "WHEN") MType = MeasureType::WHEN;
-    else if (MeasureTypeStr == "FIND") MType = MeasureType::FIND;
-    else if (MeasureTypeStr == "DERIV") MType = MeasureType::DERIV;
-    else if (MeasureTypeStr == "INTEG") MType = MeasureType::INTEG;
+    if (typeStr == "MAX") MType = MeasureType::MAX;
+    else if (typeStr == "MIN") MType = MeasureType::MIN;
+    else if (typeStr == "AVG") MType = MeasureType::AVG;
+    else if (typeStr == "RMS") MType = MeasureType::RMS;
+    else if (typeStr == "TRIG") MType = MeasureType::TRIG;
+    else if (typeStr == "TARG") MType = MeasureType::TARG;
+    else if (typeStr == "WHEN") MType = MeasureType::WHEN;
+    else if (typeStr == "FIND") MType = MeasureType::FIND;
+    else if (typeStr == "DERIV") MType = MeasureType::DERIV;
+    else if (typeStr == "INTEG") MType = MeasureType::INTEG;
     else {
-        ReportError("unknown measurement type: " + MeasureTypeStr);
+        ReportError("expected measurement type, found: " + typeStr);
         return nullptr;
     }
-    
+
+    getNextToken(); // eat type
+
     // Parse expression
     auto Expr = ParseExpression();
     if (!Expr) {
@@ -1453,7 +1479,7 @@ std::unique_ptr<ExprAST> Parser::ParseSave() {
 }
 
 // Parse subckt definition: subckt name (pin1, pin2, ...) { params... body... }
-std::unique_ptr<ExprAST> Parser::ParseSubckt() {
+std::unique_ptr<SubcktAST> Parser::ParseSubckt() {
     getNextToken(); // eat subckt
     
     if (CurTok != static_cast<int>(TokenType::tok_identifier)) {
@@ -1469,13 +1495,12 @@ std::unique_ptr<ExprAST> Parser::ParseSubckt() {
         getNextToken(); // eat (
         
         while (CurTok != ')' && CurTok != static_cast<int>(TokenType::tok_eof)) {
-            if (CurTok != static_cast<int>(TokenType::tok_identifier)) {
+            if (CurTok != static_cast<int>(TokenType::tok_identifier) && CurTok >= 0) {
                 ReportError("expected pin name");
                 return nullptr;
             }
             Pins.push_back(m_lexer.IdentifierStr);
             getNextToken();
-            
             if (CurTok == ',') getNextToken();
         }
         
@@ -1518,7 +1543,7 @@ std::unique_ptr<ExprAST> Parser::ParseSubckt() {
 }
 
 // Parse model declaration: model name type { params }
-std::unique_ptr<ExprAST> Parser::ParseModel() {
+std::unique_ptr<ModelAST> Parser::ParseModel() {
     getNextToken(); // eat model
     
     if (CurTok != static_cast<int>(TokenType::tok_identifier)) {
@@ -1636,40 +1661,6 @@ std::unique_ptr<ExprAST> Parser::ParseIC() {
 /* ========================================================================
  * Section 7.2: Mixed-Signal & Modeling Extensions - Parser
  * ======================================================================== */
-
-// Parse cross(expr, [rise_fall])
-std::unique_ptr<ExprAST> Parser::ParseCrossExpr() {
-    getNextToken(); // eat cross
-
-    if (CurTok != '(') {
-        ReportError("expected '(' after 'cross'");
-        return nullptr;
-    }
-    getNextToken(); // eat (
-
-    auto Expr = ParseExpression();
-    if (!Expr) return nullptr;
-
-    int RiseFall = 0; // Default: detect any crossing
-    if (CurTok == ',') {
-        getNextToken(); // eat ,
-        if (CurTok == static_cast<int>(TokenType::tok_number)) {
-            RiseFall = static_cast<int>(m_lexer.NumVal);
-            getNextToken();
-        } else {
-            ReportError("expected numeric rise/fall indicator (-1, 0, or 1)");
-            return nullptr;
-        }
-    }
-
-    if (CurTok != ')') {
-        ReportError("expected ')' after cross expression");
-        return nullptr;
-    }
-    getNextToken(); // eat )
-
-    return std::make_unique<CrossExprAST>(std::move(Expr), RiseFall);
-}
 
 // Parse above(expr, threshold)
 std::unique_ptr<ExprAST> Parser::ParseAboveExpr() {

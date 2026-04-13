@@ -51,11 +51,20 @@ struct CompileArtifacts {
     std::map<std::string, FluxType> functionReturnTypes;
 };
 
+struct ParsedAST {
+    std::vector<std::unique_ptr<FunctionAST>> functions;
+    std::vector<std::unique_ptr<SubcktAST>> subckts;
+    std::vector<std::unique_ptr<ModelAST>> models;
+    std::vector<std::unique_ptr<AnalysisExprAST>> analyses;
+    std::vector<std::unique_ptr<MeasureExprAST>> measures;
+};
+
 class CompilerInstance {
 public:
     explicit CompilerInstance(CompilerOptions options = {});
 
     std::vector<TokenInfo> tokenize(const std::string& code, std::string* error = nullptr) const;
+    std::unique_ptr<ParsedAST> parse(const std::string& code, std::string* error = nullptr) const;
     std::unique_ptr<CompileArtifacts> compileToIR(const std::string& code, std::string* error = nullptr);
     std::string emitLLVMIR(const std::string& code, std::string* error = nullptr);
 

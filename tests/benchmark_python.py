@@ -365,25 +365,25 @@ def run_benchmarks():
     print("="*80)
     print("""
 1. NATIVE PERFORMANCE:
-   • Python (pure):     Baseline (1.0x) - SLOWEST
-   • Python + NumPy:    10-100x faster for vectorized ops
-   • FluxScript Native: Expected ~50-100x faster than Python
-   • C++ Optimized:     Expected ~100-200x faster than Python
+    Python (pure):     Baseline (1.0x) - SLOWEST
+    Python + NumPy:    10-100x faster for vectorized ops
+    FluxScript Native: Expected ~50-100x faster than Python
+    C++ Optimized:     Expected ~100-200x faster than Python
 
 2. NUMPY ADVANTAGE:
-   • Vector ops:        50-100x speedup
-   • Matrix ops:        100-500x speedup (BLAS)
-   • Single call overhead: ~10-50μs
+    Vector ops:        50-100x speedup
+    Matrix ops:        100-500x speedup (BLAS)
+    Single call overhead: ~10-50s
 
 3. PYTHON BRIDGE GUIDELINES:
-   ✓ Use for: Setup, I/O, post-processing, vectorized ops
-   ✗ Avoid: Hot loops, element-wise operations, real-time
+    Use for: Setup, I/O, post-processing, vectorized ops
+    Avoid: Hot loops, element-wise operations, real-time
 
 4. RECOMMENDATIONS:
-   • Use FluxScript native for computation hot paths
-   • Use Python Bridge for ecosystem access (NumPy, SciPy)
-   • Vectorize Python calls (single call, bulk data)
-   • Cache Python results to minimize bridge crossings
+    Use FluxScript native for computation hot paths
+    Use Python Bridge for ecosystem access (NumPy, SciPy)
+    Vectorize Python calls (single call, bulk data)
+    Cache Python results to minimize bridge crossings
 """)
     
     return runner.results

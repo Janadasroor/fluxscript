@@ -1,6 +1,6 @@
 // ============================================================================
 // FluxScript JIT Benchmark Suite
-// Compiles actual FluxScript source via the real CompilerInstance → FluxJIT
+// Compiles actual FluxScript source via the real CompilerInstance  FluxJIT
 // pipeline and measures execution performance.
 // ============================================================================
 
@@ -100,14 +100,14 @@ static double exec_benchmark_1arg(void* fn_ptr, double arg, int iterations, doub
         double compile_ms = 0; \
         void* fn = compile_flux_script(source, func_name, &compile_ms, &error); \
         if (!fn) { \
-            printf("  ❌ %-30s COMPILE ERROR: %s\n", name, error.c_str()); \
+            printf("   %-30s COMPILE ERROR: %s\n", name, error.c_str()); \
         } else { \
             double per_iter_ns = 0; \
             double result = exec_benchmark(fn, iterations, &per_iter_ns); \
             double exec_ms = (per_iter_ns * iterations) / 1e6; \
             (void)result; \
             g_results.push_back({name, category, compile_ms, exec_ms, per_iter_ns, iterations}); \
-            printf("  ✅ %-30s compile=%.2fms  exec=%.2fms  %.1fns/iter  (%d iters)\n", \
+            printf("   %-30s compile=%.2fms  exec=%.2fms  %.1fns/iter  (%d iters)\n", \
                    name, compile_ms, exec_ms, per_iter_ns, iterations); \
         } \
     } while(0)
@@ -118,26 +118,26 @@ static double exec_benchmark_1arg(void* fn_ptr, double arg, int iterations, doub
         double compile_ms = 0; \
         void* fn = compile_flux_script(source, func_name, &compile_ms, &error); \
         if (!fn) { \
-            printf("  ❌ %-30s COMPILE ERROR: %s\n", name, error.c_str()); \
+            printf("   %-30s COMPILE ERROR: %s\n", name, error.c_str()); \
         } else { \
             double per_iter_ns = 0; \
             double result = exec_benchmark_1arg(fn, arg, iterations, &per_iter_ns); \
             double exec_ms = (per_iter_ns * iterations) / 1e6; \
             (void)result; \
             g_results.push_back({name, category, compile_ms, exec_ms, per_iter_ns, iterations}); \
-            printf("  ✅ %-30s compile=%.2fms  exec=%.2fms  %.1fns/iter  (%d iters)\n", \
+            printf("   %-30s compile=%.2fms  exec=%.2fms  %.1fns/iter  (%d iters)\n", \
                    name, compile_ms, exec_ms, per_iter_ns, iterations); \
         } \
     } while(0)
 
 int main() {
     printf("\n");
-    printf("╔══════════════════════════════════════════════════════════╗\n");
-    printf("║   FluxScript JIT Benchmark Suite (Real LLVM Pipeline)   ║\n");
-    printf("╚══════════════════════════════════════════════════════════╝\n\n");
+    printf("\n");
+    printf("   FluxScript JIT Benchmark Suite (Real LLVM Pipeline)   \n");
+    printf("\n\n");
 
     // === Math Benchmarks ===
-    printf("  ─── Math ───\n");
+    printf("   Math \n");
     BENCHMARK("math_sin_10k", "Math",
         "def compute() {\n"
         "    var r = 0.0\n"
@@ -179,7 +179,7 @@ int main() {
         "compute", 100);
 
     // === Signal Processing ===
-    printf("\n  ─── Signal Processing ───\n");
+    printf("\n   Signal Processing \n");
     BENCHMARK("signal_sine_wave", "Signal",
         "def compute() {\n"
         "    var r = 0.0\n"
@@ -202,7 +202,7 @@ int main() {
         "compute", 100);
 
     // === Control Flow ===
-    printf("\n  ─── Control Flow ───\n");
+    printf("\n   Control Flow \n");
     BENCHMARK("control_if_branch", "ControlFlow",
         "def compute() {\n"
         "    var r = 0.0\n"
@@ -218,7 +218,7 @@ int main() {
         "compute", 100);
 
     // === Native C++ baseline (for comparison) ===
-    printf("\n  ─── Native C++ Baseline ───\n");
+    printf("\n   Native C++ Baseline \n");
 
     auto native_start = std::chrono::high_resolution_clock::now();
     volatile double native_result = 0;
@@ -232,13 +232,13 @@ int main() {
     auto native_end = std::chrono::high_resolution_clock::now();
     double native_ms = std::chrono::duration<double, std::milli>(native_end - native_start).count();
     double native_per_iter = (native_ms / 100) * 1e6;
-    printf("  📊 native_sin_10k (C++):         exec=%.2fms  %.1fns/iter  (100 iters)\n",
+    printf("   native_sin_10k (C++):         exec=%.2fms  %.1fns/iter  (100 iters)\n",
            native_ms, native_per_iter);
 
     // === Summary ===
-    printf("\n╔══════════════════════════════════════════════════════════╗\n");
-    printf("║                      Summary                              ║\n");
-    printf("╚══════════════════════════════════════════════════════════╝\n\n");
+    printf("\n\n");
+    printf("                      Summary                              \n");
+    printf("\n\n");
 
     printf("  %-30s %10s %10s %12s\n", "Benchmark", "Compile", "Execute", "ns/iter");
     printf("  %-30s %10s %10s %12s\n", "---------", "--------", "-------", "-------");

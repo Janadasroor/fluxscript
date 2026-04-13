@@ -22,9 +22,9 @@ using namespace Flux::Doctor;
 
 int main(int argc, char** argv) {
     std::cout << "\n";
-    std::cout << "╔══════════════════════════════════════════════════════════╗\n";
-    std::cout << "║          FluxScript AI Circuit Doctor                   ║\n";
-    std::cout << "╚══════════════════════════════════════════════════════════╝\n";
+    std::cout << "\n";
+    std::cout << "          FluxScript AI Circuit Doctor                   \n";
+    std::cout << "\n";
     std::cout << "\n";
 
     if (argc < 2) {
@@ -54,8 +54,8 @@ int main(int argc, char** argv) {
         }
     }
 
-    std::cout << "📄 Analyzing: " << filename << "\n";
-    std::cout << "🔍 Running 8 diagnostic rules...\n\n";
+    std::cout << " Analyzing: " << filename << "\n";
+    std::cout << " Running 8 diagnostic rules...\n\n";
 
     // Create Doctor
     CircuitDoctor doctor;

@@ -494,7 +494,7 @@ std::string SourceDocGenerator::generateFunctionDoc(const FunctionDoc& func, con
         }
         oss << "**Returns:** `" << func.returnType << "`\n";
         if (!func.deprecated.empty()) {
-            oss << "\n> ⚠️ **Deprecated:** " << func.deprecated << "\n";
+            oss << "\n>  **Deprecated:** " << func.deprecated << "\n";
         }
         return oss.str();
     }

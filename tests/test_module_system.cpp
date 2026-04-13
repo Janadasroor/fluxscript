@@ -38,7 +38,7 @@ static int g_failed = 0;
     } \
 } while(0)
 
-#define PASS() do { std::cout << "✅ PASSED\n"; g_passed++; } while(0)
+#define PASS() do { std::cout << " PASSED\n"; g_passed++; } while(0)
 #define FAIL(msg) do { std::cerr << "FAILED: " << msg << "\n"; g_failed++; } while(0)
 
 static bool compileAndCheck(const std::string& mainCode, const std::string& inputName = "test.flux") {
@@ -154,10 +154,10 @@ int main() {
     std::cout << "========================================\n";
 
     if (g_failed == 0) {
-        std::cout << "  ✅ ALL MODULE SYSTEM TESTS PASSED\n\n";
+        std::cout << "   ALL MODULE SYSTEM TESTS PASSED\n\n";
         return 0;
     } else {
-        std::cout << "  ❌ " << g_failed << " TESTS FAILED\n\n";
+        std::cout << "   " << g_failed << " TESTS FAILED\n\n";
         return 1;
     }
 }

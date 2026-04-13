@@ -396,7 +396,7 @@ StabilityResult OpAmpStabilityAnalyzer::analyze() {
     std::cout << "\n=== Op-Amp Stability Analysis ===\n";
     std::cout << "Model: " << m_model.name << "\n";
     std::cout << "Closed-loop Gain: " << m_closedLoopGain << "\n\n";
-    std::cout << "Phase Margin: " << m_lastResult.phaseMargin << "°\n";
+    std::cout << "Phase Margin: " << m_lastResult.phaseMargin << "\n";
     std::cout << "Gain Margin: " << m_lastResult.gainMargin << " dB\n";
     std::cout << "Unity Gain Freq: " << (m_lastResult.unityGainFreq / 1e6) << " MHz\n";
     std::cout << "Bandwidth: " << (m_lastResult.bandwidth / 1e6) << " MHz\n";

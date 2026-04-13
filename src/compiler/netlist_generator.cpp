@@ -54,7 +54,8 @@ std::string NetlistGenerator::generateNetlist(
     const std::vector<std::unique_ptr<FunctionAST>>& functions,
     const std::vector<std::unique_ptr<SubcktAST>>& subckts,
     const std::vector<std::unique_ptr<ModelAST>>& models,
-    const std::vector<std::unique_ptr<AnalysisDeclAST>>& analyses) {
+    const std::vector<std::unique_ptr<AnalysisDeclAST>>& analyses,
+    const std::vector<std::unique_ptr<MeasureDeclAST>>& measures) {
     
     m_netlist.str("");
     m_netlist.clear();
@@ -68,13 +69,16 @@ std::string NetlistGenerator::generateNetlist(
     for (const auto& model : models) {
         m_netlist << generateModelCard(model.get());
     }
-    m_netlist << "\n";
     
     // Subcircuits
     for (const auto& subckt : subckts) {
         m_netlist << generateSubcktCard(subckt.get());
     }
-    m_netlist << "\n";
+    
+    // Measures
+    for (const auto& measure : measures) {
+        m_netlist << generateMeasureCard(measure.get());
+    }
     
     // Analysis
     for (const auto& analysis : analyses) {

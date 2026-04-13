@@ -51,11 +51,17 @@ extern "C" FluxSimulationService* g_flux_sim_service = nullptr;
 
 // Symbolic function declarations (must be before registerRuntimeFunctions)
 extern "C" double flux_sym_decl(const char* name);
+extern "C" double flux_sym_number(double val);
+extern "C" double flux_sym_add(double a_ptr, double b_ptr);
+extern "C" double flux_sym_sub(double a_ptr, double b_ptr);
+extern "C" double flux_sym_mul(double a_ptr, double b_ptr);
+extern "C" double flux_sym_div(double a_ptr, double b_ptr);
+extern "C" double flux_sym_pow(double a_ptr, double b_ptr);
 extern "C" double flux_sym_simplify(double expr_ptr);
 extern "C" double flux_sym_differentiate(double expr_ptr, const char* var);
-extern "C" double flux_sym_substitute(double expr_ptr, double var_count, double var_names_ptr, double var_values_ptr);
+extern "C" double flux_sym_substitute(double expr_ptr, double var_count, void* var_names_ptr, void* var_values_ptr);
 extern "C" double flux_sym_solve(double lhs_ptr, double rhs_ptr, const char* var);
-extern "C" double flux_sym_evaluate(double expr_ptr, double var_count, double var_names_ptr, double var_values_ptr);
+extern "C" double flux_sym_evaluate(double expr_ptr, double var_count, void* var_names_ptr, void* var_values_ptr);
 extern "C" double flux_sym_expand(double expr_ptr);
 extern "C" double flux_sym_factor(double expr_ptr);
 extern "C" double flux_sym_laplace(double expr_ptr, const char* t_var, const char* s_var);
@@ -64,6 +70,28 @@ extern "C" double flux_sym_poles(double expr_ptr);
 extern "C" double flux_sym_zeros(double expr_ptr);
 extern "C" double flux_sym_to_string(double expr_ptr);
 extern "C" void flux_parallel_for(int64_t start, int64_t end, int64_t chunk_size, void* body_func_ptr);
+extern "C" double flux_print_double(double x);
+extern "C" double flux_matrix_det(void* m_ptr);
+extern "C" void* flux_matrix_inv(void* m_ptr);
+extern "C" void* flux_matrix_eig(void* m_ptr);
+extern "C" double flux_vector_dot(double* v1_ptr, int len1, double* v2_ptr, int len2);
+extern "C" void* flux_vector_cross(double* v1_ptr, int len1, double* v2_ptr, int len2);
+extern "C" double flux_vector_norm(double* v_ptr, int len);
+extern "C" double flux_register_analysis(const char* type);
+extern "C" double flux_register_measure(const char* name, const char* type);
+extern "C" double flux_register_subckt(double name_ptr, double pins_ptr);
+extern "C" double flux_register_model(double name_ptr, double type_ptr);
+extern "C" double flux_register_param(const char* name, double value);
+
+extern "C" const char* flux_string_concat_double(const char* s, double d);
+extern "C" const char* flux_string_concat_matrix(const char* s, double* data, int rows, int cols);
+extern "C" const char* flux_string_concat_string(const char* s1, const char* s2);
+
+// Forward declaration of exception handler
+extern "C" void flux_throw_error(double error_code, const char* message);
+extern "C" void* flux_get_current_jmp_buf();
+extern "C" void flux_push_jmp_buf(void* buf);
+extern "C" void flux_pop_jmp_buf();
 
 namespace Flux {
 
@@ -87,11 +115,17 @@ void registerRuntimeFunctions(FluxJIT& jit) {
     jit.registerFunction("flux_matrix_sub_ms", reinterpret_cast<void*>(&flux_matrix_sub_ms));
     jit.registerFunction("flux_matrix_sub_sm", reinterpret_cast<void*>(&flux_matrix_sub_sm));
     jit.registerFunction("flux_matrix_transpose", reinterpret_cast<void*>(&flux_matrix_transpose));
+    jit.registerFunction("flux_matrix_rows", reinterpret_cast<void*>(&flux_matrix_rows));
+    jit.registerFunction("flux_matrix_cols", reinterpret_cast<void*>(&flux_matrix_cols));
     jit.registerFunction("flux_matrix_get", reinterpret_cast<void*>(&flux_matrix_get));
     jit.registerFunction("flux_create_matrix", reinterpret_cast<void*>(&flux_create_matrix));
     jit.registerFunction("print_matrix", reinterpret_cast<void*>(&flux_print_matrix));
-
     jit.registerFunction("print_string", reinterpret_cast<void*>(&flux_print_string));
+    jit.registerFunction("flux_string_concat_double", reinterpret_cast<void*>(&flux_string_concat_double));
+    jit.registerFunction("flux_string_concat_matrix", reinterpret_cast<void*>(&flux_string_concat_matrix));
+    jit.registerFunction("flux_string_concat_string", reinterpret_cast<void*>(&flux_string_concat_string));
+
+    jit.registerFunction("flux_print_double", reinterpret_cast<void*>(&flux_print_double));
 
     jit.registerFunction("flux_get_voltage", reinterpret_cast<void*>(&flux_get_voltage));
     jit.registerFunction("flux_get_current", reinterpret_cast<void*>(&flux_get_current));
@@ -108,7 +142,7 @@ void registerRuntimeFunctions(FluxJIT& jit) {
     jit.registerFunction("uramp", reinterpret_cast<void*>(&flux_uramp));
     jit.registerFunction("limit", reinterpret_cast<void*>(&flux_limit));
     jit.registerFunction("buf", reinterpret_cast<void*>(&flux_buf));
-    jit.registerFunction("inv", reinterpret_cast<void*>(&flux_inv));
+    jit.registerFunction("logic_not", reinterpret_cast<void*>(&flux_inv));
 
     jit.registerFunction("sin", reinterpret_cast<void*>(&flux_sin));
     jit.registerFunction("cos", reinterpret_cast<void*>(&flux_cos));
@@ -132,6 +166,21 @@ void registerRuntimeFunctions(FluxJIT& jit) {
 
     jit.registerFunction("pi", reinterpret_cast<void*>(&flux_pi));
     jit.registerFunction("e", reinterpret_cast<void*>(&flux_e));
+    jit.registerFunction("flux_throw_error", reinterpret_cast<void*>(&flux_throw_error));
+    jit.registerFunction("flux_get_current_jmp_buf", reinterpret_cast<void*>(&flux_get_current_jmp_buf));
+    jit.registerFunction("flux_push_jmp_buf", reinterpret_cast<void*>(&flux_push_jmp_buf));
+    jit.registerFunction("flux_pop_jmp_buf", reinterpret_cast<void*>(&flux_pop_jmp_buf));
+
+    // Matrix/Vector math
+    jit.registerFunction("flux_matrix_det", reinterpret_cast<void*>(&flux_matrix_det));
+    jit.registerFunction("flux_matrix_inv", reinterpret_cast<void*>(&flux_matrix_inv));
+    jit.registerFunction("flux_matrix_eig", reinterpret_cast<void*>(&flux_matrix_eig));
+    jit.registerFunction("det", reinterpret_cast<void*>(&flux_matrix_det));
+    jit.registerFunction("inv", reinterpret_cast<void*>(&flux_matrix_inv));
+    jit.registerFunction("eig", reinterpret_cast<void*>(&flux_matrix_eig));
+    jit.registerFunction("dot", reinterpret_cast<void*>(&flux_vector_dot));
+    jit.registerFunction("cross", reinterpret_cast<void*>(&flux_vector_cross));
+    jit.registerFunction("norm", reinterpret_cast<void*>(&flux_vector_norm));
 
     // Security functions
     jit.registerFunction("flux_bounds_check_row", reinterpret_cast<void*>(&flux_bounds_check_row));
@@ -206,6 +255,12 @@ void registerRuntimeFunctions(FluxJIT& jit) {
 
     // Symbolic math functions
     jit.registerFunction("flux_sym_decl", reinterpret_cast<void*>(&flux_sym_decl));
+    jit.registerFunction("flux_sym_number", reinterpret_cast<void*>(&flux_sym_number));
+    jit.registerFunction("flux_sym_add", reinterpret_cast<void*>(&flux_sym_add));
+    jit.registerFunction("flux_sym_sub", reinterpret_cast<void*>(&flux_sym_sub));
+    jit.registerFunction("flux_sym_mul", reinterpret_cast<void*>(&flux_sym_mul));
+    jit.registerFunction("flux_sym_div", reinterpret_cast<void*>(&flux_sym_div));
+    jit.registerFunction("flux_sym_pow", reinterpret_cast<void*>(&flux_sym_pow));
     jit.registerFunction("flux_sym_simplify", reinterpret_cast<void*>(&flux_sym_simplify));
     jit.registerFunction("flux_sym_differentiate", reinterpret_cast<void*>(&flux_sym_differentiate));
     jit.registerFunction("flux_sym_substitute", reinterpret_cast<void*>(&flux_sym_substitute));
@@ -217,6 +272,11 @@ void registerRuntimeFunctions(FluxJIT& jit) {
     jit.registerFunction("flux_sym_inverse_laplace", reinterpret_cast<void*>(&flux_sym_inverse_laplace));
     jit.registerFunction("flux_sym_poles", reinterpret_cast<void*>(&flux_sym_poles));
     jit.registerFunction("flux_sym_zeros", reinterpret_cast<void*>(&flux_sym_zeros));
+    jit.registerFunction("flux_register_analysis", reinterpret_cast<void*>(&flux_register_analysis));
+    jit.registerFunction("flux_register_measure", reinterpret_cast<void*>(&flux_register_measure));
+    jit.registerFunction("flux_register_subckt", reinterpret_cast<void*>(&flux_register_subckt));
+    jit.registerFunction("flux_register_model", reinterpret_cast<void*>(&flux_register_model));
+    jit.registerFunction("flux_register_param", reinterpret_cast<void*>(&flux_register_param));
     jit.registerFunction("flux_sym_to_string", reinterpret_cast<void*>(&flux_sym_to_string));
 
     // Parallel runtime function
@@ -241,6 +301,12 @@ extern "C" double flux_print_string(const char* str) {
     std::printf("%s", str);
     std::fflush(stdout);
     return 0.0;
+}
+
+extern "C" double flux_print_double(double x) {
+    std::printf("%g", x);
+    std::fflush(stdout);
+    return x;
 }
 
 extern "C" double flux_get_voltage(double node_ptr_double) {
@@ -456,131 +522,143 @@ extern "C" double flux_trapz(double* y_data, double* x_data, int size) {
     return integral;
 }
 
-extern "C" void* flux_create_matrix(double* data, int rows, int cols) {
-    auto* mat = new Eigen::MatrixXd(rows, cols);
-    for (int r = 0; r < rows; ++r) {
-        for (int c = 0; c < cols; ++c)
-            (*mat)(r, c) = data[r * cols + c];
+#include <unordered_map>
+#include <mutex>
+
+// Central tracker for matrix memory management
+struct MatrixTracker {
+    std::unordered_map<void*, std::unique_ptr<Eigen::MatrixXd>> matrices;
+    std::mutex mutex;
+
+    void* register_matrix(std::unique_ptr<Eigen::MatrixXd> mat) {
+        std::lock_guard<std::mutex> lock(mutex);
+        void* ptr = static_cast<void*>(mat.get());
+        matrices[ptr] = std::move(mat);
+        return ptr;
     }
-    return mat;
+};
+
+static MatrixTracker g_matrix_tracker;
+
+extern "C" void* flux_create_matrix(double* data, int rows, int cols) {
+    auto mat = std::make_unique<Eigen::MatrixXd>(rows, cols);
+    if (data) {
+        for (int r = 0; r < rows; ++r) {
+            for (int c = 0; c < cols; ++c)
+                (*mat)(r, c) = data[r * cols + c];
+        }
+    } else {
+        mat->setZero();
+    }
+    return g_matrix_tracker.register_matrix(std::move(mat));
 }
 
 extern "C" void* flux_matrix_mul(void* a_ptr, void* b_ptr) {
+    if (!a_ptr || !b_ptr) return nullptr;
     auto* A = static_cast<Eigen::MatrixXd*>(a_ptr);
     auto* B = static_cast<Eigen::MatrixXd*>(b_ptr);
-    return new Eigen::MatrixXd((*A) * (*B));
+    return g_matrix_tracker.register_matrix(std::make_unique<Eigen::MatrixXd>((*A) * (*B)));
 }
 
 extern "C" void* flux_matrix_mul_ms(void* m_ptr, double s) {
+    if (!m_ptr) return nullptr;
     auto* M = static_cast<Eigen::MatrixXd*>(m_ptr);
-    return new Eigen::MatrixXd((*M) * s);
+    return g_matrix_tracker.register_matrix(std::make_unique<Eigen::MatrixXd>((*M) * s));
 }
 
 extern "C" void* flux_matrix_add(void* a_ptr, void* b_ptr) {
+    if (!a_ptr || !b_ptr) return nullptr;
     auto* A = static_cast<Eigen::MatrixXd*>(a_ptr);
     auto* B = static_cast<Eigen::MatrixXd*>(b_ptr);
-    
-    if (A->rows() == B->rows() && A->cols() == B->cols())
-        return new Eigen::MatrixXd((*A) + (*B));
-    
-    if (A->rows() == B->rows() && B->cols() == 1)
-        return new Eigen::MatrixXd(A->colwise() + B->col(0));
-    
-    if (A->cols() == B->cols() && B->rows() == 1)
-        return new Eigen::MatrixXd(A->rowwise() + B->row(0));
-        
-    if (B->rows() == A->rows() && A->cols() == 1)
-        return new Eigen::MatrixXd(B->colwise() + A->col(0));
-        
-    if (B->cols() == A->cols() && A->rows() == 1)
-        return new Eigen::MatrixXd(B->rowwise() + A->row(0));
 
-    return new Eigen::MatrixXd((*A) + (*B)); // Fallback (will likely assert in Eigen)
+    if (A->rows() == B->rows() && A->cols() == B->cols())
+        return g_matrix_tracker.register_matrix(std::make_unique<Eigen::MatrixXd>((*A) + (*B)));
+
+    // Broadcasting support
+    if (A->rows() == B->rows() && B->cols() == 1)
+        return g_matrix_tracker.register_matrix(std::make_unique<Eigen::MatrixXd>(A->colwise() + B->col(0)));
+    if (A->cols() == B->cols() && B->rows() == 1)
+        return g_matrix_tracker.register_matrix(std::make_unique<Eigen::MatrixXd>(A->rowwise() + B->row(0)));
+
+    return g_matrix_tracker.register_matrix(std::make_unique<Eigen::MatrixXd>((*A) + (*B)));
 }
 
 extern "C" void* flux_matrix_sub(void* a_ptr, void* b_ptr) {
+    if (!a_ptr || !b_ptr) return nullptr;
     auto* A = static_cast<Eigen::MatrixXd*>(a_ptr);
     auto* B = static_cast<Eigen::MatrixXd*>(b_ptr);
-    
-    if (A->rows() == B->rows() && A->cols() == B->cols())
-        return new Eigen::MatrixXd((*A) - (*B));
-    
-    if (A->rows() == B->rows() && B->cols() == 1)
-        return new Eigen::MatrixXd(A->colwise() - B->col(0));
-    
-    if (A->cols() == B->cols() && B->rows() == 1)
-        return new Eigen::MatrixXd(A->rowwise() - B->row(0));
 
-    return new Eigen::MatrixXd((*A) - (*B));
+    if (A->rows() == B->rows() && A->cols() == B->cols())
+        return g_matrix_tracker.register_matrix(std::make_unique<Eigen::MatrixXd>((*A) - (*B)));
+
+    if (A->rows() == B->rows() && B->cols() == 1)
+        return g_matrix_tracker.register_matrix(std::make_unique<Eigen::MatrixXd>(A->colwise() - B->col(0)));
+
+    return g_matrix_tracker.register_matrix(std::make_unique<Eigen::MatrixXd>((*A) - (*B)));
 }
 
 extern "C" void* flux_matrix_ew_mul(void* a_ptr, void* b_ptr) {
+    if (!a_ptr || !b_ptr) return nullptr;
     auto* A = static_cast<Eigen::MatrixXd*>(a_ptr);
     auto* B = static_cast<Eigen::MatrixXd*>(b_ptr);
-    
+
     if (A->rows() == B->rows() && A->cols() == B->cols())
-        return new Eigen::MatrixXd(A->array() * B->array());
-        
-    if (A->rows() == B->rows() && B->cols() == 1)
-        return new Eigen::MatrixXd(A->array().colwise() * B->col(0).array());
-        
-    if (A->cols() == B->cols() && B->rows() == 1)
-        return new Eigen::MatrixXd(A->array().rowwise() * B->row(0).array());
-        
-    return new Eigen::MatrixXd(A->array() * B->array());
+        return g_matrix_tracker.register_matrix(std::make_unique<Eigen::MatrixXd>(A->array() * B->array()));
+
+    return g_matrix_tracker.register_matrix(std::make_unique<Eigen::MatrixXd>(A->array() * B->array()));
 }
 
 extern "C" void* flux_matrix_ew_div(void* a_ptr, void* b_ptr) {
+    if (!a_ptr || !b_ptr) return nullptr;
     auto* A = static_cast<Eigen::MatrixXd*>(a_ptr);
     auto* B = static_cast<Eigen::MatrixXd*>(b_ptr);
-    
+
     if (A->rows() == B->rows() && A->cols() == B->cols())
-        return new Eigen::MatrixXd(A->array() / B->array());
-        
-    if (A->rows() == B->rows() && B->cols() == 1)
-        return new Eigen::MatrixXd(A->array().colwise() / B->col(0).array());
-        
-    if (A->cols() == B->cols() && B->rows() == 1)
-        return new Eigen::MatrixXd(A->array().rowwise() / B->row(0).array());
-        
-    return new Eigen::MatrixXd(A->array() / B->array());
+        return g_matrix_tracker.register_matrix(std::make_unique<Eigen::MatrixXd>(A->array() / B->array()));
+
+    return g_matrix_tracker.register_matrix(std::make_unique<Eigen::MatrixXd>(A->array() / B->array()));
 }
 
 extern "C" void* flux_matrix_add_ms(void* m_ptr, double s) {
+    if (!m_ptr) return nullptr;
     auto* M = static_cast<Eigen::MatrixXd*>(m_ptr);
-    return new Eigen::MatrixXd((*M).array() + s);
+    return g_matrix_tracker.register_matrix(std::make_unique<Eigen::MatrixXd>(M->array() + s));
 }
 
 extern "C" void* flux_matrix_sub_ms(void* m_ptr, double s) {
+    if (!m_ptr) return nullptr;
     auto* M = static_cast<Eigen::MatrixXd*>(m_ptr);
-    return new Eigen::MatrixXd((*M).array() - s);
+    return g_matrix_tracker.register_matrix(std::make_unique<Eigen::MatrixXd>(M->array() - s));
 }
 
 extern "C" void* flux_matrix_sub_sm(double s, void* m_ptr) {
+    if (!m_ptr) return nullptr;
     auto* M = static_cast<Eigen::MatrixXd*>(m_ptr);
-    return new Eigen::MatrixXd(s - (*M).array());
+    return g_matrix_tracker.register_matrix(std::make_unique<Eigen::MatrixXd>(s - M->array()));
 }
 
 extern "C" void* flux_matrix_transpose(void* m_ptr) {
+    if (!m_ptr) return nullptr;
     auto* M = static_cast<Eigen::MatrixXd*>(m_ptr);
-    return new Eigen::MatrixXd(M->transpose());
+    return g_matrix_tracker.register_matrix(std::make_unique<Eigen::MatrixXd>(M->transpose()));
 }
 
 extern "C" int flux_matrix_rows(void* m_ptr) {
     if (!m_ptr) return 0;
-    return static_cast<Eigen::MatrixXd*>(m_ptr)->rows();
+    return (int)static_cast<Eigen::MatrixXd*>(m_ptr)->rows();
 }
 
 extern "C" int flux_matrix_cols(void* m_ptr) {
     if (!m_ptr) return 0;
-    return static_cast<Eigen::MatrixXd*>(m_ptr)->cols();
+    return (int)static_cast<Eigen::MatrixXd*>(m_ptr)->cols();
 }
 
 extern "C" double flux_matrix_get(void* m_ptr, int row, int col) {
+    if (!m_ptr) return 0.0;
     auto* M = static_cast<Eigen::MatrixXd*>(m_ptr);
+    if (row < 0 || row >= M->rows() || col < 0 || col >= M->cols()) return 0.0;
     return (*M)(row, col);
 }
-
 extern "C" double flux_create_vector_sum(double* data, int size) {
     double sum = 0.0;
     for (int i = 0; i < size; ++i)
@@ -593,6 +671,45 @@ extern "C" double flux_print_matrix(void* m_ptr) {
     if (!M) return 0.0;
     std::cout << *M << std::endl;
     return 1.0;
+}
+
+extern "C" double flux_matrix_det(void* m_ptr) {
+    auto* M = static_cast<Eigen::MatrixXd*>(m_ptr);
+    if (!M) return 0.0;
+    return M->determinant();
+}
+
+extern "C" void* flux_matrix_inv(void* m_ptr) {
+    auto* M = static_cast<Eigen::MatrixXd*>(m_ptr);
+    if (!M) return nullptr;
+    return g_matrix_tracker.register_matrix(std::make_unique<Eigen::MatrixXd>(M->inverse()));
+}
+
+extern "C" void* flux_matrix_eig(void* m_ptr) {
+    auto* M = static_cast<Eigen::MatrixXd*>(m_ptr);
+    if (!M) return nullptr;
+    Eigen::EigenSolver<Eigen::MatrixXd> es(*M);
+    return g_matrix_tracker.register_matrix(std::make_unique<Eigen::MatrixXd>(es.eigenvalues().real()));
+}
+
+extern "C" double flux_vector_dot(double* v1_ptr, int len1, double* v2_ptr, int len2) {
+    if (!v1_ptr || !v2_ptr) return 0.0;
+    Eigen::Map<Eigen::VectorXd> V1(v1_ptr, len1);
+    Eigen::Map<Eigen::VectorXd> V2(v2_ptr, len2);
+    return V1.dot(V2);
+}
+
+extern "C" void* flux_vector_cross(double* v1_ptr, int len1, double* v2_ptr, int len2) {
+    if (!v1_ptr || !v2_ptr || len1 < 3 || len2 < 3) return nullptr;
+    Eigen::Map<Eigen::Vector3d> a(v1_ptr);
+    Eigen::Map<Eigen::Vector3d> b(v2_ptr);
+    return new Eigen::MatrixXd(a.cross(b));
+}
+
+extern "C" double flux_vector_norm(double* v_ptr, int len) {
+    if (!v_ptr) return 0.0;
+    Eigen::Map<Eigen::VectorXd> V(v_ptr, len);
+    return V.norm();
 }
 
 // ============================================================================
@@ -940,120 +1057,223 @@ extern "C" void flux_stack_leave() {
 // Symbolic Math Runtime Functions
 // ============================================================================
 
+// Internal helper to get shared_ptr without taking ownership from raw pointer
+static std::shared_ptr<SymbolicExpr> get_sym_ptr(double ptr) {
+    if (ptr == 0) return nullptr;
+    // We assume the pointer is already managed by the engine's registry
+    // We create a shared_ptr with a no-op deleter to avoid double-free
+    return std::shared_ptr<SymbolicExpr>((SymbolicExpr*)(uintptr_t)ptr, [](SymbolicExpr*){});
+}
+
+extern "C" double flux_register_analysis(const char* type) {
+    std::cerr << "[RUNTIME] Registering analysis: " << type << std::endl;
+    return 1.0;
+}
+
+extern "C" double flux_register_measure(const char* name, const char* type) {
+    std::cerr << "[RUNTIME] Registering measure: " << name << " (" << type << ")" << std::endl;
+    return 1.0;
+}
+
+extern "C" double flux_register_subckt(double name_ptr, double pins_ptr) {
+    const char* name = bit_cast<const char*>(name_ptr);
+    const char* pins = bit_cast<const char*>(pins_ptr);
+    std::cerr << "[RUNTIME] Registering subckt: " << name << " pins: " << pins << std::endl;
+    return 1.0;
+}
+
+extern "C" double flux_register_model(double name_ptr, double type_ptr) {
+    const char* name = bit_cast<const char*>(name_ptr);
+    const char* type = bit_cast<const char*>(type_ptr);
+    std::cerr << "[RUNTIME] Registering model: " << name << " type: " << type << std::endl;
+    return 1.0;
+}
+
+extern "C" double flux_register_param(const char* name, double value) {
+    std::cerr << "[RUNTIME] Registering param: " << name << " = " << value << std::endl;
+    return 1.0;
+}
+
 extern "C" double flux_sym_decl(const char* name) {
+    std::cerr << "[RUNTIME] flux_sym_decl: " << name << std::endl;
     auto& engine = SymbolicEngine::instance();
     auto sym = engine.sym(std::string(name));
     return (double)(uintptr_t)sym.get();
 }
 
+extern "C" double flux_sym_number(double val) {
+    std::cerr << "[RUNTIME] flux_sym_number: " << val << std::endl;
+    auto& engine = SymbolicEngine::instance();
+    auto num = engine.registerExpr(SymbolicExpr::makeNumber(val));
+    return (double)(uintptr_t)num.get();
+}
+
+extern "C" double flux_sym_add(double a_ptr, double b_ptr) {
+    std::cerr << "[RUNTIME] flux_sym_add: " << a_ptr << ", " << b_ptr << std::endl;
+    auto a = get_sym_ptr(a_ptr);
+    auto b = get_sym_ptr(b_ptr);
+    if (!a || !b) return 0.0;
+    auto& engine = SymbolicEngine::instance();
+    return (double)(uintptr_t)engine.add(a, b).get();
+}
+
+extern "C" double flux_sym_sub(double a_ptr, double b_ptr) {
+    std::cerr << "[RUNTIME] flux_sym_sub: " << a_ptr << ", " << b_ptr << std::endl;
+    auto a = get_sym_ptr(a_ptr);
+    auto b = get_sym_ptr(b_ptr);
+    if (!a || !b) return 0.0;
+    auto& engine = SymbolicEngine::instance();
+    auto neg_one = engine.registerExpr(SymbolicExpr::makeNumber(-1.0));
+    auto neg_b = engine.mul(neg_one, b);
+    return (double)(uintptr_t)engine.add(a, neg_b).get();
+}
+
+extern "C" double flux_sym_mul(double a_ptr, double b_ptr) {
+    std::cerr << "[RUNTIME] flux_sym_mul: " << a_ptr << ", " << b_ptr << std::endl;
+    auto a = get_sym_ptr(a_ptr);
+    auto b = get_sym_ptr(b_ptr);
+    if (!a || !b) return 0.0;
+    auto& engine = SymbolicEngine::instance();
+    return (double)(uintptr_t)engine.mul(a, b).get();
+}
+
+extern "C" double flux_sym_div(double a_ptr, double b_ptr) {
+    std::cerr << "[RUNTIME] flux_sym_div: " << a_ptr << ", " << b_ptr << std::endl;
+    auto a = get_sym_ptr(a_ptr);
+    auto b = get_sym_ptr(b_ptr);
+    if (!a || !b) return 0.0;
+    auto& engine = SymbolicEngine::instance();
+    auto neg_one = engine.registerExpr(SymbolicExpr::makeNumber(-1.0));
+    auto inv_b = engine.power(b, neg_one);
+    return (double)(uintptr_t)engine.mul(a, inv_b).get();
+}
+
+extern "C" double flux_sym_pow(double a_ptr, double b_ptr) {
+    std::cerr << "[RUNTIME] flux_sym_pow: " << a_ptr << ", " << b_ptr << std::endl;
+    auto a = get_sym_ptr(a_ptr);
+    auto b = get_sym_ptr(b_ptr);
+    if (!a || !b) return 0.0;
+    auto& engine = SymbolicEngine::instance();
+    return (double)(uintptr_t)engine.power(a, b).get();
+}
+
 extern "C" double flux_sym_simplify(double expr_ptr) {
-    auto expr = std::shared_ptr<SymbolicExpr>((SymbolicExpr*)(uintptr_t)expr_ptr);
+    std::cerr << "[RUNTIME] flux_sym_simplify: " << expr_ptr << std::endl;
+    auto expr = get_sym_ptr(expr_ptr);
+    if (!expr) return 0.0;
     auto& engine = SymbolicEngine::instance();
     auto result = engine.simplify(expr);
     return (double)(uintptr_t)result.get();
 }
 
 extern "C" double flux_sym_differentiate(double expr_ptr, const char* var) {
-    auto expr = std::shared_ptr<SymbolicExpr>((SymbolicExpr*)(uintptr_t)expr_ptr);
+    std::cerr << "[RUNTIME] flux_sym_differentiate: " << expr_ptr << " w.r.t " << var << std::endl;
+    auto expr = get_sym_ptr(expr_ptr);
+    if (!expr) return 0.0;
     auto& engine = SymbolicEngine::instance();
     auto result = engine.differentiate(expr, std::string(var));
     return (double)(uintptr_t)result.get();
 }
 
-extern "C" double flux_sym_substitute(double expr_ptr, double var_count, double var_names_ptr, double var_values_ptr) {
-    auto expr = std::shared_ptr<SymbolicExpr>((SymbolicExpr*)(uintptr_t)expr_ptr);
+extern "C" double flux_sym_substitute(double expr_ptr, double var_count, void* var_names_ptr, void* var_values_ptr) {
+    std::cerr << "[RUNTIME] flux_sym_substitute: " << expr_ptr << std::endl;
+    auto expr = get_sym_ptr(expr_ptr);
+    if (!expr) return 0.0;
     auto& engine = SymbolicEngine::instance();
-    
-    // Reconstruct map from arrays
+
     int count = (int)var_count;
-    auto* names = (const char**) (uintptr_t)var_names_ptr;
-    auto* values = (double*) (uintptr_t)var_values_ptr;
-    
+    auto* names = static_cast<const char**>(var_names_ptr);
+    auto* values = static_cast<double*>(var_values_ptr);
+
     std::map<std::string, double> vars;
     for (int i = 0; i < count; i++) {
         vars[std::string(names[i])] = values[i];
     }
-    
+
     auto result = engine.substitute(expr, vars);
     return (double)(uintptr_t)result.get();
 }
 
 extern "C" double flux_sym_solve(double lhs_ptr, double rhs_ptr, const char* var) {
-    auto lhs = std::shared_ptr<SymbolicExpr>((SymbolicExpr*)(uintptr_t)lhs_ptr);
-    auto rhs = std::shared_ptr<SymbolicExpr>((SymbolicExpr*)(uintptr_t)rhs_ptr);
+    auto lhs = get_sym_ptr(lhs_ptr);
+    auto rhs = get_sym_ptr(rhs_ptr);
+    if (!lhs || !rhs) return 0.0;
     auto& engine = SymbolicEngine::instance();
     auto solutions = engine.solve(lhs, rhs, std::string(var));
-    // Return first solution or 0.0 if none found
     return solutions.empty() ? 0.0 : solutions[0];
 }
 
-extern "C" double flux_sym_evaluate(double expr_ptr, double var_count, double var_names_ptr, double var_values_ptr) {
-    auto expr = std::shared_ptr<SymbolicExpr>((SymbolicExpr*)(uintptr_t)expr_ptr);
+extern "C" double flux_sym_evaluate(double expr_ptr, double var_count, void* var_names_ptr, void* var_values_ptr) {
+    auto expr = get_sym_ptr(expr_ptr);
+    if (!expr) return 0.0;
     auto& engine = SymbolicEngine::instance();
-    
-    // Reconstruct map from arrays
+
     int count = (int)var_count;
-    auto* names = (const char**) (uintptr_t)var_names_ptr;
-    auto* values = (double*) (uintptr_t)var_values_ptr;
-    
+    auto* names = static_cast<const char**>(var_names_ptr);
+    auto* values = static_cast<double*>(var_values_ptr);
+
     std::map<std::string, double> vars;
     for (int i = 0; i < count; i++) {
         vars[std::string(names[i])] = values[i];
     }
-    
+
     return engine.evaluate(expr, vars);
 }
 
 extern "C" double flux_sym_expand(double expr_ptr) {
-    auto expr = std::shared_ptr<SymbolicExpr>((SymbolicExpr*)(uintptr_t)expr_ptr);
+    auto expr = get_sym_ptr(expr_ptr);
+    if (!expr) return 0.0;
     auto& engine = SymbolicEngine::instance();
     auto result = engine.expand(expr);
     return (double)(uintptr_t)result.get();
 }
 
 extern "C" double flux_sym_factor(double expr_ptr) {
-    auto expr = std::shared_ptr<SymbolicExpr>((SymbolicExpr*)(uintptr_t)expr_ptr);
+    auto expr = get_sym_ptr(expr_ptr);
+    if (!expr) return 0.0;
     auto& engine = SymbolicEngine::instance();
     auto result = engine.factor(expr);
     return (double)(uintptr_t)result.get();
 }
 
 extern "C" double flux_sym_laplace(double expr_ptr, const char* t_var, const char* s_var) {
-    auto expr = std::shared_ptr<SymbolicExpr>((SymbolicExpr*)(uintptr_t)expr_ptr);
+    auto expr = get_sym_ptr(expr_ptr);
+    if (!expr) return 0.0;
     auto& engine = SymbolicEngine::instance();
     auto result = engine.laplace(expr, std::string(t_var), std::string(s_var));
     return (double)(uintptr_t)result.get();
 }
 
 extern "C" double flux_sym_inverse_laplace(double expr_ptr, const char* s_var, const char* t_var) {
-    auto expr = std::shared_ptr<SymbolicExpr>((SymbolicExpr*)(uintptr_t)expr_ptr);
+    auto expr = get_sym_ptr(expr_ptr);
+    if (!expr) return 0.0;
     auto& engine = SymbolicEngine::instance();
     auto result = engine.inverseLaplace(expr, std::string(s_var), std::string(t_var));
     return (double)(uintptr_t)result.get();
 }
 
 extern "C" double flux_sym_poles(double expr_ptr) {
-    auto expr = std::shared_ptr<SymbolicExpr>((SymbolicExpr*)(uintptr_t)expr_ptr);
+    auto expr = get_sym_ptr(expr_ptr);
+    if (!expr) return 0.0;
     auto& engine = SymbolicEngine::instance();
     auto poles = engine.poles(expr);
-    // Return count of poles (actual data would be stored elsewhere)
     return (double)poles.size();
 }
 
 extern "C" double flux_sym_zeros(double expr_ptr) {
-    auto expr = std::shared_ptr<SymbolicExpr>((SymbolicExpr*)(uintptr_t)expr_ptr);
+    auto expr = get_sym_ptr(expr_ptr);
+    if (!expr) return 0.0;
     auto& engine = SymbolicEngine::instance();
     auto zeros = engine.zeros(expr);
     return (double)zeros.size();
 }
 
 extern "C" double flux_sym_to_string(double expr_ptr) {
-    auto expr = std::shared_ptr<SymbolicExpr>((SymbolicExpr*)(uintptr_t)expr_ptr);
-    // This would normally return a string pointer, but we return 0 for now
-    // A full implementation would store the string and return its pointer
-    return 0.0;
+    auto expr = get_sym_ptr(expr_ptr);
+    if (!expr) return 0.0;
+    std::cout << expr->toString() << std::endl;
+    return 1.0;
 }
-
 // ============================================================================
 // Parallel Runtime Function
 // ============================================================================
@@ -1101,10 +1321,97 @@ extern "C" void flux_parallel_for(int64_t start, int64_t end, int64_t chunk_size
 // Exception Handling Runtime
 // ============================================================================
 
+#include <setjmp.h>
+#include <vector>
+
+// Global stack of jump buffers for nested try blocks
+static std::vector<jmp_buf*> g_jmp_bufs;
+
+extern "C" void* flux_get_current_jmp_buf() {
+    if (g_jmp_bufs.empty()) return nullptr;
+    return g_jmp_bufs.back();
+}
+
+extern "C" void flux_push_jmp_buf(void* buf) {
+    g_jmp_bufs.push_back(static_cast<jmp_buf*>(buf));
+}
+
+extern "C" void flux_pop_jmp_buf() {
+    if (!g_jmp_bufs.empty()) g_jmp_bufs.pop_back();
+}
+
 extern "C" void flux_throw_error(double error_code, const char* message) {
     std::cerr << "[FLUX ERROR] " << message << " (code: " << error_code << ")" << std::endl;
-    std::cerr << "[FLUX ERROR] Aborting execution" << std::endl;
+    
+    void* current_buf = flux_get_current_jmp_buf();
+    if (current_buf) {
+        longjmp(*static_cast<jmp_buf*>(current_buf), (int)error_code ?: 1);
+    }
+    
+    std::cerr << "[FLUX ERROR] Uncaught exception. Aborting." << std::endl;
     std::abort();
 }
 
 } // namespace Flux
+
+extern "C" const char* flux_string_concat_double(const char* s, double d) {
+    std::string res = std::string(s) + std::to_string(d);
+    return strdup(res.c_str());
+}
+
+extern "C" const char* flux_string_concat_matrix(const char* s, double* data, int rows, int cols) {
+    if (!s) s = "";
+    
+    std::string res = s;
+    if (!data) {
+        res += "[]";
+    } else {
+        res += "[";
+        for (int i = 0; i < rows; ++i) {
+            if (i > 0) res += "; ";
+            for (int j = 0; j < cols; ++j) {
+                if (j > 0) res += ", ";
+                res += std::to_string(data[i * cols + j]);
+            }
+        }
+        res += "]";
+    }
+    return strdup(res.c_str());
+}
+
+extern "C" const char* flux_string_concat_string(const char* s1, const char* s2) {
+    std::string res = std::string(s1) + std::string(s2);
+    return strdup(res.c_str());
+}
+
+extern "C" void print_string(const char* s) {
+    if (s) {
+        printf("%s", s);
+    }
+    fflush(stdout);
+}
+
+extern "C" void print_double(double d) {
+    printf("%g", d);
+    fflush(stdout);
+}
+
+extern "C" void print_matrix(double* data, int rows, int cols) {
+    if (!data) {
+        printf("[]");
+        return;
+    }
+    
+    printf("[");
+    for (int i = 0; i < rows; ++i) {
+        if (i > 0) printf("; ");
+        for (int j = 0; j < cols; ++j) {
+            if (j > 0) printf(", ");
+            printf("%g", data[i * cols + j]);
+        }
+    }
+    printf("]");
+    fflush(stdout);
+}
+
+// End of file

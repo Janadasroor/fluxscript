@@ -49,7 +49,7 @@ std::string FuzzSummary::toString() const {
     if (!recommendations.empty()) {
         oss << "\nRecommendations:\n";
         for (const auto& rec : recommendations) {
-            oss << "  • " << rec << "\n";
+            oss << "   " << rec << "\n";
         }
     }
     

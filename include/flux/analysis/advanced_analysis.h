@@ -22,13 +22,13 @@
 namespace Flux {
 namespace AdvancedAnalysis {
 
-// ┌─────────────────────────────────────────────────────┐
-// │  Stability Analysis Results                         │
-// └─────────────────────────────────────────────────────┘
+// 
+//   Stability Analysis Results                         
+// 
 struct StabilityResult {
     double gainMargin;           // dB
     double phaseMargin;          // degrees
-    double gainMarginFreq;       // Hz (frequency where phase = -180°)
+    double gainMarginFreq;       // Hz (frequency where phase = -180)
     double phaseMarginFreq;      // Hz (frequency where gain = 0dB)
     double bandwidth;            // Hz (-3dB frequency)
     double peakGain;             // dB
@@ -46,13 +46,13 @@ struct StabilityResult {
     std::string toMarkdown() const;
 };
 
-// ┌─────────────────────────────────────────────────────┐
-// │  Sensitivity Analysis Results                       │
-// └─────────────────────────────────────────────────────┘
+// 
+//   Sensitivity Analysis Results                       
+// 
 struct SensitivityResult {
     struct ComponentSensitivity {
         std::string name;
-        double sensitivity;       // ∂Output/∂Component
+        double sensitivity;       // Output/Component
         double percentChange;     // % change in output for 1% change in component
         std::string criticality;  // "Critical", "Moderate", "Low"
     };
@@ -67,9 +67,9 @@ struct SensitivityResult {
     std::string toMarkdown() const;
 };
 
-// ┌─────────────────────────────────────────────────────┐
-// │  Monte Carlo Analysis Results                       │
-// └─────────────────────────────────────────────────────┘
+// 
+//   Monte Carlo Analysis Results                       
+// 
 struct MonteCarloResult {
     int iterations;
     double mean;
@@ -90,9 +90,9 @@ struct MonteCarloResult {
     std::string toMarkdown() const;
 };
 
-// ┌─────────────────────────────────────────────────────┐
-// │  Optimization Results                               │
-// └─────────────────────────────────────────────────────┘
+// 
+//   Optimization Results                               
+// 
 struct OptimizationResult {
     bool converged;
     int iterations;
@@ -111,9 +111,9 @@ struct OptimizationResult {
     std::string toMarkdown() const;
 };
 
-// ┌─────────────────────────────────────────────────────┐
-// │  Worst-Case Analysis Results                        │
-// └─────────────────────────────────────────────────────┘
+// 
+//   Worst-Case Analysis Results                        
+// 
 struct WorstCaseResult {
     double nominal;
     double worstMin;
@@ -133,9 +133,9 @@ struct WorstCaseResult {
     std::string toMarkdown() const;
 };
 
-// ┌─────────────────────────────────────────────────────┐
-// │  Analysis Engines                                   │
-// └─────────────────────────────────────────────────────┘
+// 
+//   Analysis Engines                                   
+// 
 
 class StabilityAnalyzer {
 public:
@@ -249,9 +249,9 @@ private:
                      const std::map<std::string, double>& values);
 };
 
-// ┌─────────────────────────────────────────────────────┐
-// │  C Interface for FluxScript JIT                     │
-// └─────────────────────────────────────────────────────┘
+// 
+//   C Interface for FluxScript JIT                     
+// 
 extern "C" {
     // Stability
     void* flux_stability_create();

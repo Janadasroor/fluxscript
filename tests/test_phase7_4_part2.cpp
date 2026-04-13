@@ -16,16 +16,16 @@ using namespace Flux;
 
 void test_example_gallery() {
     std::cout << "\n";
-    std::cout << "╔══════════════════════════════════════════════════════════╗\n";
-    std::cout << "║  Test #1: Example Gallery                               ║\n";
-    std::cout << "╚══════════════════════════════════════════════════════════╝\n";
+    std::cout << "\n";
+    std::cout << "  Test #1: Example Gallery                               \n";
+    std::cout << "\n";
 
     auto& gallery = ExampleGallery::instance();
     gallery.initialize("examples/");
 
     // Test 1.1: Scan examples
     std::cout << "\nTest 1.1: Example Discovery\n";
-    std::cout << "────────────────────────────────────────────────────────────\n";
+    std::cout << "\n";
 
     int total = gallery.totalExamples();
     std::cout << "  Total examples found: " << total << "\n";
@@ -43,11 +43,11 @@ void test_example_gallery() {
 
     assert(total >= 0 && "Should find examples (may be 0 if dir missing)");
 
-    std::cout << "\n✅ Test 1.1 PASSED\n";
+    std::cout << "\n Test 1.1 PASSED\n";
 
     // Test 1.2: Search
     std::cout << "\n\nTest 1.2: Search\n";
-    std::cout << "────────────────────────────────────────────────────────────\n";
+    std::cout << "\n";
 
     auto results = gallery.search("math");
     std::cout << "  Search 'math': " << results.size() << " results\n";
@@ -56,11 +56,11 @@ void test_example_gallery() {
     std::cout << "  Search 'nonexistent_xyz_12345': " << results.size() << " results\n";
     assert(results.size() == 0 && "Should find nothing for nonsense query!");
 
-    std::cout << "\n✅ Test 1.2 PASSED\n";
+    std::cout << "\n Test 1.2 PASSED\n";
 
     // Test 1.3: Export
     std::cout << "\n\nTest 1.3: Export\n";
-    std::cout << "────────────────────────────────────────────────────────────\n";
+    std::cout << "\n";
 
     std::string md = gallery.generateCatalogMarkdown();
     std::string html = gallery.generateCatalogHTML();
@@ -74,14 +74,14 @@ void test_example_gallery() {
     assert(html.length() > 20 && "HTML export too short!");
     assert(json.length() > 10 && "JSON export too short!");
 
-    std::cout << "\n✅ Test 1.3 PASSED\n";
+    std::cout << "\n Test 1.3 PASSED\n";
 
     gallery.finalize();
 
     std::cout << "\n";
-    std::cout << "╔══════════════════════════════════════════════════════════╗\n";
-    std::cout << "║     Test #1: ALL TESTS PASSED ✅                         ║\n";
-    std::cout << "╚══════════════════════════════════════════════════════════╝\n";
+    std::cout << "\n";
+    std::cout << "     Test #1: ALL TESTS PASSED                          \n";
+    std::cout << "\n";
 }
 
 // ============================================================================
@@ -90,16 +90,16 @@ void test_example_gallery() {
 
 void test_dependency_resolver() {
     std::cout << "\n";
-    std::cout << "╔══════════════════════════════════════════════════════════╗\n";
-    std::cout << "║  Test #2: Dependency Resolver                           ║\n";
-    std::cout << "╚══════════════════════════════════════════════════════════╝\n";
+    std::cout << "\n";
+    std::cout << "  Test #2: Dependency Resolver                           \n";
+    std::cout << "\n";
 
     auto& resolver = DependencyResolver::instance();
     resolver.clearRegistry();
 
     // Test 2.1: Version parsing
     std::cout << "\nTest 2.1: Semantic Version Parsing\n";
-    std::cout << "────────────────────────────────────────────────────────────\n";
+    std::cout << "\n";
 
     auto v1 = SemanticVersion::parse("1.2.3");
     auto v2 = SemanticVersion::parse("1.2.10");
@@ -112,11 +112,11 @@ void test_dependency_resolver() {
     assert(v1 < v2 && "1.2.3 should be < 1.2.10!");
     assert(v2 < v3 && "1.2.10 should be < 2.0.0!");
 
-    std::cout << "\n✅ Test 2.1 PASSED\n";
+    std::cout << "\n Test 2.1 PASSED\n";
 
     // Test 2.2: Constraint satisfaction
     std::cout << "\n\nTest 2.2: Version Constraints\n";
-    std::cout << "────────────────────────────────────────────────────────────\n";
+    std::cout << "\n";
 
     auto exact = VersionConstraint::parse("1.2.3");
     auto gte = VersionConstraint::parse(">=1.0.0");
@@ -135,11 +135,11 @@ void test_dependency_resolver() {
     assert(caret.satisfies(v2) && "^1.2.0 should include 1.2.10!");
     assert(!caret.satisfies(v3) && "^1.2.0 should NOT include 2.0.0!");
 
-    std::cout << "\n✅ Test 2.2 PASSED\n";
+    std::cout << "\n Test 2.2 PASSED\n";
 
     // Test 2.3: Simple resolution
     std::cout << "\n\nTest 2.3: Simple Dependency Resolution\n";
-    std::cout << "────────────────────────────────────────────────────────────\n";
+    std::cout << "\n";
 
     // Register packages
     PackageMetadata math_lib;
@@ -182,11 +182,11 @@ void test_dependency_resolver() {
     assert(result.success && "Resolution should succeed!");
     assert(result.packages.size() >= 2 && "Should resolve both packages!");
 
-    std::cout << "\n✅ Test 2.3 PASSED\n";
+    std::cout << "\n Test 2.3 PASSED\n";
 
     // Test 2.4: Conflict detection
     std::cout << "\n\nTest 2.4: Conflict Detection\n";
-    std::cout << "────────────────────────────────────────────────────────────\n";
+    std::cout << "\n";
 
     // Register conflicting packages
     PackageMetadata pkg_a;
@@ -216,11 +216,11 @@ void test_dependency_resolver() {
 
     assert(!conflict_result.success && "Should detect conflict!");
 
-    std::cout << "\n✅ Test 2.4 PASSED\n";
+    std::cout << "\n Test 2.4 PASSED\n";
 
     // Test 2.5: Dependency tree
     std::cout << "\n\nTest 2.5: Dependency Tree\n";
-    std::cout << "────────────────────────────────────────────────────────────\n";
+    std::cout << "\n";
 
     std::vector<Dependency> tree_deps;
     tree_deps.push_back({"signal-lib", VersionConstraint::parse("^2.0.0")});
@@ -235,11 +235,11 @@ void test_dependency_resolver() {
 
     assert(tree.size() >= 2 && "Tree should have at least 2 nodes!");
 
-    std::cout << "\n✅ Test 2.5 PASSED\n";
+    std::cout << "\n Test 2.5 PASSED\n";
 
     // Test 2.6: Available versions
     std::cout << "\n\nTest 2.6: Available Versions\n";
-    std::cout << "────────────────────────────────────────────────────────────\n";
+    std::cout << "\n";
 
     auto versions = resolver.getAvailableVersions("math-lib");
     std::cout << "  math-lib versions: ";
@@ -252,14 +252,14 @@ void test_dependency_resolver() {
     assert(versions.size() >= 2 && "Should have at least 2 versions!");
     assert(versions[0] > versions[1] && "Should be sorted descending!");
 
-    std::cout << "\n✅ Test 2.6 PASSED\n";
+    std::cout << "\n Test 2.6 PASSED\n";
 
     resolver.clearRegistry();
 
     std::cout << "\n";
-    std::cout << "╔══════════════════════════════════════════════════════════╗\n";
-    std::cout << "║     Test #2: ALL TESTS PASSED ✅                         ║\n";
-    std::cout << "╚══════════════════════════════════════════════════════════╝\n";
+    std::cout << "\n";
+    std::cout << "     Test #2: ALL TESTS PASSED                          \n";
+    std::cout << "\n";
 }
 
 // ============================================================================
@@ -268,23 +268,23 @@ void test_dependency_resolver() {
 
 int main() {
     std::cout << "\n";
-    std::cout << "╔══════════════════════════════════════════════════════════╗\n";
-    std::cout << "║  Phase 7.4: Example Gallery & Dependency Resolver       ║\n";
-    std::cout << "╚══════════════════════════════════════════════════════════╝\n";
+    std::cout << "\n";
+    std::cout << "  Phase 7.4: Example Gallery & Dependency Resolver       \n";
+    std::cout << "\n";
 
     try {
         test_example_gallery();
         test_dependency_resolver();
 
         std::cout << "\n";
-        std::cout << "╔══════════════════════════════════════════════════════════╗\n";
-        std::cout << "║     ALL PHASE 7.4 PART 2 TESTS PASSED ✅                 ║\n";
-        std::cout << "╚══════════════════════════════════════════════════════════╝\n";
+        std::cout << "\n";
+        std::cout << "     ALL PHASE 7.4 PART 2 TESTS PASSED                  \n";
+        std::cout << "\n";
         std::cout << "\n";
 
         return 0;
     } catch (const std::exception& e) {
-        std::cerr << "\n❌ TEST FAILED: " << e.what() << "\n";
+        std::cerr << "\n TEST FAILED: " << e.what() << "\n";
         return 1;
     }
 }

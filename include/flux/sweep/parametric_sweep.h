@@ -20,9 +20,9 @@
 namespace Flux {
 namespace Sweep {
 
-// ┌─────────────────────────────────────────────────────┐
-// │ Sweep Result Structure                               │
-// └─────────────────────────────────────────────────────┘
+// 
+//  Sweep Result Structure                               
+// 
 
 struct SweepPoint {
     double componentValue;
@@ -48,9 +48,9 @@ struct SweepReport {
     std::string toMarkdown() const;
 };
 
-// ┌─────────────────────────────────────────────────────┐
-// │ Sweep Engine                                         │
-// └─────────────────────────────────────────────────────┘
+// 
+//  Sweep Engine                                         
+// 
 
 class SweepEngine {
 public:

@@ -69,21 +69,21 @@ SimulationToolbar::~SimulationToolbar()
 void SimulationToolbar::setupActions()
 {
     // Run action
-    m_runAction = new QAction("▶ Run", this);
+    m_runAction = new QAction(" Run", this);
     m_runAction->setShortcut(QKeySequence("F5"));
     m_runAction->setToolTip("Run simulation (F5)");
     connect(m_runAction, &QAction::triggered, this, &SimulationToolbar::onRunClicked);
     addAction(m_runAction);
 
     // Pause action
-    m_pauseAction = new QAction("⏸ Pause", this);
+    m_pauseAction = new QAction(" Pause", this);
     m_pauseAction->setShortcut(QKeySequence("Ctrl+P"));
     m_pauseAction->setToolTip("Pause simulation (Ctrl+P)");
     connect(m_pauseAction, &QAction::triggered, this, &SimulationToolbar::onPauseClicked);
     addAction(m_pauseAction);
 
     // Step action
-    m_stepAction = new QAction("⏭ Step", this);
+    m_stepAction = new QAction(" Step", this);
     m_stepAction->setShortcut(QKeySequence("F10"));
     m_stepAction->setToolTip("Step to next line (F10)");
     connect(m_stepAction, &QAction::triggered, this, &SimulationToolbar::onStepClicked);
@@ -92,14 +92,14 @@ void SimulationToolbar::setupActions()
     addSeparator();
 
     // Stop action
-    m_stopAction = new QAction("⏹ Stop", this);
+    m_stopAction = new QAction(" Stop", this);
     m_stopAction->setShortcut(QKeySequence("Shift+F5"));
     m_stopAction->setToolTip("Stop simulation (Shift+F5)");
     connect(m_stopAction, &QAction::triggered, this, &SimulationToolbar::onStopClicked);
     addAction(m_stopAction);
 
     // Restart action
-    m_restartAction = new QAction("🔄 Restart", this);
+    m_restartAction = new QAction(" Restart", this);
     m_restartAction->setShortcut(QKeySequence("Ctrl+F5"));
     m_restartAction->setToolTip("Restart simulation (Ctrl+F5)");
     connect(m_restartAction, &QAction::triggered, this, &SimulationToolbar::onRestartClicked);
@@ -629,7 +629,7 @@ void WaveformWidget::drawCursors(QPainter& painter)
     painter.setPen(QColor(255, 255, 0));
     painter.drawText(x1 + 5, 15, QString("T1: %1s").arg(m_cursor1Time, 0, 'f', 6));
     painter.drawText(x2 + 5, 30, QString("T2: %1s").arg(m_cursor2Time, 0, 'f', 6));
-    painter.drawText(x2 + 5, 45, QString("ΔT: %1s").arg(m_cursor2Time - m_cursor1Time, 0, 'f', 6));
+    painter.drawText(x2 + 5, 45, QString("T: %1s").arg(m_cursor2Time - m_cursor1Time, 0, 'f', 6));
 }
 
 double WaveformWidget::pixelToTime(int x) const
@@ -998,13 +998,13 @@ void MeasurementWidget::setupUI()
 
     m_t1Label = new QLabel("T1: 0.000s");
     m_t2Label = new QLabel("T2: 0.000s");
-    m_deltaLabel = new QLabel("ΔT: 0.000s");
+    m_deltaLabel = new QLabel("T: 0.000s");
     m_v1Label = new QLabel("V1: 0.000V");
     m_v2Label = new QLabel("V2: 0.000V");
 
     cursorLayout->addRow("T1:", m_t1Label);
     cursorLayout->addRow("T2:", m_t2Label);
-    cursorLayout->addRow("ΔT:", m_deltaLabel);
+    cursorLayout->addRow("T:", m_deltaLabel);
     cursorLayout->addRow("V1:", m_v1Label);
     cursorLayout->addRow("V2:", m_v2Label);
 
@@ -1062,7 +1062,7 @@ void MeasurementWidget::updateDisplay()
 {
     m_t1Label->setText(QString("T1: %1s").arg(m_t1, 0, 'f', 3));
     m_t2Label->setText(QString("T2: %2s").arg(m_t2, 0, 'f', 3));
-    m_deltaLabel->setText(QString("ΔT: %1s").arg(m_delta, 0, 'f', 3));
+    m_deltaLabel->setText(QString("T: %1s").arg(m_delta, 0, 'f', 3));
     m_v1Label->setText(QString("V1: %1V").arg(m_v1, 0, 'f', 3));
     m_v2Label->setText(QString("V2: %1V").arg(m_v2, 0, 'f', 3));
 

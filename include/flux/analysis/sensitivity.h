@@ -30,8 +30,8 @@ namespace Sensitivity {
 struct SensitivityResult {
     std::string outputVariable;
     std::string parameter;
-    double absolute;    // ∂Output/∂Parameter
-    double relative;    // (∂Output/Output)/(∂Parameter/Parameter)
+    double absolute;    // Output/Parameter
+    double relative;    // (Output/Output)/(Parameter/Parameter)
     double normalized;  // Normalized sensitivity
     std::string unit;
     

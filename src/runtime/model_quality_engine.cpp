@@ -67,7 +67,7 @@ bool ModelQualityEngine::assertVoltage(const std::string& node, const std::strin
     result.expected_value = bound;
     m_results.push_back(result);
     
-    std::cout << "[Assert] " << (passed ? "✓ PASS" : "✗ FAIL") << ": V(" << node << ") " 
+    std::cout << "[Assert] " << (passed ? " PASS" : " FAIL") << ": V(" << node << ") " 
               << op << " " << bound << "V" << std::endl;
     if (!passed) std::cout << "  " << failMsg << std::endl;
     
@@ -135,7 +135,7 @@ double ModelQualityEngine::checkSettling(const std::string& node, double tolPerc
     result.expected_value = finalValue;
     m_results.push_back(result);
     
-    std::cout << "[Settle] V(" << node << "): " << (settled ? "✓ Settled" : "✗ Not settled")
+    std::cout << "[Settle] V(" << node << "): " << (settled ? " Settled" : " Not settled")
               << " at t=" << settleTime << "s (final=" << finalValue << "V, tol=" << tol << "V)" << std::endl;
     
     return settleTime;
@@ -224,7 +224,7 @@ bool ModelQualityEngine::compareWaveform(const std::string& node, const std::str
     m_results.push_back(result);
     
     std::cout << "[Compare] V(" << node << ") vs '" << goldenName << "': "
-              << (passed ? "✓ PASS" : "✗ FAIL") << " (max error=" << maxErrorPercent << "%)" << std::endl;
+              << (passed ? " PASS" : " FAIL") << " (max error=" << maxErrorPercent << "%)" << std::endl;
     
     return passed;
 }
@@ -251,7 +251,7 @@ bool ModelQualityEngine::checkConvergence(const std::string& node, int maxIter, 
     result.expected_value = epsilon;
     m_results.push_back(result);
     
-    std::cout << "[Converge] V(" << node << "): " << (converged ? "✓ Converged" : "✗ Diverged")
+    std::cout << "[Converge] V(" << node << "): " << (converged ? " Converged" : " Diverged")
               << " (max change=" << maxChange << ", eps=" << epsilon << ")" << std::endl;
     
     return converged;
@@ -280,7 +280,7 @@ bool ModelQualityEngine::detectDiscontinuity(const std::string& node, double thr
     result.measured_value = discontinuities.empty() ? 0.0 : discontinuities[0];
     m_results.push_back(result);
     
-    std::cout << "[Discontinuity] V(" << node << "): " << (hasDiscontinuity ? "⚠ Found " : "✓ Clean")
+    std::cout << "[Discontinuity] V(" << node << "): " << (hasDiscontinuity ? " Found " : " Clean")
               << discontinuities.size() << " discontinuitie(s)" << std::endl;
     for (double t : discontinuities) {
         std::cout << "  t=" << t << "s" << std::endl;
@@ -329,7 +329,7 @@ bool ModelQualityEngine::detectHiddenState(const std::string& node, int historyD
     result.measured_value = patternLength;
     m_results.push_back(result);
     
-    std::cout << "[State] V(" << node << "): " << (foundPattern ? "⚠ Hidden state" : "✓ No hidden state")
+    std::cout << "[State] V(" << node << "): " << (foundPattern ? " Hidden state" : " No hidden state")
               << (foundPattern ? " (pattern=" + std::to_string(patternLength) + ")" : "") << std::endl;
     
     return foundPattern;

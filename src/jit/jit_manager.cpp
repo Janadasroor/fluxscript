@@ -430,8 +430,8 @@ bool JITManager::evaluateComponent(const std::string& name, double time, double 
 
     // Detect function signature from the JIT module
     // The compiled function could be:
-    //   double update(double, double)       — 2 scalar args (def update(t, x))
-    //   double update(double, double*)      — scalar + pointer (def update(t, inputs))
+    //   double update(double, double)        2 scalar args (def update(t, x))
+    //   double update(double, double*)       scalar + pointer (def update(t, inputs))
     double result = 0.0;
 
     // Try 2-scalar-arg signature first (most common for simple components)

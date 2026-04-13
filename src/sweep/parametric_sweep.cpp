@@ -23,9 +23,9 @@
 namespace Flux {
 namespace Sweep {
 
-// ┌─────────────────────────────────────────────────────┐
-// │ Report Methods                                       │
-// └─────────────────────────────────────────────────────┘
+// 
+//  Report Methods                                       
+// 
 
 double SweepReport::getMinOutput() const {
     double min = std::numeric_limits<double>::max();
@@ -65,16 +65,16 @@ double SweepReport::getMaxValuePoint() const {
 
 std::string SweepReport::toText() const {
     std::ostringstream oss;
-    oss << "══════════════════════════════════════════════════════\n";
+    oss << "\n";
     oss << "         PARAMETRIC SWEEP REPORT\n";
-    oss << "══════════════════════════════════════════════════════\n\n";
+    oss << "\n\n";
     oss << "Circuit: " << circuitFile << "\n";
     oss << "Component: " << componentName << "\n";
     oss << "Range: " << startValue << " to " << stopValue << " (" << points << " points)\n";
     oss << "Measure: " << measureExpression << "\n\n";
     
     oss << "Results:\n";
-    oss << "─────────────────────────────────────────────────────\n";
+    oss << "\n";
     oss << "  " << componentName << "       |  " << measureExpression << "\n";
     oss << "  ----------------------+------------------\n";
     
@@ -91,7 +91,7 @@ std::string SweepReport::toText() const {
     oss << "\nSummary:\n";
     oss << "  Min Output: " << getMinOutput() << " (at " << componentName << " = " << getMinValuePoint() << ")\n";
     oss << "  Max Output: " << getMaxOutput() << " (at " << componentName << " = " << getMaxValuePoint() << ")\n";
-    oss << "══════════════════════════════════════════════════════\n";
+    oss << "\n";
     
     return oss.str();
 }
@@ -123,9 +123,9 @@ std::string SweepReport::toMarkdown() const {
     return oss.str();
 }
 
-// ┌─────────────────────────────────────────────────────┐
-// │ Sweep Engine Implementation                          │
-// └─────────────────────────────────────────────────────┘
+// 
+//  Sweep Engine Implementation                          
+// 
 
 SweepEngine::SweepEngine() : m_startValue(1000), m_stopValue(10000), m_numPoints(10) {}
 
@@ -231,7 +231,7 @@ SweepReport SweepEngine::run() {
     report.points = m_numPoints;
     report.measureExpression = m_measureExpression;
     
-    std::cout << "🚀 Starting Parametric Sweep: " << m_componentName << " from " 
+    std::cout << " Starting Parametric Sweep: " << m_componentName << " from " 
               << m_startValue << " to " << m_stopValue << " (" << m_numPoints << " points)\n";
     
     // Read original netlist
@@ -258,7 +258,7 @@ SweepReport SweepEngine::run() {
         report.data.push_back(point);
     }
     
-    std::cout << "✅ Sweep completed\n";
+    std::cout << " Sweep completed\n";
     return report;
 }
 

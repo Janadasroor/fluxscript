@@ -20,9 +20,9 @@
 namespace Flux {
 namespace Instruments {
 
-// ┌─────────────────────────────────────────────────────┐
-// │ Base Instrument Class                               │
-// └─────────────────────────────────────────────────────┘
+// 
+//  Base Instrument Class                               
+// 
 
 class Instrument {
 public:
@@ -53,9 +53,9 @@ protected:
     std::string readSocket();
 };
 
-// ┌─────────────────────────────────────────────────────┐
-// │ DC Power Supply                                     │
-// └─────────────────────────────────────────────────────┘
+// 
+//  DC Power Supply                                     
+// 
 
 class PowerSupply : public Instrument {
 public:
@@ -71,9 +71,9 @@ public:
     double measureCurrent();
 };
 
-// ┌─────────────────────────────────────────────────────┐
-// │ Digital Multimeter                                  │
-// └─────────────────────────────────────────────────────┘
+// 
+//  Digital Multimeter                                  
+// 
 
 class Multimeter : public Instrument {
 public:
@@ -86,9 +86,9 @@ public:
     double measureFrequency();
 };
 
-// ┌─────────────────────────────────────────────────────┐
-// │ Oscilloscope                                        │
-// └─────────────────────────────────────────────────────┘
+// 
+//  Oscilloscope                                        
+// 
 
 class Oscilloscope : public Instrument {
 public:
@@ -117,9 +117,9 @@ public:
     WaveformData captureWaveform(int channel = 1);
 };
 
-// ┌─────────────────────────────────────────────────────┐
-// │ Convenience Functions                                │
-// └─────────────────────────────────────────────────────┘
+// 
+//  Convenience Functions                                
+// 
 
 extern "C" {
     void* flux_ps_create();

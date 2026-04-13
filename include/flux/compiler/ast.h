@@ -28,6 +28,59 @@
 
 namespace Flux {
 
+// Unit dimensions for dimensional analysis
+struct UnitDimensions {
+    int8_t mass = 0;           // kg
+    int8_t length = 0;         // m
+    int8_t time = 0;           // s
+    int8_t current = 0;        // A
+    int8_t temperature = 0;    // K
+    int8_t amount = 0;         // mol
+    int8_t luminous = 0;       // cd
+    
+    bool isDimensionless() const {
+        return mass == 0 && length == 0 && time == 0 && 
+               current == 0 && temperature == 0 && amount == 0 && luminous == 0;
+    }
+    
+    bool operator==(const UnitDimensions& other) const {
+        return mass == other.mass && length == other.length && 
+               time == other.time && current == other.current &&
+               temperature == other.temperature && amount == other.amount &&
+               luminous == other.luminous;
+    }
+    
+    bool operator!=(const UnitDimensions& other) const {
+        return !(*this == other);
+    }
+    
+    UnitDimensions operator*(const UnitDimensions& other) const {
+        return {
+            static_cast<int8_t>(mass + other.mass),
+            static_cast<int8_t>(length + other.length),
+            static_cast<int8_t>(time + other.time),
+            static_cast<int8_t>(current + other.current),
+            static_cast<int8_t>(temperature + other.temperature),
+            static_cast<int8_t>(amount + other.amount),
+            static_cast<int8_t>(luminous + other.luminous)
+        };
+    }
+    
+    UnitDimensions operator/(const UnitDimensions& other) const {
+        return {
+            static_cast<int8_t>(mass - other.mass),
+            static_cast<int8_t>(length - other.length),
+            static_cast<int8_t>(time - other.time),
+            static_cast<int8_t>(current - other.current),
+            static_cast<int8_t>(temperature - other.temperature),
+            static_cast<int8_t>(amount - other.amount),
+            static_cast<int8_t>(luminous - other.luminous)
+        };
+    }
+    
+    std::string toString() const;
+};
+
 // Type system for explicit typing
 enum class TypeKind {
     Auto,     // Inferred type
@@ -38,14 +91,17 @@ enum class TypeKind {
     Complex,  // Complex number (double complex)
     String,   // String (i8*)
     Matrix,   // Matrix { double*, i32, i32 }
-    Vector    // Vector { double*, i32 }
+    Vector,   // Vector { double*, i32 }
+    Symbolic  // Symbolic expression handle (double/uintptr_t)
 };
 
 class FluxType {
 public:
     TypeKind Kind;
+    UnitDimensions Dimensions;
     
-    FluxType(TypeKind K = TypeKind::Double) : Kind(K) {}
+    FluxType(TypeKind K = TypeKind::Double, UnitDimensions D = {}) 
+        : Kind(K), Dimensions(D) {}
     
     llvm::Type* getLLVMType(llvm::LLVMContext& Context) const {
         switch (Kind) {
@@ -134,6 +190,7 @@ public:
     llvm::IRBuilder<> Builder;
     std::unique_ptr<llvm::Module> TheModule;
     std::map<std::string, llvm::Value*> NamedValues;
+    std::map<std::string, FluxType> NamedTypes;
     std::unique_ptr<llvm::DIBuilder> DebugBuilder;
     llvm::DICompileUnit* DebugCompileUnit = nullptr;
     llvm::DIFile* DebugFile = nullptr;
@@ -143,6 +200,15 @@ public:
     llvm::BasicBlock* CurrentLoopEnd = nullptr;      // Target for break in loops
     llvm::BasicBlock* CurrentLoopCont = nullptr;     // Target for continue in loops
     llvm::BasicBlock* CurrentSwitchEnd = nullptr;    // Target for break in switch
+
+    // Exception handling context
+    llvm::BasicBlock* CurrentCatchBB = nullptr;      // Target for throw
+    llvm::Value* CurrentExceptionAlloca = nullptr;   // Where to store the thrown value
+    
+    // Generator context
+    llvm::Value* GeneratorStateAlloca = nullptr;     // Struct containing state index and locals
+    std::vector<llvm::BasicBlock*> YieldTargets;     // Blocks to resume from
+    llvm::BasicBlock* GeneratorDispatcherBB = nullptr; // Entry dispatcher
 
     CodegenContext()
         : OwnedContext(std::make_unique<llvm::LLVMContext>()),
@@ -176,10 +242,12 @@ public:
 
 class NumberExprAST : public ExprAST {
     double Val;
+    std::string Unit;
 public:
-    NumberExprAST(double Val) : Val(Val) {}
+    NumberExprAST(double Val, std::string Unit = "") : Val(Val), Unit(std::move(Unit)) {}
     TypedValue codegen(CodegenContext& context) override;
     double getValue() const { return Val; }
+    const std::string& getUnit() const { return Unit; }
 };
 
 class ComplexExprAST : public ExprAST {
@@ -1301,7 +1369,7 @@ public:
 // unit(value, unit_string) - Annotate value with unit
 class UnitExprAST : public ExprAST {
     std::unique_ptr<ExprAST> Value;
-    std::string UnitStr;  // e.g., "V", "mA", "kΩ", "μF"
+    std::string UnitStr;  // e.g., "V", "mA", "k", "F"
 public:
     UnitExprAST(std::unique_ptr<ExprAST> val, std::string unit)
         : Value(std::move(val)), UnitStr(std::move(unit)) {}

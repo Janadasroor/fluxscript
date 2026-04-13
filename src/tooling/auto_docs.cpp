@@ -364,10 +364,10 @@ DocBlock DocGenerator::generateDesignEquations(const std::string& circuitContent
     if (circuitType == "lowpass_filter") {
         block.content = "### Low-Pass Filter Design\n\n";
         block.content += "The cutoff frequency is given by:\n\n";
-        block.content += "```\nfc = 1 / (2π × R × C)\n```\n\n";
+        block.content += "```\nfc = 1 / (2  R  C)\n```\n\n";
         block.content += "Where:\n";
         block.content += "- fc = cutoff frequency (Hz)\n";
-        block.content += "- R = resistance (Ω)\n";
+        block.content += "- R = resistance ()\n";
         block.content += "- C = capacitance (F)\n";
     } else if (circuitType == "amplifier") {
         block.content = "### Amplifier Design\n\n";

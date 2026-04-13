@@ -28,126 +28,130 @@ void TryCatchExprAST::setFinally(std::unique_ptr<ExprAST> body) {
 }
 
 TypedValue TryCatchExprAST::codegen(CodegenContext& context) {
-    // Generate try-catch-finally with error handling
-    // Uses a simple flag-based approach since LLVM exception handling is complex
+    static int TryCount = 0;
+    int ID = ++TryCount;
+    std::string IDStr = std::to_string(ID);
     
     llvm::Function* TheFunction = context.Builder.GetInsertBlock()->getParent();
     llvm::LLVMContext& Ctx = context.TheContext;
+    llvm::Type* DoubleTy = llvm::Type::getDoubleTy(Ctx);
+    llvm::Type* Int32Ty = llvm::Type::getInt32Ty(Ctx);
+    llvm::Type* VoidPtrTy = llvm::PointerType::get(Ctx, 0);
     
-    // Create blocks
-    llvm::BasicBlock* TryBB = llvm::BasicBlock::Create(Ctx, "try_block", TheFunction);
-    llvm::BasicBlock* CatchBB = llvm::BasicBlock::Create(Ctx, "catch_block", TheFunction);
-    llvm::BasicBlock* FinallyBB = llvm::BasicBlock::Create(Ctx, "finally_block", TheFunction);
-    llvm::BasicBlock* EndBB = llvm::BasicBlock::Create(Ctx, "try_end");
+    // Create unique blocks with prefixes to avoid numbering collisions
+    llvm::BasicBlock* TryBB = llvm::BasicBlock::Create(Ctx, "flux_try_" + IDStr, TheFunction);
+    llvm::BasicBlock* CatchBB = llvm::BasicBlock::Create(Ctx, "flux_catch_" + IDStr, TheFunction);
+    llvm::BasicBlock* FinallyBB = llvm::BasicBlock::Create(Ctx, "flux_finally_" + IDStr, TheFunction);
+    llvm::BasicBlock* EndBB = llvm::BasicBlock::Create(Ctx, "flux_try_end_" + IDStr, TheFunction);
     
-    // Error flag to track if exception occurred
-    llvm::Value* ErrorFlag = context.Builder.CreateAlloca(llvm::Type::getInt1Ty(Ctx), nullptr, "error_flag");
-    context.Builder.CreateStore(llvm::ConstantInt::get(Ctx, llvm::APInt(1, 0)), ErrorFlag);
+    // Result and exception storage
+    llvm::Value* ResultPtr = context.Builder.CreateAlloca(DoubleTy, nullptr, "try_res" + IDStr);
+    llvm::Value* ExceptionPtr = context.Builder.CreateAlloca(DoubleTy, nullptr, "ex_ptr" + IDStr);
     
-    // Result storage
-    llvm::Value* ResultPtr = context.Builder.CreateAlloca(llvm::Type::getDoubleTy(Ctx), nullptr, "try_result");
+    // Allocate jmp_buf (1024 bytes)
+    llvm::Value* JmpBuf = context.Builder.CreateAlloca(llvm::ArrayType::get(llvm::Type::getInt8Ty(Ctx), 1024), nullptr, "jmp_buf" + IDStr);
+    llvm::Value* JmpBufPtr = context.Builder.CreateBitCast(JmpBuf, VoidPtrTy);
     
-    // Branch to try block
-    context.Builder.CreateBr(TryBB);
+    // Register runtime helpers
+    llvm::Function* PushF = context.TheModule->getFunction("flux_push_jmp_buf");
+    if (!PushF) PushF = llvm::Function::Create(llvm::FunctionType::get(llvm::Type::getVoidTy(Ctx), {VoidPtrTy}, false), llvm::Function::ExternalLinkage, "flux_push_jmp_buf", context.TheModule.get());
+    
+    llvm::Function* PopF = context.TheModule->getFunction("flux_pop_jmp_buf");
+    if (!PopF) PopF = llvm::Function::Create(llvm::FunctionType::get(llvm::Type::getVoidTy(Ctx), {}, false), llvm::Function::ExternalLinkage, "flux_pop_jmp_buf", context.TheModule.get());
+    
+    llvm::Function* SetJmpF = context.TheModule->getFunction("setjmp");
+    if (!SetJmpF) SetJmpF = llvm::Function::Create(llvm::FunctionType::get(Int32Ty, {VoidPtrTy}, false), llvm::Function::ExternalLinkage, "setjmp", context.TheModule.get());
+    
+    // Push jump buffer to stack
+    context.Builder.CreateCall(PushF, {JmpBufPtr});
+    
+    // Call setjmp
+    llvm::Value* JmpVal = context.Builder.CreateCall(SetJmpF, {JmpBufPtr}, "jmp_val" + IDStr);
+    llvm::Value* IsCatch = context.Builder.CreateICmpNE(JmpVal, llvm::ConstantInt::get(Int32Ty, 0), "is_catch" + IDStr);
+    context.Builder.CreateCondBr(IsCatch, CatchBB, TryBB);
+    
+    // Try block
     context.Builder.SetInsertPoint(TryBB);
-    
-    // Generate try body
-    TypedValue TryResultTV = TryBody->codegen(context);
-    if (!TryResultTV.Val) {
-        // Error in try body - go to catch
-        context.Builder.CreateStore(llvm::ConstantInt::get(Ctx, llvm::APInt(1, 1)), ErrorFlag);
-        context.Builder.CreateBr(CatchBB);
-    } else {
-        // Store result
-        context.Builder.CreateStore(TryResultTV.Val, ResultPtr);
+    TypedValue TryResult = TryBody->codegen(context);
+    if (!context.Builder.GetInsertBlock()->getTerminator()) {
+        if (TryResult.Val) context.Builder.CreateStore(TryResult.Val, ResultPtr);
+        context.Builder.CreateCall(PopF);
         context.Builder.CreateBr(FinallyBB);
     }
     
-    // Catch blocks
-    TheFunction->insert(TheFunction->end(), CatchBB);
+    // Catch block
     context.Builder.SetInsertPoint(CatchBB);
+    context.Builder.CreateCall(PopF); 
     
-    // Execute catch clauses
-    TypedValue CatchResultTV = TryResultTV;
-    for (auto& [VarName, Handler] : CatchClauses) {
-        // Save old variable
+    llvm::Value* ExCode = context.Builder.CreateSIToFP(JmpVal, DoubleTy, "ex_code" + IDStr);
+    context.Builder.CreateStore(ExCode, ExceptionPtr);
+    
+    if (!CatchClauses.empty()) {
+        auto& [VarName, Handler] = CatchClauses[0];
         llvm::Value* OldVal = context.NamedValues[VarName];
         
-        // Get error code (would be passed from throw in full implementation)
-        llvm::Value* ErrorCode = llvm::ConstantFP::get(Ctx, llvm::APFloat(-1.0));
-        context.NamedValues[VarName] = ErrorCode;
+        // Bind the catch variable to the exception value
+        llvm::Value* ThrownVal = context.Builder.CreateLoad(DoubleTy, ExceptionPtr, "thrown_val" + IDStr);
+        context.NamedValues[VarName] = ThrownVal;
         
-        // Generate handler
-        TypedValue HandlerTV = Handler->codegen(context);
-        if (HandlerTV.Val) {
-            CatchResultTV = HandlerTV;
-            context.Builder.CreateStore(HandlerTV.Val, ResultPtr);
+        TypedValue CatchResult = Handler->codegen(context);
+        if (!context.Builder.GetInsertBlock()->getTerminator()) {
+            if (CatchResult.Val) context.Builder.CreateStore(CatchResult.Val, ResultPtr);
+            context.Builder.CreateBr(FinallyBB);
         }
-        
-        // Restore variable
         context.NamedValues[VarName] = OldVal;
+    } else {
+        if (!context.Builder.GetInsertBlock()->getTerminator()) {
+            context.Builder.CreateBr(FinallyBB);
+        }
     }
     
-    context.Builder.CreateBr(FinallyBB);
-    
     // Finally block
-    TheFunction->insert(TheFunction->end(), FinallyBB);
     context.Builder.SetInsertPoint(FinallyBB);
-    
     if (FinallyBody) {
         FinallyBody->codegen(context);
     }
-    
-    context.Builder.CreateBr(EndBB);
-    
-    // End block - merge results
-    TheFunction->insert(TheFunction->end(), EndBB);
+    if (!context.Builder.GetInsertBlock()->getTerminator()) {
+        context.Builder.CreateBr(EndBB);
+    }
+    // End block
     context.Builder.SetInsertPoint(EndBB);
-    
-    llvm::Value* FinalResult = context.Builder.CreateLoad(llvm::Type::getDoubleTy(Ctx), ResultPtr, "final_result");
-    
-    return TypedValue(FinalResult, TypeKind::Double);
-}
+    if (!context.Builder.GetInsertBlock()->getTerminator()) {
+        // If nothing was stored, ensure we return something
+        llvm::Value* FinalRes = context.Builder.CreateLoad(DoubleTy, ResultPtr, "res" + IDStr);
+        return TypedValue(FinalRes, TypeKind::Double);
+    }
+    return TypedValue(nullptr, TypeKind::Void);
+    }
 
 // ============ Throw Codegen ============
 
 TypedValue ThrowExprAST::codegen(CodegenContext& context) {
-    // Generate exception value
     TypedValue ExTV = Exception->codegen(context);
     if (!ExTV.Val) return TypedValue();
     
-    // Generate call to runtime error handler
     llvm::LLVMContext& Ctx = context.TheContext;
+    
+    // If block already terminated, stop.
+    if (context.Builder.GetInsertBlock()->getTerminator()) {
+        return TypedValue(llvm::ConstantFP::get(Ctx, llvm::APFloat(0.0)), TypeKind::Double);
+    }
+
     llvm::Module* TheModule = context.TheModule.get();
     
-    // Get or create the error function: void flux_throw_error(double code, const char* msg)
+    // Always use runtime throw which handles the non-local jump via longjmp
     llvm::Function* ThrowFunc = TheModule->getFunction("flux_throw_error");
     if (!ThrowFunc) {
-        llvm::Type* Params[] = {
-            llvm::Type::getDoubleTy(Ctx),
-            llvm::PointerType::get(Ctx, 0)
-        };
-        llvm::FunctionType* FT = llvm::FunctionType::get(
-            llvm::Type::getVoidTy(Ctx),
-            Params,
-            false
-        );
-        ThrowFunc = llvm::Function::Create(FT, llvm::Function::ExternalLinkage, "flux_throw_error", TheModule);
+        llvm::Type* Params[] = { llvm::Type::getDoubleTy(Ctx), llvm::PointerType::get(Ctx, 0) };
+        ThrowFunc = llvm::Function::Create(llvm::FunctionType::get(llvm::Type::getVoidTy(Ctx), Params, false),
+                                         llvm::Function::ExternalLinkage, "flux_throw_error", TheModule);
     }
     
-    // Create error message
-    llvm::Value* MsgPtr = context.Builder.CreateGlobalStringPtr("Runtime error", "throw_msg");
-    
-    // Call the throw function (this will abort execution)
+    llvm::Value* MsgPtr = context.Builder.CreateGlobalStringPtr("Flux runtime exception", "ex_msg");
     context.Builder.CreateCall(ThrowFunc, {ExTV.Val, MsgPtr});
+    context.Builder.CreateUnreachable();
     
-    // Create unreachable after throw (no return)
-    llvm::BasicBlock* UnreachableBB = llvm::BasicBlock::Create(Ctx, "after_throw", context.Builder.GetInsertBlock()->getParent());
-    context.Builder.CreateBr(UnreachableBB);
-    context.Builder.SetInsertPoint(UnreachableBB);
-    
-    // Return error code (won't be reached)
-    return TypedValue(llvm::ConstantFP::get(Ctx, llvm::APFloat(-1.0)), TypeKind::Double);
+    return TypedValue(llvm::ConstantFP::get(Ctx, llvm::APFloat(0.0)), TypeKind::Double);
 }
 
 // ============ Assert Codegen ============

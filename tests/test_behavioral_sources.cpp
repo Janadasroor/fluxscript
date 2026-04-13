@@ -8,9 +8,9 @@ using namespace Flux;
 
 int main() {
     std::cout << "\n";
-    std::cout << "╔══════════════════════════════════════════════════════════╗\n";
-    std::cout << "║       Behavioral Source Netlist Generation Tests         ║\n";
-    std::cout << "╚══════════════════════════════════════════════════════════╝\n";
+    std::cout << "\n";
+    std::cout << "       Behavioral Source Netlist Generation Tests         \n";
+    std::cout << "\n";
     std::cout << "\n";
 
     NetlistGenerator gen;
@@ -20,14 +20,14 @@ int main() {
     std::string b_voltage = gen.generateBVoltage("B1", "out", "0", "V(in)*2");
     assert(b_voltage.find("BB1") != std::string::npos);
     assert(b_voltage.find("V={V(in)*2}") != std::string::npos);
-    std::cout << "✅\n";
+    std::cout << "\n";
 
     // Test 2: B-source (Current)
     std::cout << "Test 2: B-source (Current)... ";
     std::string b_current = gen.generateBCurrent("B2", "out", "0", "sin(time)");
     assert(b_current.find("BB2") != std::string::npos);
     assert(b_current.find("I={sin(time)}") != std::string::npos);
-    std::cout << "✅\n";
+    std::cout << "\n";
 
     // Test 3: E-source (VCVS)
     std::cout << "Test 3: E-source (VCVS)... ";
@@ -37,7 +37,7 @@ int main() {
     assert(e_source.find("in+") != std::string::npos);
     assert(e_source.find("in-") != std::string::npos);
     assert(e_source.find("10") != std::string::npos);
-    std::cout << "✅\n";
+    std::cout << "\n";
 
     // Test 4: F-source (CCCS)
     std::cout << "Test 4: F-source (CCCS)... ";
@@ -45,7 +45,7 @@ int main() {
     assert(f_source.find("FF1") != std::string::npos);
     assert(f_source.find("Vin") != std::string::npos);
     assert(f_source.find("5") != std::string::npos);
-    std::cout << "✅\n";
+    std::cout << "\n";
 
     // Test 5: G-source (VCCS)
     std::cout << "Test 5: G-source (VCCS)... ";
@@ -54,7 +54,7 @@ int main() {
     assert(g_source.find("ctrl+") != std::string::npos);
     assert(g_source.find("ctrl-") != std::string::npos);
     assert(g_source.find("0.01") != std::string::npos);
-    std::cout << "✅\n";
+    std::cout << "\n";
 
     // Test 6: H-source (CCVS)
     std::cout << "Test 6: H-source (CCVS)... ";
@@ -62,12 +62,12 @@ int main() {
     assert(h_source.find("HH1") != std::string::npos);
     assert(h_source.find("Vmeas") != std::string::npos);
     assert(h_source.find("100") != std::string::npos);
-    std::cout << "✅\n";
+    std::cout << "\n";
 
     std::cout << "\n";
-    std::cout << "╔══════════════════════════════════════════════════════════╗\n";
-    std::cout << "║       ALL BEHAVIORAL SOURCE TESTS PASSED ✅              ║\n";
-    std::cout << "╚══════════════════════════════════════════════════════════╝\n";
+    std::cout << "\n";
+    std::cout << "       ALL BEHAVIORAL SOURCE TESTS PASSED               \n";
+    std::cout << "\n";
     std::cout << "\n";
 
     return 0;

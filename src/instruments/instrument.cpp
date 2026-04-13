@@ -24,9 +24,9 @@
 namespace Flux {
 namespace Instruments {
 
-// ┌─────────────────────────────────────────────────────┐
-// │ Base Instrument Implementation                       │
-// └─────────────────────────────────────────────────────┘
+// 
+//  Base Instrument Implementation                       
+// 
 
 Instrument::Instrument() : m_port(5025), m_socketFd(-1) {}
 
@@ -131,9 +131,9 @@ std::string Instrument::readSocket() {
     return "";
 }
 
-// ┌─────────────────────────────────────────────────────┐
-// │ DC Power Supply Implementation                       │
-// └─────────────────────────────────────────────────────┘
+// 
+//  DC Power Supply Implementation                       
+// 
 
 PowerSupply::PowerSupply() {}
 
@@ -167,9 +167,9 @@ double PowerSupply::measureCurrent() {
     } catch (...) { return 0.0; }
 }
 
-// ┌─────────────────────────────────────────────────────┐
-// │ Digital Multimeter Implementation                    │
-// └─────────────────────────────────────────────────────┘
+// 
+//  Digital Multimeter Implementation                    
+// 
 
 Multimeter::Multimeter() {}
 
@@ -201,9 +201,9 @@ double Multimeter::measureFrequency() {
     } catch (...) { return 0.0; }
 }
 
-// ┌─────────────────────────────────────────────────────┐
-// │ Oscilloscope Implementation                          │
-// └─────────────────────────────────────────────────────┘
+// 
+//  Oscilloscope Implementation                          
+// 
 
 Oscilloscope::Oscilloscope() {}
 
@@ -262,9 +262,9 @@ Oscilloscope::WaveformData Oscilloscope::captureWaveform(int channel) {
     return data;
 }
 
-// ┌─────────────────────────────────────────────────────┐
-// │ C Interface Implementation                           │
-// └─────────────────────────────────────────────────────┘
+// 
+//  C Interface Implementation                           
+// 
 
 extern "C" {
     void* flux_ps_create() { return new PowerSupply(); }

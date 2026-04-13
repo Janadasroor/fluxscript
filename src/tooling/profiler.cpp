@@ -166,7 +166,7 @@ void Profiler::saveReport(const std::string& filename, int topN) {
          << std::right << std::setw(12) << "Calls"
          << std::setw(15) << "Total (ms)"
          << std::setw(15) << "Self (ms)"
-         << std::setw(10) << "Avg (μs)"
+         << std::setw(10) << "Avg (s)"
          << "\n";
     file << std::string(92, '-') << "\n";
     
@@ -304,7 +304,7 @@ void ProfileReport::print(int topN) const {
               << std::right << std::setw(12) << "Calls"
               << std::setw(15) << "Total (ms)"
               << std::setw(15) << "Self (ms)"
-              << std::setw(10) << "Avg (μs)"
+              << std::setw(10) << "Avg (s)"
               << "\n";
     std::cout << std::string(92, '-') << "\n";
     

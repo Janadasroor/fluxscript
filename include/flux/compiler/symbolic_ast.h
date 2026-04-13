@@ -31,50 +31,59 @@ public:
     const std::string& getVarName() const { return VarName; }
 };
 
-// Symbolic expression
+// Symbolic expression handle
 class SymExprAST : public ExprAST {
-    std::shared_ptr<class SymbolicExpr> Expr;
+    std::unique_ptr<ExprAST> Expr;
 public:
-    SymExprAST(std::shared_ptr<SymbolicExpr> expr) : Expr(std::move(expr)) {}
+    SymExprAST(std::unique_ptr<ExprAST> expr) : Expr(std::move(expr)) {}
     TypedValue codegen(CodegenContext& context) override;
 };
 
-// Solve equation
+// Solve equation: solve(expr, var)
 class SolveExprAST : public ExprAST {
-    std::shared_ptr<SymbolicExpr> LHS;
-    std::shared_ptr<SymbolicExpr> RHS;
+    std::unique_ptr<ExprAST> Expression;
     std::string Variable;
 public:
-    SolveExprAST(std::shared_ptr<SymbolicExpr> lhs, std::shared_ptr<SymbolicExpr> rhs, std::string var)
-        : LHS(std::move(lhs)), RHS(std::move(rhs)), Variable(std::move(var)) {}
+    SolveExprAST(std::unique_ptr<ExprAST> expr, std::string var)
+        : Expression(std::move(expr)), Variable(std::move(var)) {}
     TypedValue codegen(CodegenContext& context) override;
 };
 
 // Simplify expression
 class SimplifyExprAST : public ExprAST {
-    std::shared_ptr<SymbolicExpr> Expr;
+    std::unique_ptr<ExprAST> Expression;
 public:
-    SimplifyExprAST(std::shared_ptr<SymbolicExpr> expr) : Expr(std::move(expr)) {}
+    SimplifyExprAST(std::unique_ptr<ExprAST> expr) : Expression(std::move(expr)) {}
     TypedValue codegen(CodegenContext& context) override;
 };
 
 // Differentiate
 class DifferentiateExprAST : public ExprAST {
-    std::shared_ptr<SymbolicExpr> Expr;
+    std::unique_ptr<ExprAST> Expression;
     std::string Variable;
 public:
-    DifferentiateExprAST(std::shared_ptr<SymbolicExpr> expr, std::string var)
-        : Expr(std::move(expr)), Variable(std::move(var)) {}
+    DifferentiateExprAST(std::unique_ptr<ExprAST> expr, std::string var)
+        : Expression(std::move(expr)), Variable(std::move(var)) {}
     TypedValue codegen(CodegenContext& context) override;
 };
 
 // Substitute values
 class SubstituteExprAST : public ExprAST {
-    std::shared_ptr<SymbolicExpr> Expr;
-    std::map<std::string, double> Values;
+    std::unique_ptr<ExprAST> Expression;
+    std::map<std::string, std::unique_ptr<ExprAST>> Values;
 public:
-    SubstituteExprAST(std::shared_ptr<SymbolicExpr> expr, std::map<std::string, double> vals)
-        : Expr(std::move(expr)), Values(std::move(vals)) {}
+    SubstituteExprAST(std::unique_ptr<ExprAST> expr, std::map<std::string, std::unique_ptr<ExprAST>> vals)
+        : Expression(std::move(expr)), Values(std::move(vals)) {}
+    TypedValue codegen(CodegenContext& context) override;
+};
+
+// Evaluate symbolic expression to a number
+class EvaluateExprAST : public ExprAST {
+    std::unique_ptr<ExprAST> Expression;
+    std::map<std::string, std::unique_ptr<ExprAST>> Values;
+public:
+    EvaluateExprAST(std::unique_ptr<ExprAST> expr, std::map<std::string, std::unique_ptr<ExprAST>> vals)
+        : Expression(std::move(expr)), Values(std::move(vals)) {}
     TypedValue codegen(CodegenContext& context) override;
 };
 

@@ -252,7 +252,7 @@ inline void assertNear(double expected, double actual, double tolerance = 1e-6,
                        const char* file = __FILE__, int line = __LINE__) {
     if (std::abs(expected - actual) > tolerance) {
         std::ostringstream oss;
-        oss << "Expected " << formatValue(expected) << " ± " << tolerance
+        oss << "Expected " << formatValue(expected) << "  " << tolerance
             << " but got " << formatValue(actual);
         if (!msg.empty()) oss << ": " << msg;
         throw AssertionFailure(oss.str(), file, line);
@@ -392,7 +392,7 @@ public:
         
         // Print result if verbose
         if (ctx.isVerbose()) {
-            std::cout << "  [" << (result.status == TestStatus::Passed ? "✓" : "✗") << "] "
+            std::cout << "  [" << (result.status == TestStatus::Passed ? "" : "") << "] "
                       << test.name << " (" << std::fixed << std::setprecision(2) 
                       << result.durationMs << "ms)" << std::endl;
             if (result.status != TestStatus::Passed) {
@@ -409,9 +409,9 @@ class TestReporter {
 public:
     static void printSummary(const TestRunResult& result) {
         std::cout << "\n";
-        std::cout << "═══════════════════════════════════════════════════════════\n";
+        std::cout << "\n";
         std::cout << "                    TEST SUMMARY\n";
-        std::cout << "═══════════════════════════════════════════════════════════\n\n";
+        std::cout << "\n\n";
         
         for (const auto& suite : result.suites) {
             std::cout << "Suite: " << suite.name << "\n";
@@ -425,13 +425,13 @@ public:
             // Print failed tests
             for (const auto& test : suite.tests) {
                 if (test.status == TestStatus::Failed || test.status == TestStatus::Error) {
-                    std::cout << "  ✗ " << test.name << "\n";
+                    std::cout << "   " << test.name << "\n";
                     std::cout << "    " << test.message << "\n";
                 }
             }
         }
         
-        std::cout << "───────────────────────────────────────────────────────────\n";
+        std::cout << "\n";
         std::cout << "Total:  " << result.totalTests << " tests, "
                   << result.totalPassed << " passed, "
                   << result.totalFailed << " failed, "
@@ -440,11 +440,11 @@ public:
                   << result.totalDurationMs << "ms\n";
         
         if (result.success) {
-            std::cout << "\n✅ All tests passed!\n";
+            std::cout << "\n All tests passed!\n";
         } else {
-            std::cout << "\n❌ Some tests failed!\n";
+            std::cout << "\n Some tests failed!\n";
         }
-        std::cout << "═══════════════════════════════════════════════════════════\n";
+        std::cout << "\n";
     }
     
     static void printJUnitXML(const TestRunResult& result, const std::string& outputPath) {

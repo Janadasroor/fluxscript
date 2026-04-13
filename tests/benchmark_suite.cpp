@@ -534,10 +534,10 @@ int main(int argc, char** argv) {
     runner.setWarmupIterations(100);
     
     std::cout << "\n";
-    std::cout << "╔══════════════════════════════════════════════════════════╗\n";
-    std::cout << "║     FluxScript Comprehensive Benchmark Suite             ║\n";
-    std::cout << "║     Comparing: C++, FluxScript, Python, NumPy            ║\n";
-    std::cout << "╚══════════════════════════════════════════════════════════╝\n";
+    std::cout << "\n";
+    std::cout << "     FluxScript Comprehensive Benchmark Suite             \n";
+    std::cout << "     Comparing: C++, FluxScript, Python, NumPy            \n";
+    std::cout << "\n";
     std::cout << "\n";
     
     // Run all benchmarks
@@ -552,27 +552,27 @@ int main(int argc, char** argv) {
     
     // Print detailed analysis
     std::cout << "\n";
-    std::cout << "═══════════════════════════════════════════════════════════\n";
+    std::cout << "\n";
     std::cout << "                    KEY FINDINGS\n";
-    std::cout << "═══════════════════════════════════════════════════════════\n";
+    std::cout << "\n";
     std::cout << "\n";
     std::cout << "1. NATIVE PERFORMANCE:\n";
-    std::cout << "   • C++ Optimized:    Baseline (1.0x)\n";
-    std::cout << "   • FluxScript Native: ~1.0-1.2x (near C++ speed)\n";
-    std::cout << "   • Python:           ~10-100x slower\n";
-    std::cout << "   • Python + NumPy:   ~0.5-2x (vectorized ops only)\n";
+    std::cout << "    C++ Optimized:    Baseline (1.0x)\n";
+    std::cout << "    FluxScript Native: ~1.0-1.2x (near C++ speed)\n";
+    std::cout << "    Python:           ~10-100x slower\n";
+    std::cout << "    Python + NumPy:   ~0.5-2x (vectorized ops only)\n";
     std::cout << "\n";
     std::cout << "2. PYTHON BRIDGE OVERHEAD:\n";
-    std::cout << "   • Single call:      ~500-2000ns overhead\n";
-    std::cout << "   • In hot loop:      AVOID (100x slowdown)\n";
-    std::cout << "   • Vectorized:       Acceptable (paid once)\n";
+    std::cout << "    Single call:      ~500-2000ns overhead\n";
+    std::cout << "    In hot loop:      AVOID (100x slowdown)\n";
+    std::cout << "    Vectorized:       Acceptable (paid once)\n";
     std::cout << "\n";
     std::cout << "3. RECOMMENDATIONS:\n";
-    std::cout << "   ✓ Use FluxScript native for hot paths\n";
-    std::cout << "   ✓ Use Python Bridge for setup/I/O/post-processing\n";
-    std::cout << "   ✓ Vectorize Python calls (single call, bulk data)\n";
-    std::cout << "   ✓ Cache Python results, avoid repeated calls\n";
-    std::cout << "   ✗ NEVER use Python Bridge in hot loops\n";
+    std::cout << "    Use FluxScript native for hot paths\n";
+    std::cout << "    Use Python Bridge for setup/I/O/post-processing\n";
+    std::cout << "    Vectorize Python calls (single call, bulk data)\n";
+    std::cout << "    Cache Python results, avoid repeated calls\n";
+    std::cout << "    NEVER use Python Bridge in hot loops\n";
     std::cout << "\n";
     
     return 0;

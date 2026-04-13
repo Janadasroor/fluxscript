@@ -18,14 +18,14 @@ using namespace Flux;
 
 void test_package_manager() {
     std::cout << "\n";
-    std::cout << "╔══════════════════════════════════════════════════════════╗\n";
-    std::cout << "║  Feature: Package Manager                                ║\n";
-    std::cout << "╚══════════════════════════════════════════════════════════╝\n";
+    std::cout << "\n";
+    std::cout << "  Feature: Package Manager                                \n";
+    std::cout << "\n";
     std::cout << "\n";
     
     // Test 1: Package installation
     std::cout << "Test 1: Package Installation\n";
-    std::cout << "────────────────────────────────────────────────────────────\n";
+    std::cout << "\n";
     
     PackageManager::PackageManager pkg;
     pkg.initialize(".");
@@ -38,11 +38,11 @@ void test_package_manager() {
     auto packages = pkg.getInstalledPackages();
     std::cout << "  Installed " << packages.size() << " package(s)\n";
     
-    std::cout << "\n✅ Test 1 PASSED\n";
+    std::cout << "\n Test 1 PASSED\n";
     
     // Test 2: Package search
     std::cout << "\n\nTest 2: Package Search\n";
-    std::cout << "────────────────────────────────────────────────────────────\n";
+    std::cout << "\n";
     
     auto results = PackageManager::PackageRegistry::instance().search("filter");
     
@@ -55,11 +55,11 @@ void test_package_manager() {
     // assert(results.size() > 0 && "Should find packages!");
     std::cout << "  (Note: 0 results expected if no package registry configured)\n";
 
-    std::cout << "\n✅ Test 2 PASSED\n";
+    std::cout << "\n Test 2 PASSED\n";
     
     // Test 3: Package audit
     std::cout << "\n\nTest 3: Package Audit\n";
-    std::cout << "────────────────────────────────────────────────────────────\n";
+    std::cout << "\n";
     
     auto auditResult = pkg.audit();
     
@@ -67,23 +67,23 @@ void test_package_manager() {
     std::cout << "  License issues: " << auditResult.licenseIssues.size() << "\n";
     std::cout << "  Status: " << (auditResult.hasIssues ? "Issues found" : "All clear") << "\n";
     
-    std::cout << "\n✅ Test 3 PASSED\n";
+    std::cout << "\n Test 3 PASSED\n";
     
     // Test 4: CLI
     std::cout << "\n\nTest 4: Package CLI\n";
-    std::cout << "────────────────────────────────────────────────────────────\n";
+    std::cout << "\n";
     
     const char* args[] = {"flux-pkg", "list"};
     int result = PackageManager::PackageCLI::run(2, (char**)args);
     
     std::cout << "  CLI executed with result: " << result << "\n";
     
-    std::cout << "\n✅ Test 4 PASSED\n";
+    std::cout << "\n Test 4 PASSED\n";
     
     std::cout << "\n";
-    std::cout << "╔══════════════════════════════════════════════════════════╗\n";
-    std::cout << "║     Package Manager: ALL TESTS PASSED ✅                 ║\n";
-    std::cout << "╚══════════════════════════════════════════════════════════╝\n";
+    std::cout << "\n";
+    std::cout << "     Package Manager: ALL TESTS PASSED                  \n";
+    std::cout << "\n";
 }
 
 // ============================================================================
@@ -92,14 +92,14 @@ void test_package_manager() {
 
 void test_automated_debugging() {
     std::cout << "\n";
-    std::cout << "╔══════════════════════════════════════════════════════════╗\n";
-    std::cout << "║  Feature: Automated Debugging                            ║\n";
-    std::cout << "╚══════════════════════════════════════════════════════════╝\n";
+    std::cout << "\n";
+    std::cout << "  Feature: Automated Debugging                            \n";
+    std::cout << "\n";
     std::cout << "\n";
     
     // Test 1: Circuit diagnosis
     std::cout << "Test 1: Circuit Diagnosis\n";
-    std::cout << "────────────────────────────────────────────────────────────\n";
+    std::cout << "\n";
     
     Debugger::CircuitDebugger debugger;
     debugger.loadCircuit("test_circuit.flux");
@@ -119,11 +119,11 @@ void test_automated_debugging() {
     
     assert(report.healthScore >= 0 && report.healthScore <= 100);
     
-    std::cout << "\n✅ Test 1 PASSED\n";
+    std::cout << "\n Test 1 PASSED\n";
     
     // Test 2: Design Rule Check
     std::cout << "\n\nTest 2: Design Rule Check\n";
-    std::cout << "────────────────────────────────────────────────────────────\n";
+    std::cout << "\n";
     
     Debugger::DesignRuleChecker drc;
     drc.enableVoltageStressRules();
@@ -135,11 +135,11 @@ void test_automated_debugging() {
     std::cout << "  Violations: " << violations.size() << "\n";
     std::cout << "  Has violations: " << (drc.hasViolations() ? "Yes" : "No") << "\n";
     
-    std::cout << "\n✅ Test 2 PASSED\n";
+    std::cout << "\n Test 2 PASSED\n";
     
     // Test 3: Debug Session
     std::cout << "\n\nTest 3: Interactive Debug Session\n";
-    std::cout << "────────────────────────────────────────────────────────────\n";
+    std::cout << "\n";
     
     Debugger::DebugSession session;
     session.start("amplifier.flux");
@@ -153,12 +153,12 @@ void test_automated_debugging() {
     session.end();
     assert(!session.isActive());
     
-    std::cout << "\n✅ Test 3 PASSED\n";
+    std::cout << "\n Test 3 PASSED\n";
     
     std::cout << "\n";
-    std::cout << "╔══════════════════════════════════════════════════════════╗\n";
-    std::cout << "║     Automated Debugging: ALL TESTS PASSED ✅             ║\n";
-    std::cout << "╚══════════════════════════════════════════════════════════╝\n";
+    std::cout << "\n";
+    std::cout << "     Automated Debugging: ALL TESTS PASSED              \n";
+    std::cout << "\n";
 }
 
 // ============================================================================
@@ -167,14 +167,14 @@ void test_automated_debugging() {
 
 void test_sensitivity_analysis() {
     std::cout << "\n";
-    std::cout << "╔══════════════════════════════════════════════════════════╗\n";
-    std::cout << "║  Feature: Sensitivity Analysis                           ║\n";
-    std::cout << "╚══════════════════════════════════════════════════════════╝\n";
+    std::cout << "\n";
+    std::cout << "  Feature: Sensitivity Analysis                           \n";
+    std::cout << "\n";
     std::cout << "\n";
     
     // Test 1: Basic sensitivity
     std::cout << "Test 1: Basic Sensitivity Analysis\n";
-    std::cout << "────────────────────────────────────────────────────────────\n";
+    std::cout << "\n";
     
     Sensitivity::SensitivityAnalyzer analyzer;
     analyzer.loadCircuit("filter.flux");
@@ -190,11 +190,11 @@ void test_sensitivity_analysis() {
     
     assert(report.results.size() == 2);
     
-    std::cout << "\n✅ Test 1 PASSED\n";
+    std::cout << "\n Test 1 PASSED\n";
     
     // Test 2: Tolerance analysis
     std::cout << "\n\nTest 2: Tolerance Analysis\n";
-    std::cout << "────────────────────────────────────────────────────────────\n";
+    std::cout << "\n";
     
     Sensitivity::ToleranceAnalyzer tolAnalyzer;
     tolAnalyzer.loadCircuit("filter.flux");
@@ -210,11 +210,11 @@ void test_sensitivity_analysis() {
     
     assert(yield > 0 && yield <= 1);
     
-    std::cout << "\n✅ Test 2 PASSED\n";
+    std::cout << "\n Test 2 PASSED\n";
     
     // Test 3: Corner analysis
     std::cout << "\n\nTest 3: Corner Analysis\n";
-    std::cout << "────────────────────────────────────────────────────────────\n";
+    std::cout << "\n";
     
     Sensitivity::CornerAnalyzer cornerAnalyzer;
     cornerAnalyzer.loadCircuit("amp.flux");
@@ -229,12 +229,12 @@ void test_sensitivity_analysis() {
     
     assert(corners.size() >= 3);  // tt, ff, ss at minimum
     
-    std::cout << "\n✅ Test 3 PASSED\n";
+    std::cout << "\n Test 3 PASSED\n";
     
     std::cout << "\n";
-    std::cout << "╔══════════════════════════════════════════════════════════╗\n";
-    std::cout << "║     Sensitivity Analysis: ALL TESTS PASSED ✅            ║\n";
-    std::cout << "╚══════════════════════════════════════════════════════════╝\n";
+    std::cout << "\n";
+    std::cout << "     Sensitivity Analysis: ALL TESTS PASSED             \n";
+    std::cout << "\n";
 }
 
 // ============================================================================
@@ -243,14 +243,14 @@ void test_sensitivity_analysis() {
 
 void test_natural_language() {
     std::cout << "\n";
-    std::cout << "╔══════════════════════════════════════════════════════════╗\n";
-    std::cout << "║  Feature: Natural Language Interface                     ║\n";
-    std::cout << "╚══════════════════════════════════════════════════════════╝\n";
+    std::cout << "\n";
+    std::cout << "  Feature: Natural Language Interface                     \n";
+    std::cout << "\n";
     std::cout << "\n";
     
     // Test 1: Query parsing
     std::cout << "Test 1: Natural Language Query\n";
-    std::cout << "────────────────────────────────────────────────────────────\n";
+    std::cout << "\n";
     
     NaturalLanguage::NLPProcessor nlp;
     nlp.initialize("electronics");
@@ -263,11 +263,11 @@ void test_natural_language() {
     
     assert(response.success);
     
-    std::cout << "\n✅ Test 1 PASSED\n";
+    std::cout << "\n Test 1 PASSED\n";
     
     // Test 2: Circuit explanation
     std::cout << "\n\nTest 2: Circuit Explanation\n";
-    std::cout << "────────────────────────────────────────────────────────────\n";
+    std::cout << "\n";
     
     NaturalLanguage::CircuitExplainer explainer;
     explainer.loadCircuit("amplifier.flux");
@@ -279,11 +279,11 @@ void test_natural_language() {
     std::cout << "  Q: Why is the gain low?\n";
     std::cout << "  A: " << answer << "\n";
     
-    std::cout << "\n✅ Test 2 PASSED\n";
+    std::cout << "\n Test 2 PASSED\n";
     
     // Test 3: Conversational assistant
     std::cout << "\n\nTest 3: Conversational Assistant\n";
-    std::cout << "────────────────────────────────────────────────────────────\n";
+    std::cout << "\n";
     
     NaturalLanguage::ConversationalAssistant assistant;
     
@@ -295,12 +295,12 @@ void test_natural_language() {
     std::cout << "  User: With cutoff at 1kHz\n";
     std::cout << "  Assistant: " << response2 << "\n";
     
-    std::cout << "\n✅ Test 3 PASSED\n";
+    std::cout << "\n Test 3 PASSED\n";
     
     std::cout << "\n";
-    std::cout << "╔══════════════════════════════════════════════════════════╗\n";
-    std::cout << "║     Natural Language: ALL TESTS PASSED ✅                ║\n";
-    std::cout << "╚══════════════════════════════════════════════════════════╝\n";
+    std::cout << "\n";
+    std::cout << "     Natural Language: ALL TESTS PASSED                 \n";
+    std::cout << "\n";
 }
 
 // ============================================================================
@@ -309,10 +309,10 @@ void test_natural_language() {
 
 int main(int argc, char** argv) {
     std::cout << "\n";
-    std::cout << "╔══════════════════════════════════════════════════════════╗\n";
-    std::cout << "║          FluxScript Feature Test Suite - Phase 4A        ║\n";
-    std::cout << "║          Package Manager, Debugging, Sensitivity, NLP    ║\n";
-    std::cout << "╚══════════════════════════════════════════════════════════╝\n";
+    std::cout << "\n";
+    std::cout << "          FluxScript Feature Test Suite - Phase 4A        \n";
+    std::cout << "          Package Manager, Debugging, Sensitivity, NLP    \n";
+    std::cout << "\n";
     
     try {
         // Test Package Manager
@@ -328,14 +328,14 @@ int main(int argc, char** argv) {
         test_natural_language();
         
         std::cout << "\n";
-        std::cout << "╔══════════════════════════════════════════════════════════╗\n";
-        std::cout << "║          ALL PHASE 4A FEATURES TESTED SUCCESSFULLY ✅    ║\n";
-        std::cout << "╚══════════════════════════════════════════════════════════╝\n";
+        std::cout << "\n";
+        std::cout << "          ALL PHASE 4A FEATURES TESTED SUCCESSFULLY     \n";
+        std::cout << "\n";
         std::cout << "\n";
         
         return 0;
     } catch (const std::exception& e) {
-        std::cerr << "\n❌ TEST FAILED: " << e.what() << "\n";
+        std::cerr << "\n TEST FAILED: " << e.what() << "\n";
         return 1;
     }
 }

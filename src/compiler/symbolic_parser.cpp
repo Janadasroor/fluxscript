@@ -42,33 +42,137 @@ std::unique_ptr<ExprAST> Parser::ParseSymDecl() {
     std::string name = m_lexer.IdentifierStr;
     getNextToken();
     
-    std::cout << "[Symbolic] Declared symbolic variable: " << name << std::endl;
-    
     return std::make_unique<SymDeclAST>(name);
 }
 
 std::unique_ptr<ExprAST> Parser::ParseSolveExpr() {
     getNextToken(); // eat solve
-    std::cout << "[Symbolic] Solve expression parsed" << std::endl;
-    return std::make_unique<SymDeclAST>("solve_result");
+    if (CurTok != '(') { ReportError("expected '(' after solve"); return nullptr; }
+    getNextToken(); // eat (
+    
+    auto expr = ParseExpression();
+    if (!expr) return nullptr;
+    
+    if (CurTok != ',') { ReportError("expected ',' after expression in solve"); return nullptr; }
+    getNextToken(); // eat ,
+    
+    if (CurTok != static_cast<int>(TokenType::tok_identifier)) { ReportError("expected variable name in solve"); return nullptr; }
+    std::string varName = m_lexer.IdentifierStr;
+    getNextToken();
+    
+    if (CurTok != ')') { ReportError("expected ')' after solve"); return nullptr; }
+    getNextToken();
+    
+    return std::make_unique<SolveExprAST>(std::move(expr), varName);
 }
 
 std::unique_ptr<ExprAST> Parser::ParseSimplifyExpr() {
     getNextToken(); // eat simplify
-    std::cout << "[Symbolic] Simplify expression parsed" << std::endl;
-    return std::make_unique<SymDeclAST>("simplify_result");
+    if (CurTok != '(') { ReportError("expected '(' after simplify"); return nullptr; }
+    getNextToken(); // eat (
+    
+    auto expr = ParseExpression();
+    if (!expr) return nullptr;
+    
+    if (CurTok != ')') { ReportError("expected ')' after simplify"); return nullptr; }
+    getNextToken();
+    
+    return std::make_unique<SimplifyExprAST>(std::move(expr));
 }
 
 std::unique_ptr<ExprAST> Parser::ParseDifferentiateExpr() {
     getNextToken(); // eat differentiate
-    std::cout << "[Symbolic] Differentiate expression parsed" << std::endl;
-    return std::make_unique<SymDeclAST>("diff_result");
+    if (CurTok != '(') { ReportError("expected '(' after differentiate"); return nullptr; }
+    getNextToken(); // eat (
+    
+    auto expr = ParseExpression();
+    if (!expr) return nullptr;
+    
+    if (CurTok != ',') { ReportError("expected ',' after expression in differentiate"); return nullptr; }
+    getNextToken(); // eat ,
+    
+    if (CurTok != static_cast<int>(TokenType::tok_identifier)) { ReportError("expected variable name in differentiate"); return nullptr; }
+    std::string varName = m_lexer.IdentifierStr;
+    getNextToken();
+    
+    if (CurTok != ')') { ReportError("expected ')' after differentiate"); return nullptr; }
+    getNextToken();
+    
+    return std::make_unique<DifferentiateExprAST>(std::move(expr), varName);
 }
 
 std::unique_ptr<ExprAST> Parser::ParseSubstituteExpr() {
     getNextToken(); // eat substitute
-    std::cout << "[Symbolic] Substitute expression parsed" << std::endl;
-    return std::make_unique<SymDeclAST>("substitute_result");
+    if (CurTok != '(') { ReportError("expected '(' after substitute"); return nullptr; }
+    getNextToken(); // eat (
+    
+    auto expr = ParseExpression();
+    if (!expr) return nullptr;
+    
+    if (CurTok != ',') { ReportError("expected ',' after expression in substitute"); return nullptr; }
+    getNextToken(); // eat ,
+    
+    if (CurTok != static_cast<int>(TokenType::tok_lbrace)) { ReportError("expected '{' for substitution map"); return nullptr; }
+    getNextToken(); // eat {
+    
+    std::map<std::string, std::unique_ptr<ExprAST>> vals;
+    while (CurTok != static_cast<int>(TokenType::tok_rbrace)) {
+        if (CurTok != static_cast<int>(TokenType::tok_identifier)) { ReportError("expected variable name in substitution map"); return nullptr; }
+        std::string varName = m_lexer.IdentifierStr;
+        getNextToken();
+        
+        if (CurTok != static_cast<int>(TokenType::tok_colon)) { ReportError("expected ':' after variable name in substitution map"); return nullptr; }
+        getNextToken(); // eat :
+        
+        auto val = ParseExpression();
+        if (!val) return nullptr;
+        vals[varName] = std::move(val);
+        
+        if (CurTok == ',') getNextToken();
+    }
+    getNextToken(); // eat }
+    
+    if (CurTok != ')') { ReportError("expected ')' after substitute"); return nullptr; }
+    getNextToken();
+    
+    return std::make_unique<SubstituteExprAST>(std::move(expr), std::move(vals));
+}
+
+std::unique_ptr<ExprAST> Parser::ParseEvaluateExpr() {
+    getNextToken(); // eat evaluate
+    if (CurTok != '(') { ReportError("expected '(' after evaluate"); return nullptr; }
+    getNextToken(); // eat (
+    
+    auto expr = ParseExpression();
+    if (!expr) return nullptr;
+    
+    std::map<std::string, std::unique_ptr<ExprAST>> vals;
+    if (CurTok == ',') {
+        getNextToken(); // eat ,
+        if (CurTok != static_cast<int>(TokenType::tok_lbrace)) { ReportError("expected '{' for evaluation map"); return nullptr; }
+        getNextToken(); // eat {
+        
+        while (CurTok != static_cast<int>(TokenType::tok_rbrace)) {
+            if (CurTok != static_cast<int>(TokenType::tok_identifier)) { ReportError("expected variable name in evaluation map"); return nullptr; }
+            std::string varName = m_lexer.IdentifierStr;
+            getNextToken();
+            
+            if (CurTok != static_cast<int>(TokenType::tok_colon)) { ReportError("expected ':' after variable name in evaluation map"); return nullptr; }
+            getNextToken(); // eat :
+            
+            auto val = ParseExpression();
+            if (!val) return nullptr;
+            vals[varName] = std::move(val);
+            
+            if (CurTok == ',') getNextToken();
+        }
+        getNextToken(); // eat }
+    }
+    
+    if (CurTok != ')') { ReportError("expected ')' after evaluate"); return nullptr; }
+    getNextToken();
+    
+    return std::make_unique<EvaluateExprAST>(std::move(expr), std::move(vals));
 }
 
 } // namespace Flux

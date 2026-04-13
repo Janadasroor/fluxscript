@@ -27,32 +27,32 @@ namespace Flux {
 // SymDeclAST - Symbolic variable declaration
 // ============================================================================
 TypedValue SymDeclAST::codegen(CodegenContext& context) {
-    // Register symbolic variable with the engine
-    auto& engine = SymbolicEngine::instance();
-    auto symVar = engine.sym(VarName);
+    llvm::LLVMContext& Ctx = context.TheContext;
+    llvm::Module* TheModule = context.TheModule.get();
     
-    // Return pointer to the symbolic expression
-    llvm::Type* PtrTy = llvm::PointerType::get(context.TheContext, 0);
-    llvm::Value* ExprPtr = llvm::ConstantExpr::getIntToPtr(
-        llvm::ConstantInt::get(context.TheContext, llvm::APInt(64, (uint64_t)symVar.get())),
-        PtrTy
-    );
+    // Call flux_sym_decl(const char* name)
+    llvm::Function* SymDeclF = TheModule->getFunction("flux_sym_decl");
+    if (!SymDeclF) {
+        llvm::Type* Params[] = { llvm::PointerType::get(Ctx, 0) };
+        SymDeclF = llvm::Function::Create(llvm::FunctionType::get(llvm::Type::getDoubleTy(Ctx), Params, false),
+                                         llvm::Function::ExternalLinkage, "flux_sym_decl", TheModule);
+    }
     
-    return TypedValue(ExprPtr, TypeKind::String);
+    llvm::Value* NamePtr = context.Builder.CreateGlobalStringPtr(VarName, "sym_name");
+    llvm::Value* SymPtr = context.Builder.CreateCall(SymDeclF, {NamePtr}, "sym_ptr");
+    
+    // Register in symbol table
+    context.NamedValues[VarName] = SymPtr;
+    context.NamedTypes[VarName] = FluxType(TypeKind::Symbolic);
+    
+    return TypedValue(SymPtr, TypeKind::Symbolic);
 }
 
 // ============================================================================
-// SymExprAST - Symbolic expression
+// SymExprAST - Symbolic expression handle
 // ============================================================================
 TypedValue SymExprAST::codegen(CodegenContext& context) {
-    // Return pointer to the symbolic expression
-    llvm::Type* PtrTy = llvm::PointerType::get(context.TheContext, 0);
-    llvm::Value* ExprPtr = llvm::ConstantExpr::getIntToPtr(
-        llvm::ConstantInt::get(context.TheContext, llvm::APInt(64, (uint64_t)Expr.get())),
-        PtrTy
-    );
-    
-    return TypedValue(ExprPtr, TypeKind::String);
+    return Expr->codegen(context);
 }
 
 // ============================================================================
@@ -60,64 +60,153 @@ TypedValue SymExprAST::codegen(CodegenContext& context) {
 // ============================================================================
 TypedValue SolveExprAST::codegen(CodegenContext& context) {
     llvm::LLVMContext& Ctx = context.TheContext;
+    llvm::Module* TheModule = context.TheModule.get();
     
-    // For now, return 0.0 (the actual solving happens at runtime)
-    // A full implementation would call the runtime and return the solution vector
-    return TypedValue(llvm::ConstantFP::get(Ctx, llvm::APFloat(0.0)), TypeKind::Double);
+    TypedValue ExprTV = Expression->codegen(context);
+    if (!ExprTV.Val) return TypedValue();
+    
+    // Call flux_sym_solve(double expr_ptr, double rhs_ptr, const char* var)
+    // For now we assume expr = 0
+    llvm::Function* SolveF = TheModule->getFunction("flux_sym_solve");
+    if (!SolveF) {
+        llvm::Type* Params[] = { llvm::Type::getDoubleTy(Ctx), llvm::Type::getDoubleTy(Ctx), llvm::PointerType::get(Ctx, 0) };
+        SolveF = llvm::Function::Create(llvm::FunctionType::get(llvm::Type::getDoubleTy(Ctx), Params, false),
+                                       llvm::Function::ExternalLinkage, "flux_sym_solve", TheModule);
+    }
+    
+    // Create symbolic zero
+    llvm::Function* SymNumF = TheModule->getFunction("flux_sym_number");
+    if (!SymNumF) {
+        SymNumF = llvm::Function::Create(llvm::FunctionType::get(llvm::Type::getDoubleTy(Ctx), {llvm::Type::getDoubleTy(Ctx)}, false),
+                                        llvm::Function::ExternalLinkage, "flux_sym_number", TheModule);
+    }
+    llvm::Value* ZeroPtr = context.Builder.CreateCall(SymNumF, {llvm::ConstantFP::get(Ctx, llvm::APFloat(0.0))}, "sym_zero");
+    
+    llvm::Value* VarNamePtr = context.Builder.CreateGlobalStringPtr(Variable, "solve_var");
+    
+    return TypedValue(context.Builder.CreateCall(SolveF, {ExprTV.Val, ZeroPtr, VarNamePtr}, "solution"), TypeKind::Double);
 }
 
 // ============================================================================
 // SimplifyExprAST - Simplify symbolic expression
 // ============================================================================
 TypedValue SimplifyExprAST::codegen(CodegenContext& context) {
-    // Call runtime simplify
-    auto& engine = SymbolicEngine::instance();
-    auto simplified = engine.simplify(Expr);
+    llvm::LLVMContext& Ctx = context.TheContext;
+    llvm::Module* TheModule = context.TheModule.get();
     
-    // Return pointer to simplified expression
-    llvm::Type* PtrTy = llvm::PointerType::get(context.TheContext, 0);
-    llvm::Value* ExprPtr = llvm::ConstantExpr::getIntToPtr(
-        llvm::ConstantInt::get(context.TheContext, llvm::APInt(64, (uint64_t)simplified.get())),
-        PtrTy
-    );
+    TypedValue ExprTV = Expression->codegen(context);
+    if (!ExprTV.Val) return TypedValue();
     
-    return TypedValue(ExprPtr, TypeKind::String);
+    llvm::Function* SimplifyF = TheModule->getFunction("flux_sym_simplify");
+    if (!SimplifyF) {
+        SimplifyF = llvm::Function::Create(llvm::FunctionType::get(llvm::Type::getDoubleTy(Ctx), {llvm::Type::getDoubleTy(Ctx)}, false),
+                                          llvm::Function::ExternalLinkage, "flux_sym_simplify", TheModule);
+    }
+    
+    return TypedValue(context.Builder.CreateCall(SimplifyF, {ExprTV.Val}, "simplified"), TypeKind::Symbolic);
 }
 
 // ============================================================================
 // DifferentiateExprAST - Symbolic differentiation
 // ============================================================================
 TypedValue DifferentiateExprAST::codegen(CodegenContext& context) {
-    // Call runtime differentiation
-    auto& engine = SymbolicEngine::instance();
-    auto derivative = engine.differentiate(Expr, Variable);
+    llvm::LLVMContext& Ctx = context.TheContext;
+    llvm::Module* TheModule = context.TheModule.get();
     
-    // Return pointer to derivative expression
-    llvm::Type* PtrTy = llvm::PointerType::get(context.TheContext, 0);
-    llvm::Value* ExprPtr = llvm::ConstantExpr::getIntToPtr(
-        llvm::ConstantInt::get(context.TheContext, llvm::APInt(64, (uint64_t)derivative.get())),
-        PtrTy
-    );
+    TypedValue ExprTV = Expression->codegen(context);
+    if (!ExprTV.Val) return TypedValue();
     
-    return TypedValue(ExprPtr, TypeKind::String);
+    llvm::Function* DiffF = TheModule->getFunction("flux_sym_differentiate");
+    if (!DiffF) {
+        DiffF = llvm::Function::Create(llvm::FunctionType::get(llvm::Type::getDoubleTy(Ctx), {llvm::Type::getDoubleTy(Ctx), llvm::PointerType::get(Ctx, 0)}, false),
+                                      llvm::Function::ExternalLinkage, "flux_sym_differentiate", TheModule);
+    }
+    
+    llvm::Value* VarNamePtr = context.Builder.CreateGlobalStringPtr(Variable, "diff_var");
+    return TypedValue(context.Builder.CreateCall(DiffF, {ExprTV.Val, VarNamePtr}, "derivative"), TypeKind::Symbolic);
 }
 
 // ============================================================================
 // SubstituteExprAST - Substitute values in expression
 // ============================================================================
 TypedValue SubstituteExprAST::codegen(CodegenContext& context) {
-    // Call runtime substitution
-    auto& engine = SymbolicEngine::instance();
-    auto result = engine.substitute(Expr, Values);
+    llvm::LLVMContext& Ctx = context.TheContext;
+    llvm::Module* TheModule = context.TheModule.get();
     
-    // Return pointer to result expression
-    llvm::Type* PtrTy = llvm::PointerType::get(context.TheContext, 0);
-    llvm::Value* ExprPtr = llvm::ConstantExpr::getIntToPtr(
-        llvm::ConstantInt::get(context.TheContext, llvm::APInt(64, (uint64_t)result.get())),
-        PtrTy
-    );
+    TypedValue ExprTV = Expression->codegen(context);
+    if (!ExprTV.Val) return TypedValue();
     
-    return TypedValue(ExprPtr, TypeKind::String);
+    // This is more complex because of the map. We'll need to create arrays.
+    int count = Values.size();
+    llvm::Type* DoubleTy = llvm::Type::getDoubleTy(Ctx);
+    llvm::Type* VoidPtrTy = llvm::PointerType::get(Ctx, 0);
+    
+    llvm::Value* NamesArr = context.Builder.CreateAlloca(llvm::ArrayType::get(VoidPtrTy, count), nullptr, "subst_names");
+    llvm::Value* ValsArr = context.Builder.CreateAlloca(llvm::ArrayType::get(DoubleTy, count), nullptr, "subst_vals");
+    
+    int i = 0;
+    for (auto& [name, valExpr] : Values) {
+        llvm::Value* NamePtr = context.Builder.CreateGlobalStringPtr(name);
+        llvm::Value* Idx = llvm::ConstantInt::get(llvm::Type::getInt32Ty(Ctx), i);
+        context.Builder.CreateStore(NamePtr, context.Builder.CreateInBoundsGEP(llvm::ArrayType::get(VoidPtrTy, count), NamesArr, {llvm::ConstantInt::get(llvm::Type::getInt32Ty(Ctx), 0), Idx}));
+        
+        TypedValue ValTV = valExpr->codegen(context);
+        context.Builder.CreateStore(ValTV.Val, context.Builder.CreateInBoundsGEP(llvm::ArrayType::get(DoubleTy, count), ValsArr, {llvm::ConstantInt::get(llvm::Type::getInt32Ty(Ctx), 0), Idx}));
+        i++;
+    }
+    
+    llvm::Function* SubstF = TheModule->getFunction("flux_sym_substitute");
+    if (!SubstF) {
+        llvm::Type* Params[] = { DoubleTy, DoubleTy, VoidPtrTy, VoidPtrTy };
+        SubstF = llvm::Function::Create(llvm::FunctionType::get(DoubleTy, Params, false),
+                                       llvm::Function::ExternalLinkage, "flux_sym_substitute", TheModule);
+    }
+    
+    llvm::Value* NamesPtr = context.Builder.CreateBitCast(NamesArr, VoidPtrTy);
+    llvm::Value* ValsPtr = context.Builder.CreateBitCast(ValsArr, VoidPtrTy);
+    
+    return TypedValue(context.Builder.CreateCall(SubstF, {ExprTV.Val, llvm::ConstantFP::get(DoubleTy, (double)count), NamesPtr, ValsPtr}, "substituted"), TypeKind::Symbolic);
+}
+
+// ============================================================================
+// EvaluateExprAST - Evaluate symbolic expression to a number
+// ============================================================================
+TypedValue EvaluateExprAST::codegen(CodegenContext& context) {
+    llvm::LLVMContext& Ctx = context.TheContext;
+    llvm::Module* TheModule = context.TheModule.get();
+    
+    TypedValue ExprTV = Expression->codegen(context);
+    if (!ExprTV.Val) return TypedValue();
+    
+    int count = Values.size();
+    llvm::Type* DoubleTy = llvm::Type::getDoubleTy(Ctx);
+    llvm::Type* VoidPtrTy = llvm::PointerType::get(Ctx, 0);
+    
+    llvm::Value* NamesArr = context.Builder.CreateAlloca(llvm::ArrayType::get(VoidPtrTy, std::max(1, count)), nullptr, "eval_names");
+    llvm::Value* ValsArr = context.Builder.CreateAlloca(llvm::ArrayType::get(DoubleTy, std::max(1, count)), nullptr, "eval_vals");
+    
+    int i = 0;
+    for (auto& [name, valExpr] : Values) {
+        llvm::Value* NamePtr = context.Builder.CreateGlobalStringPtr(name);
+        llvm::Value* Idx = llvm::ConstantInt::get(llvm::Type::getInt32Ty(Ctx), i);
+        context.Builder.CreateStore(NamePtr, context.Builder.CreateInBoundsGEP(llvm::ArrayType::get(VoidPtrTy, std::max(1, count)), NamesArr, {llvm::ConstantInt::get(llvm::Type::getInt32Ty(Ctx), 0), Idx}));
+        
+        TypedValue ValTV = valExpr->codegen(context);
+        context.Builder.CreateStore(ValTV.Val, context.Builder.CreateInBoundsGEP(llvm::ArrayType::get(DoubleTy, std::max(1, count)), ValsArr, {llvm::ConstantInt::get(llvm::Type::getInt32Ty(Ctx), 0), Idx}));
+        i++;
+    }
+    
+    llvm::Function* EvalF = TheModule->getFunction("flux_sym_evaluate");
+    if (!EvalF) {
+        llvm::Type* Params[] = { DoubleTy, DoubleTy, VoidPtrTy, VoidPtrTy };
+        EvalF = llvm::Function::Create(llvm::FunctionType::get(DoubleTy, Params, false),
+                                      llvm::Function::ExternalLinkage, "flux_sym_evaluate", TheModule);
+    }
+    
+    llvm::Value* NamesPtr = context.Builder.CreateBitCast(NamesArr, VoidPtrTy);
+    llvm::Value* ValsPtr = context.Builder.CreateBitCast(ValsArr, VoidPtrTy);
+    
+    return TypedValue(context.Builder.CreateCall(EvalF, {ExprTV.Val, llvm::ConstantFP::get(DoubleTy, (double)count), NamesPtr, ValsPtr}, "eval_res"), TypeKind::Double);
 }
 
 } // namespace Flux

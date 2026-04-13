@@ -178,7 +178,7 @@ double NeuralNetworkSurrogate::calculateR2(const TrainingData& testData) const {
     }
     mean /= testData.numSamples();
     
-    // Calculate R²
+    // Calculate R
     double ssRes = 0, ssTot = 0;
     for (size_t i = 0; i < testData.numSamples(); ++i) {
         auto pred = predict(testData.inputs[i]);

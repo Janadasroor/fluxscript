@@ -25,9 +25,9 @@ using namespace Flux::FFT;
 
 int main(int argc, char** argv) {
     std::cout << "\n";
-    std::cout << "╔══════════════════════════════════════════════════════════╗\n";
-    std::cout << "║          FluxScript FFT Analyzer                        ║\n";
-    std::cout << "╚══════════════════════════════════════════════════════════╝\n";
+    std::cout << "\n";
+    std::cout << "          FluxScript FFT Analyzer                        \n";
+    std::cout << "\n";
     std::cout << "\n";
 
     if (argc < 2) {
@@ -56,14 +56,14 @@ int main(int argc, char** argv) {
         }
     }
 
-    std::cout << "📄 Loading: " << filename << "\n";
-    std::cout << "⚙️  Sample Rate: " << sampleRate << " Hz\n";
+    std::cout << " Loading: " << filename << "\n";
+    std::cout << "  Sample Rate: " << sampleRate << " Hz\n";
 
     // Load CSV data
     std::vector<double> signalData;
     std::ifstream file(filename);
     if (!file.is_open()) {
-        std::cerr << "❌ Cannot open file: " << filename << "\n";
+        std::cerr << " Cannot open file: " << filename << "\n";
         return 1;
     }
 
@@ -93,10 +93,10 @@ int main(int argc, char** argv) {
     }
     file.close();
 
-    std::cout << "📊 Loaded " << signalData.size() << " samples\n";
+    std::cout << " Loaded " << signalData.size() << " samples\n";
 
     if (signalData.empty()) {
-        std::cerr << "❌ No valid data found in file\n";
+        std::cerr << " No valid data found in file\n";
         return 1;
     }
 
@@ -106,12 +106,12 @@ int main(int argc, char** argv) {
     engine.setWindowType(windowType);
 
     // Run FFT
-    std::cout << "🚀 Computing FFT...\n";
+    std::cout << " Computing FFT...\n";
     FFTReport report = engine.compute(signalData);
 
     // Output Results
     if (plotMode == "ascii") {
-        std::cout << "\n📈 Frequency Spectrum:\n";
+        std::cout << "\n Frequency Spectrum:\n";
         std::cout << report.toASCIIPlot(60, 15);
     } else {
         std::cout << report.toText();

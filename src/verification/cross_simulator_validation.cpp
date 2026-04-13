@@ -225,7 +225,7 @@ std::string CrossSimulatorValidator::generateReport(const CircuitValidationResul
     
     oss << "Circuit: " << result.circuit_name << "\n";
     oss << "Reference Simulator: " << result.reference_simulator << "\n";
-    oss << "Overall Result: " << (result.overall_passed ? "PASSED ✅" : "FAILED ❌") << "\n";
+    oss << "Overall Result: " << (result.overall_passed ? "PASSED " : "FAILED ") << "\n";
     oss << "Execution Time: " << result.execution_time_ms << " ms\n\n";
     
     oss << "--- Measurement Comparisons ---\n";

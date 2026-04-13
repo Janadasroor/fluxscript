@@ -5,14 +5,14 @@
 
 using namespace Flux::AdvancedAnalysis;
 
-// ┌─────────────────────────────────────────────────────┐
-// │ Test 1: Stability Analyzer                          │
-// └─────────────────────────────────────────────────────┘
+// 
+//  Test 1: Stability Analyzer                          
+// 
 void test_stability_analyzer() {
     std::cout << "\n";
-    std::cout << "╔══════════════════════════════════════════════════════════╗\n";
-    std::cout << "║  Test 1: Stability Analyzer                              ║\n";
-    std::cout << "╚══════════════════════════════════════════════════════════╝\n";
+    std::cout << "\n";
+    std::cout << "  Test 1: Stability Analyzer                              \n";
+    std::cout << "\n";
     std::cout << "\n";
     
     StabilityAnalyzer analyzer;
@@ -29,17 +29,17 @@ void test_stability_analyzer() {
     std::string md = result.toMarkdown();
     assert(md.find("# Stability") != std::string::npos && "Should have markdown header");
     
-    std::cout << "\n✅ Test 1 PASSED\n";
+    std::cout << "\n Test 1 PASSED\n";
 }
 
-// ┌─────────────────────────────────────────────────────┐
-// │ Test 2: Sensitivity Analyzer                        │
-// └─────────────────────────────────────────────────────┘
+// 
+//  Test 2: Sensitivity Analyzer                        
+// 
 void test_sensitivity_analyzer() {
     std::cout << "\n";
-    std::cout << "╔══════════════════════════════════════════════════════════╗\n";
-    std::cout << "║  Test 2: Sensitivity Analyzer                            ║\n";
-    std::cout << "╚══════════════════════════════════════════════════════════╝\n";
+    std::cout << "\n";
+    std::cout << "  Test 2: Sensitivity Analyzer                            \n";
+    std::cout << "\n";
     std::cout << "\n";
     
     SensitivityAnalyzer analyzer;
@@ -58,24 +58,24 @@ void test_sensitivity_analyzer() {
     std::string md = result.toMarkdown();
     assert(md.find("# Sensitivity") != std::string::npos && "Should have markdown header");
     
-    std::cout << "\n✅ Test 2 PASSED\n";
+    std::cout << "\n Test 2 PASSED\n";
 }
 
-// ┌─────────────────────────────────────────────────────┐
-// │ Test 3: Monte Carlo Engine                          │
-// └─────────────────────────────────────────────────────┘
+// 
+//  Test 3: Monte Carlo Engine                          
+// 
 void test_monte_carlo() {
     std::cout << "\n";
-    std::cout << "╔══════════════════════════════════════════════════════════╗\n";
-    std::cout << "║  Test 3: Monte Carlo Engine                              ║\n";
-    std::cout << "╚══════════════════════════════════════════════════════════╝\n";
+    std::cout << "\n";
+    std::cout << "  Test 3: Monte Carlo Engine                              \n";
+    std::cout << "\n";
     std::cout << "\n";
     
     MonteCarloEngine mc;
     mc.setIterations(100);
     mc.setDistribution("gaussian");
-    mc.addParameter("R1", 10000.0, 100.0);  // 10k ± 1%
-    mc.addParameter("C1", 1e-9, 0.2e-9);     // 1nF ± 20%
+    mc.addParameter("R1", 10000.0, 100.0);  // 10k  1%
+    mc.addParameter("C1", 1e-9, 0.2e-9);     // 1nF  20%
     mc.setOutputVariable("Vout");
     mc.setSpecLimits(4.5, 5.5);
     
@@ -91,17 +91,17 @@ void test_monte_carlo() {
     std::string md = result.toMarkdown();
     assert(md.find("# Monte Carlo") != std::string::npos && "Should have markdown header");
     
-    std::cout << "\n✅ Test 3 PASSED\n";
+    std::cout << "\n Test 3 PASSED\n";
 }
 
-// ┌─────────────────────────────────────────────────────┐
-// │ Test 4: Circuit Optimizer                           │
-// └─────────────────────────────────────────────────────┘
+// 
+//  Test 4: Circuit Optimizer                           
+// 
 void test_circuit_optimizer() {
     std::cout << "\n";
-    std::cout << "╔══════════════════════════════════════════════════════════╗\n";
-    std::cout << "║  Test 4: Circuit Optimizer                               ║\n";
-    std::cout << "╚══════════════════════════════════════════════════════════╝\n";
+    std::cout << "\n";
+    std::cout << "  Test 4: Circuit Optimizer                               \n";
+    std::cout << "\n";
     std::cout << "\n";
     
     CircuitOptimizer optimizer;
@@ -122,23 +122,23 @@ void test_circuit_optimizer() {
     std::string md = result.toMarkdown();
     assert(md.find("# Optimization") != std::string::npos && "Should have markdown header");
     
-    std::cout << "\n✅ Test 4 PASSED\n";
+    std::cout << "\n Test 4 PASSED\n";
 }
 
-// ┌─────────────────────────────────────────────────────┐
-// │ Test 5: Worst-Case Analyzer                         │
-// └─────────────────────────────────────────────────────┘
+// 
+//  Test 5: Worst-Case Analyzer                         
+// 
 void test_worst_case() {
     std::cout << "\n";
-    std::cout << "╔══════════════════════════════════════════════════════════╗\n";
-    std::cout << "║  Test 5: Worst-Case Analyzer                             ║\n";
-    std::cout << "╚══════════════════════════════════════════════════════════╝\n";
+    std::cout << "\n";
+    std::cout << "  Test 5: Worst-Case Analyzer                             \n";
+    std::cout << "\n";
     std::cout << "\n";
     
     WorstCaseAnalyzer wc;
-    wc.addComponent("R1", 10000.0, 100.0);  // 10k ± 1%
-    wc.addComponent("R2", 20000.0, 200.0);  // 20k ± 1%
-    wc.addComponent("C1", 1e-9, 0.2e-9);     // 1nF ± 20%
+    wc.addComponent("R1", 10000.0, 100.0);  // 10k  1%
+    wc.addComponent("R2", 20000.0, 200.0);  // 20k  1%
+    wc.addComponent("C1", 1e-9, 0.2e-9);     // 1nF  20%
     wc.setOutputVariable("Vout");
     wc.setSpecLimits(4.5, 5.5);
     
@@ -154,17 +154,17 @@ void test_worst_case() {
     std::string md = result.toMarkdown();
     assert(md.find("# Worst-Case") != std::string::npos && "Should have markdown header");
     
-    std::cout << "\n✅ Test 5 PASSED\n";
+    std::cout << "\n Test 5 PASSED\n";
 }
 
-// ┌─────────────────────────────────────────────────────┐
-// │ Test 6: C Interface                                 │
-// └─────────────────────────────────────────────────────┘
+// 
+//  Test 6: C Interface                                 
+// 
 void test_c_interface() {
     std::cout << "\n";
-    std::cout << "╔══════════════════════════════════════════════════════════╗\n";
-    std::cout << "║  Test 6: C Interface for JIT                             ║\n";
-    std::cout << "╚══════════════════════════════════════════════════════════╝\n";
+    std::cout << "\n";
+    std::cout << "  Test 6: C Interface for JIT                             \n";
+    std::cout << "\n";
     std::cout << "\n";
     
     // Test stability C interface
@@ -204,18 +204,18 @@ void test_c_interface() {
     assert(wc_result != nullptr && "Should return worst-case result");
     flux_worst_case_destroy(wc);
     
-    std::cout << "  ✅ All C interface functions work correctly\n";
-    std::cout << "\n✅ Test 6 PASSED\n";
+    std::cout << "   All C interface functions work correctly\n";
+    std::cout << "\n Test 6 PASSED\n";
 }
 
-// ┌─────────────────────────────────────────────────────┐
-// │ Main Test Runner                                    │
-// └─────────────────────────────────────────────────────┘
+// 
+//  Main Test Runner                                    
+// 
 int main() {
     std::cout << "\n";
-    std::cout << "╔══════════════════════════════════════════════════════════╗\n";
-    std::cout << "║       Advanced Analysis Tools - Test Suite               ║\n";
-    std::cout << "╚══════════════════════════════════════════════════════════╝\n";
+    std::cout << "\n";
+    std::cout << "       Advanced Analysis Tools - Test Suite               \n";
+    std::cout << "\n";
     
     try {
         test_stability_analyzer();
@@ -226,14 +226,14 @@ int main() {
         test_c_interface();
         
         std::cout << "\n";
-        std::cout << "╔══════════════════════════════════════════════════════════╗\n";
-        std::cout << "║          ALL ADVANCED ANALYSIS TESTS PASSED ✅           ║\n";
-        std::cout << "╚══════════════════════════════════════════════════════════╝\n";
+        std::cout << "\n";
+        std::cout << "          ALL ADVANCED ANALYSIS TESTS PASSED            \n";
+        std::cout << "\n";
         std::cout << "\n";
         
         return 0;
     } catch (const std::exception& e) {
-        std::cerr << "\n❌ TEST FAILED: " << e.what() << "\n";
+        std::cerr << "\n TEST FAILED: " << e.what() << "\n";
         return 1;
     }
 }

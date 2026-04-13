@@ -242,7 +242,7 @@ void Neuron::updateLIF(double dt) {
     double tau = 10;  // ms (smaller for faster response)
     double v_rest = -70;  // mV
     double v_thresh = -55;  // mV
-    double R = 10;  // Resistance (MΩ)
+    double R = 10;  // Resistance (M)
     
     if (m_refractoryTime > 0) {
         m_refractoryTime -= dt;

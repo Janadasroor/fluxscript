@@ -21,7 +21,7 @@ echo ""
 
 # Check if flux-minimal binary exists
 if [ ! -f "$FLUX_BIN" ]; then
-    echo -e "${RED}❌ Error: flux-minimal binary not found${NC}"
+    echo -e "${RED} Error: flux-minimal binary not found${NC}"
     echo "Please run ./scripts/build_guard.sh first"
     exit 1
 fi
@@ -40,10 +40,10 @@ for test_file in "$SCRIPT_DIR"/test_*.flux; do
     
     # Run test with timeout
     if timeout 10 "$FLUX_BIN" "$test_file" > /dev/null 2>&1; then
-        echo -e "${GREEN}✅ PASSED${NC}"
+        echo -e "${GREEN} PASSED${NC}"
         PASSED=$((PASSED + 1))
     else
-        echo -e "${RED}❌ FAILED${NC}"
+        echo -e "${RED} FAILED${NC}"
         FAILED=$((FAILED + 1))
     fi
 done
@@ -58,9 +58,9 @@ echo -e "Failed: ${RED}$FAILED${NC}"
 echo ""
 
 if [ $FAILED -eq 0 ]; then
-    echo -e "${GREEN}✅ ALL TESTS PASSED${NC}"
+    echo -e "${GREEN} ALL TESTS PASSED${NC}"
     exit 0
 else
-    echo -e "${RED}❌ SOME TESTS FAILED${NC}"
+    echo -e "${RED} SOME TESTS FAILED${NC}"
     exit 1
 fi

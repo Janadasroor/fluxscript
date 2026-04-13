@@ -264,9 +264,9 @@ std::string BenchmarkRunner::generateComparisonTable(
     }
     
     oss << "\n";
-    oss << "┌─────────────────────────┬──────────────────┬────────────┬────────────┬──────────┐\n";
-    oss << "│ Test                    │ Language         │ Time (ms)  │ Speedup    │ Ops/sec  │\n";
-    oss << "├─────────────────────────┼──────────────────┼────────────┼────────────┼──────────┤\n";
+    oss << "\n";
+    oss << " Test                     Language          Time (ms)   Speedup     Ops/sec  \n";
+    oss << "\n";
     
     for (const auto& pair : byTest) {
         // Find Python baseline
@@ -282,17 +282,17 @@ std::string BenchmarkRunner::generateComparisonTable(
         for (const auto& r : pair.second) {
             double speedup = (pythonTime > 0) ? pythonTime / r.meanTime : 1.0;
             
-            oss << "│ " << std::left << std::setw(23) << r.name
-                << "│ " << std::left << std::setw(16) << r.language
-                << "│ " << std::right << std::setw(10) << std::fixed << std::setprecision(3) << r.meanTime
-                << "│ " << std::right << std::setw(10) << std::fixed << std::setprecision(2) << speedup << "x"
-                << "│ " << std::right << std::setw(8) << std::fixed << std::setprecision(0) << r.opsPerSecond
-                << " │\n";
+            oss << " " << std::left << std::setw(23) << r.name
+                << " " << std::left << std::setw(16) << r.language
+                << " " << std::right << std::setw(10) << std::fixed << std::setprecision(3) << r.meanTime
+                << " " << std::right << std::setw(10) << std::fixed << std::setprecision(2) << speedup << "x"
+                << " " << std::right << std::setw(8) << std::fixed << std::setprecision(0) << r.opsPerSecond
+                << " \n";
         }
-        oss << "├─────────────────────────┴──────────────────┴────────────┴────────────┴──────────┤\n";
+        oss << "\n";
     }
     
-    oss << "└──────────────────────────────────────────────────────────────────────────────────┘\n";
+    oss << "\n";
     
     return oss.str();
 }

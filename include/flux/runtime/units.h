@@ -25,9 +25,9 @@
 namespace Flux {
 namespace Units {
 
-// Unit dimensions: [M L T I Θ N J]
+// Unit dimensions: [M L T I  N J]
 // M: Mass, L: Length, T: Time, I: Electric Current
-// Θ: Temperature, N: Amount of Substance, J: Luminous Intensity
+// : Temperature, N: Amount of Substance, J: Luminous Intensity
 struct UnitDimensions {
     int8_t mass = 0;           // kg
     int8_t length = 0;         // m
@@ -105,19 +105,19 @@ namespace Dimension {
     
     // Derived units
     const UnitDimensions Velocity = {0, 1, -1, 0, 0, 0, 0};   // m/s
-    const UnitDimensions Acceleration = {0, 1, -2, 0, 0, 0, 0}; // m/s²
-    const UnitDimensions Force = {1, 1, -2, 0, 0, 0, 0};      // N = kg·m/s²
-    const UnitDimensions Energy = {1, 2, -2, 0, 0, 0, 0};     // J = N·m
+    const UnitDimensions Acceleration = {0, 1, -2, 0, 0, 0, 0}; // m/s
+    const UnitDimensions Force = {1, 1, -2, 0, 0, 0, 0};      // N = kgm/s
+    const UnitDimensions Energy = {1, 2, -2, 0, 0, 0, 0};     // J = Nm
     const UnitDimensions Power = {1, 2, -3, 0, 0, 0, 0};      // W = J/s
     const UnitDimensions Voltage = {1, 2, -3, -1, 0, 0, 0};   // V = W/A
-    const UnitDimensions Resistance = {1, 2, -3, -2, 0, 0, 0}; // Ω = V/A
+    const UnitDimensions Resistance = {1, 2, -3, -2, 0, 0, 0}; //  = V/A
     const UnitDimensions Capacitance = {-1, -2, 4, 2, 0, 0, 0}; // F = C/V
-    const UnitDimensions Inductance = {1, 2, -2, -2, 0, 0, 0}; // H = V·s/A
-    const UnitDimensions Charge = {0, 0, 1, 1, 0, 0, 0};      // C = A·s
+    const UnitDimensions Inductance = {1, 2, -2, -2, 0, 0, 0}; // H = Vs/A
+    const UnitDimensions Charge = {0, 0, 1, 1, 0, 0, 0};      // C = As
     const UnitDimensions Frequency = {0, 0, -1, 0, 0, 0, 0};  // Hz = 1/s
-    const UnitDimensions Pressure = {1, -1, -2, 0, 0, 0, 0};  // Pa = N/m²
-    const UnitDimensions Area = {0, 2, 0, 0, 0, 0, 0};        // m²
-    const UnitDimensions Volume = {0, 3, 0, 0, 0, 0, 0};      // m³
+    const UnitDimensions Pressure = {1, -1, -2, 0, 0, 0, 0};  // Pa = N/m
+    const UnitDimensions Area = {0, 2, 0, 0, 0, 0, 0};        // m
+    const UnitDimensions Volume = {0, 3, 0, 0, 0, 0, 0};      // m
 }
 
 // Unit with scale factor (for prefixes)
@@ -143,7 +143,7 @@ public:
     // Lookup a unit by symbol
     const ScaledUnit* lookupUnit(const std::string& symbol) const;
     
-    // Parse unit string (e.g., "kΩ", "mA", "μF")
+    // Parse unit string (e.g., "k", "mA", "F")
     ScaledUnit parseUnitString(const std::string& str) const;
     
     // Get canonical unit for dimensions

@@ -27,31 +27,31 @@
 namespace Flux {
 namespace AdvancedAnalysis {
 
-// ┌─────────────────────────────────────────────────────┐
-// │  Result Output Methods                              │
-// └─────────────────────────────────────────────────────┘
+// 
+//   Result Output Methods                              
+// 
 
 std::string StabilityResult::toString() const {
     std::ostringstream oss;
-    oss << "══════════════════════════════════════════════════════\n";
+    oss << "\n";
     oss << "         STABILITY ANALYSIS RESULTS\n";
-    oss << "══════════════════════════════════════════════════════\n\n";
-    oss << "Phase Margin:      " << phaseMargin << "° at " 
+    oss << "\n\n";
+    oss << "Phase Margin:      " << phaseMargin << " at " 
         << phaseMarginFreq/1000 << " kHz\n";
     oss << "Gain Margin:       " << gainMargin << " dB at "
         << gainMarginFreq/1000 << " kHz\n";
     oss << "Bandwidth (-3dB):  " << bandwidth/1000 << " kHz\n";
     oss << "Peak Gain:         " << peakGain << " dB at "
         << peakGainFreq/1000 << " kHz\n";
-    oss << "Stability:         " << (isStable ? "✅ STABLE" : "❌ UNSTABLE") << "\n";
+    oss << "Stability:         " << (isStable ? " STABLE" : " UNSTABLE") << "\n";
     
     if (!warnings.empty()) {
-        oss << "\n⚠️  Warnings:\n";
+        oss << "\n  Warnings:\n";
         for (const auto& w : warnings) oss << "  - " << w << "\n";
     }
     if (!recommendations.empty()) {
-        oss << "\n💡 Recommendations:\n";
-        for (const auto& r : recommendations) oss << "  • " << r << "\n";
+        oss << "\n Recommendations:\n";
+        for (const auto& r : recommendations) oss << "   " << r << "\n";
     }
     
     return oss.str();
@@ -62,22 +62,22 @@ std::string StabilityResult::toMarkdown() const {
     oss << "# Stability Analysis Results\n\n";
     oss << "| Parameter | Value |\n";
     oss << "|-----------|-------|\n";
-    oss << "| Phase Margin | " << phaseMargin << "° |\n";
+    oss << "| Phase Margin | " << phaseMargin << " |\n";
     oss << "| Gain Margin | " << gainMargin << " dB |\n";
     oss << "| Bandwidth | " << bandwidth/1000 << " kHz |\n";
     oss << "| Peak Gain | " << peakGain << " dB |\n";
-    oss << "| Status | " << (isStable ? "✅ Stable" : "❌ Unstable") << " |\n";
+    oss << "| Status | " << (isStable ? " Stable" : " Unstable") << " |\n";
     return oss.str();
 }
 
 std::string SensitivityResult::toString() const {
     std::ostringstream oss;
-    oss << "══════════════════════════════════════════════════════\n";
+    oss << "\n";
     oss << "         SENSITIVITY ANALYSIS RESULTS\n";
-    oss << "══════════════════════════════════════════════════════\n\n";
+    oss << "\n\n";
     oss << "Output Variable: " << outputVariable << "\n\n";
     oss << "Component Sensitivities:\n";
-    oss << "─────────────────────────────────────────────────────\n";
+    oss << "\n";
     oss << "Component    | Sensitivity | % Change | Criticality\n";
     oss << "-------------|-------------|----------|------------\n";
     
@@ -91,8 +91,8 @@ std::string SensitivityResult::toString() const {
     oss << "Least Critical: " << leastCritical << "\n";
     
     if (!recommendations.empty()) {
-        oss << "\n💡 Recommendations:\n";
-        for (const auto& r : recommendations) oss << "  • " << r << "\n";
+        oss << "\n Recommendations:\n";
+        for (const auto& r : recommendations) oss << "   " << r << "\n";
     }
     
     return oss.str();
@@ -114,9 +114,9 @@ std::string SensitivityResult::toMarkdown() const {
 
 std::string MonteCarloResult::toString() const {
     std::ostringstream oss;
-    oss << "══════════════════════════════════════════════════════\n";
+    oss << "\n";
     oss << "         MONTE CARLO ANALYSIS RESULTS\n";
-    oss << "══════════════════════════════════════════════════════\n\n";
+    oss << "\n\n";
     oss << "Iterations: " << iterations << "\n\n";
     oss << "Statistics:\n";
     oss << "  Mean:      " << mean << "\n";
@@ -128,8 +128,8 @@ std::string MonteCarloResult::toString() const {
     oss << "  Parameters: " << worstCaseParams << "\n";
     
     if (!recommendations.empty()) {
-        oss << "\n💡 Recommendations:\n";
-        for (const auto& r : recommendations) oss << "  • " << r << "\n";
+        oss << "\n Recommendations:\n";
+        for (const auto& r : recommendations) oss << "   " << r << "\n";
     }
     
     return oss.str();
@@ -151,14 +151,14 @@ std::string MonteCarloResult::toMarkdown() const {
 
 std::string OptimizationResult::toString() const {
     std::ostringstream oss;
-    oss << "══════════════════════════════════════════════════════\n";
+    oss << "\n";
     oss << "         OPTIMIZATION RESULTS\n";
-    oss << "══════════════════════════════════════════════════════\n\n";
-    oss << "Status: " << (converged ? "✅ Converged" : "❌ Not converged") << "\n";
+    oss << "\n\n";
+    oss << "Status: " << (converged ? " Converged" : " Not converged") << "\n";
     oss << "Iterations: " << iterations << "\n";
     oss << "Improvement: " << improvement << "x\n\n";
     oss << "Optimal Values:\n";
-    oss << "─────────────────────────────────────────────────────\n";
+    oss << "\n";
     oss << "Parameter | Initial | Optimal | Change\n";
     oss << "----------|---------|---------|-------\n";
     
@@ -171,8 +171,8 @@ std::string OptimizationResult::toString() const {
     }
     
     if (!recommendations.empty()) {
-        oss << "\n💡 Recommendations:\n";
-        for (const auto& r : recommendations) oss << "  • " << r << "\n";
+        oss << "\n Recommendations:\n";
+        for (const auto& r : recommendations) oss << "   " << r << "\n";
     }
     
     return oss.str();
@@ -181,7 +181,7 @@ std::string OptimizationResult::toString() const {
 std::string OptimizationResult::toMarkdown() const {
     std::ostringstream oss;
     oss << "# Optimization Results\n\n";
-    oss << "**Status:** " << (converged ? "✅ Converged" : "❌ Not converged") << "\n";
+    oss << "**Status:** " << (converged ? " Converged" : " Not converged") << "\n";
     oss << "**Iterations:** " << iterations << "\n\n";
     oss << "| Parameter | Initial | Optimal |\n";
     oss << "|-----------|---------|---------|\n";
@@ -196,24 +196,24 @@ std::string OptimizationResult::toMarkdown() const {
 
 std::string WorstCaseResult::toString() const {
     std::ostringstream oss;
-    oss << "══════════════════════════════════════════════════════\n";
+    oss << "\n";
     oss << "         WORST-CASE ANALYSIS RESULTS\n";
-    oss << "══════════════════════════════════════════════════════\n\n";
+    oss << "\n\n";
     oss << "Nominal Value: " << nominal << "\n";
     oss << "Worst Minimum: " << worstMin << "\n";
     oss << "  Parameters: " << worstMinParams << "\n";
     oss << "Worst Maximum: " << worstMax << "\n";
     oss << "  Parameters: " << worstMaxParams << "\n\n";
     oss << "Margin to Spec: " << margin << "\n";
-    oss << "Meets Spec: " << (meetsSpec ? "✅ YES" : "❌ NO") << "\n";
+    oss << "Meets Spec: " << (meetsSpec ? " YES" : " NO") << "\n";
     
     if (!violations.empty()) {
-        oss << "\n❌ Violations:\n";
+        oss << "\n Violations:\n";
         for (const auto& v : violations) oss << "  - " << v << "\n";
     }
     if (!recommendations.empty()) {
-        oss << "\n💡 Recommendations:\n";
-        for (const auto& r : recommendations) oss << "  • " << r << "\n";
+        oss << "\n Recommendations:\n";
+        for (const auto& r : recommendations) oss << "   " << r << "\n";
     }
     
     return oss.str();
@@ -227,13 +227,13 @@ std::string WorstCaseResult::toMarkdown() const {
     oss << "| Nominal | " << nominal << " |\n";
     oss << "| Worst Min | " << worstMin << " |\n";
     oss << "| Worst Max | " << worstMax << " |\n";
-    oss << "| Meets Spec | " << (meetsSpec ? "✅ YES" : "❌ NO") << " |\n";
+    oss << "| Meets Spec | " << (meetsSpec ? " YES" : " NO") << " |\n";
     return oss.str();
 }
 
-// ┌─────────────────────────────────────────────────────┐
-// │  Stability Analyzer Implementation                  │
-// └─────────────────────────────────────────────────────┘
+// 
+//   Stability Analyzer Implementation                  
+// 
 
 StabilityAnalyzer::StabilityAnalyzer() {}
 StabilityAnalyzer::~StabilityAnalyzer() {}
@@ -248,7 +248,7 @@ StabilityResult StabilityAnalyzer::analyze(const std::string& circuitFile) {
     // 2. Run AC analysis (loop gain measurement)
     // 3. Extract magnitude and phase data
     // 4. Find gain crossover (0dB) frequency
-    // 5. Find phase crossover (-180°) frequency
+    // 5. Find phase crossover (-180) frequency
     // 6. Calculate margins
     
     // Placeholder - in production, parse ngspice output
@@ -272,9 +272,9 @@ StabilityResult StabilityAnalyzer::analyzeFromString(const std::string& netlist)
     return analyze(netlist);
 }
 
-// ┌─────────────────────────────────────────────────────┐
-// │  Sensitivity Analyzer Implementation                │
-// └─────────────────────────────────────────────────────┘
+// 
+//   Sensitivity Analyzer Implementation                
+// 
 
 SensitivityAnalyzer::SensitivityAnalyzer() {}
 SensitivityAnalyzer::~SensitivityAnalyzer() {}
@@ -286,7 +286,7 @@ double SensitivityAnalyzer::calculateSensitivity(const std::string& netlist,
                                                   const std::string& outputVar) {
     // Run simulation with nominal value
     // Run simulation with perturbed value (+delta%)
-    // Calculate sensitivity = (ΔOutput/Output) / (ΔParam/Param)
+    // Calculate sensitivity = (Output/Output) / (Param/Param)
     return 0.0;  // Placeholder
 }
 
@@ -339,9 +339,9 @@ SensitivityResult SensitivityAnalyzer::analyze(const std::string& circuitFile,
     return result;
 }
 
-// ┌─────────────────────────────────────────────────────┐
-// │  Monte Carlo Engine Implementation                  │
-// └─────────────────────────────────────────────────────┘
+// 
+//   Monte Carlo Engine Implementation                  
+// 
 
 MonteCarloEngine::MonteCarloEngine() 
     : m_iterations(100), m_distribution("gaussian"),
@@ -389,7 +389,7 @@ MonteCarloResult MonteCarloEngine::run(const std::string& circuitFile) {
         for (size_t j = 0; j < m_paramNames.size(); ++j) {
             double variation;
             if (m_distribution == "gaussian") {
-                variation = gaussDist(rng) * m_tolerances[j] / 3.0;  // 3σ = tolerance
+                variation = gaussDist(rng) * m_tolerances[j] / 3.0;  // 3 = tolerance
             } else {
                 variation = uniformDist(rng) * m_tolerances[j];
             }
@@ -437,9 +437,9 @@ MonteCarloResult MonteCarloEngine::run(const std::string& circuitFile) {
     return result;
 }
 
-// ┌─────────────────────────────────────────────────────┐
-// │  Circuit Optimizer Implementation                   │
-// └─────────────────────────────────────────────────────┘
+// 
+//   Circuit Optimizer Implementation                   
+// 
 
 CircuitOptimizer::CircuitOptimizer() {}
 CircuitOptimizer::~CircuitOptimizer() {}
@@ -519,9 +519,9 @@ OptimizationResult CircuitOptimizer::optimize(const std::string& circuitFile) {
     return result;
 }
 
-// ┌─────────────────────────────────────────────────────┐
-// │  Worst-Case Analyzer Implementation                 │
-// └─────────────────────────────────────────────────────┘
+// 
+//   Worst-Case Analyzer Implementation                 
+// 
 
 WorstCaseAnalyzer::WorstCaseAnalyzer() 
     : m_specMin(-std::numeric_limits<double>::infinity()),
@@ -594,9 +594,9 @@ WorstCaseResult WorstCaseAnalyzer::analyze(const std::string& circuitFile) {
     return result;
 }
 
-// ┌─────────────────────────────────────────────────────┐
-// │  C Interface Implementation                         │
-// └─────────────────────────────────────────────────────┘
+// 
+//   C Interface Implementation                         
+// 
 
 extern "C" {
 

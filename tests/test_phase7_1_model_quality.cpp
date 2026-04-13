@@ -19,16 +19,16 @@ using namespace Flux;
 
 void test_property_based_testing() {
     std::cout << "\n";
-    std::cout << "╔══════════════════════════════════════════════════════════╗\n";
-    std::cout << "║  Test #1: Property-Based Randomized Testing             ║\n";
-    std::cout << "╚══════════════════════════════════════════════════════════╝\n";
+    std::cout << "\n";
+    std::cout << "  Test #1: Property-Based Randomized Testing             \n";
+    std::cout << "\n";
 
     auto& tester = PropertyBasedTester::instance();
     tester.initialize();
 
     // Test 1.1: Register common properties
     std::cout << "\nTest 1.1: Property Registration\n";
-    std::cout << "────────────────────────────────────────────────────────────\n";
+    std::cout << "\n";
 
     assert(tester.registerProperty(CommonProperties::createPassivityProperty()) && "Failed to register passivity!");
     assert(tester.registerProperty(CommonProperties::createCausalityProperty()) && "Failed to register causality!");
@@ -42,11 +42,11 @@ void test_property_based_testing() {
     
     assert(props.size() >= 3 && "Should have at least 3 properties!");
     
-    std::cout << "\n✅ Test 1.1 PASSED\n";
+    std::cout << "\n Test 1.1 PASSED\n";
 
     // Test 1.2: Run property tests with mock simulation
     std::cout << "\n\nTest 1.2: Property Test Execution\n";
-    std::cout << "────────────────────────────────────────────────────────────\n";
+    std::cout << "\n";
 
     PropertyTestConfig config;
     config.test_name = "mock_test";
@@ -75,11 +75,11 @@ void test_property_based_testing() {
     assert(result.test_cases_evaluated == 50 && "Should evaluate 50 test cases!");
     assert(result.test_cases_passed == 50 && "All should pass!");
     
-    std::cout << "\n✅ Test 1.2 PASSED\n";
+    std::cout << "\n Test 1.2 PASSED\n";
 
     // Test 1.3: Test failure detection
     std::cout << "\n\nTest 1.3: Failure Detection\n";
-    std::cout << "────────────────────────────────────────────────────────────\n";
+    std::cout << "\n";
 
     auto mock_simulate_fail = [](const std::map<std::string, double>& params) {
         std::map<std::string, double> result;
@@ -97,11 +97,11 @@ void test_property_based_testing() {
     assert(!fail_result.passed && "Should detect passivity violation!");
     assert(fail_result.test_cases_failed > 0 && "Should have failures!");
     
-    std::cout << "\n✅ Test 1.3 PASSED\n";
+    std::cout << "\n Test 1.3 PASSED\n";
 
     // Test 1.4: Statistics
     std::cout << "\n\nTest 1.4: Statistics\n";
-    std::cout << "────────────────────────────────────────────────────────────\n";
+    std::cout << "\n";
 
     std::cout << "  Total tests run: " << tester.getTotalTestsRun() << "\n";
     std::cout << "  Total failures: " << tester.getTotalFailures() << "\n";
@@ -109,14 +109,14 @@ void test_property_based_testing() {
     
     assert(tester.getTotalTestsRun() >= 2 && "Should have run at least 2 tests!");
     
-    std::cout << "\n✅ Test 1.4 PASSED\n";
+    std::cout << "\n Test 1.4 PASSED\n";
 
     tester.finalize();
 
     std::cout << "\n";
-    std::cout << "╔══════════════════════════════════════════════════════════╗\n";
-    std::cout << "║     Test #1: ALL TESTS PASSED ✅                         ║\n";
-    std::cout << "╚══════════════════════════════════════════════════════════╝\n";
+    std::cout << "\n";
+    std::cout << "     Test #1: ALL TESTS PASSED                          \n";
+    std::cout << "\n";
 }
 
 // ============================================================================
@@ -125,16 +125,16 @@ void test_property_based_testing() {
 
 void test_cross_simulator_validation() {
     std::cout << "\n";
-    std::cout << "╔══════════════════════════════════════════════════════════╗\n";
-    std::cout << "║  Test #2: Cross-Simulator Validation                    ║\n";
-    std::cout << "╚══════════════════════════════════════════════════════════╝\n";
+    std::cout << "\n";
+    std::cout << "  Test #2: Cross-Simulator Validation                    \n";
+    std::cout << "\n";
 
     auto& validator = CrossSimulatorValidator::instance();
     validator.initialize();
 
     // Test 2.1: Measurement comparison
     std::cout << "\nTest 2.1: Measurement Comparison\n";
-    std::cout << "────────────────────────────────────────────────────────────\n";
+    std::cout << "\n";
 
     std::map<std::string, double> fluxscript_results = {
         {"V(out)", 3.298},
@@ -178,11 +178,11 @@ void test_cross_simulator_validation() {
     std::cout << "  Passed: " << passed_count << "/" << comparisons.size() << "\n";
     assert(passed_count >= 3 && "Most comparisons should pass!");
     
-    std::cout << "\n✅ Test 2.1 PASSED\n";
+    std::cout << "\n Test 2.1 PASSED\n";
 
     // Test 2.2: Report generation
     std::cout << "\n\nTest 2.2: Report Generation\n";
-    std::cout << "────────────────────────────────────────────────────────────\n";
+    std::cout << "\n";
 
     CircuitValidationResult validation_result;
     validation_result.circuit_name = "RC Low-Pass Filter";
@@ -204,11 +204,11 @@ void test_cross_simulator_validation() {
     assert(report.find("RC Low-Pass Filter") != std::string::npos && "Report should contain circuit name!");
     assert(report.find("PASSED") != std::string::npos && "Report should show pass status!");
     
-    std::cout << "\n✅ Test 2.2 PASSED\n";
+    std::cout << "\n Test 2.2 PASSED\n";
 
     // Test 2.3: Reference caching
     std::cout << "\n\nTest 2.3: Reference Caching\n";
-    std::cout << "────────────────────────────────────────────────────────────\n";
+    std::cout << "\n";
 
     std::map<std::string, double> cache_data = {
         {"V(out)", 3.3},
@@ -226,11 +226,11 @@ void test_cross_simulator_validation() {
     std::cout << "  Cached measurements: " << cached->size() << "\n";
     std::cout << "  V(out) = " << cached->at("V(out)") << "\n";
     
-    std::cout << "\n✅ Test 2.3 PASSED\n";
+    std::cout << "\n Test 2.3 PASSED\n";
 
     // Test 2.4: Statistics
     std::cout << "\n\nTest 2.4: Validator Statistics\n";
-    std::cout << "────────────────────────────────────────────────────────────\n";
+    std::cout << "\n";
 
     std::cout << "  Total validations: " << validator.getTotalValidations() << "\n";
     std::cout << "  Pass rate: " << std::setprecision(1) << validator.getPassRate() << "%\n";
@@ -241,14 +241,14 @@ void test_cross_simulator_validation() {
     
     assert(validator.getReferenceSimulator() == "xyce" && "Simulator change failed!");
     
-    std::cout << "\n✅ Test 2.4 PASSED\n";
+    std::cout << "\n Test 2.4 PASSED\n";
 
     validator.finalize();
 
     std::cout << "\n";
-    std::cout << "╔══════════════════════════════════════════════════════════╗\n";
-    std::cout << "║     Test #2: ALL TESTS PASSED ✅                         ║\n";
-    std::cout << "╚══════════════════════════════════════════════════════════╝\n";
+    std::cout << "\n";
+    std::cout << "     Test #2: ALL TESTS PASSED                          \n";
+    std::cout << "\n";
 }
 
 // ============================================================================
@@ -257,9 +257,9 @@ void test_cross_simulator_validation() {
 
 int main(int argc, char** argv) {
     std::cout << "\n";
-    std::cout << "╔══════════════════════════════════════════════════════════╗\n";
-    std::cout << "║    Phase 7.1: Model Quality & Verification Tests        ║\n";
-    std::cout << "╚══════════════════════════════════════════════════════════╝\n";
+    std::cout << "\n";
+    std::cout << "    Phase 7.1: Model Quality & Verification Tests        \n";
+    std::cout << "\n";
 
     try {
         // Test property-based randomized testing
@@ -269,14 +269,14 @@ int main(int argc, char** argv) {
         test_cross_simulator_validation();
 
         std::cout << "\n";
-        std::cout << "╔══════════════════════════════════════════════════════════╗\n";
-        std::cout << "║    ALL PHASE 7.1 MODEL QUALITY TESTS PASSED ✅           ║\n";
-        std::cout << "╚══════════════════════════════════════════════════════════╝\n";
+        std::cout << "\n";
+        std::cout << "    ALL PHASE 7.1 MODEL QUALITY TESTS PASSED            \n";
+        std::cout << "\n";
         std::cout << "\n";
 
         return 0;
     } catch (const std::exception& e) {
-        std::cerr << "\n❌ TEST FAILED: " << e.what() << "\n";
+        std::cerr << "\n TEST FAILED: " << e.what() << "\n";
         return 1;
     }
 }

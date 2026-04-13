@@ -55,6 +55,7 @@ void JITEngine::initialize() {
     m_compilerOptions.injectStdlib = true;
     if (m_cacheDirectory.empty())
         m_cacheDirectory = Tooling::defaultCacheDirectory();
+    m_cacheEnabled = false;
     m_codegenCtx = nullptr;
     m_initialized = true;
     registerEigenFunctions();

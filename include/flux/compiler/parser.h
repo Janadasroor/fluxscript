@@ -36,6 +36,12 @@ public:
     std::unique_ptr<ExplainExprAST> ParseExplainExpr();
     std::unique_ptr<SubstituteStmtAST> ParseSubstituteStmt();
     std::unique_ptr<ExprAST> ParseUpdateFunc();
+    
+    // Time-domain simulation and SPICE
+    std::unique_ptr<AnalysisExprAST> ParseAnalysis();
+    std::unique_ptr<MeasureExprAST> ParseMeasure();
+    std::unique_ptr<SubcktAST> ParseSubckt();
+    std::unique_ptr<ModelAST> ParseModel();
 
     int CurTok;
     int getNextToken();
@@ -99,6 +105,7 @@ private:
     std::unique_ptr<ExprAST> ParseSimplifyExpr();
     std::unique_ptr<ExprAST> ParseDifferentiateExpr();
     std::unique_ptr<ExprAST> ParseSubstituteExpr();
+    std::unique_ptr<ExprAST> ParseEvaluateExpr();
     
     // Time-domain simulation
     std::unique_ptr<ExprAST> ParseBSourceDecl();
@@ -123,12 +130,8 @@ private:
     std::unique_ptr<ExprAST> ParseSensitivityAnalysis();
     std::unique_ptr<ExprAST> ParseOptimization();
     std::unique_ptr<ExprAST> ParseFFTAnalysis();
-    std::unique_ptr<ExprAST> ParseAnalysis();
-    std::unique_ptr<ExprAST> ParseMeasure();
     std::unique_ptr<ExprAST> ParseProbe();
     std::unique_ptr<ExprAST> ParseSave();
-    std::unique_ptr<ExprAST> ParseSubckt();
-    std::unique_ptr<ExprAST> ParseModel();
     
     /* Hierarchical Design */
     std::unique_ptr<ExprAST> ParseSubcktInstance();

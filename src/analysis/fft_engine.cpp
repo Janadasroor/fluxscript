@@ -40,9 +40,9 @@ void FFTEngine::setWindowType(const std::string& type) {
     m_windowType = type;
 }
 
-// ┌─────────────────────────────────────────────────────┐
-// │ Windowing Functions                                  │
-// └─────────────────────────────────────────────────────┘
+// 
+//  Windowing Functions                                  
+// 
 
 void FFTEngine::applyWindow(std::vector<double>& data) {
     int N = data.size();
@@ -62,9 +62,9 @@ void FFTEngine::applyWindow(std::vector<double>& data) {
     }
 }
 
-// ┌─────────────────────────────────────────────────────┐
-// │ FFT Algorithm (Cooley-Tukey)                         │
-// └─────────────────────────────────────────────────────┘
+// 
+//  FFT Algorithm (Cooley-Tukey)                         
+// 
 
 void FFTEngine::fft(std::vector<std::complex<double>>& x) {
     int N = x.size();
@@ -89,9 +89,9 @@ void FFTEngine::fft(std::vector<std::complex<double>>& x) {
     }
 }
 
-// ┌─────────────────────────────────────────────────────┐
-// │ Compute FFT                                          │
-// └─────────────────────────────────────────────────────┘
+// 
+//  Compute FFT                                          
+// 
 
 FFTReport FFTEngine::compute(const std::vector<double>& signalData) {
     FFTReport report;
@@ -178,15 +178,15 @@ FFTReport FFTEngine::compute(const std::vector<double>& signalData) {
     return report;
 }
 
-// ┌─────────────────────────────────────────────────────┐
-// │ Report Output Methods                                │
-// └─────────────────────────────────────────────────────┘
+// 
+//  Report Output Methods                                
+// 
 
 std::string FFTReport::toText() const {
     std::ostringstream oss;
-    oss << "══════════════════════════════════════════════════════\n";
+    oss << "\n";
     oss << "              FREQUENCY DOMAIN ANALYSIS               \n";
-    oss << "══════════════════════════════════════════════════════\n\n";
+    oss << "\n\n";
     oss << "Sample Rate:       " << sampleRate << " Hz\n";
     oss << "Data Points:       " << numPoints << "\n";
     oss << "Fundamental Freq:  " << fundamentalFreq << " Hz\n";
@@ -194,7 +194,7 @@ std::string FFTReport::toText() const {
     oss << "SNR:               " << snr << " dB\n\n";
     
     oss << "Spectrum:\n";
-    oss << "─────────────────────────────────────────────────────\n";
+    oss << "\n";
     oss << "  Freq (Hz)   |  Mag (dB)  |  Phase (deg)\n";
     oss << "  ------------+------------+-------------\n";
 
@@ -206,7 +206,7 @@ std::string FFTReport::toText() const {
                 << std::setw(6) << pt.phase << "\n";
         }
     }
-    oss << "══════════════════════════════════════════════════════\n";
+    oss << "\n";
     
     return oss.str();
 }

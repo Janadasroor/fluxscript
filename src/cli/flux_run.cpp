@@ -26,14 +26,14 @@
 
 using namespace Flux;
 
-// ┌─────────────────────────────────────────────────────┐
-// │ ASCII Plotter                                       │
-// └─────────────────────────────────────────────────────┘
+// 
+//  ASCII Plotter                                       
+// 
 
 void print_ascii_plot(const std::vector<double>& x, const std::vector<double>& y, 
                       const std::string& xLabel, const std::string& yLabel, int width = 80, int height = 25) {
     if (x.empty() || y.empty() || x.size() != y.size()) {
-        std::cout << "❌ No data to plot\n";
+        std::cout << " No data to plot\n";
         return;
     }
 
@@ -217,9 +217,9 @@ std::string flux_to_spice(const std::string& fluxCode) {
 
 int main(int argc, char** argv) {
     std::cout << "\n";
-    std::cout << "╔══════════════════════════════════════════════════════════╗\n";
-    std::cout << "║          FluxScript → ngspice Runner                     ║\n";
-    std::cout << "╚══════════════════════════════════════════════════════════╝\n";
+    std::cout << "\n";
+    std::cout << "          FluxScript  ngspice Runner                     \n";
+    std::cout << "\n";
     std::cout << "\n";
     
     if (argc < 2) {
@@ -236,7 +236,7 @@ int main(int argc, char** argv) {
     std::string filename = argv[1];
     std::ifstream file(filename);
     if (!file.is_open()) {
-        std::cerr << "❌ Cannot open file: " << filename << "\n";
+        std::cerr << " Cannot open file: " << filename << "\n";
         return 1;
     }
     
@@ -244,40 +244,40 @@ int main(int argc, char** argv) {
                           std::istreambuf_iterator<char>());
     file.close();
     
-    std::cout << "📄 Reading: " << filename << "\n";
-    std::cout << "\n📝 FluxScript Code:\n";
-    std::cout << "────────────────────────────────────────────────────────────\n";
+    std::cout << " Reading: " << filename << "\n";
+    std::cout << "\n FluxScript Code:\n";
+    std::cout << "\n";
     std::cout << fluxCode;
-    std::cout << "────────────────────────────────────────────────────────────\n";
+    std::cout << "\n";
     
     // Convert to SPICE
     std::string spiceNetlist = flux_to_spice(fluxCode);
     
-    std::cout << "\n🔧 Generated SPICE Netlist:\n";
-    std::cout << "────────────────────────────────────────────────────────────\n";
+    std::cout << "\n Generated SPICE Netlist:\n";
+    std::cout << "\n";
     std::cout << spiceNetlist;
-    std::cout << "────────────────────────────────────────────────────────────\n";
+    std::cout << "\n";
     
     // Run with ngspice
-    std::cout << "\n🚀 Running ngspice simulation...\n";
-    std::cout << "────────────────────────────────────────────────────────────\n";
+    std::cout << "\n Running ngspice simulation...\n";
+    std::cout << "\n";
     
     int rc = flux_ngspice_init(spiceNetlist.c_str());
     if (rc != 0) {
-        std::cerr << "\n❌ ngspice initialization failed!\n";
+        std::cerr << "\n ngspice initialization failed!\n";
         std::cerr << "   Error: " << flux_ngspice_get_error() << "\n";
         return 1;
     }
     
-    std::cout << "✅ ngspice initialized\n";
+    std::cout << " ngspice initialized\n";
     
     // Run transient analysis (look for .tran directive)
     if (fluxCode.find(".tran") != std::string::npos || fluxCode.find(".TRAN") != std::string::npos) {
         rc = flux_ngspice_run_transient(0, 0.001, 1e-6);
         if (rc == 0) {
-            std::cout << "✅ Transient analysis completed\n";
+            std::cout << " Transient analysis completed\n";
         } else {
-            std::cerr << "❌ Transient analysis failed: " << flux_ngspice_get_error() << "\n";
+            std::cerr << " Transient analysis failed: " << flux_ngspice_get_error() << "\n";
         }
     }
     
@@ -285,9 +285,9 @@ int main(int argc, char** argv) {
     if (fluxCode.find(".ac") != std::string::npos || fluxCode.find(".AC") != std::string::npos) {
         rc = flux_ngspice_run_ac(10, 1, 100000);
         if (rc == 0) {
-            std::cout << "✅ AC analysis completed\n";
+            std::cout << " AC analysis completed\n";
         } else {
-            std::cerr << "❌ AC analysis failed: " << flux_ngspice_get_error() << "\n";
+            std::cerr << " AC analysis failed: " << flux_ngspice_get_error() << "\n";
         }
     }
     
@@ -295,16 +295,16 @@ int main(int argc, char** argv) {
     if (fluxCode.find(".dc") != std::string::npos || fluxCode.find(".DC") != std::string::npos) {
         rc = flux_ngspice_run_dc("Vin", 0, 10, 0.1);
         if (rc == 0) {
-            std::cout << "✅ DC sweep completed\n";
+            std::cout << " DC sweep completed\n";
         } else {
-            std::cerr << "❌ DC sweep failed: " << flux_ngspice_get_error() << "\n";
+            std::cerr << " DC sweep failed: " << flux_ngspice_get_error() << "\n";
         }
     }
     
     // Get available vectors
     auto vectors = flux_ngspice_get_vector_names();
     if (!vectors.empty()) {
-        std::cout << "\n📊 Available simulation data:\n";
+        std::cout << "\n Available simulation data:\n";
         for (const auto& vec : vectors) {
             std::cout << "  - " << vec << "\n";
         }
@@ -321,12 +321,12 @@ int main(int argc, char** argv) {
                 csv << t << "," << std::sin(2 * 3.14159 * 1000 * t) << "\n";
             }
             csv.close();
-            std::cout << "\n💾 Data exported to: " << csvFile << "\n";
+            std::cout << "\n Data exported to: " << csvFile << "\n";
         }
     }
 
     // ASCII Plot Demo (to prove plotting works)
-    std::cout << "\n📈 ASCII Waveform Plot:\n";
+    std::cout << "\n ASCII Waveform Plot:\n";
     
     // Try to extract real data
     std::vector<double> t_data = flux_ngspice_extract_vector("time");
@@ -334,11 +334,11 @@ int main(int argc, char** argv) {
     
     // If we got real data, plot it
     if (!t_data.empty() && !v_data.empty() && t_data.size() == v_data.size()) {
-        std::cout << "✅ Using real simulation data\n";
+        std::cout << " Using real simulation data\n";
         print_ascii_plot(t_data, v_data, "Time (s)", "V(out)", 60, 15);
     } else {
         // Fallback to demo data
-        std::cout << "ℹ️  Using demo data (real extraction pending)\n";
+        std::cout << "  Using demo data (real extraction pending)\n";
         t_data.clear();
         v_data.clear();
         for (double t = 0; t < 0.01; t += 0.00005) {
@@ -352,9 +352,9 @@ int main(int argc, char** argv) {
     flux_ngspice_cleanup();
 
     std::cout << "\n";
-    std::cout << "╔══════════════════════════════════════════════════════════╗\n";
-    std::cout << "║          Simulation Complete ✅                          ║\n";
-    std::cout << "╚══════════════════════════════════════════════════════════╝\n";
+    std::cout << "\n";
+    std::cout << "          Simulation Complete                           \n";
+    std::cout << "\n";
     std::cout << "\n";
 
     return 0;

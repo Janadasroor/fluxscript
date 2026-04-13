@@ -25,9 +25,9 @@
 namespace Flux {
 namespace Doctor {
 
-// ┌─────────────────────────────────────────────────────┐
-// │ DiagnosticIssue Output Methods                       │
-// └─────────────────────────────────────────────────────┘
+// 
+//  DiagnosticIssue Output Methods                       
+// 
 
 std::string DiagnosticIssue::severityToString() const {
     switch (severity) {
@@ -40,10 +40,10 @@ std::string DiagnosticIssue::severityToString() const {
 
 std::string DiagnosticIssue::severityIcon() const {
     switch (severity) {
-        case Severity::Error: return "❌";
-        case Severity::Warning: return "⚠️";
-        case Severity::Info: return "✅";
-        default: return "ℹ️";
+        case Severity::Error: return "";
+        case Severity::Warning: return "";
+        case Severity::Info: return "";
+        default: return "";
     }
 }
 
@@ -52,7 +52,7 @@ std::string DiagnosticIssue::toText() const {
     oss << severityIcon() << " " << severityToString() << ": " << message << "\n";
     if (!location.empty()) oss << "   Location: " << location << "\n";
     if (!component.empty()) oss << "   Component: " << component << "\n";
-    oss << "   💡 Suggestion: " << suggestion << "\n";
+    oss << "    Suggestion: " << suggestion << "\n";
     return oss.str();
 }
 
@@ -61,34 +61,34 @@ std::string DiagnosticIssue::toMarkdown() const {
     oss << "### " << severityIcon() << " " << severityToString() << ": " << message << "\n\n";
     if (!location.empty()) oss << "- **Location:** " << location << "\n";
     if (!component.empty()) oss << "- **Component:** " << component << "\n";
-    oss << "- **💡 Suggestion:** " << suggestion << "\n\n";
+    oss << "- ** Suggestion:** " << suggestion << "\n\n";
     return oss.str();
 }
 
-// ┌─────────────────────────────────────────────────────┐
-// │ DiagnosticReport Output Methods                      │
-// └─────────────────────────────────────────────────────┘
+// 
+//  DiagnosticReport Output Methods                      
+// 
 
 std::string DiagnosticReport::toText() const {
     std::ostringstream oss;
-    oss << "══════════════════════════════════════════════════════\n";
+    oss << "\n";
     oss << "         AI CIRCUIT DOCTOR - DIAGNOSTIC REPORT\n";
-    oss << "══════════════════════════════════════════════════════\n\n";
+    oss << "\n\n";
     oss << "Circuit: " << circuitFile << "\n\n";
     
     if (issues.empty()) {
-        oss << "✅ No issues found! Your circuit looks good.\n";
+        oss << " No issues found! Your circuit looks good.\n";
     } else {
         for (const auto& issue : issues) {
             oss << issue.toText() << "\n";
         }
     }
     
-    oss << "══════════════════════════════════════════════════════\n";
+    oss << "\n";
     oss << "Summary: " << errorCount << " Error(s), " 
         << warningCount << " Warning(s), " << infoCount << " Tip(s)\n";
-    oss << "Status: " << (passesDesignRules ? "✅ PASS" : "❌ FAIL") << "\n";
-    oss << "══════════════════════════════════════════════════════\n";
+    oss << "Status: " << (passesDesignRules ? " PASS" : " FAIL") << "\n";
+    oss << "\n";
     
     return oss.str();
 }
@@ -105,7 +105,7 @@ std::string DiagnosticReport::toMarkdown() const {
     oss << "\n---\n\n";
     oss << "**Summary:** " << errorCount << " Error(s), " 
         << warningCount << " Warning(s), " << infoCount << " Tip(s)\n";
-    oss << "**Status:** " << (passesDesignRules ? "✅ PASS" : "❌ FAIL") << "\n";
+    oss << "**Status:** " << (passesDesignRules ? " PASS" : " FAIL") << "\n";
     
     return oss.str();
 }
@@ -138,9 +138,9 @@ std::string DiagnosticReport::toJSON() const {
     return oss.str();
 }
 
-// ┌─────────────────────────────────────────────────────┐
-// │ Circuit Doctor Implementation                        │
-// └─────────────────────────────────────────────────────┘
+// 
+//  Circuit Doctor Implementation                        
+// 
 
 CircuitDoctor::CircuitDoctor() : m_minSeverity(Severity::Info) {
     // Enable all rules by default
@@ -175,9 +175,9 @@ void CircuitDoctor::disableRule(const std::string& ruleName) {
     );
 }
 
-// ┌─────────────────────────────────────────────────────┐
-// │ Helper Methods                                       │
-// └─────────────────────────────────────────────────────┘
+// 
+//  Helper Methods                                       
+// 
 
 std::vector<CircuitDoctor::ParsedComponent> CircuitDoctor::parseComponents(const std::string& netlist) {
     std::vector<ParsedComponent> components;
@@ -282,9 +282,9 @@ std::string CircuitDoctor::getComponentType(char prefix) {
     }
 }
 
-// ┌─────────────────────────────────────────────────────┐
-// │ Rule 1: Floating Node Detection                     │
-// └─────────────────────────────────────────────────────┘
+// 
+//  Rule 1: Floating Node Detection                     
+// 
 
 void CircuitDoctor::checkFloatingNodes(const std::string& netlist, DiagnosticReport& report) {
     auto nodeMap = buildNodeMap(netlist);
@@ -311,9 +311,9 @@ void CircuitDoctor::checkFloatingNodes(const std::string& netlist, DiagnosticRep
     }
 }
 
-// ┌─────────────────────────────────────────────────────┐
-// │ Rule 2: DC Path to Ground Check                     │
-// └─────────────────────────────────────────────────────┘
+// 
+//  Rule 2: DC Path to Ground Check                     
+// 
 
 void CircuitDoctor::checkDCPaths(const std::string& netlist, DiagnosticReport& report) {
     auto components = parseComponents(netlist);
@@ -339,9 +339,9 @@ void CircuitDoctor::checkDCPaths(const std::string& netlist, DiagnosticReport& r
     }
 }
 
-// ┌─────────────────────────────────────────────────────┐
-// │ Rule 3: Power Dissipation Check                     │
-// └─────────────────────────────────────────────────────┘
+// 
+//  Rule 3: Power Dissipation Check                     
+// 
 
 void CircuitDoctor::checkPowerDissipation(const std::string& netlist, DiagnosticReport& report) {
     // Simplified: Check for very low resistor values with voltage sources
@@ -352,19 +352,19 @@ void CircuitDoctor::checkPowerDissipation(const std::string& netlist, Diagnostic
             DiagnosticIssue issue;
             issue.rule = "PowerDissipation";
             issue.severity = Severity::Warning;
-            issue.message = comp.name + " has very low resistance (" + std::to_string(comp.value) + "Ω) - may dissipate excessive power";
+            issue.message = comp.name + " has very low resistance (" + std::to_string(comp.value) + ") - may dissipate excessive power";
             issue.component = comp.name;
             issue.location = "Line " + std::to_string(comp.lineNumber);
-            issue.suggestion = "Verify power rating: P = V²/R. Consider using higher resistance or power resistor";
+            issue.suggestion = "Verify power rating: P = V/R. Consider using higher resistance or power resistor";
             report.issues.push_back(issue);
             report.warningCount++;
         }
     }
 }
 
-// ┌─────────────────────────────────────────────────────┐
-// │ Rule 4: Short Circuit Detection                     │
-// └─────────────────────────────────────────────────────┘
+// 
+//  Rule 4: Short Circuit Detection                     
+// 
 
 void CircuitDoctor::checkShortCircuits(const std::string& netlist, DiagnosticReport& report) {
     auto components = parseComponents(netlist);
@@ -394,9 +394,9 @@ void CircuitDoctor::checkShortCircuits(const std::string& netlist, DiagnosticRep
     }
 }
 
-// ┌─────────────────────────────────────────────────────┐
-// │ Rule 5: Unrealistic Values Check                    │
-// └─────────────────────────────────────────────────────┘
+// 
+//  Rule 5: Unrealistic Values Check                    
+// 
 
 void CircuitDoctor::checkUnrealisticValues(const std::string& netlist, DiagnosticReport& report) {
     auto components = parseComponents(netlist);
@@ -408,10 +408,10 @@ void CircuitDoctor::checkUnrealisticValues(const std::string& netlist, Diagnosti
         if (comp.type == "Resistor") {
             if (comp.value < 1.0 && comp.value > 0) {
                 unrealistic = true;
-                reason = "Resistance < 1Ω";
+                reason = "Resistance < 1";
             } else if (comp.value > 1e9) {
                 unrealistic = true;
-                reason = "Resistance > 1GΩ";
+                reason = "Resistance > 1G";
             }
         } else if (comp.type == "Capacitor") {
             if (comp.value < 1e-15) {
@@ -437,9 +437,9 @@ void CircuitDoctor::checkUnrealisticValues(const std::string& netlist, Diagnosti
     }
 }
 
-// ┌─────────────────────────────────────────────────────┐
-// │ Rule 6: Missing Decoupling Capacitor Check          │
-// └─────────────────────────────────────────────────────┘
+// 
+//  Rule 6: Missing Decoupling Capacitor Check          
+// 
 
 void CircuitDoctor::checkMissingDecoupling(const std::string& netlist, DiagnosticReport& report) {
     auto components = parseComponents(netlist);
@@ -464,9 +464,9 @@ void CircuitDoctor::checkMissingDecoupling(const std::string& netlist, Diagnosti
     }
 }
 
-// ┌─────────────────────────────────────────────────────┐
-// │ Rule 7: Stability Heuristics                        │
-// └─────────────────────────────────────────────────────┘
+// 
+//  Rule 7: Stability Heuristics                        
+// 
 
 void CircuitDoctor::checkStabilityHeuristics(const std::string& netlist, DiagnosticReport& report) {
     auto components = parseComponents(netlist);
@@ -492,9 +492,9 @@ void CircuitDoctor::checkStabilityHeuristics(const std::string& netlist, Diagnos
     }
 }
 
-// ┌─────────────────────────────────────────────────────┐
-// │ Rule 8: Component Stress Analysis                   │
-// └─────────────────────────────────────────────────────┘
+// 
+//  Rule 8: Component Stress Analysis                   
+// 
 
 void CircuitDoctor::checkComponentStress(const std::string& netlist, DiagnosticReport& report) {
     auto components = parseComponents(netlist);
@@ -505,19 +505,19 @@ void CircuitDoctor::checkComponentStress(const std::string& netlist, DiagnosticR
             DiagnosticIssue issue;
             issue.rule = "ComponentStress";
             issue.severity = Severity::Warning;
-            issue.message = comp.name + " is low value (" + std::to_string(comp.value) + "Ω) - verify power rating";
+            issue.message = comp.name + " is low value (" + std::to_string(comp.value) + ") - verify power rating";
             issue.component = comp.name;
             issue.location = "Line " + std::to_string(comp.lineNumber);
-            issue.suggestion = "Calculate worst-case power: P = I²R and select appropriate wattage";
+            issue.suggestion = "Calculate worst-case power: P = IR and select appropriate wattage";
             report.issues.push_back(issue);
             report.warningCount++;
         }
     }
 }
 
-// ┌─────────────────────────────────────────────────────┐
-// │ Main Analysis Methods                                │
-// └─────────────────────────────────────────────────────┘
+// 
+//  Main Analysis Methods                                
+// 
 
 DiagnosticReport CircuitDoctor::analyze(const std::string& circuitFile) {
     DiagnosticReport report;
@@ -602,18 +602,18 @@ DiagnosticReport CircuitDoctor::analyzeFromString(const std::string& netlist) {
     return report;
 }
 
-// ┌─────────────────────────────────────────────────────┐
-// │ Convenience Functions                                │
-// └─────────────────────────────────────────────────────┘
+// 
+//  Convenience Functions                                
+// 
 
 DiagnosticReport circuit_doctor(const std::string& circuitFile) {
     CircuitDoctor doctor;
     return doctor.analyze(circuitFile);
 }
 
-// ┌─────────────────────────────────────────────────────┐
-// │ C Interface Implementation                           │
-// └─────────────────────────────────────────────────────┘
+// 
+//  C Interface Implementation                           
+// 
 
 extern "C" {
 

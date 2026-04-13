@@ -409,7 +409,7 @@ void DebuggerPanel::setupToolbar()
     m_toolbar->setIconSize(QSize(16, 16));
 
     // Continue button
-    m_continueBtn = new QPushButton("▶ Continue");
+    m_continueBtn = new QPushButton(" Continue");
     m_continueBtn->setToolTip("Continue execution (F5)");
     m_continueBtn->setStyleSheet(
         "QPushButton { background: #4CAF50; color: white; border: none; padding: 4px 8px; border-radius: 2px; } "
@@ -419,7 +419,7 @@ void DebuggerPanel::setupToolbar()
     m_toolbar->addWidget(m_continueBtn);
 
     // Step Over button
-    m_stepOverBtn = new QPushButton("⏭ Step Over");
+    m_stepOverBtn = new QPushButton(" Step Over");
     m_stepOverBtn->setToolTip("Step over (F10)");
     m_stepOverBtn->setStyleSheet(
         "QPushButton { background: #2196F3; color: white; border: none; padding: 4px 8px; border-radius: 2px; } "
@@ -429,7 +429,7 @@ void DebuggerPanel::setupToolbar()
     m_toolbar->addWidget(m_stepOverBtn);
 
     // Step Into button
-    m_stepIntoBtn = new QPushButton("⤵ Step Into");
+    m_stepIntoBtn = new QPushButton(" Step Into");
     m_stepIntoBtn->setToolTip("Step into (F11)");
     m_stepIntoBtn->setStyleSheet(
         "QPushButton { background: #9C27B0; color: white; border: none; padding: 4px 8px; border-radius: 2px; } "
@@ -439,7 +439,7 @@ void DebuggerPanel::setupToolbar()
     m_toolbar->addWidget(m_stepIntoBtn);
 
     // Step Out button
-    m_stepOutBtn = new QPushButton("⤴ Step Out");
+    m_stepOutBtn = new QPushButton(" Step Out");
     m_stepOutBtn->setToolTip("Step out (Shift+F11)");
     m_stepOutBtn->setStyleSheet(
         "QPushButton { background: #FF9800; color: white; border: none; padding: 4px 8px; border-radius: 2px; } "
@@ -449,7 +449,7 @@ void DebuggerPanel::setupToolbar()
     m_toolbar->addWidget(m_stepOutBtn);
 
     // Stop button
-    m_stopBtn = new QPushButton("⏹ Stop");
+    m_stopBtn = new QPushButton(" Stop");
     m_stopBtn->setToolTip("Stop debugging (Shift+F5)");
     m_stopBtn->setStyleSheet(
         "QPushButton { background: #f44336; color: white; border: none; padding: 4px 8px; border-radius: 2px; } "

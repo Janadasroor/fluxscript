@@ -48,7 +48,7 @@ public:
     TransferFunction feedback(const TransferFunction& H) const;  // Closed-loop
     
     // Evaluation
-    std::complex<double> eval(double omega) const;  // Evaluate at s = jω
+    std::complex<double> eval(double omega) const;  // Evaluate at s = j
     std::complex<double> eval(std::complex<double> s) const;
     
     // Properties
@@ -183,7 +183,7 @@ struct OpAmpModel {
     double fp3;           // Third pole (Hz)
     double fz1;           // Zero (Hz)
     double GBW;           // Gain-bandwidth product (Hz)
-    double slewRate;      // V/μs
+    double slewRate;      // V/s
     double inputBias;     // Input bias current (A)
     double inputOffset;   // Input offset voltage (V)
     
@@ -217,7 +217,7 @@ struct StabilityResult {
 struct CompensationNetwork {
     std::string type;  // "dominant_pole", "lead_lag", "notch"
     double C;          // Compensation capacitor (F)
-    double R;          // Compensation resistor (Ω)
+    double R;          // Compensation resistor ()
     double fz;         // Zero frequency (Hz)
     double fp;         // Pole frequency (Hz)
 };

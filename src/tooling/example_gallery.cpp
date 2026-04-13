@@ -40,51 +40,51 @@ void ExampleGallery::initialize(const std::string& examples_dir) {
     // Define categories
     {
         CategorySummary& c = m_categories["math"];
-        c.name = "Math & Arithmetic"; c.description = "Basic math operations, functions, and computations"; c.icon = "📐";
+        c.name = "Math & Arithmetic"; c.description = "Basic math operations, functions, and computations"; c.icon = "";
     }
     {
         CategorySummary& c = m_categories["control_flow"];
-        c.name = "Control Flow"; c.description = "If/else, loops, lambda expressions"; c.icon = "🔀";
+        c.name = "Control Flow"; c.description = "If/else, loops, lambda expressions"; c.icon = "";
     }
     {
         CategorySummary& c = m_categories["types"];
-        c.name = "Type System"; c.description = "Type checking, complex numbers, integers"; c.icon = "🏷️";
+        c.name = "Type System"; c.description = "Type checking, complex numbers, integers"; c.icon = "";
     }
     {
         CategorySummary& c = m_categories["matrix"];
-        c.name = "Matrix & Vector"; c.description = "Linear algebra, SIMD operations"; c.icon = "🔢";
+        c.name = "Matrix & Vector"; c.description = "Linear algebra, SIMD operations"; c.icon = "";
     }
     {
         CategorySummary& c = m_categories["spice"];
-        c.name = "SPICE & Circuits"; c.description = "Circuit simulation, netlists, analysis"; c.icon = "⚡";
+        c.name = "SPICE & Circuits"; c.description = "Circuit simulation, netlists, analysis"; c.icon = "";
     }
     {
         CategorySummary& c = m_categories["signal"];
-        c.name = "Signal Processing"; c.description = "Waveforms, modulation, FFT"; c.icon = "📡";
+        c.name = "Signal Processing"; c.description = "Waveforms, modulation, FFT"; c.icon = "";
     }
     {
         CategorySummary& c = m_categories["analysis"];
-        c.name = "Advanced Analysis"; c.description = "Monte Carlo, optimization, stability"; c.icon = "📊";
+        c.name = "Advanced Analysis"; c.description = "Monte Carlo, optimization, stability"; c.icon = "";
     }
     {
         CategorySummary& c = m_categories["string"];
-        c.name = "String Operations"; c.description = "String manipulation and text processing"; c.icon = "📝";
+        c.name = "String Operations"; c.description = "String manipulation and text processing"; c.icon = "";
     }
     {
         CategorySummary& c = m_categories["bitwise"];
-        c.name = "Bitwise & Logical"; c.description = "Bit operations, boolean logic"; c.icon = "🔧";
+        c.name = "Bitwise & Logical"; c.description = "Bit operations, boolean logic"; c.icon = "";
     }
     {
         CategorySummary& c = m_categories["stdlib"];
-        c.name = "Standard Library"; c.description = "Built-in functions and utilities"; c.icon = "📚";
+        c.name = "Standard Library"; c.description = "Built-in functions and utilities"; c.icon = "";
     }
     {
         CategorySummary& c = m_categories["compiler"];
-        c.name = "Compiler Tests"; c.description = "Phase tests and compiler features"; c.icon = "🛠️";
+        c.name = "Compiler Tests"; c.description = "Phase tests and compiler features"; c.icon = "";
     }
     {
         CategorySummary& c = m_categories["demo"];
-        c.name = "Demos"; c.description = "Showcase examples and tutorials"; c.icon = "🎯";
+        c.name = "Demos"; c.description = "Showcase examples and tutorials"; c.icon = "";
     }
 
     scanDirectory(examples_dir);
@@ -313,7 +313,7 @@ std::string ExampleGallery::generateCatalogMarkdown() const {
         for (const auto& [name, entry] : m_examples) {
             if (entry.category != cat_key) continue;
             oss << "- `" << entry.name << "` (" << entry.difficulty << ")";
-            if (entry.runnable) oss << " ✅";
+            if (entry.runnable) oss << " ";
             oss << "\n";
         }
         oss << "\n";
@@ -334,7 +334,7 @@ std::string ExampleGallery::generateCatalogHTML() const {
         for (const auto& [name, entry] : m_examples) {
             if (entry.category != cat_key) continue;
             oss << "<li><code>" << entry.name << "</code> (" << entry.difficulty << ")";
-            if (entry.runnable) oss << " ✅";
+            if (entry.runnable) oss << " ";
             oss << "</li>\n";
         }
         oss << "</ul>\n";

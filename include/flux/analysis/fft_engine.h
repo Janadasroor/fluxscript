@@ -21,9 +21,9 @@
 namespace Flux {
 namespace FFT {
 
-// ┌─────────────────────────────────────────────────────┐
-// │ FFT Result Structure                                 │
-// └─────────────────────────────────────────────────────┘
+// 
+//  FFT Result Structure                                 
+// 
 
 struct FFTPoint {
     double frequency; // Hz
@@ -44,9 +44,9 @@ struct FFTReport {
     std::string toASCIIPlot(int width = 80, int height = 20) const;
 };
 
-// ┌─────────────────────────────────────────────────────┐
-// │ FFT Engine Class                                     │
-// └─────────────────────────────────────────────────────┘
+// 
+//  FFT Engine Class                                     
+// 
 
 class FFTEngine {
 public:

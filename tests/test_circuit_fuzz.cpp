@@ -8,14 +8,14 @@ using namespace Flux::FuzzTesting;
 
 void test_fuzz_basic() {
     std::cout << "\n";
-    std::cout << "╔══════════════════════════════════════════════════════════╗\n";
-    std::cout << "║  Feature #2: Circuit Fuzz Testing - Basic Tests          ║\n";
-    std::cout << "╚══════════════════════════════════════════════════════════╝\n";
+    std::cout << "\n";
+    std::cout << "  Feature #2: Circuit Fuzz Testing - Basic Tests          \n";
+    std::cout << "\n";
     std::cout << "\n";
     
     // Test 1: Simple Fuzz Test
     std::cout << "Test 1: Simple Fuzz Test\n";
-    std::cout << "────────────────────────────────────────────────────────────\n";
+    std::cout << "\n";
     
     CircuitFuzzer fuzzer;
     FuzzConfig config;
@@ -34,11 +34,11 @@ void test_fuzz_basic() {
     assert(summary.totalTests == 10 && "Should run 10 iterations!");
     assert(summary.passed == 10 && "All should pass with default stub!");
     
-    std::cout << "\n✅ Test 1 PASSED\n";
+    std::cout << "\n Test 1 PASSED\n";
     
     // Test 2: Random Input Generation
     std::cout << "\n\nTest 2: Random Input Generation\n";
-    std::cout << "────────────────────────────────────────────────────────────\n";
+    std::cout << "\n";
     
     auto inputs1 = fuzzer.generateRandomInput();
     auto inputs2 = fuzzer.generateRandomInput();
@@ -52,11 +52,11 @@ void test_fuzz_basic() {
     assert(inputs1["Vin"] >= 0.0 && inputs1["Vin"] <= 5.0 && "Vin should be in bounds!");
     assert(inputs1["R1"] >= 1000.0 && inputs1["R1"] <= 10000.0 && "R1 should be in bounds!");
     
-    std::cout << "\n✅ Test 2 PASSED\n";
+    std::cout << "\n Test 2 PASSED\n";
     
     // Test 3: Mutation
     std::cout << "\n\nTest 3: Input Mutation\n";
-    std::cout << "────────────────────────────────────────────────────────────\n";
+    std::cout << "\n";
     
     std::map<std::string, double> original = {{"Vin", 2.5}, {"R1", 5000.0}};
     auto mutated = fuzzer.mutateInputs(original);
@@ -69,23 +69,23 @@ void test_fuzz_basic() {
     assert(mutated.count("Vin") && "Should have Vin!");
     assert(mutated.count("R1") && "Should have R1!");
     
-    std::cout << "\n✅ Test 3 PASSED\n";
+    std::cout << "\n Test 3 PASSED\n";
     
     std::cout << "\n";
-    std::cout << "╔══════════════════════════════════════════════════════════╗\n";
-    std::cout << "║     Fuzz Testing: BASIC TESTS PASSED ✅                  ║\n";
-    std::cout << "╚══════════════════════════════════════════════════════════╝\n";
+    std::cout << "\n";
+    std::cout << "     Fuzz Testing: BASIC TESTS PASSED                   \n";
+    std::cout << "\n";
 }
 
 void test_fuzz_crash_detection() {
     std::cout << "\n";
-    std::cout << "╔══════════════════════════════════════════════════════════╗\n";
-    std::cout << "║  Feature #2: Circuit Fuzz Testing - Crash Detection      ║\n";
-    std::cout << "╚══════════════════════════════════════════════════════════╝\n";
+    std::cout << "\n";
+    std::cout << "  Feature #2: Circuit Fuzz Testing - Crash Detection      \n";
+    std::cout << "\n";
     std::cout << "\n";
     
     std::cout << "Test 1: Exception Handling\n";
-    std::cout << "────────────────────────────────────────────────────────────\n";
+    std::cout << "\n";
     
     CircuitFuzzer fuzzer;
     FuzzConfig config;
@@ -114,23 +114,23 @@ void test_fuzz_crash_detection() {
     assert(summary.crashed > 0 && "Should detect crashes!");
     assert(!summary.failingInputs.empty() && "Should record failing inputs!");
     
-    std::cout << "\n✅ Test 1 PASSED\n";
+    std::cout << "\n Test 1 PASSED\n";
     
     std::cout << "\n";
-    std::cout << "╔══════════════════════════════════════════════════════════╗\n";
-    std::cout << "║     Fuzz Testing: CRASH TESTS PASSED ✅                  ║\n";
-    std::cout << "╚══════════════════════════════════════════════════════════╝\n";
+    std::cout << "\n";
+    std::cout << "     Fuzz Testing: CRASH TESTS PASSED                   \n";
+    std::cout << "\n";
 }
 
 void test_fuzz_stability() {
     std::cout << "\n";
-    std::cout << "╔══════════════════════════════════════════════════════════╗\n";
-    std::cout << "║  Feature #2: Circuit Fuzz Testing - Stability Checks     ║\n";
-    std::cout << "╚══════════════════════════════════════════════════════════╝\n";
+    std::cout << "\n";
+    std::cout << "  Feature #2: Circuit Fuzz Testing - Stability Checks     \n";
+    std::cout << "\n";
     std::cout << "\n";
     
     std::cout << "Test 1: NaN/Inf Detection\n";
-    std::cout << "────────────────────────────────────────────────────────────\n";
+    std::cout << "\n";
     
     CircuitFuzzer fuzzer;
     FuzzConfig config;
@@ -158,23 +158,23 @@ void test_fuzz_stability() {
     
     assert(summary.unstable > 0 && "Should detect unstable outputs (NaN)!");
     
-    std::cout << "\n✅ Test 1 PASSED\n";
+    std::cout << "\n Test 1 PASSED\n";
     
     std::cout << "\n";
-    std::cout << "╔══════════════════════════════════════════════════════════╗\n";
-    std::cout << "║     Fuzz Testing: STABILITY TESTS PASSED ✅              ║\n";
-    std::cout << "╚══════════════════════════════════════════════════════════╝\n";
+    std::cout << "\n";
+    std::cout << "     Fuzz Testing: STABILITY TESTS PASSED               \n";
+    std::cout << "\n";
 }
 
 void test_fuzz_report() {
     std::cout << "\n";
-    std::cout << "╔══════════════════════════════════════════════════════════╗\n";
-    std::cout << "║  Feature #2: Circuit Fuzz Testing - Reports              ║\n";
-    std::cout << "╚══════════════════════════════════════════════════════════╝\n";
+    std::cout << "\n";
+    std::cout << "  Feature #2: Circuit Fuzz Testing - Reports              \n";
+    std::cout << "\n";
     std::cout << "\n";
     
     std::cout << "Test 1: Report Generation\n";
-    std::cout << "────────────────────────────────────────────────────────────\n";
+    std::cout << "\n";
     
     auto summary = circuit_fuzz_test("my_circuit", 50);
     
@@ -184,19 +184,19 @@ void test_fuzz_report() {
     assert(report.find("Fuzz Testing Summary") != std::string::npos && "Should have header!");
     assert(report.find("Total Tests:") != std::string::npos && "Should have stats!");
     
-    std::cout << "\n✅ Test 1 PASSED\n";
+    std::cout << "\n Test 1 PASSED\n";
     
     std::cout << "\n";
-    std::cout << "╔══════════════════════════════════════════════════════════╗\n";
-    std::cout << "║     Fuzz Testing: REPORT TESTS PASSED ✅                 ║\n";
-    std::cout << "╚══════════════════════════════════════════════════════════╝\n";
+    std::cout << "\n";
+    std::cout << "     Fuzz Testing: REPORT TESTS PASSED                  \n";
+    std::cout << "\n";
 }
 
 int main() {
     std::cout << "\n";
-    std::cout << "╔══════════════════════════════════════════════════════════╗\n";
-    std::cout << "║          Circuit Fuzz Testing - Test Suite               ║\n";
-    std::cout << "╚══════════════════════════════════════════════════════════╝\n";
+    std::cout << "\n";
+    std::cout << "          Circuit Fuzz Testing - Test Suite               \n";
+    std::cout << "\n";
     
     try {
         test_fuzz_basic();
@@ -205,14 +205,14 @@ int main() {
         test_fuzz_report();
         
         std::cout << "\n";
-        std::cout << "╔══════════════════════════════════════════════════════════╗\n";
-        std::cout << "║          ALL FUZZ TESTS PASSED ✅                        ║\n";
-        std::cout << "╚══════════════════════════════════════════════════════════╝\n";
+        std::cout << "\n";
+        std::cout << "          ALL FUZZ TESTS PASSED                         \n";
+        std::cout << "\n";
         std::cout << "\n";
         
         return 0;
     } catch (const std::exception& e) {
-        std::cerr << "\n❌ TEST FAILED: " << e.what() << "\n";
+        std::cerr << "\n TEST FAILED: " << e.what() << "\n";
         return 1;
     }
 }

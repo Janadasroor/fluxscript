@@ -62,6 +62,11 @@ public:
     // Create symbolic variables
     std::shared_ptr<SymbolicExpr> sym(const std::string& name);
     
+    // Arithmetic
+    std::shared_ptr<SymbolicExpr> add(std::shared_ptr<SymbolicExpr> a, std::shared_ptr<SymbolicExpr> b);
+    std::shared_ptr<SymbolicExpr> mul(std::shared_ptr<SymbolicExpr> a, std::shared_ptr<SymbolicExpr> b);
+    std::shared_ptr<SymbolicExpr> power(std::shared_ptr<SymbolicExpr> base, std::shared_ptr<SymbolicExpr> exp);
+    
     // Core operations
     std::shared_ptr<SymbolicExpr> simplify(std::shared_ptr<SymbolicExpr> expr);
     std::shared_ptr<SymbolicExpr> expand(std::shared_ptr<SymbolicExpr> expr);
@@ -93,9 +98,13 @@ public:
     // Evaluation
     double evaluate(std::shared_ptr<SymbolicExpr> expr, const std::map<std::string, double>& vars);
     
+    // Internal registry to keep expressions alive for JIT
+    std::shared_ptr<SymbolicExpr> registerExpr(std::shared_ptr<SymbolicExpr> expr);
+    
 private:
     SymbolicEngine() {}
     std::map<std::string, std::shared_ptr<SymbolicExpr>> m_symbols;
+    std::vector<std::shared_ptr<SymbolicExpr>> m_registry;
 };
 
 } // namespace Flux

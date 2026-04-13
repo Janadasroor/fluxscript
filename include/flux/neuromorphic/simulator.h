@@ -55,10 +55,10 @@ struct LIFParameters {
 
 // Hodgkin-Huxley neuron parameters
 struct HHParameters {
-    double C_m;        // Membrane capacitance (μF/cm²)
-    double g_Na;       // Sodium conductance (mS/cm²)
-    double g_K;        // Potassium conductance (mS/cm²)
-    double g_L;        // Leak conductance (mS/cm²)
+    double C_m;        // Membrane capacitance (F/cm)
+    double g_Na;       // Sodium conductance (mS/cm)
+    double g_K;        // Potassium conductance (mS/cm)
+    double g_L;        // Leak conductance (mS/cm)
     double E_Na;       // Sodium reversal potential (mV)
     double E_K;        // Potassium reversal potential (mV)
     double E_L;        // Leak reversal potential (mV)

@@ -22,9 +22,9 @@ using namespace Flux::Sweep;
 
 int main(int argc, char** argv) {
     std::cout << "\n";
-    std::cout << "╔══════════════════════════════════════════════════════════╗\n";
-    std::cout << "║          FluxScript Parametric Sweep                    ║\n";
-    std::cout << "╚══════════════════════════════════════════════════════════╝\n";
+    std::cout << "\n";
+    std::cout << "          FluxScript Parametric Sweep                    \n";
+    std::cout << "\n";
     std::cout << "\n";
 
     if (argc < 2) {
@@ -47,7 +47,7 @@ int main(int argc, char** argv) {
         else if (arg == "--points" && i + 1 < argc) points = std::stoi(argv[++i]);
     }
 
-    std::cout << "📄 Circuit: " << filename << "\n";
+    std::cout << " Circuit: " << filename << "\n";
 
     // Create Engine
     SweepEngine engine;
