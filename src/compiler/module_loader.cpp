@@ -284,7 +284,7 @@ bool ModuleLoader::compileModule(const std::filesystem::path& sourcePath,
     }
 
     // Get the LLVM module and write bitcode
-    llvm::Module* mod = artifacts->codegenContext->TheModule.get();
+    llvm::Module* mod = artifacts->codegenContext->TheModule;
     if (!mod) {
         if (error) *error = "No LLVM module after compilation";
         return false;

@@ -387,4 +387,34 @@ double SymbolicEngine::evaluate(std::shared_ptr<SymbolicExpr> expr, const std::m
     return 0.0;
 }
 
+std::vector<std::vector<std::shared_ptr<SymbolicExpr>>> SymbolicEngine::jacobian(
+    const std::vector<std::shared_ptr<SymbolicExpr>>& exprs, 
+    const std::vector<std::string>& vars) {
+    
+    std::vector<std::vector<std::shared_ptr<SymbolicExpr>>> J;
+    for (const auto& e : exprs) {
+        std::vector<std::shared_ptr<SymbolicExpr>> row;
+        for (const auto& v : vars) {
+            row.push_back(differentiate(e, v));
+        }
+        J.push_back(row);
+    }
+    return J;
+}
+
 } // namespace Flux
+
+std::shared_ptr<SymbolicExpr> SymbolicEngine::pde_register(std::shared_ptr<SymbolicExpr> eq, 
+                                                          const std::vector<std::string>& vars) {
+    // For now, just return the equation. In a full solver, this would set up boundary conditions.
+    return eq;
+}
+
+std::shared_ptr<SymbolicExpr> SymbolicEngine::partial_differentiate(std::shared_ptr<SymbolicExpr> expr, 
+                                                                   const std::string& var, int order) {
+    auto res = expr;
+    for (int i = 0; i < order; i++) {
+        res = differentiate(res, var);
+    }
+    return simplify(res);
+}

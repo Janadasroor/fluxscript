@@ -31,7 +31,7 @@ TypedValue BSourceDeclAST::codegen(CodegenContext& context) {
     std::vector<llvm::Type*> paramTypes = {DoubleTy, DoublePtrTy, llvm::Type::getInt32Ty(context.TheContext)};
     auto funcType = llvm::FunctionType::get(DoubleTy, paramTypes, false);
     auto func = llvm::Function::Create(funcType, llvm::Function::ExternalLinkage,
-                                       "bsource_" + Name, context.TheModule.get());
+                                       "bsource_" + Name, context.TheModule);
 
     // Set up basic block
     llvm::BasicBlock* BB = llvm::BasicBlock::Create(context.TheContext, "entry", func);
@@ -92,7 +92,7 @@ TypedValue TimeExprAST::codegen(CodegenContext& context) {
         auto funcType = llvm::FunctionType::get(
             llvm::Type::getDoubleTy(context.TheContext), {}, false);
         getTimeF = llvm::Function::Create(funcType, llvm::Function::ExternalLinkage,
-                                          "flux_get_time", context.TheModule.get());
+                                          "flux_get_time", context.TheModule);
     }
     
     auto call = context.Builder.CreateCall(getTimeF, {}, "sim_time");
@@ -107,7 +107,7 @@ TypedValue TimestepExprAST::codegen(CodegenContext& context) {
         auto funcType = llvm::FunctionType::get(
             llvm::Type::getDoubleTy(context.TheContext), {}, false);
         getDtF = llvm::Function::Create(funcType, llvm::Function::ExternalLinkage,
-                                        "flux_get_dt", context.TheModule.get());
+                                        "flux_get_dt", context.TheModule);
     }
     
     auto call = context.Builder.CreateCall(getDtF, {}, "timestep");
@@ -122,7 +122,7 @@ TypedValue TempExprAST::codegen(CodegenContext& context) {
         auto funcType = llvm::FunctionType::get(
             llvm::Type::getDoubleTy(context.TheContext), {}, false);
         getTempF = llvm::Function::Create(funcType, llvm::Function::ExternalLinkage,
-                                          "flux_get_temp", context.TheModule.get());
+                                          "flux_get_temp", context.TheModule);
     }
     
     auto call = context.Builder.CreateCall(getTempF, {}, "temperature");
@@ -188,7 +188,7 @@ TypedValue OutputsExprAST::codegen(CodegenContext& context) {
             llvm::Type::getVoidTy(context.TheContext),
             {DoubleTy, DoubleTy}, false);
         setOutputF = llvm::Function::Create(funcType, llvm::Function::ExternalLinkage,
-                                            "flux_set_output", context.TheModule.get());
+                                            "flux_set_output", context.TheModule);
     }
 
     // Convert node name string pointer to double (for JIT calling convention)
@@ -225,7 +225,7 @@ TypedValue InitialCondAST::codegen(CodegenContext& context) {
             llvm::Type::getVoidTy(context.TheContext),
             {DoubleTy, DoubleTy}, false);
         setICF = llvm::Function::Create(funcType, llvm::Function::ExternalLinkage,
-                                        "flux_set_initial_condition", context.TheModule.get());
+                                        "flux_set_initial_condition", context.TheModule);
     }
 
     // Convert node name string pointer to double (for JIT calling convention)
@@ -259,7 +259,7 @@ TypedValue TransientAnalysisAST::codegen(CodegenContext& context) {
             llvm::Type::getVoidTy(context.TheContext), 
             {llvm::Type::getDoubleTy(context.TheContext)}, false);
         setTimestepF = llvm::Function::Create(funcType, llvm::Function::ExternalLinkage,
-                                              "flux_set_timestep", context.TheModule.get());
+                                              "flux_set_timestep", context.TheModule);
     }
     
     llvm::Value* timestepVal = llvm::ConstantFP::get(context.TheContext, llvm::APFloat(Timestep));

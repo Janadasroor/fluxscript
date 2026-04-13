@@ -87,6 +87,37 @@ public:
     TypedValue codegen(CodegenContext& context) override;
 };
 
+// Jacobian matrix
+class JacobianExprAST : public ExprAST {
+    std::unique_ptr<ExprAST> Expressions; // VectorExprAST
+    std::unique_ptr<ExprAST> Variables;   // VectorExprAST
+public:
+    JacobianExprAST(std::unique_ptr<ExprAST> exprs, std::unique_ptr<ExprAST> vars)
+        : Expressions(std::move(exprs)), Variables(std::move(vars)) {}
+    TypedValue codegen(CodegenContext& context) override;
+};
+
+// Partial Differential Equation
+class PDEExprAST : public ExprAST {
+    std::unique_ptr<ExprAST> Equation;
+    std::vector<std::string> IndependentVars;
+public:
+    PDEExprAST(std::unique_ptr<ExprAST> eq, std::vector<std::string> vars)
+        : Equation(std::move(eq)), IndependentVars(std::move(vars)) {}
+    TypedValue codegen(CodegenContext& context) override;
+};
+
+// Partial Derivative
+class PartialDiffExprAST : public ExprAST {
+    std::unique_ptr<ExprAST> Expression;
+    std::string Variable;
+    int Order;
+public:
+    PartialDiffExprAST(std::unique_ptr<ExprAST> expr, std::string var, int order = 1)
+        : Expression(std::move(expr)), Variable(std::move(var)), Order(order) {}
+    TypedValue codegen(CodegenContext& context) override;
+};
+
 } // namespace Flux
 
 #endif // FLUX_SYMBOLIC_AST_H

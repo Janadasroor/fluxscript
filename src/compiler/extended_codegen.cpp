@@ -54,13 +54,13 @@ TypedValue TryCatchExprAST::codegen(CodegenContext& context) {
     
     // Register runtime helpers
     llvm::Function* PushF = context.TheModule->getFunction("flux_push_jmp_buf");
-    if (!PushF) PushF = llvm::Function::Create(llvm::FunctionType::get(llvm::Type::getVoidTy(Ctx), {VoidPtrTy}, false), llvm::Function::ExternalLinkage, "flux_push_jmp_buf", context.TheModule.get());
+    if (!PushF) PushF = llvm::Function::Create(llvm::FunctionType::get(llvm::Type::getVoidTy(Ctx), {VoidPtrTy}, false), llvm::Function::ExternalLinkage, "flux_push_jmp_buf", context.TheModule);
     
     llvm::Function* PopF = context.TheModule->getFunction("flux_pop_jmp_buf");
-    if (!PopF) PopF = llvm::Function::Create(llvm::FunctionType::get(llvm::Type::getVoidTy(Ctx), {}, false), llvm::Function::ExternalLinkage, "flux_pop_jmp_buf", context.TheModule.get());
+    if (!PopF) PopF = llvm::Function::Create(llvm::FunctionType::get(llvm::Type::getVoidTy(Ctx), {}, false), llvm::Function::ExternalLinkage, "flux_pop_jmp_buf", context.TheModule);
     
     llvm::Function* SetJmpF = context.TheModule->getFunction("setjmp");
-    if (!SetJmpF) SetJmpF = llvm::Function::Create(llvm::FunctionType::get(Int32Ty, {VoidPtrTy}, false), llvm::Function::ExternalLinkage, "setjmp", context.TheModule.get());
+    if (!SetJmpF) SetJmpF = llvm::Function::Create(llvm::FunctionType::get(Int32Ty, {VoidPtrTy}, false), llvm::Function::ExternalLinkage, "setjmp", context.TheModule);
     
     // Push jump buffer to stack
     context.Builder.CreateCall(PushF, {JmpBufPtr});
@@ -137,7 +137,7 @@ TypedValue ThrowExprAST::codegen(CodegenContext& context) {
         return TypedValue(llvm::ConstantFP::get(Ctx, llvm::APFloat(0.0)), TypeKind::Double);
     }
 
-    llvm::Module* TheModule = context.TheModule.get();
+    llvm::Module* TheModule = context.TheModule;
     
     // Always use runtime throw which handles the non-local jump via longjmp
     llvm::Function* ThrowFunc = TheModule->getFunction("flux_throw_error");
@@ -191,12 +191,33 @@ TypedValue AssertExprAST::codegen(CodegenContext& context) {
 // ============ Yield Codegen ============
 
 TypedValue YieldExprAST::codegen(CodegenContext& context) {
-    // Generate yielded value
+    if (!context.GeneratorStateAlloca) {
+        std::cerr << "[FLUX ERROR] yield used outside of a generator function." << std::endl;
+        return TypedValue();
+    }
+
+    // 1. Generate value to yield
     TypedValue ValueTV = Value->codegen(context);
     if (!ValueTV.Val) return TypedValue();
     
-    // In full implementation, this would save state and return from generator
-    // For now, just return the value
+    // 2. Create resume block and record it
+    int nextState = (int)context.YieldTargets.size();
+    llvm::Function* TheFunction = context.Builder.GetInsertBlock()->getParent();
+    llvm::BasicBlock* ResumeBB = llvm::BasicBlock::Create(context.TheContext, "yield_resume", TheFunction);
+    context.YieldTargets.push_back(ResumeBB);
+    
+    // 3. Save next state index in the state struct
+    // Generator state struct: { i32 state_index }
+    llvm::Type* StateTy = llvm::StructType::get(context.TheContext, { llvm::Type::getInt32Ty(context.TheContext) });
+    llvm::Value* IndexPtr = context.Builder.CreateStructGEP(StateTy, context.GeneratorStateAlloca, 0);
+    context.Builder.CreateStore(llvm::ConstantInt::get(llvm::Type::getInt32Ty(context.TheContext), nextState), IndexPtr);
+    
+    // 4. Return from the function with the yielded value
+    context.Builder.CreateRet(ValueTV.Val);
+    
+    // 5. Continue codegen from the resume block
+    context.Builder.SetInsertPoint(ResumeBB);
+    
     return ValueTV;
 }
 
@@ -338,13 +359,79 @@ TypedValue MatchExprAST::codegen(CodegenContext& context) {
 // ============ Foreach Codegen ============
 
 TypedValue ForeachExprAST::codegen(CodegenContext& context) {
-    // Generate foreach loop that iterates over a vector/collection
-    // Assumes iterable is a {double*, i32} vector struct
-    
     llvm::Function* TheFunction = context.Builder.GetInsertBlock()->getParent();
     llvm::LLVMContext& Ctx = context.TheContext;
     
-    // Generate iterable expression
+    // Check if iterable is a call to a generator
+    CallExprAST* Call = dynamic_cast<CallExprAST*>(Iterable.get());
+    llvm::Function* GenF = nullptr;
+    if (Call) {
+        GenF = context.TheModule->getFunction(Call->getCallee());
+    }
+
+    bool isGenerator = GenF && GenF->arg_size() > 0 && GenF->getArg(0)->getType()->isPointerTy() && 
+                       GenF->getArg(0)->getName() == "__gen_state";
+
+    if (isGenerator) {
+        // 1. Allocate generator state struct { i32 state_index }
+        llvm::Type* Int32Ty = llvm::Type::getInt32Ty(Ctx);
+        llvm::StructType* StateTy = llvm::StructType::get(Ctx, { Int32Ty });
+        llvm::Value* StatePtr = context.Builder.CreateAlloca(StateTy, nullptr, "gen_state");
+        
+        // Initialize state to 0
+        llvm::Value* IdxPtr = context.Builder.CreateStructGEP(StateTy, StatePtr, 0);
+        context.Builder.CreateStore(llvm::ConstantInt::get(Int32Ty, 0), IdxPtr);
+        
+        // 2. Create loop blocks
+        llvm::BasicBlock* LoopBB = llvm::BasicBlock::Create(Ctx, "gen_loop", TheFunction);
+        llvm::BasicBlock* AfterBB = llvm::BasicBlock::Create(Ctx, "after_gen");
+        
+        context.Builder.CreateBr(LoopBB);
+        context.Builder.SetInsertPoint(LoopBB);
+        
+        // 3. Prepare arguments for generator call
+        std::vector<llvm::Value*> ArgsV;
+        ArgsV.push_back(StatePtr); // First argument is state pointer
+        
+        for (const auto& Arg : Call->getArgs()) {
+            TypedValue ArgTV = Arg->codegen(context);
+            ArgsV.push_back(ArgTV.Val);
+        }
+        
+        // 4. Call generator
+        llvm::Value* RetVal = context.Builder.CreateCall(GenF, ArgsV, "yield_val");
+        
+        // 5. Check if finished (state == -1)
+        llvm::Value* CurrentState = context.Builder.CreateLoad(Int32Ty, IdxPtr, "cur_state");
+        llvm::Value* IsFinished = context.Builder.CreateICmpEQ(CurrentState, llvm::ConstantInt::get(Int32Ty, -1));
+        context.Builder.CreateCondBr(IsFinished, AfterBB, LoopBB); // This logic is slightly wrong, need a body block
+        
+        // Fix: Jump to BodyBB if not finished
+        LoopBB->getTerminator()->eraseFromParent();
+        llvm::BasicBlock* BodyBB = llvm::BasicBlock::Create(Ctx, "gen_body", TheFunction);
+        context.Builder.CreateCondBr(IsFinished, AfterBB, BodyBB);
+        
+        context.Builder.SetInsertPoint(BodyBB);
+        
+        // 6. Set loop variable
+        llvm::Value* OldVal = context.NamedValues[VarName];
+        context.NamedValues[VarName] = RetVal;
+        
+        // 7. Generate body
+        context.CurrentLoopEnd = AfterBB;
+        context.CurrentLoopCont = LoopBB;
+        Body->codegen(context);
+        
+        context.Builder.CreateBr(LoopBB);
+        
+        // 8. Cleanup
+        context.Builder.SetInsertPoint(AfterBB);
+        context.NamedValues[VarName] = OldVal;
+        
+        return TypedValue(llvm::ConstantFP::get(Ctx, llvm::APFloat(0.0)), TypeKind::Double);
+    }
+
+    // Default: Vector iteration (existing implementation)
     TypedValue IterableTV = Iterable->codegen(context);
     if (!IterableTV.Val) return TypedValue();
     

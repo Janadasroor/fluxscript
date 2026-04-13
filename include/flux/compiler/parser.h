@@ -106,6 +106,9 @@ private:
     std::unique_ptr<ExprAST> ParseDifferentiateExpr();
     std::unique_ptr<ExprAST> ParseSubstituteExpr();
     std::unique_ptr<ExprAST> ParseEvaluateExpr();
+    std::unique_ptr<ExprAST> ParseJacobianExpr();
+    std::unique_ptr<ExprAST> ParsePDEExpr();
+    std::unique_ptr<ExprAST> ParsePartialDiffExpr();
     
     // Time-domain simulation
     std::unique_ptr<ExprAST> ParseBSourceDecl();

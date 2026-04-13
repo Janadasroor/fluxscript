@@ -21,66 +21,88 @@
 namespace Flux {
 
 TypedValue ParallelForExprAST::codegen(CodegenContext& context) {
-    // Generate parallel for loop
-    // For now, generate as sequential loop to ensure correct variable scoping
-    // Parallel execution with closure capture requires more complex infrastructure
-
-    llvm::Function* TheFunction = context.Builder.GetInsertBlock()->getParent();
     llvm::LLVMContext& Ctx = context.TheContext;
+    llvm::Module* TheModule = context.TheModule;
+    llvm::Type* DoubleTy = llvm::Type::getDoubleTy(Ctx);
+    llvm::Type* Int64Ty = llvm::Type::getInt64Ty(Ctx);
+    llvm::Type* VoidPtrTy = llvm::PointerType::get(Ctx, 0);
 
-    // Generate start and end values
+    // 1. Generate start and end values in the current function
     TypedValue StartTV = Start->codegen(context);
     TypedValue EndTV = End->codegen(context);
     if (!StartTV.Val || !EndTV.Val) return TypedValue();
 
-    // Create loop blocks
-    llvm::BasicBlock* PreheaderBB = context.Builder.GetInsertBlock();
-    llvm::BasicBlock* LoopBB = llvm::BasicBlock::Create(Ctx, "par_loop", TheFunction);
-    llvm::BasicBlock* AfterBB = llvm::BasicBlock::Create(Ctx, "after_par_loop");
+    // Convert start/end to int64 if they are doubles
+    llvm::Value* StartIdx = context.Builder.CreateFPToSI(StartTV.Val, Int64Ty, "start_idx");
+    llvm::Value* EndIdx = context.Builder.CreateFPToSI(EndTV.Val, Int64Ty, "end_idx");
 
-    // Save old variable
-    llvm::Value* OldVal = context.NamedValues[VarName];
+    // 2. Identify captured variables (all current NamedValues)
+    std::vector<std::string> CapturedNames;
+    std::vector<llvm::Type*> CapturedTypes;
+    for (auto const& [name, val] : context.NamedValues) {
+        if (name != VarName) {
+            CapturedNames.push_back(name);
+            CapturedTypes.push_back(val->getType());
+        }
+    }
 
-    // Branch to loop
-    context.Builder.CreateBr(LoopBB);
-    context.Builder.SetInsertPoint(LoopBB);
+    // Create a struct to hold captured variables
+    llvm::StructType* CaptureStructTy = llvm::StructType::get(Ctx, CapturedTypes);
+    llvm::Value* CaptureStruct = context.Builder.CreateAlloca(CaptureStructTy, nullptr, "par_capture");
 
-    // Create PHI for loop variable
-    llvm::PHINode* Variable = context.Builder.CreatePHI(llvm::Type::getDoubleTy(Ctx), 2, VarName.c_str());
-    Variable->addIncoming(StartTV.Val, PreheaderBB);
+    for (size_t i = 0; i < CapturedNames.size(); i++) {
+        llvm::Value* MemberPtr = context.Builder.CreateStructGEP(CaptureStructTy, CaptureStruct, i);
+        context.Builder.CreateStore(context.NamedValues[CapturedNames[i]], MemberPtr);
+    }
 
-    // Set loop variable in scope
-    context.NamedValues[VarName] = Variable;
+    // 3. Create the loop body function
+    // Signature: void body(int64_t index, void* user_data)
+    llvm::FunctionType* BodyFuncTy = llvm::FunctionType::get(llvm::Type::getVoidTy(Ctx), {Int64Ty, VoidPtrTy}, false);
+    llvm::Function* BodyFunc = llvm::Function::Create(BodyFuncTy, llvm::Function::InternalLinkage, "par_body", TheModule);
 
-    // Generate body
-    context.CurrentLoopEnd = AfterBB;
-    context.CurrentLoopCont = LoopBB;
+    // Create entry block in body function
+    llvm::BasicBlock* EntryBB = llvm::BasicBlock::Create(Ctx, "entry", BodyFunc);
+    llvm::IRBuilder<> BodyBuilder(EntryBB);
 
-    TypedValue BodyTV = Body->codegen(context);
+    // Setup body context
+    CodegenContext BodyContext(context.TheContext, context.TheModule);
+    BodyContext.Builder.SetInsertPoint(EntryBB);
 
-    // Restore scope
-    context.CurrentLoopEnd = nullptr;
-    context.CurrentLoopCont = nullptr;
+    // Extract loop index
+    llvm::Value* RawIdx = BodyFunc->arg_begin();
+    llvm::Value* LoopVar = BodyBuilder.CreateSIToFP(RawIdx, DoubleTy, VarName.c_str());
+    BodyContext.NamedValues[VarName] = LoopVar;
 
-    // Increment
-    llvm::Value* NextVar = context.Builder.CreateFAdd(Variable,
-        llvm::ConstantFP::get(Ctx, llvm::APFloat(1.0)), "nextvar");
-    Variable->addIncoming(NextVar, context.Builder.GetInsertBlock());
+    // Extract captured variables
+    llvm::Value* UserDataPtr = (BodyFunc->arg_begin() + 1);
+    llvm::Value* CastUserData = BodyBuilder.CreateBitCast(UserDataPtr, llvm::PointerType::get(CaptureStructTy, 0));
 
-    // Restore old variable
-    context.NamedValues[VarName] = OldVal;
+    for (size_t i = 0; i < CapturedNames.size(); i++) {
+        llvm::Value* MemberPtr = BodyBuilder.CreateStructGEP(CaptureStructTy, CastUserData, i);
+        BodyContext.NamedValues[CapturedNames[i]] = BodyBuilder.CreateLoad(CapturedTypes[i], MemberPtr);
+    }
 
-    // Check condition
-    llvm::Value* EndCond = context.Builder.CreateFCmpOLT(NextVar, EndTV.Val, "loopcond");
-    context.Builder.CreateCondBr(EndCond, LoopBB, AfterBB);
+    // Codegen the body expression into the new function
+    TypedValue BodyResult = Body->codegen(BodyContext);
+    BodyBuilder.CreateRetVoid();
 
-    // After loop
-    TheFunction->insert(TheFunction->end(), AfterBB);
-    context.Builder.SetInsertPoint(AfterBB);
+    // 4. Call flux_parallel_for in the current function
+    llvm::Function* ParForFunc = TheModule->getFunction("flux_parallel_for");
+    if (!ParForFunc) {
+        ParForFunc = llvm::Function::Create(
+            llvm::FunctionType::get(llvm::Type::getVoidTy(Ctx), {Int64Ty, Int64Ty, Int64Ty, VoidPtrTy}, false),
+            llvm::Function::ExternalLinkage, "flux_parallel_for", TheModule);
+    }
 
-    std::cout << "[CodeGen] Generated parallel for loop (sequential): " << VarName << std::endl;
+    llvm::Value* ChunkSize = llvm::ConstantInt::get(Int64Ty, 0); // Auto-calculate chunk size
+    llvm::Value* BodyFuncPtr = context.Builder.CreateBitCast(BodyFunc, VoidPtrTy);
+    llvm::Value* CapturePtr = context.Builder.CreateBitCast(CaptureStruct, VoidPtrTy);
 
-    return BodyTV ? BodyTV : TypedValue(llvm::ConstantFP::get(Ctx, llvm::APFloat(0.0)), TypeKind::Double);
+    context.Builder.CreateCall(ParForFunc, {StartIdx, EndIdx, ChunkSize, BodyFuncPtr});
+
+    std::cout << "[CodeGen] Generated TRUE parallel for loop: " << VarName << std::endl;
+
+    return TypedValue(llvm::ConstantFP::get(Ctx, llvm::APFloat(0.0)), TypeKind::Double);
 }
 
 } // namespace Flux

@@ -185,6 +185,9 @@ enum class TokenType {
     tok_laplace = -170,           // Laplace transform
     tok_inverse_laplace = -171,   // Inverse Laplace
     tok_evaluate = -172,          // Evaluate symbolic expression
+    tok_jacobian = -195,          // Jacobian matrix
+    tok_pde = -198,               // PDE solver
+    tok_partial_diff = -199,      // Partial derivative
     tok_expand = -173,            // expand expression
     tok_factor = -174,            // factor expression
     tok_numerator = -175,         // get numerator
@@ -351,8 +354,8 @@ public:
     int CurTok;
     
     // Position tracking for error messages
-    int getCurrentLine() const { return m_line; }
-    int getCurrentColumn() const { return m_column; }
+    int getCurrentLine() const { return m_currentTokenLine; }
+    int getCurrentColumn() const { return m_currentTokenColumn; }
     size_t getCurrentTokenOffset() const { return m_currentTokenOffset; }
     size_t getCurrentTokenLength() const { return m_currentTokenLength; }
     std::string getCurrentTokenText() const;
@@ -370,6 +373,8 @@ private:
     int m_lastChar;
     int m_line;
     int m_column;
+    int m_currentTokenLine;
+    int m_currentTokenColumn;
     size_t m_lineStart;
     size_t m_currentTokenOffset;
     size_t m_currentTokenLength;

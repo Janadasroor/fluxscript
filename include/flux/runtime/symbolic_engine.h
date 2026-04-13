@@ -85,6 +85,17 @@ public:
     std::shared_ptr<SymbolicExpr> substitute(std::shared_ptr<SymbolicExpr> expr, 
                                             const std::map<std::string, double>& vars);
     
+    // Jacobian matrix generation
+    std::vector<std::vector<std::shared_ptr<SymbolicExpr>>> jacobian(
+        const std::vector<std::shared_ptr<SymbolicExpr>>& exprs, 
+        const std::vector<std::string>& vars);
+    
+    // PDE Support
+    std::shared_ptr<SymbolicExpr> pde_register(std::shared_ptr<SymbolicExpr> eq, 
+                                              const std::vector<std::string>& vars);
+    std::shared_ptr<SymbolicExpr> partial_differentiate(std::shared_ptr<SymbolicExpr> expr, 
+                                                       const std::string& var, int order);
+    
     // Equation solving
     std::vector<double> solve(std::shared_ptr<SymbolicExpr> lhs, std::shared_ptr<SymbolicExpr> rhs, 
                              const std::string& var);

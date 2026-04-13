@@ -62,6 +62,9 @@ extern "C" double flux_sym_differentiate(double expr_ptr, const char* var);
 extern "C" double flux_sym_substitute(double expr_ptr, double var_count, void* var_names_ptr, void* var_values_ptr);
 extern "C" double flux_sym_solve(double lhs_ptr, double rhs_ptr, const char* var);
 extern "C" double flux_sym_evaluate(double expr_ptr, double var_count, void* var_names_ptr, void* var_values_ptr);
+extern "C" void* flux_sym_jacobian(void* exprs_ptr, int expr_count, void* vars_ptr, int var_count);
+extern "C" double flux_sym_pde_register(double eq_ptr, int var_count, void* var_names_ptr);
+extern "C" double flux_sym_pdiff(double expr_ptr, const char* var, int order);
 extern "C" double flux_sym_expand(double expr_ptr);
 extern "C" double flux_sym_factor(double expr_ptr);
 extern "C" double flux_sym_laplace(double expr_ptr, const char* t_var, const char* s_var);
@@ -77,6 +80,11 @@ extern "C" void* flux_matrix_eig(void* m_ptr);
 extern "C" double flux_vector_dot(double* v1_ptr, int len1, double* v2_ptr, int len2);
 extern "C" void* flux_vector_cross(double* v1_ptr, int len1, double* v2_ptr, int len2);
 extern "C" double flux_vector_norm(double* v_ptr, int len);
+extern "C" void* flux_matrix_solve(void* a_ptr, void* b_ptr);
+extern "C" void* flux_matrix_pow(void* m_ptr, double p);
+extern "C" void* flux_matrix_transpose(void* m_ptr);
+extern "C" int flux_matrix_rows(void* m_ptr);
+extern "C" int flux_matrix_cols(void* m_ptr);
 extern "C" double flux_register_analysis(const char* type);
 extern "C" double flux_register_measure(const char* name, const char* type);
 extern "C" double flux_register_subckt(double name_ptr, double pins_ptr);
@@ -177,6 +185,8 @@ void registerRuntimeFunctions(FluxJIT& jit) {
     jit.registerFunction("flux_matrix_eig", reinterpret_cast<void*>(&flux_matrix_eig));
     jit.registerFunction("det", reinterpret_cast<void*>(&flux_matrix_det));
     jit.registerFunction("inv", reinterpret_cast<void*>(&flux_matrix_inv));
+    jit.registerFunction("solve", reinterpret_cast<void*>(&flux_matrix_solve));
+    jit.registerFunction("matpow", reinterpret_cast<void*>(&flux_matrix_pow));
     jit.registerFunction("eig", reinterpret_cast<void*>(&flux_matrix_eig));
     jit.registerFunction("dot", reinterpret_cast<void*>(&flux_vector_dot));
     jit.registerFunction("cross", reinterpret_cast<void*>(&flux_vector_cross));
@@ -266,6 +276,9 @@ void registerRuntimeFunctions(FluxJIT& jit) {
     jit.registerFunction("flux_sym_substitute", reinterpret_cast<void*>(&flux_sym_substitute));
     jit.registerFunction("flux_sym_solve", reinterpret_cast<void*>(&flux_sym_solve));
     jit.registerFunction("flux_sym_evaluate", reinterpret_cast<void*>(&flux_sym_evaluate));
+    jit.registerFunction("flux_sym_jacobian", reinterpret_cast<void*>(&flux_sym_jacobian));
+    jit.registerFunction("flux_sym_pde_register", reinterpret_cast<void*>(&flux_sym_pde_register));
+    jit.registerFunction("flux_sym_pdiff", reinterpret_cast<void*>(&flux_sym_pdiff));
     jit.registerFunction("flux_sym_expand", reinterpret_cast<void*>(&flux_sym_expand));
     jit.registerFunction("flux_sym_factor", reinterpret_cast<void*>(&flux_sym_factor));
     jit.registerFunction("flux_sym_laplace", reinterpret_cast<void*>(&flux_sym_laplace));
@@ -635,6 +648,39 @@ extern "C" void* flux_matrix_sub_sm(double s, void* m_ptr) {
     if (!m_ptr) return nullptr;
     auto* M = static_cast<Eigen::MatrixXd*>(m_ptr);
     return g_matrix_tracker.register_matrix(std::make_unique<Eigen::MatrixXd>(s - M->array()));
+}
+
+extern "C" void* flux_matrix_div_ms(void* m_ptr, double s) {
+    if (!m_ptr || s == 0) return nullptr;
+    auto* M = static_cast<Eigen::MatrixXd*>(m_ptr);
+    return g_matrix_tracker.register_matrix(std::make_unique<Eigen::MatrixXd>(*M / s));
+}
+
+extern "C" void* flux_matrix_div_sm(double s, void* m_ptr) {
+    if (!m_ptr) return nullptr;
+    auto* M = static_cast<Eigen::MatrixXd*>(m_ptr);
+    return g_matrix_tracker.register_matrix(std::make_unique<Eigen::MatrixXd>(s / M->array()));
+}
+
+extern "C" void* flux_matrix_solve(void* a_ptr, void* b_ptr) {
+    if (!a_ptr || !b_ptr) return nullptr;
+    auto* A = static_cast<Eigen::MatrixXd*>(a_ptr);
+    auto* B = static_cast<Eigen::MatrixXd*>(b_ptr);
+    if (A->rows() != A->cols()) return nullptr;
+    return g_matrix_tracker.register_matrix(std::make_unique<Eigen::MatrixXd>(A->partialPivLu().solve(*B)));
+}
+
+extern "C" void* flux_matrix_pow(void* m_ptr, double p) {
+    if (!m_ptr) return nullptr;
+    auto* M = static_cast<Eigen::MatrixXd*>(m_ptr);
+    if (M->rows() == M->cols() && std::floor(p) == p && p >= 0) {
+        int ip = (int)p;
+        if (ip == 0) return g_matrix_tracker.register_matrix(std::make_unique<Eigen::MatrixXd>(Eigen::MatrixXd::Identity(M->rows(), M->cols())));
+        Eigen::MatrixXd res = *M;
+        for (int i = 1; i < ip; i++) res *= *M;
+        return g_matrix_tracker.register_matrix(std::make_unique<Eigen::MatrixXd>(res));
+    }
+    return g_matrix_tracker.register_matrix(std::make_unique<Eigen::MatrixXd>(M->array().pow(p)));
 }
 
 extern "C" void* flux_matrix_transpose(void* m_ptr) {
@@ -1065,6 +1111,13 @@ static std::shared_ptr<SymbolicExpr> get_sym_ptr(double ptr) {
     return std::shared_ptr<SymbolicExpr>((SymbolicExpr*)(uintptr_t)ptr, [](SymbolicExpr*){});
 }
 
+// Internal helper to register and return a raw pointer from a shared_ptr
+static double make_sym_ptr(std::shared_ptr<SymbolicExpr> expr) {
+    if (!expr) return 0.0;
+    auto& engine = SymbolicEngine::instance();
+    return (double)(uintptr_t)engine.registerExpr(expr).get();
+}
+
 extern "C" double flux_register_analysis(const char* type) {
     std::cerr << "[RUNTIME] Registering analysis: " << type << std::endl;
     return 1.0;
@@ -1352,8 +1405,6 @@ extern "C" void flux_throw_error(double error_code, const char* message) {
     std::abort();
 }
 
-} // namespace Flux
-
 extern "C" const char* flux_string_concat_double(const char* s, double d) {
     std::string res = std::string(s) + std::to_string(d);
     return strdup(res.c_str());
@@ -1413,5 +1464,58 @@ extern "C" void print_matrix(double* data, int rows, int cols) {
     printf("]");
     fflush(stdout);
 }
+
+extern "C" void* flux_sym_jacobian(void* exprs_ptr, int expr_count, void* vars_ptr, int var_count) {
+    auto* expr_ptrs = static_cast<double*>(exprs_ptr);
+    auto** var_names = static_cast<const char**>(vars_ptr);
+    
+    std::vector<std::shared_ptr<SymbolicExpr>> exprs;
+    for(int i=0; i<expr_count; i++) exprs.push_back(get_sym_ptr(expr_ptrs[i]));
+    
+    std::vector<std::string> vars;
+    for(int i=0; i<var_count; i++) vars.push_back(var_names[i]);
+    
+    auto& engine = SymbolicEngine::instance();
+    auto J = engine.jacobian(exprs, vars);
+    
+    int rows = (int)J.size();
+    int cols = (int)vars.size();
+    
+    auto result = std::make_unique<Eigen::MatrixXd>(rows, cols);
+    for(int r=0; r<rows; r++) {
+        for(int c=0; c<cols; c++) {
+            (*result)(r, c) = make_sym_ptr(J[r][c]);
+        }
+    }
+    
+    return g_matrix_tracker.register_matrix(std::move(result));
+}
+
+} // namespace Flux
+
+// End of file
+
+extern "C" double flux_sym_pde_register(double eq_ptr, int var_count, void* var_names_ptr) {
+    auto eq = get_sym_ptr(eq_ptr);
+    if (!eq) return 0.0;
+    
+    auto** names = static_cast<const char**>(var_names_ptr);
+    std::vector<std::string> vars;
+    for(int i=0; i<var_count; i++) vars.push_back(names[i]);
+    
+    auto& engine = SymbolicEngine::instance();
+    auto res = engine.pde_register(eq, vars);
+    return make_sym_ptr(res);
+}
+
+extern "C" double flux_sym_pdiff(double expr_ptr, const char* var, int order) {
+    auto expr = get_sym_ptr(expr_ptr);
+    if (!expr) return 0.0;
+    
+    auto& engine = SymbolicEngine::instance();
+    auto res = engine.partial_differentiate(expr, var, order);
+    return make_sym_ptr(res);
+}
+} // namespace Flux
 
 // End of file

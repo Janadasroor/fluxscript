@@ -109,7 +109,7 @@ TypedValue VoltageAccessAST::codegen(CodegenContext& context) {
             llvm::FunctionType::get(llvm::Type::getDoubleTy(context.TheContext), {CharPtrTy, CharPtrTy}, false),
             llvm::Function::ExternalLinkage,
             "flux_get_voltage",
-            context.TheModule.get());
+            context.TheModule);
     }
     
     auto call = context.Builder.CreateCall(GetVoltageF, {NodePPtr, NodeNPtr}, "voltage");
@@ -129,7 +129,7 @@ TypedValue CurrentAccessAST::codegen(CodegenContext& context) {
             llvm::FunctionType::get(llvm::Type::getDoubleTy(context.TheContext), {CharPtrTy}, false),
             llvm::Function::ExternalLinkage,
             "flux_get_current",
-            context.TheModule.get());
+            context.TheModule);
     }
     
     auto call = context.Builder.CreateCall(GetCurrentF, {BranchPtr}, "current");
@@ -148,7 +148,7 @@ TypedValue DdtExprAST::codegen(CodegenContext& context) {
             llvm::FunctionType::get(llvm::Type::getDoubleTy(context.TheContext), {llvm::Type::getDoubleTy(context.TheContext)}, false),
             llvm::Function::ExternalLinkage,
             "flux_ddt",
-            context.TheModule.get());
+            context.TheModule);
     }
     
     auto call = context.Builder.CreateCall(DdtF, {operandTV.Val}, "ddt_result");
@@ -177,7 +177,7 @@ TypedValue IdtExprAST::codegen(CodegenContext& context) {
                                     llvm::Type::getDoubleTy(context.TheContext)}, false),
             llvm::Function::ExternalLinkage,
             "flux_idt",
-            context.TheModule.get());
+            context.TheModule);
     }
     
     auto call = context.Builder.CreateCall(IdtF, {operandTV.Val, icVal}, "idt_result");

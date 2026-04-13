@@ -46,7 +46,7 @@ TypedValue AssertDeclAST::codegen(CodegenContext& context) {
                                     llvm::Type::getDoubleTy(context.TheContext), CharPtrTy}, false),
             llvm::Function::ExternalLinkage,
             "flux_assert_voltage",
-            context.TheModule.get());
+            context.TheModule);
     }
     
     auto call = context.Builder.CreateCall(AssertF, {NodePtr, OpPtr, BoundVal, WithinVal, MsgPtr}, "assert_result");
@@ -71,7 +71,7 @@ TypedValue SettleDeclAST::codegen(CodegenContext& context) {
                                     llvm::Type::getDoubleTy(context.TheContext)}, false),
             llvm::Function::ExternalLinkage,
             "flux_check_settling",
-            context.TheModule.get());
+            context.TheModule);
     }
     
     auto call = context.Builder.CreateCall(SettleF, {NodePtr, TolVal, AfterVal}, "settle_time");
@@ -102,7 +102,7 @@ TypedValue GoldenDeclAST::codegen(CodegenContext& context) {
             llvm::FunctionType::get(llvm::Type::getVoidTy(context.TheContext), {CharPtrTy}, false),
             llvm::Function::ExternalLinkage,
             "flux_register_golden",
-            context.TheModule.get());
+            context.TheModule);
     }
     
     context.Builder.CreateCall(RegisterF, {NamePtr});
@@ -126,7 +126,7 @@ TypedValue CompareDeclAST::codegen(CodegenContext& context) {
                                    {CharPtrTy, CharPtrTy, llvm::Type::getDoubleTy(context.TheContext)}, false),
             llvm::Function::ExternalLinkage,
             "flux_compare_waveform",
-            context.TheModule.get());
+            context.TheModule);
     }
     
     auto call = context.Builder.CreateCall(CompareF, {NodePtr, GoldenPtr, TolVal}, "compare_result");
@@ -155,7 +155,7 @@ TypedValue ConvergeDeclAST::codegen(CodegenContext& context) {
                                     llvm::Type::getDoubleTy(context.TheContext)}, false),
             llvm::Function::ExternalLinkage,
             "flux_check_convergence",
-            context.TheModule.get());
+            context.TheModule);
     }
     
     auto call = context.Builder.CreateCall(ConvergeF, {NodePtr, MaxIterVal, EpsVal}, "converged");
@@ -177,7 +177,7 @@ TypedValue DiscontinuityDeclAST::codegen(CodegenContext& context) {
                                    {CharPtrTy, llvm::Type::getDoubleTy(context.TheContext)}, false),
             llvm::Function::ExternalLinkage,
             "flux_detect_discontinuity",
-            context.TheModule.get());
+            context.TheModule);
     }
     
     auto call = context.Builder.CreateCall(DiscF, {NodePtr, ThreshVal}, "discontinuity_found");
@@ -199,7 +199,7 @@ TypedValue StateDeclAST::codegen(CodegenContext& context) {
                                    {CharPtrTy, llvm::Type::getInt32Ty(context.TheContext)}, false),
             llvm::Function::ExternalLinkage,
             "flux_detect_hidden_state",
-            context.TheModule.get());
+            context.TheModule);
     }
     
     auto call = context.Builder.CreateCall(StateF, {NodePtr, DepthVal}, "hidden_state_found");
@@ -244,7 +244,7 @@ TypedValue ToleranceDeclAST::codegen(CodegenContext& context) {
                                     llvm::Type::getDoubleTy(context.TheContext)}, false),
             llvm::Function::ExternalLinkage,
             "flux_set_tolerance",
-            context.TheModule.get());
+            context.TheModule);
     }
     
     context.Builder.CreateCall(TolF, {AbsVal, RelVal});

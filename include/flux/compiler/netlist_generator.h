@@ -32,18 +32,19 @@ public:
         const std::vector<std::unique_ptr<FunctionAST>>& functions,
         const std::vector<std::unique_ptr<SubcktAST>>& subckts,
         const std::vector<std::unique_ptr<ModelAST>>& models,
-        const std::vector<std::unique_ptr<AnalysisDeclAST>>& analyses,
-        const std::vector<std::unique_ptr<MeasureDeclAST>>& measures);
+        const std::vector<std::unique_ptr<AnalysisExprAST>>& analyses,
+        const std::vector<std::unique_ptr<MeasureExprAST>>& measures);
     
     // Generate specific SPICE cards
     std::string generateTitle(const std::string& title);
     std::string generateInclude(const std::string& file);
     std::string generateLib(const std::string& lib);
     std::string generateParam(const std::string& name, double value);
-    std::string generateAnalysisCard(const AnalysisDeclAST* analysis);
-    std::string generateMeasureCard(const MeasureDeclAST* measure);
+    std::string generateAnalysisCard(const AnalysisExprAST* analysis);
+    std::string generateMeasureCard(const MeasureExprAST* measure);
     std::string generateProbeCard(const ProbeDeclAST* probe);
-    std::string generateSaveCard(const std::vector<std::string>& signals);
+    std::string generateSaveCard(const std::vector<std::string>& signalNames);
+
     std::string generateSubcktCard(const SubcktAST* subckt);
     std::string generateModelCard(const ModelAST* model);
     std::string generateEnds();

@@ -82,20 +82,29 @@ bool Parser::IsSynchronizationToken(int token) {
 }
 
 std::unique_ptr<ExprAST> Parser::ParseNumberExpr() {
+    int line = m_lexer.getCurrentLine();
+    int col = m_lexer.getCurrentColumn();
     auto Result = std::make_unique<NumberExprAST>(m_lexer.NumVal, m_lexer.StringVal);
     getNextToken();
+    Result->setLocation(line, col);
     return Result;
 }
 
 std::unique_ptr<ExprAST> Parser::ParseImaginaryExpr() {
+    int line = m_lexer.getCurrentLine();
+    int col = m_lexer.getCurrentColumn();
     auto Result = std::make_unique<ComplexExprAST>(0.0, m_lexer.NumVal);
     getNextToken();
+    Result->setLocation(line, col);
     return Result;
 }
 
 std::unique_ptr<ExprAST> Parser::ParseStringExpr() {
+    int line = m_lexer.getCurrentLine();
+    int col = m_lexer.getCurrentColumn();
     auto Result = std::make_unique<StringExprAST>(m_lexer.StringVal);
     getNextToken();
+    Result->setLocation(line, col);
     return Result;
 }
 
@@ -188,6 +197,8 @@ std::unique_ptr<ExprAST> Parser::ParseParenExpr() {
 }
 
 std::unique_ptr<ExprAST> Parser::ParseIdentifierExpr() {
+    int line = m_lexer.getCurrentLine();
+    int col = m_lexer.getCurrentColumn();
     std::string IdName = m_lexer.IdentifierStr;
     
     // Explicit check for statement keywords that might be misparsed as identifiers
@@ -226,10 +237,14 @@ std::unique_ptr<ExprAST> Parser::ParseIdentifierExpr() {
             }
             getNextToken();
             // Call with qualified name
-            return std::make_unique<CallExprAST>(qualifiedName, std::move(Args));
+            auto Result = std::make_unique<CallExprAST>(qualifiedName, std::move(Args));
+            Result->setLocation(line, col);
+            return Result;
         }
         
-        return std::make_unique<VariableExprAST>(qualifiedName);
+        auto Result = std::make_unique<VariableExprAST>(qualifiedName);
+        Result->setLocation(line, col);
+        return Result;
     }
 
     // Handle V(node), I(branch), and P(param) as special expressions for SPICE support
@@ -256,11 +271,17 @@ std::unique_ptr<ExprAST> Parser::ParseIdentifierExpr() {
         getNextToken(); // eat )
 
         if (IdName == "V" || IdName == "v") {
-            return std::make_unique<VoltageExprAST>(name);
+            auto Result = std::make_unique<VoltageExprAST>(name);
+            Result->setLocation(line, col);
+            return Result;
         } else if (IdName == "I" || IdName == "i") {
-            return std::make_unique<CurrentExprAST>(name);
+            auto Result = std::make_unique<CurrentExprAST>(name);
+            Result->setLocation(line, col);
+            return Result;
         } else {
-            return std::make_unique<ParameterExprAST>(name);
+            auto Result = std::make_unique<ParameterExprAST>(name);
+            Result->setLocation(line, col);
+            return Result;
         }
     }
 
@@ -277,9 +298,13 @@ std::unique_ptr<ExprAST> Parser::ParseIdentifierExpr() {
             }
         }
         getNextToken();
-        return std::make_unique<CallExprAST>(IdName, std::move(Args));
+        auto Result = std::make_unique<CallExprAST>(IdName, std::move(Args));
+        Result->setLocation(line, col);
+        return Result;
     }
-    return std::make_unique<VariableExprAST>(IdName);
+    auto Result = std::make_unique<VariableExprAST>(IdName);
+    Result->setLocation(line, col);
+    return Result;
 }
 
 std::unique_ptr<ExprAST> Parser::ParseIfExpr() {
@@ -657,6 +682,9 @@ std::unique_ptr<ExprAST> Parser::ParsePrimary() {
     case static_cast<int>(TokenType::tok_differentiate): Res = ParseDifferentiateExpr(); break;
     case static_cast<int>(TokenType::tok_substitute): Res = ParseSubstituteExpr(); break;
     case static_cast<int>(TokenType::tok_evaluate): Res = ParseEvaluateExpr(); break;
+    case static_cast<int>(TokenType::tok_jacobian): Res = ParseJacobianExpr(); break;
+    case static_cast<int>(TokenType::tok_pde): Res = ParsePDEExpr(); break;
+    case static_cast<int>(TokenType::tok_partial_diff): Res = ParsePartialDiffExpr(); break;
     
     // Analysis and Measurements
     case static_cast<int>(TokenType::tok_analysis): Res = ParseAnalysis(); break;
@@ -1341,7 +1369,8 @@ std::unique_ptr<AnalysisExprAST> Parser::ParseAnalysis() {
 
         while (CurTok != static_cast<int>(TokenType::tok_rbrace) && CurTok != static_cast<int>(TokenType::tok_eof)) {
             if (CurTok == static_cast<int>(TokenType::tok_identifier) || CurTok < 0) {
-                std::string ParamName = Lexer::tokenSpelling(CurTok);
+                std::string ParamName = (CurTok == static_cast<int>(TokenType::tok_identifier)) ? 
+                                        m_lexer.IdentifierStr : Lexer::tokenSpelling(CurTok);
                 getNextToken();
 
                 if (CurTok != '=') {

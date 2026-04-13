@@ -299,7 +299,7 @@ bool JITManager::compileSource(const std::string& source, JITComponent& comp, st
         }
 
         comp.jit->addModule(
-            std::move(artifacts->codegenContext->TheModule),
+            std::move(artifacts->codegenContext->OwnedModule),
             std::move(artifacts->codegenContext->OwnedContext)
         );
 

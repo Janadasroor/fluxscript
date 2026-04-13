@@ -56,7 +56,8 @@ CompilerInstance::CompilerInstance(CompilerOptions options)
 
 std::unique_ptr<CodegenContext> CompilerInstance::createCodegenContext() const {
     auto context = std::make_unique<CodegenContext>();
-    context->TheModule = std::make_unique<llvm::Module>(m_options.moduleName, context->TheContext);
+    context->OwnedModule = std::make_unique<llvm::Module>(m_options.moduleName, context->TheContext);
+    context->TheModule = context->OwnedModule.get();
 
     if (m_options.debugInfo) {
         namespace path = llvm::sys::path;

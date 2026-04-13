@@ -40,7 +40,7 @@ TypedValue CrossExprAST::codegen(CodegenContext& context) {
     llvm::Function* crossFunc = context.TheModule->getFunction("flux_cross_detect");
     if (!crossFunc) {
         llvm::FunctionType* FT = llvm::FunctionType::get(DoubleTy, llvm::ArrayRef<llvm::Type*>{DoubleTy, llvm::Type::getInt32Ty(context.TheContext)}, false);
-        crossFunc = llvm::Function::Create(FT, llvm::Function::ExternalLinkage, "flux_cross_detect", context.TheModule.get());
+        crossFunc = llvm::Function::Create(FT, llvm::Function::ExternalLinkage, "flux_cross_detect", context.TheModule);
     }
 
     // Codegen the expression
@@ -62,7 +62,7 @@ TypedValue AboveExprAST::codegen(CodegenContext& context) {
     llvm::Function* aboveFunc = context.TheModule->getFunction("flux_above_detect");
     if (!aboveFunc) {
         llvm::FunctionType* FT = llvm::FunctionType::get(DoubleTy, llvm::ArrayRef<llvm::Type*>{DoubleTy, DoubleTy}, false);
-        aboveFunc = llvm::Function::Create(FT, llvm::Function::ExternalLinkage, "flux_above_detect", context.TheModule.get());
+        aboveFunc = llvm::Function::Create(FT, llvm::Function::ExternalLinkage, "flux_above_detect", context.TheModule);
     }
 
     auto ExprVal = Expression->codegen(context);
@@ -88,7 +88,7 @@ TypedValue TimerExprAST::codegen(CodegenContext& context) {
     llvm::Function* timerFunc = context.TheModule->getFunction("flux_timer_get");
     if (!timerFunc) {
         llvm::FunctionType* FT = llvm::FunctionType::get(DoubleTy, false);
-        timerFunc = llvm::Function::Create(FT, llvm::Function::ExternalLinkage, "flux_timer_get", context.TheModule.get());
+        timerFunc = llvm::Function::Create(FT, llvm::Function::ExternalLinkage, "flux_timer_get", context.TheModule);
     }
 
     return TypedValue(context.Builder.CreateCall(timerFunc, {}, "timer_value"), TypeKind::Double);
@@ -109,7 +109,7 @@ TypedValue FSMExprAST::codegen(CodegenContext& context) {
     llvm::Function* createFunc = context.TheModule->getFunction("flux_fsm_create");
     if (!createFunc) {
         llvm::FunctionType* FT = llvm::FunctionType::get(VoidPtrTy, llvm::ArrayRef<llvm::Type*>{Int32Ty, DoubleTy}, false);
-        createFunc = llvm::Function::Create(FT, llvm::Function::ExternalLinkage, "flux_fsm_create", context.TheModule.get());
+        createFunc = llvm::Function::Create(FT, llvm::Function::ExternalLinkage, "flux_fsm_create", context.TheModule);
     }
 
     llvm::Value* InitStateVal = llvm::ConstantInt::get(Int32Ty, InitialState, true);
@@ -130,7 +130,7 @@ TypedValue FSMExprAST::codegen(CodegenContext& context) {
         llvm::FunctionType* FT = llvm::FunctionType::get(
             llvm::Type::getVoidTy(context.TheContext),
             llvm::ArrayRef<llvm::Type*>{VoidPtrTy, Int32Ty, Int32Ty, CondFnPtrTy, OutFnPtrTy}, false);
-        addTransFunc = llvm::Function::Create(FT, llvm::Function::ExternalLinkage, "flux_fsm_add_transition", context.TheModule.get());
+        addTransFunc = llvm::Function::Create(FT, llvm::Function::ExternalLinkage, "flux_fsm_add_transition", context.TheModule);
     }
 
     for (size_t i = 0; i < Transitions.size(); ++i) {
@@ -139,7 +139,7 @@ TypedValue FSMExprAST::codegen(CodegenContext& context) {
         // Create condition function
         std::string CondFnName = "fsm_cond_" + std::to_string(i);
         llvm::FunctionType* CondFnTy = llvm::FunctionType::get(DoubleTy, llvm::ArrayRef<llvm::Type*>{VoidPtrTy}, false);
-        llvm::Function* CondFn = llvm::Function::Create(CondFnTy, llvm::Function::InternalLinkage, CondFnName, context.TheModule.get());
+        llvm::Function* CondFn = llvm::Function::Create(CondFnTy, llvm::Function::InternalLinkage, CondFnName, context.TheModule);
         llvm::BasicBlock* CondEntry = llvm::BasicBlock::Create(context.TheContext, "entry", CondFn);
         llvm::IRBuilder<> CondBuilder(context.TheContext);
         CondBuilder.SetInsertPoint(CondEntry);
@@ -154,7 +154,7 @@ TypedValue FSMExprAST::codegen(CodegenContext& context) {
 
         // Create output function
         std::string OutFnName = "fsm_out_" + std::to_string(i);
-        llvm::Function* OutFn = llvm::Function::Create(CondFnTy, llvm::Function::InternalLinkage, OutFnName, context.TheModule.get());
+        llvm::Function* OutFn = llvm::Function::Create(CondFnTy, llvm::Function::InternalLinkage, OutFnName, context.TheModule);
         llvm::BasicBlock* OutEntry = llvm::BasicBlock::Create(context.TheContext, "entry", OutFn);
         llvm::IRBuilder<> OutBuilder(context.TheContext);
         OutBuilder.SetInsertPoint(OutEntry);
@@ -184,7 +184,7 @@ TypedValue EdgeExprAST::codegen(CodegenContext& context) {
     llvm::Function* edgeFunc = context.TheModule->getFunction("flux_edge_detect");
     if (!edgeFunc) {
         llvm::FunctionType* FT = llvm::FunctionType::get(DoubleTy, llvm::ArrayRef<llvm::Type*>{DoubleTy, Int32Ty}, false);
-        edgeFunc = llvm::Function::Create(FT, llvm::Function::ExternalLinkage, "flux_edge_detect", context.TheModule.get());
+        edgeFunc = llvm::Function::Create(FT, llvm::Function::ExternalLinkage, "flux_edge_detect", context.TheModule);
     }
 
     auto ExprVal = Expression->codegen(context);
@@ -255,7 +255,7 @@ TypedValue NoiseExprAST::codegen(CodegenContext& context) {
     if (!noiseFunc) {
         llvm::FunctionType* FT = llvm::FunctionType::get(DoubleTy,
             llvm::ArrayRef<llvm::Type*>{DoubleTy, DoubleTy, DoubleTy}, false);
-        noiseFunc = llvm::Function::Create(FT, llvm::Function::ExternalLinkage, "flux_noise_generate", context.TheModule.get());
+        noiseFunc = llvm::Function::Create(FT, llvm::Function::ExternalLinkage, "flux_noise_generate", context.TheModule);
     }
 
     auto AmpVal = Amplitude->codegen(context);
@@ -287,7 +287,7 @@ TypedValue WhiteNoiseExprAST::codegen(CodegenContext& context) {
     llvm::Function* func = context.TheModule->getFunction("flux_white_noise");
     if (!func) {
         llvm::FunctionType* FT = llvm::FunctionType::get(DoubleTy, llvm::ArrayRef<llvm::Type*>{DoubleTy}, false);
-        func = llvm::Function::Create(FT, llvm::Function::ExternalLinkage, "flux_white_noise", context.TheModule.get());
+        func = llvm::Function::Create(FT, llvm::Function::ExternalLinkage, "flux_white_noise", context.TheModule);
     }
 
     auto AmpVal = Amplitude->codegen(context);
@@ -306,7 +306,7 @@ TypedValue FlickerNoiseExprAST::codegen(CodegenContext& context) {
     llvm::Function* func = context.TheModule->getFunction("flux_flicker_noise");
     if (!func) {
         llvm::FunctionType* FT = llvm::FunctionType::get(DoubleTy, llvm::ArrayRef<llvm::Type*>{DoubleTy, DoubleTy}, false);
-        func = llvm::Function::Create(FT, llvm::Function::ExternalLinkage, "flux_flicker_noise", context.TheModule.get());
+        func = llvm::Function::Create(FT, llvm::Function::ExternalLinkage, "flux_flicker_noise", context.TheModule);
     }
 
     auto AmpVal = Amplitude->codegen(context);
@@ -331,7 +331,7 @@ TypedValue ThermalNoiseExprAST::codegen(CodegenContext& context) {
     llvm::Function* func = context.TheModule->getFunction("flux_thermal_noise");
     if (!func) {
         llvm::FunctionType* FT = llvm::FunctionType::get(DoubleTy, llvm::ArrayRef<llvm::Type*>{DoubleTy, DoubleTy}, false);
-        func = llvm::Function::Create(FT, llvm::Function::ExternalLinkage, "flux_thermal_noise", context.TheModule.get());
+        func = llvm::Function::Create(FT, llvm::Function::ExternalLinkage, "flux_thermal_noise", context.TheModule);
     }
 
     auto ResVal = Resistance->codegen(context);
@@ -366,7 +366,7 @@ TypedValue PiecewiseExprAST::codegen(CodegenContext& context) {
     llvm::Function* createFunc = context.TheModule->getFunction("flux_piecewise_create");
     if (!createFunc) {
         llvm::FunctionType* FT = llvm::FunctionType::get(VoidPtrTy, llvm::ArrayRef<llvm::Type*>{DoubleTy}, false);
-        createFunc = llvm::Function::Create(FT, llvm::Function::ExternalLinkage, "flux_piecewise_create", context.TheModule.get());
+        createFunc = llvm::Function::Create(FT, llvm::Function::ExternalLinkage, "flux_piecewise_create", context.TheModule);
     }
 
     uint64_t addr = reinterpret_cast<uint64_t>(getPermanentString(Interpolation));
@@ -381,7 +381,7 @@ TypedValue PiecewiseExprAST::codegen(CodegenContext& context) {
     if (!addPointFunc) {
         llvm::FunctionType* FT = llvm::FunctionType::get(llvm::Type::getVoidTy(context.TheContext),
             llvm::ArrayRef<llvm::Type*>{VoidPtrTy, DoubleTy, DoubleTy}, false);
-        addPointFunc = llvm::Function::Create(FT, llvm::Function::ExternalLinkage, "flux_piecewise_add_point", context.TheModule.get());
+        addPointFunc = llvm::Function::Create(FT, llvm::Function::ExternalLinkage, "flux_piecewise_add_point", context.TheModule);
     }
 
     for (auto& pt : Points) {
@@ -405,7 +405,7 @@ TypedValue PiecewiseExprAST::codegen(CodegenContext& context) {
     llvm::Function* evalFunc = context.TheModule->getFunction("flux_piecewise_eval");
     if (!evalFunc) {
         llvm::FunctionType* FT = llvm::FunctionType::get(DoubleTy, llvm::ArrayRef<llvm::Type*>{VoidPtrTy, DoubleTy}, false);
-        evalFunc = llvm::Function::Create(FT, llvm::Function::ExternalLinkage, "flux_piecewise_eval", context.TheModule.get());
+        evalFunc = llvm::Function::Create(FT, llvm::Function::ExternalLinkage, "flux_piecewise_eval", context.TheModule);
     }
 
     llvm::Value* QueryLLVM = llvm::ConstantFP::get(context.TheContext, llvm::APFloat(0.0));
@@ -429,7 +429,7 @@ TypedValue TableExprAST::codegen(CodegenContext& context) {
     llvm::Function* createFunc = context.TheModule->getFunction("flux_table_create");
     if (!createFunc) {
         llvm::FunctionType* FT = llvm::FunctionType::get(VoidPtrTy, false);
-        createFunc = llvm::Function::Create(FT, llvm::Function::ExternalLinkage, "flux_table_create", context.TheModule.get());
+        createFunc = llvm::Function::Create(FT, llvm::Function::ExternalLinkage, "flux_table_create", context.TheModule);
     }
 
     llvm::Value* TableObj = context.Builder.CreateCall(createFunc);
@@ -440,7 +440,7 @@ TypedValue TableExprAST::codegen(CodegenContext& context) {
     if (!addEntryFunc) {
         llvm::FunctionType* FT = llvm::FunctionType::get(llvm::Type::getVoidTy(context.TheContext),
             llvm::ArrayRef<llvm::Type*>{VoidPtrTy, DoubleTy, DoubleTy}, false);
-        addEntryFunc = llvm::Function::Create(FT, llvm::Function::ExternalLinkage, "flux_table_add_entry", context.TheModule.get());
+        addEntryFunc = llvm::Function::Create(FT, llvm::Function::ExternalLinkage, "flux_table_add_entry", context.TheModule);
     }
 
     for (auto& entry : Entries) {
@@ -466,7 +466,7 @@ TypedValue TableExprAST::codegen(CodegenContext& context) {
         if (!setDefFunc) {
             llvm::FunctionType* FT = llvm::FunctionType::get(llvm::Type::getVoidTy(context.TheContext),
                 llvm::ArrayRef<llvm::Type*>{VoidPtrTy, DoubleTy}, false);
-            setDefFunc = llvm::Function::Create(FT, llvm::Function::ExternalLinkage, "flux_table_set_default", context.TheModule.get());
+            setDefFunc = llvm::Function::Create(FT, llvm::Function::ExternalLinkage, "flux_table_set_default", context.TheModule);
         }
 
         auto DVal = DefaultValue->codegen(context);
@@ -482,7 +482,7 @@ TypedValue TableExprAST::codegen(CodegenContext& context) {
     llvm::Function* lookupFunc = context.TheModule->getFunction("flux_table_lookup");
     if (!lookupFunc) {
         llvm::FunctionType* FT = llvm::FunctionType::get(DoubleTy, llvm::ArrayRef<llvm::Type*>{VoidPtrTy, DoubleTy}, false);
-        lookupFunc = llvm::Function::Create(FT, llvm::Function::ExternalLinkage, "flux_table_lookup", context.TheModule.get());
+        lookupFunc = llvm::Function::Create(FT, llvm::Function::ExternalLinkage, "flux_table_lookup", context.TheModule);
     }
 
     llvm::Value* QueryLLVM = llvm::ConstantFP::get(context.TheContext, llvm::APFloat(0.0));
@@ -508,7 +508,7 @@ TypedValue CsvImportExprAST::codegen(CodegenContext& context) {
     if (!importFunc) {
         llvm::FunctionType* FT = llvm::FunctionType::get(VoidPtrTy,
             llvm::ArrayRef<llvm::Type*>{DoubleTy, DoubleTy}, false);
-        importFunc = llvm::Function::Create(FT, llvm::Function::ExternalLinkage, "flux_csv_import", context.TheModule.get());
+        importFunc = llvm::Function::Create(FT, llvm::Function::ExternalLinkage, "flux_csv_import", context.TheModule);
     }
 
     uint64_t f_addr = reinterpret_cast<uint64_t>(getPermanentString(Filename));
@@ -553,7 +553,7 @@ TypedValue UnitExprAST::codegen(CodegenContext& context) {
     llvm::Function* createFunc = context.TheModule->getFunction("flux_unit_create");
     if (!createFunc) {
         llvm::FunctionType* FT = llvm::FunctionType::get(VoidPtrTy, llvm::ArrayRef<llvm::Type*>{DoubleTy, DoubleTy}, false);
-        createFunc = llvm::Function::Create(FT, llvm::Function::ExternalLinkage, "flux_unit_create", context.TheModule.get());
+        createFunc = llvm::Function::Create(FT, llvm::Function::ExternalLinkage, "flux_unit_create", context.TheModule);
     }
 
     auto ValResult = Value->codegen(context);
@@ -581,7 +581,7 @@ TypedValue DimensionExprAST::codegen(CodegenContext& context) {
     llvm::Function* dimFunc = context.TheModule->getFunction("flux_dimension");
     if (!dimFunc) {
         llvm::FunctionType* FT = llvm::FunctionType::get(llvm::PointerType::get(context.TheContext, 0), llvm::ArrayRef<llvm::Type*>{VoidPtrTy}, false);
-        dimFunc = llvm::Function::Create(FT, llvm::Function::ExternalLinkage, "flux_dimension", context.TheModule.get());
+        dimFunc = llvm::Function::Create(FT, llvm::Function::ExternalLinkage, "flux_dimension", context.TheModule);
     }
 
     // Expression should be a quantified value handle
@@ -604,7 +604,7 @@ TypedValue ConvertExprAST::codegen(CodegenContext& context) {
     if (!convFunc) {
         llvm::FunctionType* FT = llvm::FunctionType::get(DoubleTy,
             llvm::ArrayRef<llvm::Type*>{DoubleTy, DoubleTy, DoubleTy}, false);
-        convFunc = llvm::Function::Create(FT, llvm::Function::ExternalLinkage, "flux_convert", context.TheModule.get());
+        convFunc = llvm::Function::Create(FT, llvm::Function::ExternalLinkage, "flux_convert", context.TheModule);
     }
 
     auto ValResult = Value->codegen(context);
@@ -634,7 +634,7 @@ TypedValue HasUnitExprAST::codegen(CodegenContext& context) {
     llvm::Function* hasUnitFunc = context.TheModule->getFunction("flux_has_unit");
     if (!hasUnitFunc) {
         llvm::FunctionType* FT = llvm::FunctionType::get(DoubleTy, llvm::ArrayRef<llvm::Type*>{VoidPtrTy, DoubleTy}, false);
-        hasUnitFunc = llvm::Function::Create(FT, llvm::Function::ExternalLinkage, "flux_has_unit", context.TheModule.get());
+        hasUnitFunc = llvm::Function::Create(FT, llvm::Function::ExternalLinkage, "flux_has_unit", context.TheModule);
     }
 
     auto ValResult = Value->codegen(context);

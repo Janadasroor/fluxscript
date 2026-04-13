@@ -27,6 +27,8 @@ Lexer::Lexer(const std::string& input)
       m_lastChar(' '),
       m_line(1),
       m_column(1),
+      m_currentTokenLine(1),
+      m_currentTokenColumn(1),
       m_lineStart(0),
       m_currentTokenOffset(0),
       m_currentTokenLength(0),
@@ -229,6 +231,9 @@ int Lexer::gettok() {
         if (IdentifierStr == "laplace") return static_cast<int>(TokenType::tok_laplace);
         if (IdentifierStr == "inverse_laplace") return static_cast<int>(TokenType::tok_inverse_laplace);
         if (IdentifierStr == "evaluate") return static_cast<int>(TokenType::tok_evaluate);
+        if (IdentifierStr == "jacobian") return static_cast<int>(TokenType::tok_jacobian);
+        if (IdentifierStr == "pde") return static_cast<int>(TokenType::tok_pde);
+        if (IdentifierStr == "pdiff") return static_cast<int>(TokenType::tok_partial_diff);
         if (IdentifierStr == "substitute") return static_cast<int>(TokenType::tok_substitute);
         if (IdentifierStr == "expand") return static_cast<int>(TokenType::tok_expand);
         if (IdentifierStr == "factor") return static_cast<int>(TokenType::tok_factor);
@@ -750,6 +755,14 @@ int Lexer::getNextToken() {
 
     if (CurTok == static_cast<int>(TokenType::tok_eof))
         m_currentTokenLength = 0;
+
+    // Update current token line/column for source mapping
+    auto loc = getCurrentTokenLoc();
+    if (loc.isValid()) {
+        auto lineAndCol = m_sourceMgr->getLineAndColumn(loc);
+        m_currentTokenLine = lineAndCol.first;
+        m_currentTokenColumn = lineAndCol.second;
+    }
 
     // std::cerr << "DEBUG getNextToken: returning " << CurTok << " '" << (char)CurTok << "'" << std::endl;
     return CurTok;

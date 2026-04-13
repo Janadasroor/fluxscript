@@ -50,7 +50,7 @@ OptimizationLevel JITEngine::getOptimizationLevel() const {
 
 void JITEngine::initialize() {
     if (m_initialized) return;
-    m_jit = std::make_unique<FluxJIT>(OptimizationLevel::O0);
+    m_jit = std::make_unique<FluxJIT>(OptimizationLevel::O3);
     m_compilerOptions.moduleName = "Flux JIT Core";
     m_compilerOptions.injectStdlib = true;
     if (m_cacheDirectory.empty())
@@ -91,7 +91,7 @@ bool JITEngine::compileScript(const QString& code, QString* error) {
     }
     m_functionReturnTypes = artifacts->functionReturnTypes;
     m_codegenCtx = std::move(artifacts->codegenContext);
-    m_jit->addModule(std::move(m_codegenCtx->TheModule), std::move(m_codegenCtx->OwnedContext));
+    m_jit->addModule(std::move(m_codegenCtx->OwnedModule), std::move(m_codegenCtx->OwnedContext));
     m_codegenCtx.reset();
     return true;
 }
@@ -146,7 +146,7 @@ bool JITEngine::compileScript(const std::string& code, std::string* error) {
     }
 
     m_codegenCtx = std::move(artifacts->codegenContext);
-    m_jit->addModule(std::move(m_codegenCtx->TheModule), std::move(m_codegenCtx->OwnedContext));
+    m_jit->addModule(std::move(m_codegenCtx->OwnedModule), std::move(m_codegenCtx->OwnedContext));
     m_codegenCtx.reset();
     return true;
 }

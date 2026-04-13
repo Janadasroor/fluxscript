@@ -188,13 +188,15 @@ public:
     std::unique_ptr<llvm::LLVMContext> OwnedContext;
     llvm::LLVMContext& TheContext;
     llvm::IRBuilder<> Builder;
-    std::unique_ptr<llvm::Module> TheModule;
+    std::unique_ptr<llvm::Module> OwnedModule;
+    llvm::Module* TheModule = nullptr;
     std::map<std::string, llvm::Value*> NamedValues;
     std::map<std::string, FluxType> NamedTypes;
     std::unique_ptr<llvm::DIBuilder> DebugBuilder;
     llvm::DICompileUnit* DebugCompileUnit = nullptr;
     llvm::DIFile* DebugFile = nullptr;
     bool DebugEnabled = false;
+    std::vector<llvm::DIScope*> LexicalBlocks;
     
     // Control flow context for break/continue
     llvm::BasicBlock* CurrentLoopEnd = nullptr;      // Target for break in loops
@@ -213,11 +215,16 @@ public:
     CodegenContext()
         : OwnedContext(std::make_unique<llvm::LLVMContext>()),
           TheContext(*OwnedContext),
-          Builder(TheContext),
-          CurrentLoopEnd(nullptr),
-          CurrentLoopCont(nullptr),
-          CurrentSwitchEnd(nullptr) {
-        // Enable Fast-Math flags by default for performance in simulations
+          Builder(TheContext) {
+        llvm::FastMathFlags FMF;
+        FMF.setFast();
+        Builder.setFastMathFlags(FMF);
+    }
+
+    CodegenContext(llvm::LLVMContext& Ctx, llvm::Module* Mod)
+        : TheContext(Ctx),
+          Builder(Ctx),
+          TheModule(Mod) {
         llvm::FastMathFlags FMF;
         FMF.setFast();
         Builder.setFastMathFlags(FMF);
@@ -235,9 +242,15 @@ struct TypedValue {
 };
 
 class ExprAST {
+    int Line = 0;
+    int Col = 0;
 public:
     virtual ~ExprAST() = default;
     virtual TypedValue codegen(CodegenContext& context) = 0;
+    void setLocation(int L, int C) { Line = L; Col = C; }
+    int getLine() const { return Line; }
+    int getCol() const { return Col; }
+    virtual bool containsYield() const { return false; }
 };
 
 class NumberExprAST : public ExprAST {
@@ -356,6 +369,9 @@ public:
     TypedValue codegen(CodegenContext& context) override;
     const ExprAST* getObject() const { return Object.get(); }
     const std::string& getMemberName() const { return MemberName; }
+    bool containsYield() const override {
+        return Object->containsYield();
+    }
 };
 
 class BinaryExprAST : public ExprAST {
@@ -368,6 +384,9 @@ public:
     int getOp() const { return Op; }
     const ExprAST* getLHS() const { return LHS.get(); }
     const ExprAST* getRHS() const { return RHS.get(); }
+    bool containsYield() const override {
+        return LHS->containsYield() || RHS->containsYield();
+    }
 };
 
 class UnaryExprAST : public ExprAST {
@@ -379,6 +398,9 @@ public:
     TypedValue codegen(CodegenContext& context) override;
     int getOp() const { return Op; }
     const ExprAST* getOperand() const { return Operand.get(); }
+    bool containsYield() const override {
+        return Operand->containsYield();
+    }
 };
 
 class TransposeExprAST : public ExprAST {
@@ -388,6 +410,9 @@ public:
         : Operand(std::move(Operand)) {}
     TypedValue codegen(CodegenContext& context) override;
     const ExprAST* getOperand() const { return Operand.get(); }
+    bool containsYield() const override {
+        return Operand->containsYield();
+    }
 };
 
 class CallExprAST : public ExprAST {
@@ -399,6 +424,12 @@ public:
     TypedValue codegen(CodegenContext& context) override;
     const std::string& getCallee() const { return Callee; }
     const std::vector<std::unique_ptr<ExprAST>>& getArgs() const { return Args; }
+    bool containsYield() const override {
+        for (const auto& Arg : Args) {
+            if (Arg->containsYield()) return true;
+        }
+        return false;
+    }
 };
 
 class AssignExprAST : public ExprAST {
@@ -412,6 +443,9 @@ public:
     const ExprAST* getLHS() const { return LHS.get(); }
     const ExprAST* getValueExpr() const { return Val.get(); }
     int getAssignmentOp() const { return Op; }
+    bool containsYield() const override {
+        return LHS->containsYield() || Val->containsYield();
+    }
 };
 
 class IfExprAST : public ExprAST {
@@ -424,6 +458,12 @@ public:
     const ExprAST* getCond() const { return Cond.get(); }
     const ExprAST* getThen() const { return Then.get(); }
     const ExprAST* getElse() const { return Else.get(); }
+    bool containsYield() const override {
+        if (Cond->containsYield()) return true;
+        if (Then->containsYield()) return true;
+        if (Else && Else->containsYield()) return true;
+        return false;
+    }
 };
 
 class ForExprAST : public ExprAST {
@@ -442,6 +482,13 @@ public:
     const ExprAST* getEnd() const { return End.get(); }
     const ExprAST* getStep() const { return Step.get(); }
     const ExprAST* getBody() const { return Body.get(); }
+    bool containsYield() const override {
+        if (Start->containsYield()) return true;
+        if (End->containsYield()) return true;
+        if (Step && Step->containsYield()) return true;
+        if (Body->containsYield()) return true;
+        return false;
+    }
 };
 
 class ArrayExprAST : public ExprAST {
@@ -451,6 +498,12 @@ public:
         : Elements(std::move(Elements)) {}
     TypedValue codegen(CodegenContext& context) override;
     const std::vector<std::unique_ptr<ExprAST>>& getElements() const { return Elements; }
+    bool containsYield() const override {
+        for (const auto& Elem : Elements) {
+            if (Elem->containsYield()) return true;
+        }
+        return false;
+    }
 };
 
 class WhileExprAST : public ExprAST {
@@ -461,6 +514,22 @@ public:
     TypedValue codegen(CodegenContext& context) override;
     const ExprAST* getCond() const { return Cond.get(); }
     const ExprAST* getBody() const { return Body.get(); }
+    bool containsYield() const override {
+        return Cond->containsYield() || Body->containsYield();
+    }
+};
+
+class DoWhileExprAST : public ExprAST {
+    std::unique_ptr<ExprAST> Body, Cond;
+public:
+    DoWhileExprAST(std::unique_ptr<ExprAST> Body, std::unique_ptr<ExprAST> Cond)
+        : Body(std::move(Body)), Cond(std::move(Cond)) {}
+    TypedValue codegen(CodegenContext& context) override;
+    const ExprAST* getBody() const { return Body.get(); }
+    const ExprAST* getCond() const { return Cond.get(); }
+    bool containsYield() const override {
+        return Body->containsYield() || Cond->containsYield();
+    }
 };
 
 // ============================================================================
@@ -483,6 +552,16 @@ public:
     const ExprAST* getCond() const { return Cond.get(); }
     const std::vector<std::unique_ptr<ExprAST>>& getThenBody() const { return ThenBody; }
     const std::vector<std::unique_ptr<ExprAST>>& getElseBody() const { return ElseBody; }
+    bool containsYield() const override {
+        if (Cond->containsYield()) return true;
+        for (const auto& Stmt : ThenBody) {
+            if (Stmt->containsYield()) return true;
+        }
+        for (const auto& Stmt : ElseBody) {
+            if (Stmt->containsYield()) return true;
+        }
+        return false;
+    }
 };
 
 class ForStmtAST : public ExprAST {
@@ -499,6 +578,15 @@ public:
     const ExprAST* getCond() const { return Cond.get(); }
     const ExprAST* getStep() const { return Step.get(); }
     const std::vector<std::unique_ptr<ExprAST>>& getBody() const { return Body; }
+    bool containsYield() const override {
+        if (Init && Init->containsYield()) return true;
+        if (Cond && Cond->containsYield()) return true;
+        if (Step && Step->containsYield()) return true;
+        for (const auto& Stmt : Body) {
+            if (Stmt->containsYield()) return true;
+        }
+        return false;
+    }
 };
 
 class WhileStmtAST : public ExprAST {
@@ -510,6 +598,13 @@ public:
     TypedValue codegen(CodegenContext& context) override;
     const ExprAST* getCond() const { return Cond.get(); }
     const std::vector<std::unique_ptr<ExprAST>>& getBody() const { return Body; }
+    bool containsYield() const override {
+        if (Cond && Cond->containsYield()) return true;
+        for (const auto& Stmt : Body) {
+            if (Stmt->containsYield()) return true;
+        }
+        return false;
+    }
 };
 
 class LetExprAST : public ExprAST {
@@ -525,6 +620,9 @@ public:
     const FluxType& getDeclaredType() const { return Type; }
     const ExprAST* getInit() const { return Init.get(); }
     const ExprAST* getBody() const { return Body.get(); }
+    bool containsYield() const override {
+        return (Init && Init->containsYield()) || (Body && Body->containsYield());
+    }
 };
 
 class LambdaExprAST : public ExprAST {
@@ -536,6 +634,9 @@ public:
     TypedValue codegen(CodegenContext& context) override;
     const std::vector<std::string>& getArgs() const { return Args; }
     const ExprAST* getBody() const { return Body.get(); }
+    bool containsYield() const override {
+        return Body && Body->containsYield();
+    }
 };
 
 class VectorExprAST : public ExprAST {
@@ -545,6 +646,12 @@ public:
         : Elements(std::move(Elements)) {}
     TypedValue codegen(CodegenContext& context) override;
     const std::vector<std::unique_ptr<ExprAST>>& getElements() const { return Elements; }
+    bool containsYield() const override {
+        for (const auto& Elem : Elements) {
+            if (Elem->containsYield()) return true;
+        }
+        return false;
+    }
 };
 
 class MatrixExprAST : public ExprAST {
@@ -558,6 +665,25 @@ public:
     const std::vector<std::vector<std::unique_ptr<ExprAST>>>& getRows() const { return Rows; }
     int getNumRows() const { return NumRows; }
     int getNumCols() const { return NumCols; }
+    bool containsYield() const override {
+        for (const auto& Row : Rows) {
+            for (const auto& Elem : Row) {
+                if (Elem->containsYield()) return true;
+            }
+        }
+        return false;
+    }
+};
+
+class SymbolicExprAST : public ExprAST {
+    std::unique_ptr<ExprAST> Expression;
+public:
+    SymbolicExprAST(std::unique_ptr<ExprAST> Expr) : Expression(std::move(Expr)) {}
+    TypedValue codegen(CodegenContext& context) override;
+    const ExprAST* getExpression() const { return Expression.get(); }
+    bool containsYield() const override {
+        return Expression && Expression->containsYield();
+    }
 };
 
 class VoltageExprAST : public ExprAST {
@@ -582,6 +708,7 @@ public:
     ParameterExprAST(const std::string& ParamName) : ParamName(ParamName) {}
     TypedValue codegen(CodegenContext& context) override;
     const std::string& getParamName() const { return ParamName; }
+    bool containsYield() const override { return false; }
 };
 
 class IndexExprAST : public ExprAST {
@@ -603,6 +730,12 @@ public:
     const ExprAST* getRowIndex() const { return RowIndex.get(); }
     const ExprAST* getColIndex() const { return ColIndex.get(); }
     bool isMatrixIndex() const { return IsMatrixIndex; }
+    bool containsYield() const override {
+        if (Array && Array->containsYield()) return true;
+        if (RowIndex && RowIndex->containsYield()) return true;
+        if (ColIndex && ColIndex->containsYield()) return true;
+        return false;
+    }
 };
 
 // Range expression for slicing: start:end or start:step:end
@@ -621,6 +754,12 @@ public:
     const ExprAST* getStart() const { return Start.get(); }
     const ExprAST* getStep() const { return Step.get(); }
     const ExprAST* getEnd() const { return End.get(); }
+    bool containsYield() const override {
+        if (Start && Start->containsYield()) return true;
+        if (Step && Step->containsYield()) return true;
+        if (End && End->containsYield()) return true;
+        return false;
+    }
 };
 
 class BlockExprAST : public ExprAST {
@@ -630,6 +769,12 @@ public:
         : Statements(std::move(Statements)) {}
     TypedValue codegen(CodegenContext& context) override;
     const std::vector<std::unique_ptr<ExprAST>>& getStatements() const { return Statements; }
+    bool containsYield() const override {
+        for (const auto& Stmt : Statements) {
+            if (Stmt->containsYield()) return true;
+        }
+        return false;
+    }
 };
 
 // Switch statement AST
@@ -655,6 +800,19 @@ public:
     ExprAST* getCondition() const { return Condition.get(); }
     const std::vector<CaseClauseAST>& getCases() const { return Cases; }
     const std::vector<std::unique_ptr<ExprAST>>& getDefaultBody() const { return DefaultBody; }
+    bool containsYield() const override {
+        if (Condition && Condition->containsYield()) return true;
+        for (const auto& Clause : Cases) {
+            if (Clause.getValue() && Clause.getValue()->containsYield()) return true;
+            for (const auto& Stmt : Clause.getBody()) {
+                if (Stmt->containsYield()) return true;
+            }
+        }
+        for (const auto& Stmt : DefaultBody) {
+            if (Stmt->containsYield()) return true;
+        }
+        return false;
+    }
 };
 
 // Break and Continue statements
@@ -670,6 +828,17 @@ public:
     TypedValue codegen(CodegenContext& context) override;
 };
 
+class ReturnExprAST : public ExprAST {
+    std::unique_ptr<ExprAST> Val;
+public:
+    ReturnExprAST(std::unique_ptr<ExprAST> Val) : Val(std::move(Val)) {}
+    TypedValue codegen(CodegenContext& context) override;
+    const ExprAST* getVal() const { return Val.get(); }
+    bool containsYield() const override {
+        return Val && Val->containsYield();
+    }
+};
+
 // Try/Catch/Finally
 class TryCatchExprAST : public ExprAST {
     std::unique_ptr<ExprAST> TryBody;
@@ -681,6 +850,12 @@ public:
     TypedValue codegen(CodegenContext& context) override;
     void addCatch(const std::string& var, std::unique_ptr<ExprAST> handler);
     void setFinally(std::unique_ptr<ExprAST> body);
+    bool containsYield() const override {
+        if (TryBody->containsYield()) return true;
+        for (const auto& C : CatchClauses) if (C.second->containsYield()) return true;
+        if (FinallyBody && FinallyBody->containsYield()) return true;
+        return false;
+    }
 };
 
 // Throw exception
@@ -690,6 +865,7 @@ public:
     ThrowExprAST(std::unique_ptr<ExprAST> Exception)
         : Exception(std::move(Exception)) {}
     TypedValue codegen(CodegenContext& context) override;
+    bool containsYield() const override { return Exception->containsYield(); }
 };
 
 // Assert
@@ -709,6 +885,7 @@ public:
     YieldExprAST(std::unique_ptr<ExprAST> Value)
         : Value(std::move(Value)) {}
     TypedValue codegen(CodegenContext& context) override;
+    bool containsYield() const override { return true; }
 };
 
 // Corner case analysis
@@ -720,6 +897,10 @@ public:
         : Variable(std::move(Var)) {}
     TypedValue codegen(CodegenContext& context) override;
     void addCase(const std::string& name, std::unique_ptr<ExprAST> expr);
+    bool containsYield() const override {
+        for (const auto& C : Cases) if (C.second->containsYield()) return true;
+        return false;
+    }
 };
 
 // Pattern matching
@@ -733,6 +914,12 @@ public:
     TypedValue codegen(CodegenContext& context) override;
     void addArm(std::unique_ptr<ExprAST> pattern, std::unique_ptr<ExprAST> result);
     void setDefault(std::unique_ptr<ExprAST> arm);
+    bool containsYield() const override {
+        if (Value->containsYield()) return true;
+        for (const auto& A : Arms) if (A.second->containsYield()) return true;
+        if (DefaultArm && DefaultArm->containsYield()) return true;
+        return false;
+    }
 };
 
 // Foreach loop
@@ -744,6 +931,7 @@ public:
     ForeachExprAST(std::string Var, std::unique_ptr<ExprAST> Iterable, std::unique_ptr<ExprAST> Body)
         : VarName(std::move(Var)), Iterable(std::move(Iterable)), Body(std::move(Body)) {}
     TypedValue codegen(CodegenContext& context) override;
+    bool containsYield() const override { return Body->containsYield(); }
 };
 
 // Repeat-Until loop
@@ -754,6 +942,7 @@ public:
     RepeatUntilExprAST(std::unique_ptr<ExprAST> Body, std::unique_ptr<ExprAST> Cond)
         : Body(std::move(Body)), Condition(std::move(Cond)) {}
     TypedValue codegen(CodegenContext& context) override;
+    bool containsYield() const override { return Body->containsYield() || Condition->containsYield(); }
 };
 
 // Parallel for loop
@@ -770,12 +959,15 @@ public:
         : VarName(std::move(Var)), Start(std::move(Start)), End(std::move(End)),
           Body(std::move(Body)), ChunkSize(ChunkSize) {}
     TypedValue codegen(CodegenContext& context) override;
+    bool containsYield() const override { return Body->containsYield(); }
 };
 
 class PrototypeAST {
     std::string Name;
     std::vector<std::pair<std::string, FluxType>> Args;  // Name-Type pairs
     FluxType ReturnType;
+    int Line = 0;
+    bool IsGenerator = false;
 public:
     PrototypeAST(const std::string& Name, std::vector<std::pair<std::string, FluxType>> Args, FluxType RetType = FluxType(TypeKind::Double))
         : Name(Name), Args(std::move(Args)), ReturnType(RetType) {}
@@ -783,6 +975,12 @@ public:
     const std::string& getName() const { return Name; }
     const std::vector<std::pair<std::string, FluxType>>& getArgs() const { return Args; }
     const FluxType& getReturnType() const { return ReturnType; }
+    
+    void setLocation(int L) { Line = L; }
+    int getLine() const { return Line; }
+    
+    void setGenerator(bool G) { IsGenerator = G; }
+    bool isGenerator() const { return IsGenerator; }
 };
 
 class FunctionAST {
@@ -795,6 +993,9 @@ public:
     PrototypeAST* getProto() const { return Proto.get(); }
     const ExprAST* getBody() const { return Body.get(); }
 };
+
+// Debug info helper
+void emitLocation(ExprAST* ast, CodegenContext& context);
 
 // ============================================================================
 // SPICE Time-Domain Simulation AST Nodes

@@ -12,50 +12,52 @@
  limitations under the License. */
 
 #include "flux/compiler/netlist_generator.h"
+#include "flux/compiler/lexer.h"
+#include "flux/compiler/component_modeling_ast.h"
 #include <sstream>
+#include <cmath>
 
 namespace Flux {
 
+NetlistGenerator::NetlistGenerator() : m_nodeCounter(1) {}
+NetlistGenerator::~NetlistGenerator() {}
+
 static std::string analysisTypeToString(AnalysisType type) {
     switch (type) {
-        case AnalysisType::TRAN:    return "tran";
-        case AnalysisType::DC:      return "dc";
-        case AnalysisType::AC:      return "ac";
-        case AnalysisType::NOISE:   return "noise";
-        case AnalysisType::OP:      return "op";
-        case AnalysisType::TF:      return "tf";
-        case AnalysisType::SENS:    return "sens";
+        case AnalysisType::TRAN: return "tran";
+        case AnalysisType::DC: return "dc";
+        case AnalysisType::AC: return "ac";
+        case AnalysisType::NOISE: return "noise";
+        case AnalysisType::OP: return "op";
+        case AnalysisType::TF: return "tf";
+        case AnalysisType::SENS: return "sens";
         case AnalysisType::FOURIER: return "fourier";
-        default: return "unknown";
     }
+    return "unknown";
 }
 
 static std::string measureTypeToString(MeasureType type) {
     switch (type) {
-        case MeasureType::MAX:   return "MAX";
-        case MeasureType::MIN:   return "MIN";
-        case MeasureType::AVG:   return "AVG";
-        case MeasureType::RMS:   return "RMS";
-        case MeasureType::TRIG:  return "TRIG";
-        case MeasureType::TARG:  return "TARG";
-        case MeasureType::WHEN:  return "WHEN";
-        case MeasureType::FIND:  return "FIND";
+        case MeasureType::MAX: return "MAX";
+        case MeasureType::MIN: return "MIN";
+        case MeasureType::AVG: return "AVG";
+        case MeasureType::RMS: return "RMS";
+        case MeasureType::TRIG: return "TRIG";
+        case MeasureType::TARG: return "TARG";
+        case MeasureType::WHEN: return "WHEN";
+        case MeasureType::FIND: return "FIND";
         case MeasureType::DERIV: return "DERIV";
         case MeasureType::INTEG: return "INTEG";
-        default: return "UNKNOWN";
     }
+    return "UNKNOWN";
 }
-
-NetlistGenerator::NetlistGenerator() : m_nodeCounter(100) {}
-
-NetlistGenerator::~NetlistGenerator() {}
 
 std::string NetlistGenerator::generateNetlist(
     const std::vector<std::unique_ptr<FunctionAST>>& functions,
     const std::vector<std::unique_ptr<SubcktAST>>& subckts,
     const std::vector<std::unique_ptr<ModelAST>>& models,
-    const std::vector<std::unique_ptr<AnalysisDeclAST>>& analyses,
-    const std::vector<std::unique_ptr<MeasureDeclAST>>& measures) {
+    const std::vector<std::unique_ptr<AnalysisExprAST>>& analyses,
+    const std::vector<std::unique_ptr<MeasureExprAST>>& measures) {
     
     m_netlist.str("");
     m_netlist.clear();
@@ -106,48 +108,21 @@ std::string NetlistGenerator::generateParam(const std::string& name, double valu
     return ".PARAM " + name + "=" + valueToSpice(value) + "\n";
 }
 
-std::string NetlistGenerator::generateAnalysisCard(const AnalysisDeclAST* analysis) {
+std::string NetlistGenerator::generateAnalysisCard(const AnalysisExprAST* analysis) {
     if (!analysis) return "";
     
     std::ostringstream oss;
-    std::string type = analysisTypeToString(analysis->getAnalysisType());
-    const auto& params = analysis->getParameters();
+    oss << "." << analysisTypeToString(analysis->getAnalysisType());
     
-    if (type == "tran") {
-        oss << ".TRAN";
-        for (const auto& param : params) {
-            // Would need to evaluate parameter expression
-            oss << " 1u";  // Stub value
-        }
-        oss << "\n";
-    } else if (type == "ac") {
-        oss << ".AC";
-        for (const auto& param : params) {
-            oss << " DEC 10 1 1Meg";  // Stub value
-        }
-        oss << "\n";
-    } else if (type == "dc") {
-        oss << ".DC";
-        for (const auto& param : params) {
-            oss << " LIN 100 0 10";  // Stub value
-        }
-        oss << "\n";
-    } else if (type == "op") {
-        oss << ".OP\n";
-    } else if (type == "tf") {
-        oss << ".TF V(out) VIN\n";
-    } else if (type == "sens") {
-        oss << ".SENS V(out)\n";
-    } else if (type == "fourier") {
-        oss << ".FOUR 1k V(out)\n";
-    } else if (type == "noise") {
-        oss << ".NOISE V(out) VIN DEC 10 100 100k\n";
+    for (const auto& [name, value] : analysis->getParameters()) {
+        oss << " " << name << "=" << expressionToSpice(value.get());
     }
     
+    oss << "\n";
     return oss.str();
 }
 
-std::string NetlistGenerator::generateMeasureCard(const MeasureDeclAST* measure) {
+std::string NetlistGenerator::generateMeasureCard(const MeasureExprAST* measure) {
     if (!measure) return "";
     
     std::ostringstream oss;
@@ -170,11 +145,11 @@ std::string NetlistGenerator::generateProbeCard(const ProbeDeclAST* probe) {
     return oss.str();
 }
 
-std::string NetlistGenerator::generateSaveCard(const std::vector<std::string>& signals) {
+std::string NetlistGenerator::generateSaveCard(const std::vector<std::string>& signalNames) {
     std::ostringstream oss;
     oss << ".SAVE";
     
-    for (const auto& signal : signals) {
+    for (const auto& signal : signalNames) {
         oss << " " << signal;
     }
     
@@ -191,11 +166,50 @@ std::string NetlistGenerator::generateSubcktCard(const SubcktAST* subckt) {
     for (const auto& pin : subckt->getPins()) {
         oss << " " << pin;
     }
+    
+    for (const auto& [name, value] : subckt->getParameters()) {
+        oss << " " << name << "=" << expressionToSpice(value.get());
+    }
     oss << "\n";
     
-    // Subcircuit body would be generated here
-    // For now, just add placeholder
-    oss << "* Subcircuit body\n";
+    // Subcircuit body
+    for (const auto& stmt : subckt->getBody()) {
+        if (auto* bsource = dynamic_cast<const BSourceExprAST*>(stmt.get())) {
+            oss << "B" << bsource->getName() << " " << bsource->getPositiveNode() << " " 
+                << bsource->getNegativeNode() << " " << (bsource->isCurrentSource() ? "I" : "V") 
+                << "={" << expressionToSpice(bsource->getExpression()) << "}\n";
+        } else if (auto* esource = dynamic_cast<const ESourceExprAST*>(stmt.get())) {
+            oss << "E" << esource->getName() << " " << esource->getPositiveNode() << " " 
+                << esource->getNegativeNode() << " " << esource->getControlPosNode() << " " 
+                << esource->getControlNegNode() << " " << expressionToSpice(esource->getGain()) << "\n";
+        } else if (auto* fsource = dynamic_cast<const FSourceExprAST*>(stmt.get())) {
+            oss << "F" << fsource->getName() << " " << fsource->getPositiveNode() << " " 
+                << fsource->getNegativeNode() << " " << fsource->getVoltageSourceName() << " " 
+                << expressionToSpice(fsource->getGain()) << "\n";
+        } else if (auto* gsource = dynamic_cast<const GSourceExprAST*>(stmt.get())) {
+            oss << "G" << gsource->getName() << " " << gsource->getPositiveNode() << " " 
+                << gsource->getNegativeNode() << " " << gsource->getControlPosNode() << " " 
+                << gsource->getControlNegNode() << " " << expressionToSpice(gsource->getTransconductance()) << "\n";
+        } else if (auto* hsource = dynamic_cast<const HSourceExprAST*>(stmt.get())) {
+            oss << "H" << hsource->getName() << " " << hsource->getPositiveNode() << " " 
+                << hsource->getNegativeNode() << " " << hsource->getVoltageSourceName() << " " 
+                << expressionToSpice(hsource->getTransresistance()) << "\n";
+        } else if (auto* model = dynamic_cast<const ModelAST*>(stmt.get())) {
+            oss << generateModelCard(model);
+        } else if (auto* sub = dynamic_cast<const SubcktAST*>(stmt.get())) {
+            oss << generateSubcktCard(sub);
+        } else if (auto* inst = dynamic_cast<const SubcktInstanceAST*>(stmt.get())) {
+            oss << "X" << inst->getInstanceName();
+            for (const auto& node : inst->getNodes()) oss << " " << node;
+            oss << " " << inst->getSubcktName();
+            for (const auto& [name, val] : inst->getParameters()) oss << " " << name << "=" << val;
+            oss << "\n";
+        } else if (auto* param = dynamic_cast<const ParamExprAST*>(stmt.get())) {
+            oss << ".PARAM " << param->getName() << "=" << expressionToSpice(param->getValue()) << "\n";
+        } else if (auto* ic = dynamic_cast<const ICExprAST*>(stmt.get())) {
+            oss << ".IC V(" << ic->getNodeName() << ")=" << expressionToSpice(ic->getValue()) << "\n";
+        }
+    }
     
     oss << ".ENDS " << subckt->getName() << "\n";
     return oss.str();
@@ -311,10 +325,10 @@ std::string NetlistGenerator::generateGSource(const std::string& name,
                                                const std::string& nMinus,
                                                const std::string& cnPlus,
                                                const std::string& cnMinus,
-                                               double transconductance) {
+                                               double gain) {
     std::ostringstream oss;
     oss << "G" << name << " " << nPlus << " " << nMinus << " "
-        << cnPlus << " " << cnMinus << " " << transconductance << "\n";
+        << cnPlus << " " << cnMinus << " " << gain << "\n";
     return oss.str();
 }
 
@@ -323,30 +337,26 @@ std::string NetlistGenerator::generateHSource(const std::string& name,
                                                const std::string& nPlus,
                                                const std::string& nMinus,
                                                const std::string& vSourceName,
-                                               double transresistance) {
+                                               double gain) {
     std::ostringstream oss;
     oss << "H" << name << " " << nPlus << " " << nMinus << " "
-        << vSourceName << " " << transresistance << "\n";
+        << vSourceName << " " << gain << "\n";
     return oss.str();
 }
 
 std::string NetlistGenerator::generateSubcktInstance(const std::string& name,
-                                                      const std::string& subcktName,
-                                                      const std::vector<std::string>& nodes,
-                                                      const std::map<std::string, double>& params) {
+                                                     const std::string& subcktName,
+                                                     const std::vector<std::string>& nodes,
+                                                     const std::map<std::string, double>& params) {
     std::ostringstream oss;
-    oss << "X" << name << " ";
-    
+    oss << "X" << name;
     for (const auto& node : nodes) {
-        oss << node << " ";
+        oss << " " << node;
     }
-    
-    oss << subcktName;
-    
-    for (const auto& [pname, pvalue] : params) {
-        oss << " " << pname << "=" << valueToSpice(pvalue);
+    oss << " " << subcktName;
+    for (const auto& [key, val] : params) {
+        oss << " " << key << "=" << valueToSpice(val);
     }
-    
     oss << "\n";
     return oss.str();
 }
@@ -371,6 +381,50 @@ std::string NetlistGenerator::expressionToSpice(const ExprAST* expr) {
     
     if (auto* var = dynamic_cast<const VariableExprAST*>(expr)) {
         return var->getName();
+    }
+
+    if (auto* bin = dynamic_cast<const BinaryExprAST*>(expr)) {
+        return "(" + expressionToSpice(bin->getLHS()) + " " + 
+               Lexer::tokenSpelling(bin->getOp()) + " " + 
+               expressionToSpice(bin->getRHS()) + ")";
+    }
+
+    if (auto* un = dynamic_cast<const UnaryExprAST*>(expr)) {
+        return "(" + Lexer::tokenSpelling(un->getOp()) + 
+               expressionToSpice(un->getOperand()) + ")";
+    }
+
+    if (auto* call = dynamic_cast<const CallExprAST*>(expr)) {
+        std::string res = call->getCallee() + "(";
+        for (size_t i = 0; i < call->getArgs().size(); ++i) {
+            if (i > 0) res += ", ";
+            res += expressionToSpice(call->getArgs()[i].get());
+        }
+        res += ")";
+        return res;
+    }
+
+    if (auto* volt = dynamic_cast<const VoltageExprAST*>(expr)) {
+        return "V(" + volt->getNodeName() + ")";
+    }
+
+    if (auto* curr = dynamic_cast<const CurrentExprAST*>(expr)) {
+        return "I(" + curr->getBranchName() + ")";
+    }
+
+    if (auto* param = dynamic_cast<const ParameterExprAST*>(expr)) {
+        return param->getParamName();
+    }
+    
+    if (auto* block = dynamic_cast<const BlockExprAST*>(expr)) {
+        if (block->getStatements().empty()) return "0";
+        // For SPICE expressions, we take the last expression in the block
+        return expressionToSpice(block->getStatements().back().get());
+    }
+    
+    if (auto* assign = dynamic_cast<const AssignExprAST*>(expr)) {
+        // In SPICE B-sources, V=V is redundant if already in card, but let's just return RHS
+        return expressionToSpice(assign->getValueExpr());
     }
     
     // For more complex expressions, return 0 as placeholder for now

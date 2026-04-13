@@ -394,7 +394,7 @@ TypedValue PlotDeclAST::codegen(CodegenContext& context) {
             llvm::FunctionType::get(llvm::Type::getVoidTy(context.TheContext), {CharPtrTy}, true),
             llvm::Function::ExternalLinkage,
             "flux_plot_waveforms",
-            context.TheModule.get());
+            context.TheModule);
     }
     
     // For now, just print the plot configuration
@@ -426,7 +426,7 @@ TypedValue BenchmarkDeclAST::codegen(CodegenContext& context) {
             llvm::FunctionType::get(llvm::Type::getVoidTy(context.TheContext), {CharPtrTy}, true),
             llvm::Function::ExternalLinkage,
             "flux_run_benchmark",
-            context.TheModule.get());
+            context.TheModule);
     }
     
     std::ostringstream oss;
@@ -457,7 +457,7 @@ TypedValue OptimizeDeclAST::codegen(CodegenContext& context) {
             llvm::FunctionType::get(llvm::Type::getVoidTy(context.TheContext), {CharPtrTy}, true),
             llvm::Function::ExternalLinkage,
             "flux_run_optimization",
-            context.TheModule.get());
+            context.TheModule);
     }
     
     std::ostringstream oss;
@@ -502,7 +502,7 @@ TypedValue SweepDeclAST::codegen(CodegenContext& context) {
             llvm::FunctionType::get(llvm::Type::getVoidTy(context.TheContext), {CharPtrTy}, true),
             llvm::Function::ExternalLinkage,
             "flux_run_sweep",
-            context.TheModule.get());
+            context.TheModule);
     }
     
     std::ostringstream oss;
@@ -543,7 +543,7 @@ TypedValue ReportDeclAST::codegen(CodegenContext& context) {
             llvm::FunctionType::get(llvm::Type::getVoidTy(context.TheContext), {CharPtrTy}, true),
             llvm::Function::ExternalLinkage,
             "flux_generate_report",
-            context.TheModule.get());
+            context.TheModule);
     }
     
     std::ostringstream oss;
