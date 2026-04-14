@@ -90,6 +90,62 @@ std::unique_ptr<ExprAST> Parser::ParseNumberExpr() {
     return Result;
 }
 
+std::unique_ptr<ExprAST> Parser::ParseFixedExpr() {
+    int line = m_lexer.getCurrentLine();
+    int col = m_lexer.getCurrentColumn();
+    getNextToken(); // eat fixed
+    
+    if (CurTok != '(') {
+        ReportError("expected '(' after fixed");
+        return nullptr;
+    }
+    getNextToken(); // eat (
+    
+    auto Val = ParseExpression();
+    if (!Val) return nullptr;
+    
+    if (CurTok != ',') {
+        ReportError("expected ',' in fixed");
+        return nullptr;
+    }
+    getNextToken(); // eat ,
+    
+    if (CurTok != static_cast<int>(TokenType::tok_number)) {
+        ReportError("expected bit-width in fixed");
+        return nullptr;
+    }
+    int bits = (int)m_lexer.NumVal;
+    getNextToken(); // eat bits
+    
+    if (CurTok != ',') {
+        ReportError("expected ',' in fixed");
+        return nullptr;
+    }
+    getNextToken(); // eat ,
+    
+    if (CurTok != static_cast<int>(TokenType::tok_number)) {
+        ReportError("expected fraction-width in fixed");
+        return nullptr;
+    }
+    int fract = (int)m_lexer.NumVal;
+    getNextToken(); // eat fract
+    
+    if (CurTok != ')') {
+        ReportError("expected ')' after fixed");
+        return nullptr;
+    }
+    getNextToken(); // eat )
+    
+    std::unique_ptr<ExprAST> Result;
+    if (auto* num = dynamic_cast<NumberExprAST*>(Val.get())) {
+        Result = std::make_unique<FixedExprAST>(num->getValue(), bits, fract);
+    } else {
+        Result = std::make_unique<ToFixedExprAST>(std::move(Val), bits, fract);
+    }
+    Result->setLocation(line, col);
+    return Result;
+}
+
 std::unique_ptr<ExprAST> Parser::ParseImaginaryExpr() {
     int line = m_lexer.getCurrentLine();
     int col = m_lexer.getCurrentColumn();
@@ -608,6 +664,7 @@ std::unique_ptr<ExprAST> Parser::ParsePrimary() {
     switch (CurTok) {
     case static_cast<int>(TokenType::tok_identifier): Res = ParseIdentifierExpr(); break;
     case static_cast<int>(TokenType::tok_number): Res = ParseNumberExpr(); break;
+    case static_cast<int>(TokenType::tok_fixed): Res = ParseFixedExpr(); break;
     case static_cast<int>(TokenType::tok_imaginary): Res = ParseImaginaryExpr(); break;
     case static_cast<int>(TokenType::tok_string): Res = ParseStringExpr(); break;
     case '(': Res = ParseParenExpr(); break;
@@ -685,6 +742,9 @@ std::unique_ptr<ExprAST> Parser::ParsePrimary() {
     case static_cast<int>(TokenType::tok_jacobian): Res = ParseJacobianExpr(); break;
     case static_cast<int>(TokenType::tok_pde): Res = ParsePDEExpr(); break;
     case static_cast<int>(TokenType::tok_partial_diff): Res = ParsePartialDiffExpr(); break;
+    case static_cast<int>(TokenType::tok_nn): Res = ParseNNExpr(); break;
+    case static_cast<int>(TokenType::tok_train): Res = ParseTrainExpr(); break;
+    case static_cast<int>(TokenType::tok_predict): Res = ParsePredictExpr(); break;
     
     // Analysis and Measurements
     case static_cast<int>(TokenType::tok_analysis): Res = ParseAnalysis(); break;
@@ -2374,4 +2434,91 @@ std::unique_ptr<ExprAST> Parser::ParseHasUnitExpr() {
     return std::make_unique<HasUnitExprAST>(std::move(Val), std::move(unitStr));
 }
 
+
+std::unique_ptr<ExprAST> Parser::ParseNNExpr() {
+    int line = m_lexer.getCurrentLine();
+    int col = m_lexer.getCurrentColumn();
+    getNextToken(); // eat nn
+    
+    if (CurTok != '(') { ReportError("expected '(' after nn"); return nullptr; }
+    getNextToken(); // eat (
+    
+    std::vector<int> layers;
+    while (CurTok == static_cast<int>(TokenType::tok_number)) {
+        layers.push_back((int)m_lexer.NumVal);
+        getNextToken();
+        if (CurTok == ',') getNextToken();
+    }
+    
+    if (CurTok != ')') { ReportError("expected ')' after nn layers"); return nullptr; }
+    getNextToken();
+    
+    auto Res = std::make_unique<NNCreateExprAST>(std::move(layers));
+    Res->setLocation(line, col);
+    return Res;
+}
+
+std::unique_ptr<ExprAST> Parser::ParseTrainExpr() {
+    int line = m_lexer.getCurrentLine();
+    int col = m_lexer.getCurrentColumn();
+    getNextToken(); // eat train
+    
+    if (CurTok != '(') { ReportError("expected '(' after train"); return nullptr; }
+    getNextToken(); // eat (
+    
+    auto model = ParseExpression();
+    if (!model) return nullptr;
+    
+    if (CurTok != ',') { ReportError("expected ',' after model in train"); return nullptr; }
+    getNextToken(); // eat ,
+    
+    auto inputs = ParseExpression();
+    if (!inputs) return nullptr;
+    
+    if (CurTok != ',') { ReportError("expected ',' after inputs in train"); return nullptr; }
+    getNextToken(); // eat ,
+    
+    auto outputs = ParseExpression();
+    if (!outputs) return nullptr;
+    
+    int epochs = 100;
+    if (CurTok == ',') {
+        getNextToken();
+        if (CurTok != static_cast<int>(TokenType::tok_number)) { ReportError("expected number of epochs"); return nullptr; }
+        epochs = (int)m_lexer.NumVal;
+        getNextToken();
+    }
+    
+    if (CurTok != ')') { ReportError("expected ')' after train arguments"); return nullptr; }
+    getNextToken();
+    
+    auto Res = std::make_unique<TrainExprAST>(std::move(model), std::move(inputs), std::move(outputs), epochs);
+    Res->setLocation(line, col);
+    return Res;
+}
+
+std::unique_ptr<ExprAST> Parser::ParsePredictExpr() {
+    int line = m_lexer.getCurrentLine();
+    int col = m_lexer.getCurrentColumn();
+    getNextToken(); // eat predict
+    
+    if (CurTok != '(') { ReportError("expected '(' after predict"); return nullptr; }
+    getNextToken(); // eat (
+    
+    auto model = ParseExpression();
+    if (!model) return nullptr;
+    
+    if (CurTok != ',') { ReportError("expected ',' after model in predict"); return nullptr; }
+    getNextToken(); // eat ,
+    
+    auto input = ParseExpression();
+    if (!input) return nullptr;
+    
+    if (CurTok != ')') { ReportError("expected ')' after predict arguments"); return nullptr; }
+    getNextToken();
+    
+    auto Res = std::make_unique<PredictExprAST>(std::move(model), std::move(input));
+    Res->setLocation(line, col);
+    return Res;
+}
 } // namespace Flux

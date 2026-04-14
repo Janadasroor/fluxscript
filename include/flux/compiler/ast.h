@@ -92,16 +92,23 @@ enum class TypeKind {
     String,   // String (i8*)
     Matrix,   // Matrix { double*, i32, i32 }
     Vector,   // Vector { double*, i32 }
-    Symbolic  // Symbolic expression handle (double/uintptr_t)
+    Symbolic, // Symbolic expression handle (double/uintptr_t)
+    Fixed,    // Fixed-point integer (Q format)
+    ComplexMatrix // Complex Matrix { std::complex<double>*, i32, i32 }
 };
 
 class FluxType {
 public:
     TypeKind Kind;
     UnitDimensions Dimensions;
+    int Bits = 32;    // Total bits for Fixed
+    int Fract = 16;   // Fractional bits for Fixed
     
     FluxType(TypeKind K = TypeKind::Double, UnitDimensions D = {}) 
         : Kind(K), Dimensions(D) {}
+    
+    FluxType(TypeKind K, int bits, int fract)
+        : Kind(K), Bits(bits), Fract(fract) {}
     
     llvm::Type* getLLVMType(llvm::LLVMContext& Context) const {
         switch (Kind) {
@@ -109,13 +116,16 @@ public:
                 return llvm::Type::getFloatTy(Context);
             case TypeKind::Int:
                 return llvm::Type::getInt32Ty(Context);
+            case TypeKind::Fixed:
+                return llvm::Type::getIntNTy(Context, Bits);
             case TypeKind::Void:
                 return llvm::Type::getVoidTy(Context);
             case TypeKind::Complex:
                 // Complex numbers use native LLVM <2 x double> vector (SSE2 compatible)
                 return llvm::VectorType::get(llvm::Type::getDoubleTy(Context), 2, false);
             case TypeKind::Matrix:
-                // Matrix represented as { double*, i32, i32 }
+            case TypeKind::ComplexMatrix:
+                // Matrix represented as { void*, i32, i32 }
                 return llvm::StructType::get(Context, {
                     llvm::PointerType::get(Context, 0),
                     llvm::Type::getInt32Ty(Context),
@@ -262,6 +272,29 @@ public:
     double getValue() const { return Val; }
     const std::string& getUnit() const { return Unit; }
 };
+
+class FixedExprAST : public ExprAST {
+    double Val;
+    int Bits;
+    int Fract;
+public:
+    FixedExprAST(double Val, int Bits, int Fract)
+        : Val(std::move(Val)), Bits(Bits), Fract(Fract) {}
+    TypedValue codegen(CodegenContext& context) override;
+    bool containsYield() const override { return false; }
+};
+
+class ToFixedExprAST : public ExprAST {
+    std::unique_ptr<ExprAST> Value;
+    int Bits;
+    int Fract;
+public:
+    ToFixedExprAST(std::unique_ptr<ExprAST> Val, int Bits, int Fract)
+        : Value(std::move(Val)), Bits(Bits), Fract(Fract) {}
+    TypedValue codegen(CodegenContext& context) override;
+    bool containsYield() const override { return Value->containsYield(); }
+};
+
 
 class ComplexExprAST : public ExprAST {
     double Real;
@@ -886,6 +919,39 @@ public:
         : Value(std::move(Value)) {}
     TypedValue codegen(CodegenContext& context) override;
     bool containsYield() const override { return true; }
+};
+
+// --- AI / Neural Network Nodes ---
+
+class NNCreateExprAST : public ExprAST {
+    std::vector<int> Layers;
+public:
+    NNCreateExprAST(std::vector<int> layers) : Layers(std::move(layers)) {}
+    TypedValue codegen(CodegenContext& context) override;
+    bool containsYield() const override { return false; }
+};
+
+class TrainExprAST : public ExprAST {
+    std::unique_ptr<ExprAST> Model;
+    std::unique_ptr<ExprAST> Inputs;
+    std::unique_ptr<ExprAST> Outputs;
+    int Epochs;
+public:
+    TrainExprAST(std::unique_ptr<ExprAST> model, std::unique_ptr<ExprAST> in,
+                 std::unique_ptr<ExprAST> out, int epochs)
+        : Model(std::move(model)), Inputs(std::move(in)), Outputs(std::move(out)), Epochs(epochs) {}
+    TypedValue codegen(CodegenContext& context) override;
+    bool containsYield() const override { return false; }
+};
+
+class PredictExprAST : public ExprAST {
+    std::unique_ptr<ExprAST> Model;
+    std::unique_ptr<ExprAST> Input;
+public:
+    PredictExprAST(std::unique_ptr<ExprAST> model, std::unique_ptr<ExprAST> in)
+        : Model(std::move(model)), Input(std::move(in)) {}
+    TypedValue codegen(CodegenContext& context) override;
+    bool containsYield() const override { return false; }
 };
 
 // Corner case analysis

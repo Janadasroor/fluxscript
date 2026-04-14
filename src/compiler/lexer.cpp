@@ -156,6 +156,11 @@ int Lexer::gettok() {
         if (IdentifierStr == "let") return static_cast<int>(TokenType::tok_let);
         if (IdentifierStr == "fn") return static_cast<int>(TokenType::tok_fn);
         if (IdentifierStr == "if") return static_cast<int>(TokenType::tok_if);
+        if (IdentifierStr == "fixed") return static_cast<int>(TokenType::tok_fixed);
+        if (IdentifierStr == "surrogate") return static_cast<int>(TokenType::tok_surrogate);
+        if (IdentifierStr == "train") return static_cast<int>(TokenType::tok_train);
+        if (IdentifierStr == "predict") return static_cast<int>(TokenType::tok_predict);
+        if (IdentifierStr == "nn") return static_cast<int>(TokenType::tok_nn);
         if (IdentifierStr == "then") return static_cast<int>(TokenType::tok_then);
         if (IdentifierStr == "else") return static_cast<int>(TokenType::tok_else);
         if (IdentifierStr == "for") return static_cast<int>(TokenType::tok_for);

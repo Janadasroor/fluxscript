@@ -55,6 +55,7 @@ public:
 
 private:
     std::unique_ptr<ExprAST> ParseNumberExpr();
+    std::unique_ptr<ExprAST> ParseFixedExpr();
     std::unique_ptr<ExprAST> ParseImaginaryExpr();
     std::unique_ptr<ExprAST> ParseStringExpr();
     std::unique_ptr<ExprAST> ParseParenExpr();
@@ -109,6 +110,11 @@ private:
     std::unique_ptr<ExprAST> ParseJacobianExpr();
     std::unique_ptr<ExprAST> ParsePDEExpr();
     std::unique_ptr<ExprAST> ParsePartialDiffExpr();
+    
+    // AI / Neural Network
+    std::unique_ptr<ExprAST> ParseNNExpr();
+    std::unique_ptr<ExprAST> ParseTrainExpr();
+    std::unique_ptr<ExprAST> ParsePredictExpr();
     
     // Time-domain simulation
     std::unique_ptr<ExprAST> ParseBSourceDecl();

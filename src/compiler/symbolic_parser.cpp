@@ -34,15 +34,27 @@ std::string getCurrentIdentifier(Parser& p) {
 std::unique_ptr<ExprAST> Parser::ParseSymDecl() {
     getNextToken(); // eat sym
     
-    if (CurTok != static_cast<int>(TokenType::tok_identifier)) {
-        ReportError("expected variable name after sym");
-        return nullptr;
+    std::vector<std::unique_ptr<ExprAST>> decls;
+    
+    while (true) {
+        if (CurTok != static_cast<int>(TokenType::tok_identifier)) {
+            ReportError("expected variable name after sym");
+            return nullptr;
+        }
+        
+        std::string name = m_lexer.IdentifierStr;
+        getNextToken();
+        decls.push_back(std::make_unique<SymDeclAST>(name));
+        
+        if (CurTok == ',') {
+            getNextToken(); // eat ,
+        } else {
+            break;
+        }
     }
     
-    std::string name = m_lexer.IdentifierStr;
-    getNextToken();
-    
-    return std::make_unique<SymDeclAST>(name);
+    if (decls.size() == 1) return std::move(decls[0]);
+    return std::make_unique<BlockExprAST>(std::move(decls));
 }
 
 std::unique_ptr<ExprAST> Parser::ParseSolveExpr() {
@@ -56,14 +68,25 @@ std::unique_ptr<ExprAST> Parser::ParseSolveExpr() {
     if (CurTok != ',') { ReportError("expected ',' after expression in solve"); return nullptr; }
     getNextToken(); // eat ,
     
-    if (CurTok != static_cast<int>(TokenType::tok_identifier)) { ReportError("expected variable name in solve"); return nullptr; }
-    std::string varName = m_lexer.IdentifierStr;
-    getNextToken();
-    
-    if (CurTok != ')') { ReportError("expected ')' after solve"); return nullptr; }
-    getNextToken();
-    
-    return std::make_unique<SolveExprAST>(std::move(expr), varName);
+    if (CurTok == static_cast<int>(TokenType::tok_identifier)) {
+        // Symbolic solve: solve(expr, var)
+        std::string varName = m_lexer.IdentifierStr;
+        getNextToken();
+        if (CurTok != ')') { ReportError("expected ')' after solve"); return nullptr; }
+        getNextToken();
+        return std::make_unique<SolveExprAST>(std::move(expr), varName);
+    } else {
+        // Matrix solve: solve(A, B) -> actually just a function call to flux_matrix_solve
+        auto rhs = ParseExpression();
+        if (!rhs) return nullptr;
+        if (CurTok != ')') { ReportError("expected ')' after solve"); return nullptr; }
+        getNextToken();
+        
+        std::vector<std::unique_ptr<ExprAST>> args;
+        args.push_back(std::move(expr));
+        args.push_back(std::move(rhs));
+        return std::make_unique<CallExprAST>("solve", std::move(args));
+    }
 }
 
 std::unique_ptr<ExprAST> Parser::ParseSimplifyExpr() {

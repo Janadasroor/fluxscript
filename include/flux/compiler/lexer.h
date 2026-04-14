@@ -335,6 +335,11 @@ enum class TokenType {
     tok_knob = -252,
     tok_sections = -253,
     tok_include = -254,
+    tok_fixed = -255,               // fixed-point literal
+    tok_surrogate = -256,           // surrogate model
+    tok_train = -257,               // train model
+    tok_predict = -258,             // predict using model
+    tok_nn = -259,                  // neural network
 };
 
 class Lexer {

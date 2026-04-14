@@ -66,6 +66,8 @@ public:
     std::shared_ptr<SymbolicExpr> add(std::shared_ptr<SymbolicExpr> a, std::shared_ptr<SymbolicExpr> b);
     std::shared_ptr<SymbolicExpr> mul(std::shared_ptr<SymbolicExpr> a, std::shared_ptr<SymbolicExpr> b);
     std::shared_ptr<SymbolicExpr> power(std::shared_ptr<SymbolicExpr> base, std::shared_ptr<SymbolicExpr> exp);
+    std::shared_ptr<SymbolicExpr> eq(std::shared_ptr<SymbolicExpr> a, std::shared_ptr<SymbolicExpr> b);
+    std::shared_ptr<SymbolicExpr> ne(std::shared_ptr<SymbolicExpr> a, std::shared_ptr<SymbolicExpr> b);
     
     // Core operations
     std::shared_ptr<SymbolicExpr> simplify(std::shared_ptr<SymbolicExpr> expr);

@@ -126,6 +126,48 @@ TypedValue NumberExprAST::codegen(CodegenContext& context) {
     return TypedValue(llvm::ConstantFP::get(context.TheContext, llvm::APFloat(finalVal)), FluxType(TypeKind::Double, dims));
 }
 
+TypedValue FixedExprAST::codegen(CodegenContext& context) {
+    emitLocation(this, context);
+    llvm::Type* IntTy = llvm::Type::getIntNTy(context.TheContext, Bits);
+    double scaled = Val * std::pow(2.0, Fract);
+    int64_t fixedVal = (int64_t)std::round(scaled);
+    return TypedValue(llvm::ConstantInt::get(IntTy, fixedVal), FluxType(TypeKind::Fixed, Bits, Fract));
+}
+
+TypedValue ToFixedExprAST::codegen(CodegenContext& context) {
+    emitLocation(this, context);
+    TypedValue ValTV = Value->codegen(context);
+    if (!ValTV.Val) return TypedValue();
+    
+    llvm::Type* IntTy = llvm::Type::getIntNTy(context.TheContext, Bits);
+    llvm::Value* Res = nullptr;
+    
+    if (ValTV.Type.Kind == TypeKind::Fixed) {
+        if (ValTV.Type.Fract != Fract) {
+            llvm::Value* RawVal = ValTV.Val;
+            if (ValTV.Type.Fract < Fract) {
+                RawVal = context.Builder.CreateShl(RawVal, Fract - ValTV.Type.Fract);
+            } else {
+                RawVal = context.Builder.CreateAShr(RawVal, ValTV.Type.Fract - Fract);
+            }
+            Res = context.Builder.CreateIntCast(RawVal, IntTy, true);
+        } else {
+            Res = context.Builder.CreateIntCast(ValTV.Val, IntTy, true);
+        }
+    } else {
+        llvm::Value* FloatVal = ValTV.Val;
+        if (ValTV.Type.Kind == TypeKind::Int) {
+            FloatVal = context.Builder.CreateSIToFP(ValTV.Val, llvm::Type::getDoubleTy(context.TheContext));
+        }
+        
+        double scale = std::pow(2.0, Fract);
+        llvm::Value* Scaled = context.Builder.CreateFMul(FloatVal, llvm::ConstantFP::get(context.TheContext, llvm::APFloat(scale)));
+        Res = context.Builder.CreateFPToSI(Scaled, IntTy);
+    }
+    
+    return TypedValue(Res, FluxType(TypeKind::Fixed, Bits, Fract));
+}
+
 TypedValue ComplexExprAST::codegen(CodegenContext& context) {
     llvm::Type* DoubleTy = llvm::Type::getDoubleTy(context.TheContext);
 
@@ -440,9 +482,15 @@ TypedValue BinaryExprAST::codegen(CodegenContext& context) {
             case '-': fnName = "flux_sym_sub"; break;
             case '*': fnName = "flux_sym_mul"; break;
             case '/': fnName = "flux_sym_div"; break;
-            case '^': fnName = "flux_sym_pow"; break;
+            case '^': 
+            case static_cast<int>(TokenType::tok_power):
+                fnName = "flux_sym_pow"; break;
+            case static_cast<int>(TokenType::tok_equal):
+                fnName = "flux_sym_eq"; break;
+            case static_cast<int>(TokenType::tok_not_equal):
+                fnName = "flux_sym_ne"; break;
             default:
-                std::cerr << "Symbolic operator not supported: " << (char)Op << std::endl;
+                std::cerr << "Symbolic operator not supported: " << Op << " (char: " << (char)Op << ")" << std::endl;
                 return TypedValue();
         }
         
@@ -473,58 +521,64 @@ TypedValue BinaryExprAST::codegen(CodegenContext& context) {
         ResDims = L.Type.Dimensions;
     }
 
-    if (L.Type.Kind == TypeKind::Matrix || R.Type.Kind == TypeKind::Matrix) {
-        // ... (existing matrix codegen setup) ...
+    if (L.Type.Kind == TypeKind::Matrix || L.Type.Kind == TypeKind::ComplexMatrix ||
+        R.Type.Kind == TypeKind::Matrix || R.Type.Kind == TypeKind::ComplexMatrix) {
         
-        // --- CONSTANT FOLDING FOR MATRICES ---
-        MatrixExprAST* LMat = dynamic_cast<MatrixExprAST*>(LHS.get());
-        MatrixExprAST* RMat = dynamic_cast<MatrixExprAST*>(RHS.get());
-        NumberExprAST* LNum = dynamic_cast<NumberExprAST*>(LHS.get());
-        NumberExprAST* RNum = dynamic_cast<NumberExprAST*>(RHS.get());
-
-        if ((LMat || LNum) && (RMat || RNum)) {
-            // Both are potentially constants. Check if they really are.
-            bool LConst = LMat ? true : (LNum != nullptr);
-            bool RConst = RMat ? true : (RNum != nullptr);
-            
-            if (LMat) {
-                for (auto const& row : LMat->getRows()) 
-                    for (auto const& e : row) if (!dynamic_cast<NumberExprAST*>(e.get())) LConst = false;
-            }
-            if (RMat) {
-                for (auto const& row : RMat->getRows()) 
-                    for (auto const& e : row) if (!dynamic_cast<NumberExprAST*>(e.get())) RConst = false;
-            }
-
-            if (LConst && RConst) {
-                // Evaluate at compile time!
-                // For now, let's just use the runtime logic to generate the code,
-                // but we could actually compute the values here and create a new MatrixExprAST.
-                // However, LLVM's O3 will already do a lot of this if we emit clean IR.
-            }
-        }
+        bool isLComplex = (L.Type.Kind == TypeKind::ComplexMatrix);
+        bool isRComplex = (R.Type.Kind == TypeKind::ComplexMatrix);
+        bool isScalarLComplex = (L.Type.Kind == TypeKind::Complex);
+        bool isScalarRComplex = (R.Type.Kind == TypeKind::Complex);
+        
+        bool resultComplex = isLComplex || isRComplex || isScalarLComplex || isScalarRComplex;
         
         llvm::Type* Int32Ty = llvm::Type::getInt32Ty(context.TheContext);
         llvm::Type* DoubleTy = llvm::Type::getDoubleTy(context.TheContext);
+        llvm::Type* ComplexTy = llvm::VectorType::get(DoubleTy, 2, false);
         llvm::Type* VoidPtrTy = llvm::PointerType::get(context.TheContext, 0);
-        llvm::StructType* MatStructTy = llvm::cast<llvm::StructType>(FluxType(TypeKind::Matrix).getLLVMType(context.TheContext));
         
-        bool isMatMat = (L.Type.Kind == TypeKind::Matrix && R.Type.Kind == TypeKind::Matrix);
-        bool isMatSca = (L.Type.Kind == TypeKind::Matrix && R.Type.Kind != TypeKind::Matrix);
-        bool isScaMat = (L.Type.Kind != TypeKind::Matrix && R.Type.Kind == TypeKind::Matrix);
+        FluxType resType = resultComplex ? FluxType(TypeKind::ComplexMatrix) : FluxType(TypeKind::Matrix);
+        llvm::StructType* MatStructTy = llvm::cast<llvm::StructType>(resType.getLLVMType(context.TheContext));
         
+        bool isMatMat = (L.Type.Kind == TypeKind::Matrix || L.Type.Kind == TypeKind::ComplexMatrix) && 
+                        (R.Type.Kind == TypeKind::Matrix || R.Type.Kind == TypeKind::ComplexMatrix);
+        bool isMatSca = (L.Type.Kind == TypeKind::Matrix || L.Type.Kind == TypeKind::ComplexMatrix) && 
+                        !(R.Type.Kind == TypeKind::Matrix || R.Type.Kind == TypeKind::ComplexMatrix);
+        bool isScaMat = !(L.Type.Kind == TypeKind::Matrix || L.Type.Kind == TypeKind::ComplexMatrix) && 
+                        (R.Type.Kind == TypeKind::Matrix || R.Type.Kind == TypeKind::ComplexMatrix);
+        
+        // Promotion to complex if needed
+        if (resultComplex) {
+            if (!isLComplex && (L.Type.Kind == TypeKind::Matrix)) {
+                // Call flux_promote_matrix_to_complex
+                llvm::Function* PromF = context.TheModule->getFunction("flux_promote_matrix_to_complex");
+                if (!PromF) PromF = llvm::Function::Create(llvm::FunctionType::get(VoidPtrTy, {VoidPtrTy}, false), llvm::Function::ExternalLinkage, "flux_promote_matrix_to_complex", context.TheModule);
+                llvm::Value* LPtr = context.Builder.CreateExtractValue(L.Val, 0);
+                llvm::Value* NewPtr = context.Builder.CreateCall(PromF, {LPtr});
+                L.Val = context.Builder.CreateInsertValue(L.Val, NewPtr, 0);
+                L.Type.Kind = TypeKind::ComplexMatrix;
+            }
+            if (!isRComplex && (R.Type.Kind == TypeKind::Matrix)) {
+                llvm::Function* PromF = context.TheModule->getFunction("flux_promote_matrix_to_complex");
+                if (!PromF) PromF = llvm::Function::Create(llvm::FunctionType::get(VoidPtrTy, {VoidPtrTy}, false), llvm::Function::ExternalLinkage, "flux_promote_matrix_to_complex", context.TheModule);
+                llvm::Value* RPtr = context.Builder.CreateExtractValue(R.Val, 0);
+                llvm::Value* NewPtr = context.Builder.CreateCall(PromF, {RPtr});
+                R.Val = context.Builder.CreateInsertValue(R.Val, NewPtr, 0);
+                R.Type.Kind = TypeKind::ComplexMatrix;
+            }
+        }
+
         llvm::Value* LPtr = isMatMat || isMatSca ? context.Builder.CreateExtractValue(L.Val, 0, "l_mat_ptr") : nullptr;
         llvm::Value* RPtr = isMatMat || isScaMat ? context.Builder.CreateExtractValue(R.Val, 0, "r_mat_ptr") : nullptr;
         
         std::string runtimeFunc;
+        std::string prefix = resultComplex ? "flux_complex_matrix_" : "flux_matrix_";
+
         switch (Op) {
-        case '+': runtimeFunc = isMatMat ? "flux_matrix_add" : (isMatSca ? "flux_matrix_add_ms" : "flux_matrix_add_ms"); break;
-        case '-': runtimeFunc = isMatMat ? "flux_matrix_sub" : (isMatSca ? "flux_matrix_sub_ms" : "flux_matrix_sub_sm"); break;
-        case '*': runtimeFunc = isMatMat ? "flux_matrix_mul" : (isMatSca ? "flux_matrix_mul_ms" : "flux_matrix_mul_ms"); break;
-        case '/': runtimeFunc = isMatMat ? "flux_matrix_ew_div" : (isMatSca ? "flux_matrix_div_ms" : "flux_matrix_div_sm"); break;
-        case '^': runtimeFunc = "flux_matrix_pow"; break;
-        case static_cast<int>(TokenType::tok_ew_mul): runtimeFunc = isMatMat ? "flux_matrix_ew_mul" : "flux_matrix_mul_ms"; break;
-        case static_cast<int>(TokenType::tok_ew_div): runtimeFunc = isMatMat ? "flux_matrix_ew_div" : "flux_matrix_div_ms"; break;
+        case '+': runtimeFunc = prefix + (isMatMat ? "add" : (isMatSca ? "add_ms" : "add_ms")); break;
+        case '-': runtimeFunc = prefix + (isMatMat ? "sub" : (isMatSca ? "sub_ms" : "sub_sm")); break;
+        case '*': runtimeFunc = prefix + (isMatMat ? "mul" : (isMatSca ? "mul_ms" : "mul_ms")); break;
+        case '/': runtimeFunc = prefix + (isMatMat ? "ew_div" : (isMatSca ? "div_ms" : "div_sm")); break;
+        case '^': runtimeFunc = prefix + "pow"; break;
         default:
             std::cerr << "Unsupported matrix operation: " << (char)Op << std::endl;
             return TypedValue();
@@ -532,12 +586,13 @@ TypedValue BinaryExprAST::codegen(CodegenContext& context) {
 
         llvm::Function* F = context.TheModule->getFunction(runtimeFunc);
         if (!F) {
+            llvm::Type* ScalarTy = resultComplex ? ComplexTy : DoubleTy;
             llvm::Type* Params[] = { VoidPtrTy, VoidPtrTy };
             if (isMatSca || isScaMat) {
                 if (runtimeFunc.find("_sm") != std::string::npos) {
-                    Params[0] = DoubleTy; Params[1] = VoidPtrTy;
-                } else if (runtimeFunc.find("_ms") != std::string::npos || runtimeFunc == "flux_matrix_pow") {
-                    Params[0] = VoidPtrTy; Params[1] = DoubleTy;
+                    Params[0] = ScalarTy; Params[1] = VoidPtrTy;
+                } else {
+                    Params[0] = VoidPtrTy; Params[1] = ScalarTy;
                 }
             }
             F = llvm::Function::Create(llvm::FunctionType::get(VoidPtrTy, Params, false),
@@ -548,18 +603,23 @@ TypedValue BinaryExprAST::codegen(CodegenContext& context) {
         if (isMatMat) {
             ResPtr = context.Builder.CreateCall(F, {LPtr, RPtr});
         } else if (isMatSca) {
-            ResPtr = context.Builder.CreateCall(F, {LPtr, R.Val});
+            llvm::Value* ScalVal = resultComplex ? promoteToComplex(R, context).Val : R.Val;
+            ResPtr = context.Builder.CreateCall(F, {LPtr, ScalVal});
         } else {
+            llvm::Value* ScalVal = resultComplex ? promoteToComplex(L, context).Val : L.Val;
             if (runtimeFunc.find("_sm") != std::string::npos)
-                ResPtr = context.Builder.CreateCall(F, {L.Val, RPtr});
+                ResPtr = context.Builder.CreateCall(F, {ScalVal, RPtr});
             else
-                ResPtr = context.Builder.CreateCall(F, {RPtr, L.Val});
+                ResPtr = context.Builder.CreateCall(F, {RPtr, ScalVal});
         }
 
-        llvm::Function* RowsF = context.TheModule->getFunction("flux_matrix_rows");
-        if (!RowsF) RowsF = llvm::Function::Create(llvm::FunctionType::get(Int32Ty, {VoidPtrTy}, false), llvm::Function::ExternalLinkage, "flux_matrix_rows", context.TheModule);
-        llvm::Function* ColsF = context.TheModule->getFunction("flux_matrix_cols");
-        if (!ColsF) ColsF = llvm::Function::Create(llvm::FunctionType::get(Int32Ty, {VoidPtrTy}, false), llvm::Function::ExternalLinkage, "flux_matrix_cols", context.TheModule);
+        std::string rowsFn = resultComplex ? "flux_complex_matrix_rows" : "flux_matrix_rows";
+        std::string colsFn = resultComplex ? "flux_complex_matrix_cols" : "flux_matrix_cols";
+        
+        llvm::Function* RowsF = context.TheModule->getFunction(rowsFn);
+        if (!RowsF) RowsF = llvm::Function::Create(llvm::FunctionType::get(Int32Ty, {VoidPtrTy}, false), llvm::Function::ExternalLinkage, rowsFn, context.TheModule);
+        llvm::Function* ColsF = context.TheModule->getFunction(colsFn);
+        if (!ColsF) ColsF = llvm::Function::Create(llvm::FunctionType::get(Int32Ty, {VoidPtrTy}, false), llvm::Function::ExternalLinkage, colsFn, context.TheModule);
 
         llvm::Value* ResRows = context.Builder.CreateCall(RowsF, {ResPtr}, "res_rows");
         llvm::Value* ResCols = context.Builder.CreateCall(ColsF, {ResPtr}, "res_cols");
@@ -568,7 +628,7 @@ TypedValue BinaryExprAST::codegen(CodegenContext& context) {
         MatVal = context.Builder.CreateInsertValue(MatVal, ResPtr, 0);
         MatVal = context.Builder.CreateInsertValue(MatVal, ResRows, 1);
         MatVal = context.Builder.CreateInsertValue(MatVal, ResCols, 2);
-        return TypedValue(MatVal, TypeKind::Matrix);
+        return TypedValue(MatVal, resType);
     }
 
 
@@ -656,11 +716,47 @@ TypedValue BinaryExprAST::codegen(CodegenContext& context) {
 
     llvm::Value* LV = L.Val;
     llvm::Value* RV = R.Val;
-    bool isIntOp = LV->getType()->isIntegerTy() && RV->getType()->isIntegerTy();
 
     auto createBoolResult = [&](llvm::Value* cmp) -> TypedValue {
         return TypedValue(context.Builder.CreateUIToFP(cmp, llvm::Type::getDoubleTy(context.TheContext), "booltmp"), FluxType(TypeKind::Double, {}));
     };
+
+    // Handle Fixed-Point Arithmetic
+    if (L.Type.Kind == TypeKind::Fixed && R.Type.Kind == TypeKind::Fixed) {
+        llvm::Value* Res = nullptr;
+        // Assume same Q format for simplicity in this pass
+        switch (Op) {
+            case '+': Res = context.Builder.CreateAdd(LV, RV, "faddtmp"); break;
+            case '-': Res = context.Builder.CreateSub(LV, RV, "fsubtmp"); break;
+            case '*': {
+                // (L * R) >> Fract. Use double bit-width for intermediate result.
+                llvm::Type* WideTy = llvm::Type::getIntNTy(context.TheContext, L.Type.Bits * 2);
+                llvm::Value* WideL = context.Builder.CreateSExt(LV, WideTy);
+                llvm::Value* WideR = context.Builder.CreateSExt(RV, WideTy);
+                llvm::Value* WideRes = context.Builder.CreateMul(WideL, WideR);
+                Res = context.Builder.CreateAShr(WideRes, L.Type.Fract);
+                Res = context.Builder.CreateTrunc(Res, LV->getType());
+                break;
+            }
+            case '/': {
+                // (L << Fract) / R. Use double bit-width for intermediate result.
+                llvm::Type* WideTy = llvm::Type::getIntNTy(context.TheContext, L.Type.Bits * 2);
+                llvm::Value* WideL = context.Builder.CreateSExt(LV, WideTy);
+                llvm::Value* ShiftedL = context.Builder.CreateShl(WideL, L.Type.Fract);
+                llvm::Value* WideR = context.Builder.CreateSExt(RV, WideTy);
+                llvm::Value* WideRes = context.Builder.CreateSDiv(ShiftedL, WideR);
+                Res = context.Builder.CreateTrunc(WideRes, LV->getType());
+                break;
+            }
+            case '<': return createBoolResult(context.Builder.CreateICmpSLT(LV, RV));
+            case '>': return createBoolResult(context.Builder.CreateICmpSGT(LV, RV));
+            case static_cast<int>(TokenType::tok_equal): return createBoolResult(context.Builder.CreateICmpEQ(LV, RV));
+            case static_cast<int>(TokenType::tok_not_equal): return createBoolResult(context.Builder.CreateICmpNE(LV, RV));
+        }
+        if (Res) return TypedValue(Res, L.Type);
+    }
+
+    bool isIntOp = LV->getType()->isIntegerTy() && RV->getType()->isIntegerTy();
 
         switch (Op) {
         case '+':
@@ -826,6 +922,60 @@ TypedValue CallExprAST::codegen(CodegenContext& context) {
     }
 
     // 1. Handle built-ins that depend on argument types (Complex, Matrix, etc.)
+    if (Name == "print" || Name == "println") {
+        for (size_t i = 0; i < Args.size(); ++i) {
+            TypedValue Arg = Args[i]->codegen(context);
+            if (!Arg.Val) continue;
+
+            llvm::Function* PrintFn = nullptr;
+            std::vector<llvm::Value*> PrintArgs;
+
+            if (Arg.Type.Kind == TypeKind::Matrix || Arg.Type.Kind == TypeKind::ComplexMatrix) {
+                std::string fnName = (Arg.Type.Kind == TypeKind::ComplexMatrix) ? "print_complex_matrix" : "print_matrix";
+                PrintFn = context.TheModule->getFunction(fnName);
+                if (!PrintFn) PrintFn = llvm::Function::Create(
+                    llvm::FunctionType::get(llvm::Type::getDoubleTy(context.TheContext), {llvm::PointerType::get(context.TheContext, 0)}, false),
+                    llvm::Function::ExternalLinkage, fnName, context.TheModule);
+                PrintArgs.push_back(context.Builder.CreateExtractValue(Arg.Val, 0));
+            } else if (Arg.Type.Kind == TypeKind::String) {
+                PrintFn = context.TheModule->getFunction("flux_print_string");
+                if (!PrintFn) PrintFn = llvm::Function::Create(
+                    llvm::FunctionType::get(llvm::Type::getDoubleTy(context.TheContext), {llvm::PointerType::get(context.TheContext, 0)}, false),
+                    llvm::Function::ExternalLinkage, "flux_print_string", context.TheModule);
+                
+                // Convert double-bitcasted-pointer back to pointer
+                llvm::Value* DoubleVal = Arg.Val;
+                llvm::Type* Int64Ty = llvm::Type::getInt64Ty(context.TheContext);
+                llvm::Value* IntVal = context.Builder.CreateBitCast(DoubleVal, Int64Ty);
+                PrintArgs.push_back(context.Builder.CreateIntToPtr(IntVal, llvm::PointerType::get(context.TheContext, 0)));
+            } else {
+                // Default: Print as double (handles Fixed-point too via previous conversion logic)
+                PrintFn = context.TheModule->getFunction("flux_print_double");
+                if (!PrintFn) PrintFn = llvm::Function::Create(
+                    llvm::FunctionType::get(llvm::Type::getDoubleTy(context.TheContext), {llvm::Type::getDoubleTy(context.TheContext)}, false),
+                    llvm::Function::ExternalLinkage, "flux_print_double", context.TheModule);
+                
+                llvm::Value* Val = Arg.Val;
+                if (Arg.Type.Kind == TypeKind::Fixed) {
+                    double scale = std::pow(2.0, -Arg.Type.Fract);
+                    llvm::Value* FloatVal = context.Builder.CreateSIToFP(Val, llvm::Type::getDoubleTy(context.TheContext));
+                    Val = context.Builder.CreateFMul(FloatVal, llvm::ConstantFP::get(context.TheContext, llvm::APFloat(scale)));
+                }
+                PrintArgs.push_back(Val);
+            }
+
+            if (PrintFn) context.Builder.CreateCall(PrintFn, PrintArgs);
+        }
+        if (Name == "println") {
+            llvm::Function* PrintStr = context.TheModule->getFunction("flux_print_string");
+            if (PrintStr) {
+                llvm::Value* NewLine = context.Builder.CreateGlobalStringPtr("\n");
+                context.Builder.CreateCall(PrintStr, {NewLine});
+            }
+        }
+        return TypedValue(llvm::ConstantFP::get(context.TheContext, llvm::APFloat(0.0)), TypeKind::Double);
+    }
+
     if (Args.size() == 1) {
         TypedValue Arg = Args[0]->codegen(context);
         if (!Arg.Val) {
@@ -1010,7 +1160,14 @@ TypedValue CallExprAST::codegen(CodegenContext& context) {
             ArgV = context.Builder.CreateBitCast(ArgV, llvm::Type::getDoubleTy(context.TheContext), "strptr_double");
         }
 
-        llvm::Type* ExpectedTy = CalleeF->getArg(i)->getType();
+        // Automatic conversion from Fixed-Point to Double for standard functions (like print)
+        if (ArgTV.Type.Kind == TypeKind::Fixed) {
+            double scale = std::pow(2.0, -ArgTV.Type.Fract);
+            llvm::Value* FloatVal = context.Builder.CreateSIToFP(ArgV, llvm::Type::getDoubleTy(context.TheContext));
+            ArgV = context.Builder.CreateFMul(FloatVal, llvm::ConstantFP::get(context.TheContext, llvm::APFloat(scale)));
+        }
+
+        llvm::Type* ExpectedTy = CalleeF->getArg(ArgsV.size())->getType();
         if (ArgV->getType() != ExpectedTy) {
             if (ExpectedTy->isIntegerTy() && ArgV->getType()->isFloatingPointTy()) {
                 ArgV = context.Builder.CreateFPToSI(ArgV, ExpectedTy, "cast");
@@ -1229,69 +1386,65 @@ TypedValue VectorExprAST::codegen(CodegenContext& context) {
 
 TypedValue MatrixExprAST::codegen(CodegenContext& context) {
     llvm::Type* DoubleTy = llvm::Type::getDoubleTy(context.TheContext);
+    llvm::Type* ComplexTy = llvm::VectorType::get(DoubleTy, 2, false);
     llvm::Type* Int32Ty = llvm::Type::getInt32Ty(context.TheContext);
     llvm::Type* VoidPtrTy = llvm::PointerType::get(context.TheContext, 0);
 
-    // Create a flat array of constants if all elements are constants
-    std::vector<double> ConstElements;
-    bool allConst = true;
+    // Determine if the matrix should be complex
+    bool isComplex = false;
     for (int r = 0; r < NumRows; ++r) {
         for (int c = 0; c < NumCols; ++c) {
-            if (auto* Num = dynamic_cast<NumberExprAST*>(Rows[r][c].get())) {
-                ConstElements.push_back(Num->getValue());
-            } else {
-                allConst = false;
+            if (dynamic_cast<ComplexExprAST*>(Rows[r][c].get())) {
+                isComplex = true;
                 break;
             }
         }
-        if (!allConst) break;
+        if (isComplex) break;
     }
 
     llvm::Value* DataPtr = nullptr;
-    if (allConst) {
-        std::vector<llvm::Constant*> Constants;
-        for (double d : ConstElements) {
-            Constants.push_back(llvm::ConstantFP::get(context.TheContext, llvm::APFloat(d)));
-        }
-        llvm::ArrayType* ArrTy = llvm::ArrayType::get(DoubleTy, ConstElements.size());
-        llvm::GlobalVariable* GV = new llvm::GlobalVariable(*context.TheModule, ArrTy, true,
-                                                            llvm::GlobalValue::InternalLinkage,
-                                                            llvm::ConstantArray::get(ArrTy, Constants),
-                                                            "mat_const_data");
-        DataPtr = context.Builder.CreateBitCast(GV, llvm::PointerType::get(DoubleTy, 0));
-    } else {
-        // Fallback to dynamic allocation for non-constant elements
-        llvm::Function* MallocF = context.TheModule->getFunction("malloc");
-        if (!MallocF) MallocF = llvm::Function::Create(llvm::FunctionType::get(VoidPtrTy, { Int32Ty }, false), llvm::Function::ExternalLinkage, "malloc", context.TheModule);
-        llvm::Value* DataSize = llvm::ConstantInt::get(Int32Ty, NumRows * NumCols * 8);
-        DataPtr = context.Builder.CreateCall(MallocF, {DataSize}, "mat_data");
-        DataPtr = context.Builder.CreateBitCast(DataPtr, llvm::PointerType::get(DoubleTy, 0));
-        
-        for (int r = 0; r < NumRows; ++r) {
-            for (int c = 0; c < NumCols; ++c) {
-                TypedValue ElemTV = Rows[r][c]->codegen(context);
-                if (ElemTV.Val) {
-                    llvm::Value* ElemPtr = context.Builder.CreateInBoundsGEP(DoubleTy, DataPtr, {llvm::ConstantInt::get(llvm::Type::getInt64Ty(context.TheContext), r * NumCols + c)}, "elem_ptr");
-                    context.Builder.CreateStore(ElemTV.Val, ElemPtr);
+    int elemSize = isComplex ? 16 : 8;
+    llvm::Type* ElemTy = isComplex ? ComplexTy : DoubleTy;
+
+    // Allocate memory for matrix elements
+    llvm::Function* MallocF = context.TheModule->getFunction("malloc");
+    if (!MallocF) MallocF = llvm::Function::Create(llvm::FunctionType::get(VoidPtrTy, { Int32Ty }, false), llvm::Function::ExternalLinkage, "malloc", context.TheModule);
+    llvm::Value* DataSize = llvm::ConstantInt::get(Int32Ty, NumRows * NumCols * elemSize);
+    DataPtr = context.Builder.CreateCall(MallocF, {DataSize}, "mat_data");
+    DataPtr = context.Builder.CreateBitCast(DataPtr, llvm::PointerType::get(ElemTy, 0));
+    
+    for (int r = 0; r < NumRows; ++r) {
+        for (int c = 0; c < NumCols; ++c) {
+            TypedValue ElemTV = Rows[r][c]->codegen(context);
+            if (ElemTV.Val) {
+                if (isComplex && ElemTV.Type.Kind != TypeKind::Complex) {
+                    ElemTV = promoteToComplex(ElemTV, context);
                 }
+                llvm::Value* ElemPtr = context.Builder.CreateInBoundsGEP(ElemTy, DataPtr, {llvm::ConstantInt::get(llvm::Type::getInt64Ty(context.TheContext), r * NumCols + c)}, "elem_ptr");
+                context.Builder.CreateStore(ElemTV.Val, ElemPtr);
             }
         }
     }
 
-    llvm::Function* CreateMatF = context.TheModule->getFunction("flux_create_matrix");
-    if (!CreateMatF) CreateMatF = llvm::Function::Create(llvm::FunctionType::get(VoidPtrTy, { VoidPtrTy, Int32Ty, Int32Ty }, false), llvm::Function::ExternalLinkage, "flux_create_matrix", context.TheModule);
+    std::string createFn = isComplex ? "flux_create_complex_matrix" : "flux_create_matrix";
+    llvm::Function* CreateMatF = context.TheModule->getFunction(createFn);
+    if (!CreateMatF) {
+        llvm::Type* Params[] = { llvm::PointerType::get(ElemTy, 0), Int32Ty, Int32Ty };
+        CreateMatF = llvm::Function::Create(llvm::FunctionType::get(VoidPtrTy, Params, false), llvm::Function::ExternalLinkage, createFn, context.TheModule);
+    }
     
     llvm::Value* RowsVal = llvm::ConstantInt::get(Int32Ty, NumRows);
     llvm::Value* ColsVal = llvm::ConstantInt::get(Int32Ty, NumCols);
     llvm::Value* MatPtr = context.Builder.CreateCall(CreateMatF, {DataPtr, RowsVal, ColsVal}, "mat_ptr_reg");
     
-    llvm::StructType* MatStructTy = llvm::cast<llvm::StructType>(FluxType(TypeKind::Matrix).getLLVMType(context.TheContext));
+    FluxType resType = isComplex ? FluxType(TypeKind::ComplexMatrix) : FluxType(TypeKind::Matrix);
+    llvm::StructType* MatStructTy = llvm::cast<llvm::StructType>(resType.getLLVMType(context.TheContext));
     llvm::Value* MatVal = llvm::UndefValue::get(MatStructTy);
     MatVal = context.Builder.CreateInsertValue(MatVal, MatPtr, 0);
     MatVal = context.Builder.CreateInsertValue(MatVal, RowsVal, 1);
     MatVal = context.Builder.CreateInsertValue(MatVal, ColsVal, 2);
     
-    return TypedValue(MatVal, TypeKind::Matrix);
+    return TypedValue(MatVal, resType);
 }
 
 TypedValue IndexExprAST::codegen(CodegenContext& context) {
@@ -2315,4 +2468,107 @@ TypedValue WhileStmtAST::codegen(CodegenContext& context) {
     return TypedValue(llvm::ConstantFP::get(Ctx, llvm::APFloat(0.0)), TypeKind::Double);
 }
 
+
+TypedValue NNCreateExprAST::codegen(CodegenContext& context) {
+    emitLocation(this, context);
+    llvm::LLVMContext& Ctx = context.TheContext;
+    llvm::Module* TheModule = context.TheModule;
+    llvm::Type* Int32Ty = llvm::Type::getInt32Ty(Ctx);
+    llvm::Type* VoidPtrTy = llvm::PointerType::get(Ctx, 0);
+    
+    // Call flux_nn_create(const int* layers, int numLayers)
+    llvm::Function* CreateF = TheModule->getFunction("flux_nn_create");
+    if (!CreateF) {
+        CreateF = llvm::Function::Create(
+            llvm::FunctionType::get(VoidPtrTy, {VoidPtrTy, Int32Ty}, false),
+            llvm::Function::ExternalLinkage, "flux_nn_create", TheModule);
+    }
+    
+    std::vector<llvm::Constant*> LayerConsts;
+    for (int l : Layers) LayerConsts.push_back(llvm::ConstantInt::get(Int32Ty, l));
+    
+    llvm::ArrayType* ArrTy = llvm::ArrayType::get(Int32Ty, Layers.size());
+    llvm::GlobalVariable* GV = new llvm::GlobalVariable(*TheModule, ArrTy, true,
+                                                        llvm::GlobalValue::InternalLinkage,
+                                                        llvm::ConstantArray::get(ArrTy, LayerConsts),
+                                                        "nn_layers");
+    llvm::Value* LayersPtr = context.Builder.CreateBitCast(GV, VoidPtrTy);
+    
+    llvm::Value* NNPtr = context.Builder.CreateCall(CreateF, {LayersPtr, llvm::ConstantInt::get(Int32Ty, Layers.size())}, "nn_ptr");
+    
+    return TypedValue(NNPtr, TypeKind::Double); // NN handle as double
+}
+
+TypedValue TrainExprAST::codegen(CodegenContext& context) {
+    emitLocation(this, context);
+    llvm::LLVMContext& Ctx = context.TheContext;
+    llvm::Module* TheModule = context.TheModule;
+    
+    TypedValue ModelTV = Model->codegen(context);
+    TypedValue InTV = Inputs->codegen(context);
+    TypedValue OutTV = Outputs->codegen(context);
+    
+    if (!ModelTV.Val || !InTV.Val || !OutTV.Val) return TypedValue();
+    
+    llvm::Type* DoubleTy = llvm::Type::getDoubleTy(Ctx);
+    llvm::Type* Int32Ty = llvm::Type::getInt32Ty(Ctx);
+    llvm::Type* VoidPtrTy = llvm::PointerType::get(Ctx, 0);
+    
+    // Call flux_nn_train(void* nn, const double* inputs, const double* outputs, int numSamples, int inDim, int outDim, int epochs)
+    llvm::Function* TrainF = TheModule->getFunction("flux_nn_train");
+    if (!TrainF) {
+        llvm::Type* Params[] = { VoidPtrTy, VoidPtrTy, VoidPtrTy, Int32Ty, Int32Ty, Int32Ty, Int32Ty };
+        TrainF = llvm::Function::Create(llvm::FunctionType::get(llvm::Type::getVoidTy(Ctx), Params, false),
+                                        llvm::Function::ExternalLinkage, "flux_nn_train", TheModule);
+    }
+    
+    // Extract info from Matrix/Vector inputs/outputs
+    llvm::Value* InPtr = context.Builder.CreateExtractValue(InTV.Val, 0, "in_ptr");
+    llvm::Value* InRows = context.Builder.CreateExtractValue(InTV.Val, 1, "in_rows");
+    llvm::Value* InCols = context.Builder.CreateExtractValue(InTV.Val, 2, "in_cols");
+    
+    llvm::Value* OutPtr = context.Builder.CreateExtractValue(OutTV.Val, 0, "out_ptr");
+    llvm::Value* OutCols = context.Builder.CreateExtractValue(OutTV.Val, 2, "out_cols");
+    
+    context.Builder.CreateCall(TrainF, {ModelTV.Val, InPtr, OutPtr, InRows, InCols, OutCols, llvm::ConstantInt::get(Int32Ty, Epochs)});
+    
+    return ModelTV;
+}
+
+TypedValue PredictExprAST::codegen(CodegenContext& context) {
+    emitLocation(this, context);
+    llvm::LLVMContext& Ctx = context.TheContext;
+    llvm::Module* TheModule = context.TheModule;
+    
+    TypedValue ModelTV = Model->codegen(context);
+    TypedValue InTV = Input->codegen(context);
+    
+    if (!ModelTV.Val || !InTV.Val) return TypedValue();
+    
+    llvm::Type* DoubleTy = llvm::Type::getDoubleTy(Ctx);
+    llvm::Type* Int32Ty = llvm::Type::getInt32Ty(Ctx);
+    llvm::Type* VoidPtrTy = llvm::PointerType::get(Ctx, 0);
+    
+    // Call flux_nn_predict(void* nn, const double* input, double* output, int inDim, int outDim)
+    // We'll return a new Vector
+    
+    // For now, let's assume output is a vector of size 1 for simplicity
+    llvm::Function* PredictF = TheModule->getFunction("flux_nn_predict");
+    if (!PredictF) {
+        llvm::Type* Params[] = { VoidPtrTy, VoidPtrTy, VoidPtrTy, Int32Ty, Int32Ty };
+        PredictF = llvm::Function::Create(llvm::FunctionType::get(llvm::Type::getVoidTy(Ctx), Params, false),
+                                          llvm::Function::ExternalLinkage, "flux_nn_predict", TheModule);
+    }
+    
+    // Allocate output buffer on stack
+    llvm::Value* OutBuf = context.Builder.CreateAlloca(DoubleTy, llvm::ConstantInt::get(Int32Ty, 1), "pred_out");
+    
+    llvm::Value* InPtr = context.Builder.CreateExtractValue(InTV.Val, 0, "in_ptr");
+    llvm::Value* InSize = context.Builder.CreateExtractValue(InTV.Val, 1, "in_size");
+    
+    context.Builder.CreateCall(PredictF, {ModelTV.Val, InPtr, OutBuf, InSize, llvm::ConstantInt::get(Int32Ty, 1)});
+    
+    // Return the value from buffer
+    return TypedValue(context.Builder.CreateLoad(DoubleTy, OutBuf), TypeKind::Double);
+}
 } // namespace Flux
