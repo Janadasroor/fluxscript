@@ -48,6 +48,7 @@ static bool isComplexType(TypedValue V) {
 }
 
 void emitLocation(ExprAST* ast, CodegenContext& context) {
+    return; // Temporarily disabled for stability
     if (!context.DebugEnabled || !ast || !context.DebugBuilder) return;
     
     llvm::DIScope* Scope;
@@ -923,8 +924,8 @@ TypedValue CallExprAST::codegen(CodegenContext& context) {
 
     // 1. Handle built-ins that depend on argument types (Complex, Matrix, etc.)
     if (Name == "print" || Name == "println") {
-        for (size_t i = 0; i < Args.size(); ++i) {
-            TypedValue Arg = Args[i]->codegen(context);
+        for (auto& Expr : Args) {
+            TypedValue Arg = Expr->codegen(context);
             if (!Arg.Val) continue;
 
             llvm::Function* PrintFn = nullptr;

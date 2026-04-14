@@ -108,7 +108,21 @@ public:
                                  const std::string& nMinus,
                                  const std::string& vSourceName,
                                  double transresistance);
-    
+
+    // Generate A-device (XSPICE digital gate/flip-flop)
+    std::string generateADevice(const std::string& name,
+                                ADeviceType deviceType,
+                                const std::vector<std::string>& inputNodes,
+                                const std::vector<std::string>& outputNodes);
+
+    // Generate WAVEFILE voltage/current source
+    std::string generateWaveFile(const std::string& name,
+                                  const std::string& nPlus,
+                                  const std::string& nMinus,
+                                  const std::string& filePath,
+                                  int channel,
+                                  bool isCurrent);
+
     // Generate subcircuit instance
     std::string generateSubcktInstance(const std::string& name,
                                         const std::string& subcktName,

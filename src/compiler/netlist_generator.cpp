@@ -344,6 +344,52 @@ std::string NetlistGenerator::generateHSource(const std::string& name,
     return oss.str();
 }
 
+// A-device (XSPICE digital gate/flip-flop)
+// Generates LTspice-style 8-pin format: Aname pin0..pin7 DEVTYPE
+// LTspice layout: pins 0-4 = inputs, pin 5 = reserved, pins 6-7 = outputs
+std::string NetlistGenerator::generateADevice(const std::string& name,
+                                               ADeviceType deviceType,
+                                               const std::vector<std::string>& inputNodes,
+                                               const std::vector<std::string>& outputNodes) {
+    std::ostringstream oss;
+    std::string modelType = ADeviceExprAST::deviceTypeToModelName(deviceType);
+
+    // Build 8-pin array (LTspice format)
+    std::vector<std::string> pins(8, "0");
+
+    // Fill inputs at pins 0-4
+    for (size_t i = 0; i < inputNodes.size() && i < 5; i++) {
+        pins[i] = inputNodes[i];
+    }
+
+    // Fill outputs at pins 6-7
+    for (size_t i = 0; i < outputNodes.size() && i < 2; i++) {
+        pins[6 + i] = outputNodes[i];
+    }
+
+    oss << "A" << name;
+    for (int i = 0; i < 8; i++) {
+        oss << " " << pins[i];
+    }
+    oss << " " << ADeviceExprAST::deviceTypeToString(deviceType) << "\n";
+
+    return oss.str();
+}
+
+// WAVEFILE voltage/current source
+std::string NetlistGenerator::generateWaveFile(const std::string& name,
+                                                const std::string& nPlus,
+                                                const std::string& nMinus,
+                                                const std::string& filePath,
+                                                int channel,
+                                                bool isCurrent) {
+    std::ostringstream oss;
+    char prefix = isCurrent ? 'I' : 'V';
+    oss << prefix << name << " " << nPlus << " " << nMinus
+        << " WAVEFILE \"" << filePath << "\" CHAN " << channel << "\n";
+    return oss.str();
+}
+
 std::string NetlistGenerator::generateSubcktInstance(const std::string& name,
                                                      const std::string& subcktName,
                                                      const std::vector<std::string>& nodes,

@@ -1750,6 +1750,82 @@ public:
 };
 
 // ============================================================================
+// VioMATRIXC Integration: A-Device Digital Gates & Flip-Flops
+// ============================================================================
+
+// A-device types for LTspice compatibility
+enum class ADeviceType {
+    BUF,        // Buffer
+    NOT,        // Inverter
+    AND,        // AND gate
+    OR,         // OR gate
+    NAND,       // NAND gate
+    NOR,        // NOR gate
+    XOR,        // XOR gate
+    XNOR,       // XNOR gate
+    SCHMITT,    // Schmitt trigger
+    DFF,        // D flip-flop
+    JKFF,       // JK flip-flop
+    SRFF,       // SR flip-flop
+    DLATCH,     // D latch
+    COUNTER     // Counter/frequency divider
+};
+
+// A-device instance: A1 [in1 in2] out d_and  or  A1 d clk q nq d_dff
+class ADeviceExprAST : public ExprAST {
+    std::string InstanceName;
+    ADeviceType DeviceType;
+    std::vector<std::string> InputNodes;
+    std::vector<std::string> OutputNodes;
+public:
+    ADeviceExprAST(const std::string& name, ADeviceType type)
+        : InstanceName(name), DeviceType(type) {}
+    TypedValue codegen(CodegenContext& context) override;
+
+    void addInputNode(const std::string& node) { InputNodes.push_back(node); }
+    void addOutputNode(const std::string& node) { OutputNodes.push_back(node); }
+
+    const std::string& getInstanceName() const { return InstanceName; }
+    ADeviceType getDeviceType() const { return DeviceType; }
+    const std::vector<std::string>& getInputNodes() const { return InputNodes; }
+    const std::vector<std::string>& getOutputNodes() const { return OutputNodes; }
+
+    static std::string deviceTypeToString(ADeviceType type);
+    static std::string deviceTypeToModelName(ADeviceType type);
+    static int deviceTypeToInputCount(ADeviceType type);
+    static int deviceTypeToOutputCount(ADeviceType type);
+};
+
+// ============================================================================
+// VioMATRIXC Integration: WAVEFILE Voltage/Current Source
+// ============================================================================
+
+// WAVEFILE source: V1 out 0 WAVEFILE "audio.wav" CHAN 0
+class WaveFileExprAST : public ExprAST {
+    std::string InstanceName;
+    std::string PositiveNode;
+    std::string NegativeNode;
+    std::string FilePath;
+    int Channel = 0;
+    bool IsCurrent = false;
+public:
+    WaveFileExprAST(const std::string& name, const std::string& posNode, const std::string& negNode,
+                    const std::string& filePath)
+        : InstanceName(name), PositiveNode(posNode), NegativeNode(negNode), FilePath(filePath) {}
+    TypedValue codegen(CodegenContext& context) override;
+
+    void setChannel(int ch) { Channel = ch; }
+    void setCurrent(bool isCurrent) { IsCurrent = isCurrent; }
+
+    const std::string& getInstanceName() const { return InstanceName; }
+    const std::string& getPositiveNode() const { return PositiveNode; }
+    const std::string& getNegativeNode() const { return NegativeNode; }
+    const std::string& getFilePath() const { return FilePath; }
+    int getChannel() const { return Channel; }
+    bool isCurrentSource() const { return IsCurrent; }
+};
+
+// ============================================================================
 // Type Aliases for Netlist Generator Compatibility
 // ============================================================================
 using SubcktAST = SubcktExprAST;

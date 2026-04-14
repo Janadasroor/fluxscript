@@ -318,7 +318,6 @@ std::shared_ptr<SymbolicExpr> SymbolicEngine::partial_differentiate(std::shared_
     return simplify(res);
 }
 
-} // namespace Flux
 
 std::shared_ptr<SymbolicExpr> SymbolicEngine::eq(std::shared_ptr<SymbolicExpr> a, std::shared_ptr<SymbolicExpr> b) {
     // a == b  is represented as a - b = 0
@@ -330,3 +329,5 @@ std::shared_ptr<SymbolicExpr> SymbolicEngine::eq(std::shared_ptr<SymbolicExpr> a
 std::shared_ptr<SymbolicExpr> SymbolicEngine::ne(std::shared_ptr<SymbolicExpr> a, std::shared_ptr<SymbolicExpr> b) {
     return eq(a, b); // Simplified for now
 }
+
+} // namespace Flux

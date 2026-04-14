@@ -105,7 +105,14 @@ FluxJIT::FluxJIT(OptimizationLevel optLevel)
     }
     JTMB->setCodeModel(llvm::CodeModel::Large);
     JTMB->setRelocationModel(llvm::Reloc::PIC_);
-    auto JIT = llvm::orc::LLJITBuilder().setJITTargetMachineBuilder(std::move(*JTMB)).create();
+    
+    auto JIT = llvm::orc::LLJITBuilder()
+        .setJITTargetMachineBuilder(std::move(*JTMB))
+        .setObjectLinkingLayerCreator([&](llvm::orc::ExecutionSession &ES, const llvm::Triple &TT) {
+            auto Layer = std::make_unique<llvm::orc::ObjectLinkingLayer>(ES, std::make_unique<llvm::jitlink::InProcessMemoryManager>(16384));
+            return Layer;
+        })
+        .create();
     if (!JIT) {
         logError(JIT.takeError(), "Failed to create LLJIT");
         return;
@@ -238,6 +245,7 @@ void FluxJIT::prepareModule(llvm::Module& M) {
     M.setDataLayout(m_dataLayout);
     M.setTargetTriple(m_targetTriple);
     M.setCodeModel(llvm::CodeModel::Large);
+    M.setPICLevel(llvm::PICLevel::BigPIC);
 }
 
 void FluxJIT::addModule(std::unique_ptr<llvm::Module> M,

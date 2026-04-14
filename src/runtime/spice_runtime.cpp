@@ -298,6 +298,121 @@ double flux_register_ic(const char* node_name, double value) {
 }
 
 // ============================================================================
+// VioMATRIXC Integration: A-Device and WAVEFILE Storage
+// ============================================================================
+
+struct ADeviceInfo {
+    std::string instanceName;
+    int deviceType;
+    std::vector<std::string> inputNodes;
+    std::vector<std::string> outputNodes;
+};
+static std::vector<ADeviceInfo> g_adevices;
+
+struct WaveFileInfo {
+    std::string instanceName;
+    std::string positiveNode;
+    std::string negativeNode;
+    std::string filePath;
+    int channel;
+    bool isCurrent;
+};
+static std::vector<WaveFileInfo> g_wavefiles;
+
+// ============================================================================
+// Reset simulated state
+// ============================================================================
+void flux_reset_simulation() {
+    std::lock_guard<std::mutex> lock(g_sim_mutex);
+    g_sim_time = 0.0;
+    g_sim_dt = 1e-12;
+    g_node_voltages.clear();
+    g_branch_currents.clear();
+    g_bsources.clear();
+    g_probes.clear();
+    g_save_vars.clear();
+    g_measures.clear();
+}
+
+// ============================================================================
+// VioMATRIXC Integration: A-Device Registration
+// ============================================================================
+
+void flux_register_adevice(const char* name, int deviceType,
+                           const char* inputNodesStr, const char* outputNodesStr) {
+    ADeviceInfo info;
+    info.instanceName = name ? name : "";
+    info.deviceType = deviceType;
+
+    // Parse comma-separated input nodes
+    if (inputNodesStr && inputNodesStr[0]) {
+        std::string inputs(inputNodesStr);
+        size_t start = 0;
+        while (true) {
+            size_t end = inputs.find(',', start);
+            if (end == std::string::npos) {
+                std::string node = inputs.substr(start);
+                if (!node.empty()) info.inputNodes.push_back(node);
+                break;
+            }
+            std::string node = inputs.substr(start, end - start);
+            if (!node.empty()) info.inputNodes.push_back(node);
+            start = end + 1;
+        }
+    }
+
+    // Parse comma-separated output nodes
+    if (outputNodesStr && outputNodesStr[0]) {
+        std::string outputs(outputNodesStr);
+        size_t start = 0;
+        while (true) {
+            size_t end = outputs.find(',', start);
+            if (end == std::string::npos) {
+                std::string node = outputs.substr(start);
+                if (!node.empty()) info.outputNodes.push_back(node);
+                break;
+            }
+            std::string node = outputs.substr(start, end - start);
+            if (!node.empty()) info.outputNodes.push_back(node);
+            start = end + 1;
+        }
+    }
+
+    g_adevices.push_back(info);
+    printf("[SPICE] Registered A-device: A%s type=%d inputs=[%s] outputs=[%s]\n",
+           name, deviceType, inputNodesStr, outputNodesStr);
+}
+
+// ============================================================================
+// VioMATRIXC Integration: WAVEFILE Source Registration
+// ============================================================================
+
+struct WaveFileInfo {
+    std::string instanceName;
+    std::string positiveNode;
+    std::string negativeNode;
+    std::string filePath;
+    int channel;
+    bool isCurrent;
+};
+std::vector<WaveFileInfo> g_wavefiles;
+
+void flux_register_wavefile(const char* name, const char* posNode, const char* negNode,
+                            const char* filePath, int channel) {
+    WaveFileInfo info;
+    info.instanceName = name ? name : "";
+    info.positiveNode = posNode ? posNode : "";
+    info.negativeNode = negNode ? negNode : "";
+    info.filePath = filePath ? filePath : "";
+    info.channel = channel;
+    info.isCurrent = (name && name[0] == 'I');  // 'I' prefix = current source
+
+    g_wavefiles.push_back(info);
+    char type = info.isCurrent ? 'I' : 'V';
+    printf("[SPICE] Registered WAVEFILE: %c%s nodes=%s,%s file=\"%s\" chan=%d\n",
+           type, name, posNode, negNode, filePath, channel);
+}
+
 // ngspice Callback Interface
 // ============================================================================
 
@@ -318,9 +433,11 @@ double flux_evaluate_bsource(const char* bsource_name, double time, double dt,
 // Print simulation summary
 void flux_print_summary() {
     std::lock_guard<std::mutex> lock(g_sim_mutex);
-    
+
     printf("\n=== FluxScript SPICE Simulation Summary ===\n");
     printf("B-sources: %zu\n", g_bsources.size());
+    printf("A-devices: %zu\n", g_adevices.size());
+    printf("WAVEFILEs: %zu\n", g_wavefiles.size());
     printf("Subcircuits: %zu\n", g_subckts.size());
     printf("Models: %zu\n", g_models.size());
     printf("Parameters: %zu\n", g_parameters.size());
@@ -338,6 +455,8 @@ void flux_reset_simulation() {
     g_node_voltages.clear();
     g_branch_currents.clear();
     g_bsources.clear();
+    g_adevices.clear();
+    g_wavefiles.clear();
     g_probes.clear();
     g_save_vars.clear();
     g_measures.clear();

@@ -16,6 +16,6 @@
 
 namespace Flux {
 
-// Stubs removed. Implementations now in new_features_codegen.cpp
+// Stubs removed. Implementations now in relevant source files.
 
 } // namespace Flux

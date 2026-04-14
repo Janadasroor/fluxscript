@@ -98,32 +98,32 @@ void UnitRegistry::initializeSIUnits() {
     // Common prefixes for electrical units
     // Voltage
     registerUnit("mV", ScaledUnit(Dimension::Voltage, 0.001, "millivolt", "mV"));
-    registerUnit("V", ScaledUnit(Dimension::Voltage, 1e-6, "microvolt", "V"));
-    registerUnit("uV", ScaledUnit(Dimension::Voltage, 1e-6, "microvolt", "uV"));  // ASCII alt
+    registerUnit("V", ScaledUnit(Dimension::Voltage, 1.0, "volt", "V"));
+    registerUnit("uV", ScaledUnit(Dimension::Voltage, 1e-6, "microvolt", "uV"));
     registerUnit("kV", ScaledUnit(Dimension::Voltage, 1000.0, "kilovolt", "kV"));
     registerUnit("MV", ScaledUnit(Dimension::Voltage, 1e6, "megavolt", "MV"));
     
     // Resistance
-    registerUnit("m", ScaledUnit(Dimension::Resistance, 0.001, "milliohm", "m"));
+    registerUnit("mohm", ScaledUnit(Dimension::Resistance, 0.001, "milliohm", "mohm"));
     registerUnit("k", ScaledUnit(Dimension::Resistance, 1000.0, "kiloohm", "k"));
     registerUnit("M", ScaledUnit(Dimension::Resistance, 1e6, "megaohm", "M"));
     
     // Capacitance
     registerUnit("mF", ScaledUnit(Dimension::Capacitance, 0.001, "millifarad", "mF"));
-    registerUnit("F", ScaledUnit(Dimension::Capacitance, 1e-6, "microfarad", "F"));
+    registerUnit("F", ScaledUnit(Dimension::Capacitance, 1.0, "farad", "F"));
     registerUnit("uF", ScaledUnit(Dimension::Capacitance, 1e-6, "microfarad", "uF"));
     registerUnit("nF", ScaledUnit(Dimension::Capacitance, 1e-9, "nanofarad", "nF"));
     registerUnit("pF", ScaledUnit(Dimension::Capacitance, 1e-12, "picofarad", "pF"));
     
     // Inductance
     registerUnit("mH", ScaledUnit(Dimension::Inductance, 0.001, "millihenry", "mH"));
-    registerUnit("H", ScaledUnit(Dimension::Inductance, 1e-6, "microhenry", "H"));
+    registerUnit("H", ScaledUnit(Dimension::Inductance, 1.0, "henry", "H"));
     registerUnit("uH", ScaledUnit(Dimension::Inductance, 1e-6, "microhenry", "uH"));
     registerUnit("nH", ScaledUnit(Dimension::Inductance, 1e-9, "nanohenry", "nH"));
     
     // Current
     registerUnit("mA", ScaledUnit(Dimension::Current, 0.001, "milliampere", "mA"));
-    registerUnit("A", ScaledUnit(Dimension::Current, 1e-6, "microampere", "A"));
+    registerUnit("A", ScaledUnit(Dimension::Current, 1.0, "ampere", "A"));
     registerUnit("uA", ScaledUnit(Dimension::Current, 1e-6, "microampere", "uA"));
     registerUnit("nA", ScaledUnit(Dimension::Current, 1e-9, "nanoampere", "nA"));
     registerUnit("kA", ScaledUnit(Dimension::Current, 1000.0, "kiloampere", "kA"));
@@ -136,7 +136,7 @@ void UnitRegistry::initializeSIUnits() {
     
     // Time
     registerUnit("ms", ScaledUnit(Dimension::Time, 0.001, "millisecond", "ms"));
-    registerUnit("s", ScaledUnit(Dimension::Time, 1e-6, "microsecond", "s"));
+    registerUnit("s", ScaledUnit(Dimension::Time, 1.0, "second", "s"));
     registerUnit("us", ScaledUnit(Dimension::Time, 1e-6, "microsecond", "us"));
     registerUnit("ns", ScaledUnit(Dimension::Time, 1e-9, "nanosecond", "ns"));
     registerUnit("ps", ScaledUnit(Dimension::Time, 1e-12, "picosecond", "ps"));
@@ -145,7 +145,7 @@ void UnitRegistry::initializeSIUnits() {
     
     // Power
     registerUnit("mW", ScaledUnit(Dimension::Power, 0.001, "milliwatt", "mW"));
-    registerUnit("W", ScaledUnit(Dimension::Power, 1e-6, "microwatt", "W"));
+    registerUnit("W", ScaledUnit(Dimension::Power, 1.0, "watt", "W"));
     registerUnit("uW", ScaledUnit(Dimension::Power, 1e-6, "microwatt", "uW"));
     registerUnit("kW", ScaledUnit(Dimension::Power, 1000.0, "kilowatt", "kW"));
     registerUnit("MW", ScaledUnit(Dimension::Power, 1e6, "megawatt", "MW"));

@@ -340,6 +340,27 @@ enum class TokenType {
     tok_train = -257,               // train model
     tok_predict = -258,             // predict using model
     tok_nn = -259,                  // neural network
+
+    // VioMATRIXC Integration: A-Device Digital Gates
+    tok_adevice = -260,             // A-device (digital gate/flip-flop)
+    tok_buf = -261,                 // BUF gate
+    tok_not_gate = -262,            // NOT gate
+    tok_and_gate = -263,            // AND gate
+    tok_or_gate = -264,             // OR gate
+    tok_nand_gate = -265,           // NAND gate
+    tok_nor_gate = -266,            // NOR gate
+    tok_xor_gate = -267,            // XOR gate
+    tok_xnor_gate = -268,           // XNOR gate
+    tok_schmitt = -269,             // SCHMITT trigger
+    tok_dff = -270,                 // D flip-flop
+    tok_jkff = -271,                // JK flip-flop
+    tok_srff = -272,                // SR flip-flop
+    tok_dlatch = -273,              // D latch
+    tok_counter = -274,             // COUNTER/frequency divider
+
+    // VioMATRIXC Integration: WAVEFILE Source
+    tok_wavefile = -275,            // WAVEFILE voltage/current source
+    tok_chan = -276,                // CHAN parameter for WAVEFILE
 };
 
 class Lexer {

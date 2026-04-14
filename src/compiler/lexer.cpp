@@ -106,6 +106,28 @@ std::string Lexer::tokenSpelling(int token) {
         case TokenType::tok_find: return "FIND";
         case TokenType::tok_deriv: return "DERIV";
         case TokenType::tok_integ: return "INTEG";
+
+        // VioMATRIXC A-Device tokens
+        case TokenType::tok_adevice: return "adevice";
+        case TokenType::tok_buf: return "BUF";
+        case TokenType::tok_not_gate: return "NOT";
+        case TokenType::tok_and_gate: return "AND";
+        case TokenType::tok_or_gate: return "OR";
+        case TokenType::tok_nand_gate: return "NAND";
+        case TokenType::tok_nor_gate: return "NOR";
+        case TokenType::tok_xor_gate: return "XOR";
+        case TokenType::tok_xnor_gate: return "XNOR";
+        case TokenType::tok_schmitt: return "SCHMITT";
+        case TokenType::tok_dff: return "DFF";
+        case TokenType::tok_jkff: return "JKFF";
+        case TokenType::tok_srff: return "SRFF";
+        case TokenType::tok_dlatch: return "DLATCH";
+        case TokenType::tok_counter: return "COUNTER";
+
+        // VioMATRIXC WAVEFILE tokens
+        case TokenType::tok_wavefile: return "WAVEFILE";
+        case TokenType::tok_chan: return "CHAN";
+
         default: return "token(" + std::to_string(token) + ")";
     }
 }
@@ -167,6 +189,7 @@ int Lexer::gettok() {
         if (IdentifierStr == "in") return static_cast<int>(TokenType::tok_in);
         if (IdentifierStr == "do") return static_cast<int>(TokenType::tok_do);
         if (IdentifierStr == "while") return static_cast<int>(TokenType::tok_while);
+        if (IdentifierStr == "yield") return static_cast<int>(TokenType::tok_yield);
         if (IdentifierStr == "import") return static_cast<int>(TokenType::tok_import);
         if (IdentifierStr == "analysis") return static_cast<int>(TokenType::tok_analysis);
         if (IdentifierStr == "measure") return static_cast<int>(TokenType::tok_measure);
@@ -382,6 +405,27 @@ int Lexer::gettok() {
         if (IdentifierStr == "param") return static_cast<int>(TokenType::tok_param);
         if (IdentifierStr == "ic") return static_cast<int>(TokenType::tok_ic);
 
+        // VioMATRIXC Integration: A-Device Digital Gates
+        if (IdentifierStr == "adevice") return static_cast<int>(TokenType::tok_adevice);
+        if (IdentifierStr == "BUF") return static_cast<int>(TokenType::tok_buf);
+        if (IdentifierStr == "NOT") return static_cast<int>(TokenType::tok_not_gate);
+        if (IdentifierStr == "AND") return static_cast<int>(TokenType::tok_and_gate);
+        if (IdentifierStr == "OR") return static_cast<int>(TokenType::tok_or_gate);
+        if (IdentifierStr == "NAND") return static_cast<int>(TokenType::tok_nand_gate);
+        if (IdentifierStr == "NOR") return static_cast<int>(TokenType::tok_nor_gate);
+        if (IdentifierStr == "XOR") return static_cast<int>(TokenType::tok_xor_gate);
+        if (IdentifierStr == "XNOR") return static_cast<int>(TokenType::tok_xnor_gate);
+        if (IdentifierStr == "SCHMITT") return static_cast<int>(TokenType::tok_schmitt);
+        if (IdentifierStr == "DFF") return static_cast<int>(TokenType::tok_dff);
+        if (IdentifierStr == "JKFF") return static_cast<int>(TokenType::tok_jkff);
+        if (IdentifierStr == "SRFF") return static_cast<int>(TokenType::tok_srff);
+        if (IdentifierStr == "DLATCH") return static_cast<int>(TokenType::tok_dlatch);
+        if (IdentifierStr == "COUNTER") return static_cast<int>(TokenType::tok_counter);
+
+        // VioMATRIXC Integration: WAVEFILE Source
+        if (IdentifierStr == "WAVEFILE") return static_cast<int>(TokenType::tok_wavefile);
+        if (IdentifierStr == "CHAN") return static_cast<int>(TokenType::tok_chan);
+
         return static_cast<int>(TokenType::tok_identifier);
     }
 
@@ -473,24 +517,22 @@ int Lexer::gettok() {
         StringVal = "";
         if (hasSuffix) {
             char suffix = m_lastChar;
+            StringVal += suffix; // Add the multiplier prefix to the unit string
             advance(); // consume the suffix
-            // Capture unit name (e.g. "V", "A", "Ohm")
-            while (isalpha(m_lastChar) || (unsigned char)m_lastChar > 127) { // Support , , etc.
+            // Capture rest of unit name (e.g. "V", "A", "Ohm")
+            while (isalpha(m_lastChar) || (unsigned char)m_lastChar > 127) {
                 StringVal += m_lastChar;
                 advance();
             }
-            // If StringVal is empty, the suffix itself might be the unit (if not a SPICE multiplier)
-            // But SPICE multipliers are usually single chars. 
-            // We'll let the parser handle the mapping.
         } else {
-            // Check if a unit follows even without a SPICE suffix (e.g., 5V)
+            // Check if a unit follows even without a SPICE prefix (e.g., 5V)
             while (isalpha(m_lastChar) || (unsigned char)m_lastChar > 127) {
                 StringVal += m_lastChar;
                 advance();
             }
         }
 
-        NumVal = strtod(NumStr.c_str(), nullptr) * multiplier;
+        NumVal = strtod(NumStr.c_str(), nullptr);
         return static_cast<int>(TokenType::tok_number);
     }
     
