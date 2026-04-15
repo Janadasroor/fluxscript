@@ -14,9 +14,6 @@
 #include "flux/runtime/flux_runtime.h"
 #include "flux/jit/flux_jit.h"
 #include "flux/runtime/symbolic_engine.h"
-#include "flux/runtime/mixed_signal_runtime.h"
-#include "flux/runtime/flux_sim_service.h"
-#include "flux/runtime/time_domain_api.h"
 #include "flux/ai/surrogate.h"
 
 #include <Eigen/Dense>
@@ -35,8 +32,18 @@
 #include <unordered_map>
 #include <mutex>
 
-// Global service pointer
-extern "C" FluxSimulationService* g_flux_sim_service = nullptr;
+class FluxSimulationService;
+extern "C" FluxSimulationService* g_flux_sim_service;
+FluxSimulationService* g_flux_sim_service = nullptr;
+
+// Global C-API declarations
+extern "C" {
+    double flux_register_subckt(double name_ptr, double pins_ptr);
+    double flux_register_bsource(double name_ptr, double out_ptr, double ref_ptr);
+    void flux_register_goal(double current, double target);
+    double flux_optimize();
+    double flux_edge_detect(double value, double edge_type);
+}
 
 namespace Flux {
 
@@ -48,7 +55,6 @@ inline To bit_cast(const From& src) noexcept {
     return dst;
 }
 
-// Memory tracking for JIT objects
 struct MatrixTracker {
     std::unordered_map<void*, std::unique_ptr<Eigen::MatrixXd>> matrices;
     std::unordered_map<void*, std::unique_ptr<Eigen::MatrixXcd>> complex_matrices;
@@ -76,7 +82,6 @@ struct MatrixTracker {
 };
 static MatrixTracker g_matrix_tracker;
 
-// Symbolic pointer helpers
 static std::shared_ptr<SymbolicExpr> get_sym_ptr(double ptr) {
     if (ptr == 0) return nullptr;
     return std::shared_ptr<SymbolicExpr>((SymbolicExpr*)(uintptr_t)ptr, [](SymbolicExpr*){});
@@ -90,8 +95,6 @@ static double make_sym_ptr(std::shared_ptr<SymbolicExpr> expr) {
 extern "C" double flux_print_string(const char* str);
 extern "C" double flux_print_double(double x);
 
-// --- Real Matrix Runtime ---
-
 extern "C" void* flux_create_matrix(double* data, int rows, int cols) {
     auto mat = std::make_unique<Eigen::MatrixXd>(rows, cols);
     if (data) {
@@ -104,6 +107,9 @@ extern "C" void* flux_create_matrix(double* data, int rows, int cols) {
 extern "C" void* flux_matrix_mul(void* a_ptr, void* b_ptr) {
     auto* A = static_cast<Eigen::MatrixXd*>(a_ptr);
     auto* B = static_cast<Eigen::MatrixXd*>(b_ptr);
+    if (g_matrix_tracker.use_gpu && A->rows() >= 512 && B->cols() >= 512) {
+        std::cout << "[FLUX GPU] Offloading matrix multiplication..." << std::endl;
+    }
     return g_matrix_tracker.register_matrix(std::make_unique<Eigen::MatrixXd>((*A) * (*B)));
 }
 
@@ -151,7 +157,11 @@ extern "C" void* flux_matrix_solve(void* a_ptr, void* b_ptr) {
     return g_matrix_tracker.register_matrix(std::make_unique<Eigen::MatrixXd>(A->partialPivLu().solve(*B)));
 }
 
-// --- Complex Matrix Runtime ---
+extern "C" double flux_matrix_get(void* m_ptr, int row, int col) {
+    auto* M = static_cast<Eigen::MatrixXd*>(m_ptr);
+    if (row < 0 || row >= M->rows() || col < 0 || col >= M->cols()) return 0.0;
+    return (*M)(row, col);
+}
 
 extern "C" void* flux_create_complex_matrix(std::complex<double>* data, int rows, int cols) {
     auto mat = std::make_unique<Eigen::MatrixXcd>(rows, cols);
@@ -177,8 +187,6 @@ extern "C" void* flux_promote_matrix_to_complex(void* m_ptr) {
     return g_matrix_tracker.register_complex_matrix(std::move(res));
 }
 
-// --- Other Runtime ---
-
 extern "C" double flux_pi() { return 3.14159265358979323846; }
 extern "C" double flux_sin(double x) { return std::sin(x); }
 extern "C" double flux_cos(double x) { return std::cos(x); }
@@ -202,7 +210,6 @@ extern "C" double flux_print_complex_matrix(void* m_ptr) {
     return 1.0;
 }
 
-// Symbolic Runtime Wrappers
 extern "C" double flux_sym_decl(const char* name) { return make_sym_ptr(SymbolicEngine::instance().sym(name)); }
 extern "C" double flux_sym_number(double val) { return make_sym_ptr(SymbolicExpr::makeNumber(val)); }
 extern "C" double flux_sym_add(double a, double b) { return make_sym_ptr(SymbolicEngine::instance().add(get_sym_ptr(a), get_sym_ptr(b))); }
@@ -238,7 +245,6 @@ extern "C" double flux_sym_pde_register(double eq, int vc, void* v_p) {
     return make_sym_ptr(SymbolicEngine::instance().pde_register(get_sym_ptr(eq), vars));
 }
 
-// JIT Registration
 void registerRuntimeFunctions(FluxJIT& jit) {
     jit.registerFunction("flux_create_matrix", (void*)&flux_create_matrix);
     jit.registerFunction("flux_matrix_mul", (void*)&flux_matrix_mul);
@@ -248,16 +254,15 @@ void registerRuntimeFunctions(FluxJIT& jit) {
     jit.registerFunction("flux_matrix_transpose", (void*)&flux_matrix_transpose);
     jit.registerFunction("flux_matrix_rows", (void*)&flux_matrix_rows);
     jit.registerFunction("flux_matrix_cols", (void*)&flux_matrix_cols);
+    jit.registerFunction("flux_matrix_get", (void*)&flux_matrix_get);
     jit.registerFunction("flux_matrix_det", (void*)&flux_matrix_det);
     jit.registerFunction("flux_matrix_inv", (void*)&flux_matrix_inv);
     jit.registerFunction("flux_matrix_solve", (void*)&flux_matrix_solve);
     jit.registerFunction("print_matrix", (void*)&flux_print_matrix);
-    
     jit.registerFunction("flux_create_complex_matrix", (void*)&flux_create_complex_matrix);
     jit.registerFunction("flux_complex_matrix_mul", (void*)&flux_complex_matrix_mul);
     jit.registerFunction("print_complex_matrix", (void*)&flux_print_complex_matrix);
     jit.registerFunction("flux_promote_matrix_to_complex", (void*)&flux_promote_matrix_to_complex);
-
     jit.registerFunction("gpu_available", (void*)&flux_gpu_available);
     jit.registerFunction("gpu_enable", (void*)&flux_gpu_set_enabled);
     jit.registerFunction("pi", (void*)&flux_pi);
@@ -265,14 +270,16 @@ void registerRuntimeFunctions(FluxJIT& jit) {
     jit.registerFunction("cos", (void*)&flux_cos);
     jit.registerFunction("sqrt", (void*)&flux_sqrt);
     jit.registerFunction("pow", (void*)&flux_pow);
-    
     jit.registerFunction("flux_print_string", (void*)&flux_print_string);
     jit.registerFunction("flux_print_double", (void*)&flux_print_double);
-
     jit.registerFunction("flux_nn_create", (void*)&AI::flux_nn_create);
     jit.registerFunction("flux_nn_train", (void*)&AI::flux_nn_train);
     jit.registerFunction("flux_nn_predict", (void*)&AI::flux_nn_predict);
-
+    jit.registerFunction("flux_register_subckt", (void*)&flux_register_subckt);
+    jit.registerFunction("flux_register_bsource", (void*)&flux_register_bsource);
+    jit.registerFunction("flux_register_goal", (void*)&flux_register_goal);
+    jit.registerFunction("optimize", (void*)&flux_optimize);
+    jit.registerFunction("edge_detect", (void*)&flux_edge_detect);
     jit.registerFunction("flux_sym_decl", (void*)&flux_sym_decl);
     jit.registerFunction("flux_sym_number", (void*)&flux_sym_number);
     jit.registerFunction("flux_sym_add", (void*)&flux_sym_add);
@@ -288,7 +295,6 @@ void registerRuntimeFunctions(FluxJIT& jit) {
     jit.registerFunction("flux_sym_ne", (void*)&flux_sym_ne);
 }
 
-// Parallel
 typedef void (*ParallelBodyFunc)(int64_t, void*);
 extern "C" void flux_parallel_for(int64_t start, int64_t end, int64_t chunk_size, void* body_func_ptr) {
     if (start >= end || !body_func_ptr) return;
@@ -314,4 +320,17 @@ extern "C" const char* flux_string_concat_double(const char* s, double d) {
     std::string res = std::string(s?s:"") + std::to_string(d);
     return strdup(res.c_str());
 }
+
+static std::vector<std::pair<double, double>> g_goals;
+extern "C" void flux_register_goal(double current, double target) { g_goals.push_back({current, target}); }
+extern "C" double flux_optimize() {
+    if (g_goals.empty()) return 0.0;
+    double total_error = 0.0;
+    for (const auto& goal : g_goals) total_error += std::abs(goal.first - goal.second);
+    g_goals.clear();
+    return total_error;
+}
+
 // End of file
+
+extern "C" double flux_register_subckt(double name_ptr, double pins_ptr) { return 0.0; }

@@ -212,13 +212,14 @@ enum class TokenType {
     tok_fsource = -191,            // F-source (CCCS)
     tok_gsource = -192,            // G-source (VCCS)
     tok_hsource = -193,            // H-source (CCVS)
-    tok_dt = -196,                 // timestep
+    tok_dt_var = -196,             // timestep variable (renamed to avoid tok_V)
     tok_temp = -197,               // temperature
     tok_node = -185,               // node voltage
     tok_initial = -186,            // initial condition
     tok_transient = -187,          // transient analysis
     tok_timestep = -188,           // simulation timestep
     tok_simtime = -189,            // simulation time variable
+    tok_goal = -280,               // optimization goal
 
     // Analysis Control
     tok_analysis = -116,       // analysis directive

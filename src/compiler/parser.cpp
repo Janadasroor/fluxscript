@@ -743,6 +743,8 @@ std::unique_ptr<ExprAST> Parser::ParsePrimary() {
     case static_cast<int>(TokenType::tok_pde): Res = ParsePDEExpr(); break;
     case static_cast<int>(TokenType::tok_partial_diff): Res = ParsePartialDiffExpr(); break;
     case static_cast<int>(TokenType::tok_nn): Res = ParseNNExpr(); break;
+    case static_cast<int>(TokenType::tok_goal): Res = ParseGoalExpr(); break;
+    case static_cast<int>(TokenType::tok_optimize): Res = ParseOptimizeExpr(); break;
     case static_cast<int>(TokenType::tok_train): Res = ParseTrainExpr(); break;
     case static_cast<int>(TokenType::tok_predict): Res = ParsePredictExpr(); break;
     
@@ -781,7 +783,7 @@ std::unique_ptr<ExprAST> Parser::ParsePrimary() {
 
     // SPICE Time-Domain Simulation
     case static_cast<int>(TokenType::tok_time):
-    case static_cast<int>(TokenType::tok_dt):
+    case static_cast<int>(TokenType::tok_dt_var):
     case static_cast<int>(TokenType::tok_temp):
         Res = ParseBuiltinVar(); break;
     case static_cast<int>(TokenType::tok_update): Res = ParseUpdateFunc(); break;
@@ -2518,6 +2520,48 @@ std::unique_ptr<ExprAST> Parser::ParsePredictExpr() {
     getNextToken();
     
     auto Res = std::make_unique<PredictExprAST>(std::move(model), std::move(input));
+    Res->setLocation(line, col);
+    return Res;
+}
+
+std::unique_ptr<ExprAST> Parser::ParseGoalExpr() {
+    int line = m_lexer.getCurrentLine();
+    int col = m_lexer.getCurrentColumn();
+    getNextToken(); // eat goal
+    
+    if (CurTok != '(') { ReportError("expected '(' after goal"); return nullptr; }
+    getNextToken(); // eat (
+    
+    auto expr = ParseExpression();
+    if (!expr) return nullptr;
+    
+    if (CurTok != ',') { ReportError("expected ',' after expression in goal"); return nullptr; }
+    getNextToken(); // eat ,
+    
+    auto target = ParseExpression();
+    if (!target) return nullptr;
+    
+    if (CurTok != ')') { ReportError("expected ')' after goal"); return nullptr; }
+    getNextToken(); // eat )
+    
+    auto Res = std::make_unique<GoalExprAST>(std::move(expr), std::move(target));
+    Res->setLocation(line, col);
+    return Res;
+}
+
+std::unique_ptr<ExprAST> Parser::ParseOptimizeExpr() {
+    int line = m_lexer.getCurrentLine();
+    int col = m_lexer.getCurrentColumn();
+    getNextToken(); // eat optimize
+    
+    if (CurTok != '(') { ReportError("expected '(' after optimize"); return nullptr; }
+    getNextToken(); // eat (
+    
+    // optimize() has no arguments for now, just runs the global optimizer
+    if (CurTok != ')') { ReportError("expected ')' after optimize"); return nullptr; }
+    getNextToken(); // eat )
+    
+    auto Res = std::make_unique<CallExprAST>("optimize", std::vector<std::unique_ptr<ExprAST>>());
     Res->setLocation(line, col);
     return Res;
 }

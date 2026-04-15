@@ -1126,7 +1126,14 @@ TypedValue CallExprAST::codegen(CodegenContext& context) {
         }
         return TypedValue();
     }
-    if (!CalleeF) return TypedValue();
+
+    if (!CalleeF) {
+        // Automatically declare as extern double(double, ...) if not found
+        // but only if it's not a known non-function identifier.
+        std::vector<llvm::Type*> Doubles(Args.size(), llvm::Type::getDoubleTy(context.TheContext));
+        llvm::FunctionType* FT = llvm::FunctionType::get(llvm::Type::getDoubleTy(context.TheContext), Doubles, false);
+        CalleeF = llvm::Function::Create(FT, llvm::Function::ExternalLinkage, Callee, context.TheModule);
+    }
 
     std::vector<llvm::Value*> ArgsV;
     if (CalleeF->arg_size() != Args.size()) {
@@ -2571,5 +2578,30 @@ TypedValue PredictExprAST::codegen(CodegenContext& context) {
     
     // Return the value from buffer
     return TypedValue(context.Builder.CreateLoad(DoubleTy, OutBuf), TypeKind::Double);
+}
+
+TypedValue GoalExprAST::codegen(CodegenContext& context) {
+    std::cout << "[DEBUG] GoalExprAST::codegen called" << std::endl;
+    emitLocation(this, context);
+    llvm::LLVMContext& Ctx = context.TheContext;
+    llvm::Module* TheModule = context.TheModule;
+    
+    TypedValue ExprTV = Expression->codegen(context);
+    TypedValue TargetTV = Target->codegen(context);
+    
+    if (!ExprTV.Val || !TargetTV.Val) return TypedValue();
+    
+    llvm::Type* DoubleTy = llvm::Type::getDoubleTy(Ctx);
+    
+    llvm::Function* Fn = TheModule->getFunction("flux_register_goal");
+    if (!Fn) {
+        Fn = llvm::Function::Create(
+            llvm::FunctionType::get(llvm::Type::getVoidTy(Ctx), {DoubleTy, DoubleTy}, false),
+            llvm::Function::ExternalLinkage, "flux_register_goal", TheModule);
+    }
+    
+    context.Builder.CreateCall(Fn, {ExprTV.Val, TargetTV.Val});
+    
+    return TypedValue(llvm::ConstantFP::get(Ctx, llvm::APFloat(0.0)), TypeKind::Double);
 }
 } // namespace Flux

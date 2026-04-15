@@ -954,6 +954,16 @@ public:
     bool containsYield() const override { return false; }
 };
 
+class GoalExprAST : public ExprAST {
+    std::unique_ptr<ExprAST> Expression;
+    std::unique_ptr<ExprAST> Target;
+public:
+    GoalExprAST(std::unique_ptr<ExprAST> expr, std::unique_ptr<ExprAST> target)
+        : Expression(std::move(expr)), Target(std::move(target)) {}
+    TypedValue codegen(CodegenContext& context) override;
+    bool containsYield() const override { return false; }
+};
+
 // Corner case analysis
 class CornerExprAST : public ExprAST {
     std::string Variable;

@@ -204,6 +204,7 @@ int Lexer::gettok() {
         if (IdentifierStr == "sensitivity") return static_cast<int>(TokenType::tok_sensitivity);
         if (IdentifierStr == "ask") return static_cast<int>(TokenType::tok_ask);
         if (IdentifierStr == "explain") return static_cast<int>(TokenType::tok_explain);
+        if (IdentifierStr == "corner") return static_cast<int>(TokenType::tok_corner);
         if (IdentifierStr == "substitute") return static_cast<int>(TokenType::tok_substitute);
         if (IdentifierStr == "float") return static_cast<int>(TokenType::tok_type_float);
         if (IdentifierStr == "double") return static_cast<int>(TokenType::tok_type_double);
@@ -271,6 +272,7 @@ int Lexer::gettok() {
         if (IdentifierStr == "zeros") return static_cast<int>(TokenType::tok_zeros);
         if (IdentifierStr == "collect") return static_cast<int>(TokenType::tok_collect);
         if (IdentifierStr == "time") return static_cast<int>(TokenType::tok_time);
+        if (IdentifierStr == "dt") return static_cast<int>(TokenType::tok_dt_var);
         if (IdentifierStr == "inputs") return static_cast<int>(TokenType::tok_inputs);
         if (IdentifierStr == "outputs") return static_cast<int>(TokenType::tok_outputs);
         if (IdentifierStr == "update") return static_cast<int>(TokenType::tok_update);

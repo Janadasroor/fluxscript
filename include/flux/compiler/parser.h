@@ -115,6 +115,8 @@ private:
     std::unique_ptr<ExprAST> ParseNNExpr();
     std::unique_ptr<ExprAST> ParseTrainExpr();
     std::unique_ptr<ExprAST> ParsePredictExpr();
+    std::unique_ptr<ExprAST> ParseGoalExpr();
+    std::unique_ptr<ExprAST> ParseOptimizeExpr();
     
     // Time-domain simulation
     std::unique_ptr<ExprAST> ParseBSourceDecl();
@@ -149,6 +151,7 @@ private:
     std::unique_ptr<ExprAST> ParseAnalogBlock();
     std::unique_ptr<ExprAST> ParseDdtExpr();
     std::unique_ptr<ExprAST> ParseIdtExpr();
+
     
     /* Symbol Pin Mapping */
     std::unique_ptr<ExprAST> ParseSymbolDecl();
