@@ -138,4 +138,50 @@ TypedValue ContinueExprAST::codegen(CodegenContext& context) {
     return TypedValue(llvm::ConstantFP::get(context.TheContext, llvm::APFloat(0.0)), TypeKind::Double);
 }
 
+// ============ Return Statement Codegen ============
+
+TypedValue ReturnExprAST::codegen(CodegenContext& context) {
+    llvm::Function* TheFunction = context.Builder.GetInsertBlock()->getParent();
+    llvm::Type* RetTy = TheFunction->getReturnType();
+
+    TypedValue RetValTV(nullptr, TypeKind::Void);
+    llvm::Value* RetVal = nullptr;
+
+    if (Val) {
+        RetValTV = Val->codegen(context);
+        if (!RetValTV.Val) return TypedValue();
+        RetVal = RetValTV.Val;
+
+        // Handle type conversion for return value
+        if (RetVal->getType() != RetTy && !RetTy->isVoidTy()) {
+            if (RetTy->isFloatingPointTy() && RetVal->getType()->isIntegerTy()) {
+                RetVal = context.Builder.CreateSIToFP(RetVal, RetTy, "cast_ret");
+            } else if (RetTy->isIntegerTy() && RetVal->getType()->isFloatingPointTy()) {
+                RetVal = context.Builder.CreateFPToSI(RetVal, RetTy, "cast_ret");
+            }
+        }
+    }
+
+    // Use unified return block if available
+    if (context.CurrentReturnBB) {
+        if (context.CurrentReturnValueAlloca && RetVal) {
+            context.Builder.CreateStore(RetVal, context.CurrentReturnValueAlloca);
+        }
+        context.Builder.CreateBr(context.CurrentReturnBB);
+        
+        // Subsequent instructions in the same block are unreachable
+        llvm::BasicBlock* UnreachableBB = llvm::BasicBlock::Create(context.TheContext, "unreachable", TheFunction);
+        context.Builder.SetInsertPoint(UnreachableBB);
+    } else {
+        // Fallback to direct return
+        if (RetTy->isVoidTy() || !RetVal) {
+            context.Builder.CreateRetVoid();
+        } else {
+            context.Builder.CreateRet(RetVal);
+        }
+    }
+
+    return RetValTV;
+}
+
 } // namespace Flux

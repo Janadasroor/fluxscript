@@ -317,12 +317,15 @@ bool CompilerInstance::compileParser(Parser& parser,
         if (parser.CurTok == static_cast<int>(TokenType::tok_def)) {
             functionAst = parser.ParseDefinition();
         } else if (parser.CurTok == static_cast<int>(TokenType::tok_update)) {
-            // Handle update function at top level
+            // Handle update function at top level - wrap it in FunctionAST so it's treated as a named function
             auto updateAst = parser.ParseUpdateFunc();
             if (!updateAst) {
                 error = "Failed to parse update function";
                 return false;
             }
+            // We can't easily wrap UpdateFuncAST in FunctionAST because it doesn't use a PrototypeAST
+            // So we just codegen it here and continue. 
+            // Note: This matches the 'extern' and 'import' pattern.
             returnTypes["update"] = FluxType(TypeKind::Double);
             if (!updateAst->codegen(context)) {
                 error = "Code generation failed for update function";
@@ -386,7 +389,11 @@ bool CompilerInstance::compileParser(Parser& parser,
             
             if (!Exprs.empty()) {
                 auto Block = std::make_unique<BlockExprAST>(std::move(Exprs));
-                auto Proto = std::make_unique<PrototypeAST>("__anon_expr", std::vector<std::pair<std::string, FluxType>>(), FluxType(TypeKind::Double));
+                std::string anonName = "__anon_expr";
+                if (!m_options.moduleName.empty() && m_options.moduleName != "Flux Module") {
+                    anonName = m_options.moduleName + "_anon_expr";
+                }
+                auto Proto = std::make_unique<PrototypeAST>(anonName, std::vector<std::pair<std::string, FluxType>>(), FluxType(TypeKind::Double));
                 functionAst = std::make_unique<FunctionAST>(std::move(Proto), std::move(Block));
             }
         }

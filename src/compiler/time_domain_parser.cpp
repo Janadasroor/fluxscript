@@ -187,8 +187,11 @@ std::unique_ptr<ExprAST> Parser::ParseInputsExpr() {
     } else if (CurTok == static_cast<int>(TokenType::tok_identifier)) {
         node = m_lexer.IdentifierStr;
         getNextToken();
+    } else if (CurTok == static_cast<int>(TokenType::tok_number)) {
+        node = std::to_string((int)m_lexer.NumVal);
+        getNextToken();
     } else {
-        ReportError("expected node name in inputs");
+        ReportError("[ABI-SYNC] expected node name or index in inputs");
         return nullptr;
     }
     
@@ -219,8 +222,11 @@ std::unique_ptr<ExprAST> Parser::ParseOutputsExpr() {
     } else if (CurTok == static_cast<int>(TokenType::tok_identifier)) {
         node = m_lexer.IdentifierStr;
         getNextToken();
+    } else if (CurTok == static_cast<int>(TokenType::tok_number)) {
+        node = std::to_string((int)m_lexer.NumVal);
+        getNextToken();
     } else {
-        ReportError("expected node name in outputs");
+        ReportError("[ABI-SYNC] expected node name or index in outputs");
         return nullptr;
     }
     

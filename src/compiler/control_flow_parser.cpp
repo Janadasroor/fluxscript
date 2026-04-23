@@ -97,7 +97,7 @@ std::unique_ptr<ExprAST> Parser::ParseSwitchExpr() {
                 
                 if (CurTok == static_cast<int>(TokenType::tok_return)) {
                     getNextToken();
-                    defaultBody.push_back(ParseExpression());
+                    defaultBody.push_back(std::make_unique<ReturnExprAST>(ParseExpression()));
                     break;
                 } else if (CurTok == static_cast<int>(TokenType::tok_break)) {
                     defaultBody.push_back(std::make_unique<BreakExprAST>());

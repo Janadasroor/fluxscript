@@ -13,6 +13,7 @@
 
 #include <iostream>
 #include "flux/compiler/parser.h"
+#include "flux/compiler/symbolic_ast.h"
 
 namespace Flux {
 
@@ -307,18 +308,21 @@ std::unique_ptr<ExprAST> Parser::ParseIdentifierExpr() {
     if (CurTok == '(' && (IdName == "V" || IdName == "I" || IdName == "P")) {
         getNextToken(); // eat (
         if (CurTok != static_cast<int>(TokenType::tok_identifier) &&
-            CurTok != static_cast<int>(TokenType::tok_number)) {
-            ReportError("expected name in V() / I() / P()");
+            CurTok != static_cast<int>(TokenType::tok_number) &&
+            CurTok != static_cast<int>(TokenType::tok_string)) {
+            ReportError("expected name or string in V() / I() / P()");
             return nullptr;
         }
 
         std::string name;
         if (CurTok == static_cast<int>(TokenType::tok_identifier)) {
             name = m_lexer.IdentifierStr;
+        } else if (CurTok == static_cast<int>(TokenType::tok_string)) {
+            name = m_lexer.StringVal;
         } else {
             name = std::to_string(static_cast<int>(m_lexer.NumVal));
         }
-        getNextToken(); // eat name
+        getNextToken(); // eat name/string
 
         if (CurTok != ')') {
             ReportError("expected ')' after name");
@@ -652,7 +656,7 @@ std::unique_ptr<ExprAST> Parser::ParseBlockExpr() {
     while (CurTok != static_cast<int>(TokenType::tok_rbrace) && CurTok != static_cast<int>(TokenType::tok_eof)) {
         if (auto Expr = ParseExpression()) Stmts.push_back(std::move(Expr));
         else return nullptr;
-        if (CurTok == static_cast<int>(TokenType::tok_semicolon) || CurTok == static_cast<int>(TokenType::tok_semicolon)) getNextToken();
+        while (CurTok == static_cast<int>(TokenType::tok_semicolon)) getNextToken();
     }
     if (CurTok != static_cast<int>(TokenType::tok_rbrace)) { ReportError("expected '}'"); return nullptr; }
     getNextToken();
@@ -719,7 +723,7 @@ std::unique_ptr<ExprAST> Parser::ParsePrimary() {
     case static_cast<int>(TokenType::tok_outputs): Res = ParseOutputsExpr(); break;
     case static_cast<int>(TokenType::tok_return):
         getNextToken(); // eat return
-        Res = ParseExpression();
+        Res = std::make_unique<ReturnExprAST>(ParseExpression());
         break;
     
     // Advanced control flow
@@ -742,6 +746,7 @@ std::unique_ptr<ExprAST> Parser::ParsePrimary() {
     case static_cast<int>(TokenType::tok_jacobian): Res = ParseJacobianExpr(); break;
     case static_cast<int>(TokenType::tok_pde): Res = ParsePDEExpr(); break;
     case static_cast<int>(TokenType::tok_partial_diff): Res = ParsePartialDiffExpr(); break;
+    case static_cast<int>(TokenType::tok_thermal): Res = ParseThermalBlock(); break;
     case static_cast<int>(TokenType::tok_nn): Res = ParseNNExpr(); break;
     case static_cast<int>(TokenType::tok_goal): Res = ParseGoalExpr(); break;
     case static_cast<int>(TokenType::tok_optimize): Res = ParseOptimizeExpr(); break;
@@ -753,6 +758,9 @@ std::unique_ptr<ExprAST> Parser::ParsePrimary() {
     case static_cast<int>(TokenType::tok_measure): Res = ParseMeasure(); break;
     case static_cast<int>(TokenType::tok_model): Res = ParseModel(); break;
     case static_cast<int>(TokenType::tok_subckt): Res = ParseSubckt(); break;
+    case static_cast<int>(TokenType::tok_montecarlo): Res = ParseMonteCarlo(); break;
+    case static_cast<int>(TokenType::tok_virtual_probe): Res = ParseVirtualProbe(); break;
+    case static_cast<int>(TokenType::tok_hot_swap): Res = ParseHotSwap(); break;
     
     case static_cast<int>(TokenType::tok_settle): Res = ParseSettleDecl(); break;
     case static_cast<int>(TokenType::tok_golden): Res = ParseGoldenDecl(); break;
@@ -873,14 +881,25 @@ std::unique_ptr<ExprAST> Parser::ParseExpression() {
 }
 
 std::unique_ptr<PrototypeAST> Parser::ParsePrototype() {
-    if (CurTok != static_cast<int>(TokenType::tok_identifier)) return nullptr;
-    std::string FnName = m_lexer.IdentifierStr;
+    if (CurTok != static_cast<int>(TokenType::tok_identifier) &&
+        CurTok != static_cast<int>(TokenType::tok_update)) return nullptr;
+    
+    std::string FnName = (CurTok == static_cast<int>(TokenType::tok_update)) ? "update" : m_lexer.IdentifierStr;
     getNextToken();
     if (CurTok != '(') return nullptr;
     getNextToken();
     std::vector<std::pair<std::string, FluxType>> Args;
-    while (CurTok == static_cast<int>(TokenType::tok_identifier)) {
-        std::string Name = m_lexer.IdentifierStr;
+    while (CurTok == static_cast<int>(TokenType::tok_identifier) || 
+           CurTok == static_cast<int>(TokenType::tok_inputs) ||
+           CurTok == static_cast<int>(TokenType::tok_outputs)) {
+        std::string Name;
+        if (CurTok == static_cast<int>(TokenType::tok_identifier))
+            Name = m_lexer.IdentifierStr;
+        else if (CurTok == static_cast<int>(TokenType::tok_inputs))
+            Name = "inputs";
+        else
+            Name = "outputs";
+        
         getNextToken();
         FluxType Type(TypeKind::Double);
         if (CurTok == static_cast<int>(TokenType::tok_colon)) {
@@ -2562,6 +2581,148 @@ std::unique_ptr<ExprAST> Parser::ParseOptimizeExpr() {
     getNextToken(); // eat )
     
     auto Res = std::make_unique<CallExprAST>("optimize", std::vector<std::unique_ptr<ExprAST>>());
+    Res->setLocation(line, col);
+    return Res;
+}
+
+std::unique_ptr<ExprAST> Parser::ParseThermalBlock() {
+    int line = m_lexer.getCurrentLine();
+    int col = m_lexer.getCurrentColumn();
+    getNextToken(); // eat thermal
+    
+    if (CurTok != '(') { ReportError("expected '(' after thermal"); return nullptr; }
+    getNextToken(); // eat (
+    
+    auto power = ParseExpression();
+    if (!power) return nullptr;
+    
+    if (CurTok != ',') { ReportError("expected ',' after power in thermal"); return nullptr; }
+    getNextToken(); // eat ,
+    
+    auto res = ParseExpression();
+    if (!res) return nullptr;
+    
+    if (CurTok != ',') { ReportError("expected ',' after resistance in thermal"); return nullptr; }
+    getNextToken(); // eat ,
+    
+    auto cap = ParseExpression();
+    if (!cap) return nullptr;
+    
+    if (CurTok != ')') { ReportError("expected ')' after thermal arguments"); return nullptr; }
+    getNextToken(); // eat )
+    
+    auto Res = std::make_unique<ThermalBlockAST>(std::move(power), std::move(res), std::move(cap));
+    Res->setLocation(line, col);
+    return Res;
+}
+
+
+std::unique_ptr<ExprAST> Parser::ParseMonteCarlo() {
+    int line = m_lexer.getCurrentLine();
+    int col = m_lexer.getCurrentColumn();
+    getNextToken(); // eat montecarlo
+    
+    if (CurTok != '(') { ReportError("expected '(' after montecarlo"); return nullptr; }
+    getNextToken(); // eat (
+    
+    auto expr = ParseExpression();
+    if (!expr) return nullptr;
+    
+    std::vector<std::string> params;
+    if (CurTok != ',') { ReportError("expected ',' after expression in montecarlo"); return nullptr; }
+    getNextToken(); // eat ,
+    
+    if (CurTok == '[') {
+        getNextToken(); // eat [
+        while (CurTok != ']') {
+            if (CurTok != static_cast<int>(TokenType::tok_identifier)) {
+                ReportError("expected parameter name in montecarlo list");
+                return nullptr;
+            }
+            params.push_back(m_lexer.IdentifierStr);
+            getNextToken();
+            if (CurTok == ',') getNextToken();
+        }
+        getNextToken(); // eat ]
+    } else {
+        if (CurTok != static_cast<int>(TokenType::tok_identifier)) {
+            ReportError("expected parameter name or list in montecarlo");
+            return nullptr;
+        }
+        params.push_back(m_lexer.IdentifierStr);
+        getNextToken();
+    }
+    
+    int iters = 100;
+    if (CurTok == ',') {
+        getNextToken(); // eat ,
+        if (CurTok != static_cast<int>(TokenType::tok_number)) {
+            ReportError("expected number of iterations in montecarlo");
+            return nullptr;
+        }
+        iters = (int)m_lexer.NumVal;
+        getNextToken();
+    }
+    
+    if (CurTok != ')') { ReportError("expected ')' after montecarlo arguments"); return nullptr; }
+    getNextToken(); // eat )
+    
+    auto Res = std::make_unique<MonteCarloExprAST>(std::move(expr), std::move(params), iters);
+    Res->setLocation(line, col);
+    return Res;
+}
+
+std::unique_ptr<ExprAST> Parser::ParseVirtualProbe() {
+    int line = m_lexer.getCurrentLine();
+    int col = m_lexer.getCurrentColumn();
+    getNextToken(); // eat virtual_probe
+    
+    if (CurTok != '(') { ReportError("expected '(' after virtual_probe"); return nullptr; }
+    getNextToken(); // eat (
+    
+    auto sig = ParseExpression();
+    if (!sig) return nullptr;
+    
+    std::string name = "scope1";
+    if (CurTok == ',') {
+        getNextToken(); // eat ,
+        if (CurTok != static_cast<int>(TokenType::tok_string)) {
+            ReportError("expected probe name string in virtual_probe");
+            return nullptr;
+        }
+        name = m_lexer.StringVal;
+        getNextToken();
+    }
+    
+    if (CurTok != ')') { ReportError("expected ')' after virtual_probe arguments"); return nullptr; }
+    getNextToken(); // eat )
+    
+    auto Res = std::make_unique<VirtualProbeExprAST>(std::move(sig), name);
+    Res->setLocation(line, col);
+    return Res;
+}
+
+std::unique_ptr<ExprAST> Parser::ParseHotSwap() {
+    int line = m_lexer.getCurrentLine();
+    int col = m_lexer.getCurrentColumn();
+    getNextToken(); // eat hot_swap
+    
+    if (CurTok != '(') { ReportError("expected '(' after hot_swap"); return nullptr; }
+    getNextToken(); // eat (
+    
+    auto subckt = ParseExpression();
+    if (!subckt) return nullptr;
+    
+    if (CurTok != ',') { ReportError("expected ',' after subcircuit name in hot_swap"); return nullptr; }
+    getNextToken(); // eat ,
+    
+    auto model = ParseExpression();
+    if (!model) return nullptr;
+    
+    if (CurTok != ')') { ReportError("expected ')' after hot_swap arguments"); return nullptr; }
+    getNextToken(); // eat )
+    
+    auto Res = std::make_unique<HotSwapExprAST>(std::move(subckt), std::move(model));
     Res->setLocation(line, col);
     return Res;
 }

@@ -22,6 +22,7 @@
 #include <map>
 #include <memory>
 #include <functional>
+#include <Eigen/Dense>
 
 namespace Flux {
 namespace AI {
@@ -40,7 +41,7 @@ struct NetworkArchitecture {
     double regularization;
     
     NetworkArchitecture() : activation("relu"), outputActivation("linear"),
-                            learningRate(0.001), batchSize(32), epochs(100),
+                            learningRate(0.5), batchSize(32), epochs(100),
                             regularization(0.0001) {}
 };
 
@@ -87,6 +88,7 @@ public:
     
     // Architecture
     void setArchitecture(const NetworkArchitecture& arch);
+    void setEpochs(int epochs) { m_arch.epochs = epochs; }
     const NetworkArchitecture& architecture() const { return m_arch; }
     
     // Training
@@ -124,9 +126,9 @@ private:
     NetworkArchitecture m_arch;
     bool m_trained;
     
-    // Model weights (simplified representation)
-    std::vector<std::vector<double>> m_weights;
-    std::vector<std::vector<double>> m_biases;
+    // Model weights (native Eigen types)
+    std::vector<Eigen::MatrixXd> m_weights;
+    std::vector<Eigen::VectorXd> m_biases;
     
     // Training state
     std::vector<double> m_inputMean;
@@ -136,13 +138,20 @@ private:
     
     // Internal methods
     void initializeWeights();
-    std::vector<double> forward(const std::vector<double>& input) const;
-    void backward(const std::vector<double>& input, 
-                  const std::vector<double>& target);
+    Eigen::VectorXd forward(const Eigen::VectorXd& input) const;
+    void backward(const Eigen::VectorXd& input, 
+                  const Eigen::VectorXd& target);
     double computeLoss(const TrainingData& data) const;
+    
+    // Training state (per-thread or per-instance buffers)
+    mutable std::vector<Eigen::VectorXd> m_activations;
+    mutable std::vector<Eigen::VectorXd> m_deltas;
     
     // Activation functions
     static double relu(double x);
+    static double relu_derivative(double x);
+    static double tanh_derivative(double x);
+    static double sigmoid_derivative(double x);
     static double tanh(double x);
     static double sigmoid(double x);
     static double linear(double x);

@@ -13,7 +13,6 @@
 
 // FluxScript Neural Network Surrogate Implementation
 #include "flux/ai/surrogate.h"
-#include <Eigen/Dense>
 #include <sstream>
 #include <cmath>
 #include <fstream>
@@ -24,12 +23,6 @@
 
 namespace Flux {
 namespace AI {
-
-// Helper: Eigen representation of weights/biases
-struct ModelData {
-    std::vector<Eigen::MatrixXd> weights;
-    std::vector<Eigen::VectorXd> biases;
-};
 
 NeuralNetworkSurrogate::NeuralNetworkSurrogate() : m_trained(false) {}
 
@@ -60,12 +53,12 @@ void NeuralNetworkSurrogate::initializeWeights() {
         double limit = std::sqrt(6.0 / (inSize + outSize));
         std::uniform_real_distribution<> dis(-limit, limit);
         
-        std::vector<double> w(inSize * outSize);
-        for(auto& val : w) val = dis(gen);
+        Eigen::MatrixXd W(outSize, inSize);
+        for(int r=0; r<outSize; ++r) for(int c=0; c<inSize; ++c) W(r, c) = dis(gen);
         
-        std::vector<double> b(outSize, 0.0);
+        Eigen::VectorXd b = Eigen::VectorXd::Zero(outSize);
         
-        m_weights.push_back(w);
+        m_weights.push_back(W);
         m_biases.push_back(b);
     }
 }
@@ -78,14 +71,39 @@ TrainingResult NeuralNetworkSurrogate::train(const TrainingData& data) {
     }
 
     std::cout << "[FLUX AI] Training Neural Network (" << data.numSamples() << " samples)..." << std::endl;
-
-    // Implementation of simple SGD would go here.
-    // For now, we simulate a trained model with a linear regression baseline
-    // to ensure the pipeline works.
     
+    for (int epoch = 0; epoch < m_arch.epochs; ++epoch) {
+        double epochLoss = 0;
+        
+        std::vector<int> indices(data.numSamples());
+        std::iota(indices.begin(), indices.end(), 0);
+        static std::random_device rd;
+        static std::mt19937 gen(rd());
+        std::shuffle(indices.begin(), indices.end(), gen);
+
+        for (int idx : indices) {
+            Eigen::VectorXd in = Eigen::Map<const Eigen::VectorXd>(data.inputs[idx].data(), data.inputs[idx].size());
+            Eigen::VectorXd target = Eigen::Map<const Eigen::VectorXd>(data.outputs[idx].data(), data.outputs[idx].size());
+            
+            forward(in);
+            backward(in, target);
+            const Eigen::VectorXd& prediction = m_activations.back();
+            epochLoss += (prediction - target).squaredNorm();
+        }
+        
+        epochLoss /= data.numSamples();
+        result.lossHistory.push_back(epochLoss);
+        
+        if (epoch % 100 == 0 || epoch == m_arch.epochs - 1) {
+            std::cout << "  Epoch " << epoch << ": loss = " << epochLoss << std::endl;
+        }
+        
+        if (std::isfinite(epochLoss) && epochLoss < 1e-15) break;
+    }
+
     result.success = true;
-    result.epochsTrained = m_arch.epochs;
-    result.finalLoss = 0.001;
+    result.epochsTrained = result.lossHistory.size();
+    result.finalLoss = result.lossHistory.empty() ? 0 : result.lossHistory.back();
     result.message = "Training completed";
     m_trained = true;
     
@@ -107,25 +125,12 @@ PredictionResult NeuralNetworkSurrogate::predict(const std::vector<double>& inpu
     PredictionResult result;
     if (!m_trained || input.empty() || m_weights.empty()) return result;
     
-    Eigen::VectorXd x = Eigen::Map<const Eigen::VectorXd>(input.data(), input.size());
+    Eigen::VectorXd in = Eigen::Map<const Eigen::VectorXd>(input.data(), input.size());
+    Eigen::VectorXd pred = forward(in);
     
-    for (size_t i = 0; i < m_weights.size(); ++i) {
-        int inSize = m_arch.layers[i];
-        int outSize = m_arch.layers[i+1];
-        
-        Eigen::MatrixXd W = Eigen::Map<const Eigen::MatrixXd>(m_weights[i].data(), outSize, inSize);
-        Eigen::VectorXd b = Eigen::Map<const Eigen::VectorXd>(m_biases[i].data(), outSize);
-        
-        x = (W * x) + b;
-        
-        // Activation (ReLU for hidden, Linear for output)
-        if (i < m_weights.size() - 1) {
-            for(int j=0; j<x.size(); j++) if(x(j) < 0) x(j) = 0;
-        }
-    }
+    result.prediction.resize(pred.size());
+    Eigen::VectorXd::Map(result.prediction.data(), pred.size()) = pred;
     
-    result.prediction.resize(x.size());
-    Eigen::VectorXd::Map(result.prediction.data(), x.size()) = x;
     result.inferenceTime = 0.05;
     return result;
 }
@@ -149,12 +154,85 @@ size_t NeuralNetworkSurrogate::memorySize() const { return 0; }
 std::string NeuralNetworkSurrogate::getSummary() const { return "Neural Network Surrogate"; }
 
 double NeuralNetworkSurrogate::relu(double x) { return x > 0 ? x : 0; }
+double NeuralNetworkSurrogate::relu_derivative(double x) { return x > 0 ? 1.0 : 0.0; }
+double NeuralNetworkSurrogate::tanh_derivative(double x) { return 1.0 - x * x; }
+double NeuralNetworkSurrogate::sigmoid_derivative(double x) { return x * (1.0 - x); }
 double NeuralNetworkSurrogate::tanh(double x) { return std::tanh(x); }
-double NeuralNetworkSurrogate::sigmoid(double x) { return 1.0 / (1.0 + std::exp(-x)); }
+double NeuralNetworkSurrogate::sigmoid(double x) { 
+    if (x < -20.0) return 0.0;
+    if (x > 20.0) return 1.0;
+    return 1.0 / (1.0 + std::exp(-x)); 
+}
 double NeuralNetworkSurrogate::linear(double x) { return x; }
 
-std::vector<double> NeuralNetworkSurrogate::forward(const std::vector<double>& input) const { return predict(input).prediction; }
-void NeuralNetworkSurrogate::backward(const std::vector<double>& input, const std::vector<double>& target) {}
+Eigen::VectorXd NeuralNetworkSurrogate::forward(const Eigen::VectorXd& input) const {
+    m_activations.clear();
+    m_activations.push_back(input);
+    
+    Eigen::VectorXd current = input;
+    
+    for (size_t i = 0; i < m_weights.size(); ++i) {
+        Eigen::VectorXd z = (m_weights[i] * current) + m_biases[i];
+        
+        current.resize(z.size());
+        for (int j = 0; j < z.size(); ++j) {
+            if (i < m_weights.size() - 1) {
+                if (m_arch.activation == "relu") current(j) = relu(z(j));
+                else if (m_arch.activation == "tanh") current(j) = std::tanh(z(j));
+                else if (m_arch.activation == "sigmoid") current(j) = sigmoid(z(j));
+                else current(j) = z(j);
+            } else {
+                if (m_arch.outputActivation == "sigmoid") current(j) = sigmoid(z(j));
+                else current(j) = z(j);
+            }
+        }
+        m_activations.push_back(current);
+    }
+    
+    return current;
+}
+
+void NeuralNetworkSurrogate::backward(const Eigen::VectorXd& input, 
+                                      const Eigen::VectorXd& target) {
+    m_deltas.resize(m_weights.size());
+    
+    const Eigen::VectorXd& output = m_activations.back();
+    Eigen::VectorXd delta = output - target;
+    
+    if (m_arch.outputActivation == "sigmoid") {
+        for(int j=0; j<delta.size(); ++j) delta(j) *= sigmoid_derivative(output(j));
+    }
+    m_deltas.back() = delta;
+    
+    for (int i = (int)m_weights.size() - 2; i >= 0; --i) {
+        Eigen::VectorXd grad = m_weights[i+1].transpose() * m_deltas[i+1];
+        
+        m_deltas[i].resize(grad.size());
+        for (int j = 0; j < grad.size(); ++j) {
+            double a = m_activations[i+1](j);
+            double deriv = 1.0;
+            if (m_arch.activation == "relu") deriv = relu_derivative(a);
+            else if (m_arch.activation == "tanh") deriv = tanh_derivative(a);
+            else if (m_arch.activation == "sigmoid") deriv = sigmoid_derivative(a);
+            
+            m_deltas[i](j) = grad(j) * deriv;
+        }
+    }
+    
+    double lr = m_arch.learningRate;
+    for (size_t i = 0; i < m_weights.size(); ++i) {
+        // Gradient Clipping
+        Eigen::VectorXd clipped_delta = m_deltas[i];
+        for(int j=0; j<clipped_delta.size(); ++j) {
+            if (clipped_delta(j) > 1.0) clipped_delta(j) = 1.0;
+            if (clipped_delta(j) < -1.0) clipped_delta(j) = -1.0;
+        }
+
+        m_weights[i] -= lr * (clipped_delta * m_activations[i].transpose());
+        m_biases[i] -= lr * clipped_delta;
+    }
+}
+
 double NeuralNetworkSurrogate::computeLoss(const TrainingData& data) const { return 0.0; }
 
 // ============================================================================
@@ -215,9 +293,15 @@ void flux_nn_train(void* nn, const double* inputs, const double* outputs,
                     int numSamples, int inputDim, int outputDim, int epochs) {
     auto* net = static_cast<NeuralNetworkSurrogate*>(nn);
     TrainingData data;
+    net->setEpochs(epochs);
+    
     for (int i = 0; i < numSamples; ++i) {
-        data.inputs.push_back(std::vector<double>(inputs + i * inputDim, inputs + (i + 1) * inputDim));
-        data.outputs.push_back(std::vector<double>(outputs + i * outputDim, outputs + (i + 1) * outputDim));
+        std::vector<double> in(inputDim);
+        std::vector<double> out(outputDim);
+        for (int j = 0; j < inputDim; ++j) in[j] = inputs[i * inputDim + j];
+        for (int j = 0; j < outputDim; ++j) out[j] = outputs[i * outputDim + j];
+        data.inputs.push_back(in);
+        data.outputs.push_back(out);
     }
     net->train(data);
 }

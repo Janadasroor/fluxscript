@@ -47,7 +47,7 @@ static void* compile_flux_script(const std::string& source, const std::string& f
 
     auto jit = std::make_unique<Flux::FluxJIT>();
     jit->addModule(
-        std::move(artifacts->codegenContext->TheModule),
+        std::move(artifacts->codegenContext->OwnedModule),
         std::move(artifacts->codegenContext->OwnedContext)
     );
 

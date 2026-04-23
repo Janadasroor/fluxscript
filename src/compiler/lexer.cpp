@@ -183,6 +183,13 @@ int Lexer::gettok() {
         if (IdentifierStr == "train") return static_cast<int>(TokenType::tok_train);
         if (IdentifierStr == "predict") return static_cast<int>(TokenType::tok_predict);
         if (IdentifierStr == "nn") return static_cast<int>(TokenType::tok_nn);
+        if (IdentifierStr == "nn") return static_cast<int>(TokenType::tok_nn);
+        if (IdentifierStr == "goal") return static_cast<int>(TokenType::tok_goal);
+        if (IdentifierStr == "thermal") return static_cast<int>(TokenType::tok_thermal);
+        if (IdentifierStr == "virtual_probe") return static_cast<int>(TokenType::tok_virtual_probe);
+        if (IdentifierStr == "hot_swap") return static_cast<int>(TokenType::tok_hot_swap);
+        if (IdentifierStr == "train") return static_cast<int>(TokenType::tok_train);
+        if (IdentifierStr == "predict") return static_cast<int>(TokenType::tok_predict);
         if (IdentifierStr == "then") return static_cast<int>(TokenType::tok_then);
         if (IdentifierStr == "else") return static_cast<int>(TokenType::tok_else);
         if (IdentifierStr == "for") return static_cast<int>(TokenType::tok_for);

@@ -117,6 +117,10 @@ private:
     std::unique_ptr<ExprAST> ParsePredictExpr();
     std::unique_ptr<ExprAST> ParseGoalExpr();
     std::unique_ptr<ExprAST> ParseOptimizeExpr();
+    std::unique_ptr<ExprAST> ParseThermalBlock();
+    std::unique_ptr<ExprAST> ParseMonteCarlo();
+    std::unique_ptr<ExprAST> ParseVirtualProbe();
+    std::unique_ptr<ExprAST> ParseHotSwap();
     
     // Time-domain simulation
     std::unique_ptr<ExprAST> ParseBSourceDecl();

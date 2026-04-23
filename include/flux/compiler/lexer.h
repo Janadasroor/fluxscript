@@ -220,6 +220,10 @@ enum class TokenType {
     tok_timestep = -188,           // simulation timestep
     tok_simtime = -189,            // simulation time variable
     tok_goal = -280,               // optimization goal
+    tok_thermal = -281,            // thermal solver
+    tok_monte_carlo = -282,        // monte carlo analysis
+    tok_virtual_probe = -283,      // virtual logic analyzer probe
+    tok_hot_swap = -284,           // AI model hot-swapping
 
     // Analysis Control
     tok_analysis = -116,       // analysis directive

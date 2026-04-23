@@ -396,7 +396,10 @@ bool TypeSafetyVerifier::verifyFunction(llvm::Function* func, std::string* error
     llvm::raw_string_ostream errorStream(errorMsg);
     
     if (llvm::verifyFunction(*func, &errorStream)) {
+        errorStream.flush();
         if (error) *error = errorMsg;
+        std::cerr << "TypeSafetyVerifier: LLVM Function Verification FAILED: " << errorMsg << std::endl;
+        func->print(llvm::errs());
         return false;
     }
     

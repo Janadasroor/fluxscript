@@ -14,6 +14,7 @@
 #include "flux/compiler/time_domain_ast.h"
 #include "flux/runtime/time_domain_api.h"
 #include <iostream>
+#include <algorithm>
 #include <sstream>
 
 namespace Flux {
@@ -138,24 +139,40 @@ TypedValue InputsExprAST::codegen(CodegenContext& context) {
     
     llvm::Type* DoubleTy = llvm::Type::getDoubleTy(context.TheContext);
     
-    // Get the inputs pointer from NamedValues
-    llvm::Value* InputsPtr = context.NamedValues["inputs"];
-    if (!InputsPtr) {
+    // Get the inputs pointer from NamedValues.
+    // UpdateFuncAST stores function arguments in allocas, while some older
+    // time-domain paths keep the raw argument value directly. Accept both so
+    // native SmartSignal JIT code always indexes the actual input buffer.
+    llvm::Value* InputsValue = context.NamedValues["inputs"];
+    if (!InputsValue) {
         std::cerr << "[CodeGen] Error: 'inputs' variable not available in context" << std::endl;
         return TypedValue(llvm::ConstantFP::get(context.TheContext, llvm::APFloat(0.0)), TypeKind::Double);
     }
-    
-    // For now, assume NodeName contains an index like "in0", "in1", etc.
-    // Extract index from node name (simple parsing)
-    int nodeIndex = 0;
-    std::string idxStr;
-    for (char c : NodeName) {
-        if (std::isdigit(c)) {
-            idxStr += c;
+
+    llvm::Value* InputsPtr = InputsValue;
+    if (auto* Alloca = llvm::dyn_cast<llvm::AllocaInst>(InputsValue)) {
+        llvm::Type* StoredTy = Alloca->getAllocatedType();
+        if (StoredTy->isPointerTy()) {
+            InputsPtr = context.Builder.CreateLoad(StoredTy, Alloca, "inputs_raw_ptr");
         }
     }
-    if (!idxStr.empty()) {
-        nodeIndex = std::stoi(idxStr);
+    
+    // If NodeName is a pure number, use it as direct index.
+    // Otherwise, try to extract index from node name (e.g. "in0" -> 0)
+    int nodeIndex = 0;
+    bool isAllDigits = !NodeName.empty() && std::all_of(NodeName.begin(), NodeName.end(), ::isdigit);
+    if (isAllDigits) {
+        nodeIndex = std::stoi(NodeName);
+    } else {
+        std::string idxStr;
+        for (char c : NodeName) {
+            if (std::isdigit(c)) {
+                idxStr += c;
+            }
+        }
+        if (!idxStr.empty()) {
+            nodeIndex = std::stoi(idxStr);
+        }
     }
     
     // Create GEP to access inputs[nodeIndex]

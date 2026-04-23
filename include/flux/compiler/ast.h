@@ -202,6 +202,11 @@ public:
     llvm::Module* TheModule = nullptr;
     std::map<std::string, llvm::Value*> NamedValues;
     std::map<std::string, FluxType> NamedTypes;
+    
+    // For return statements
+    llvm::BasicBlock* CurrentReturnBB = nullptr;
+    llvm::Value* CurrentReturnValueAlloca = nullptr;
+    
     std::unique_ptr<llvm::DIBuilder> DebugBuilder;
     llvm::DICompileUnit* DebugCompileUnit = nullptr;
     llvm::DIFile* DebugFile = nullptr;
@@ -964,6 +969,49 @@ public:
     bool containsYield() const override { return false; }
 };
 
+class ThermalBlockAST : public ExprAST {
+    std::unique_ptr<ExprAST> Power;
+    std::unique_ptr<ExprAST> Resistance;
+    std::unique_ptr<ExprAST> Capacitance;
+public:
+    ThermalBlockAST(std::unique_ptr<ExprAST> power, std::unique_ptr<ExprAST> res, std::unique_ptr<ExprAST> cap)
+        : Power(std::move(power)), Resistance(std::move(res)), Capacitance(std::move(cap)) {}
+    TypedValue codegen(CodegenContext& context) override;
+    bool containsYield() const override { return false; }
+};
+
+class MonteCarloExprAST : public ExprAST {
+    std::unique_ptr<ExprAST> Expression;
+    std::vector<std::string> Parameters;
+    int Iterations;
+public:
+    MonteCarloExprAST(std::unique_ptr<ExprAST> expr, std::vector<std::string> params, int iters)
+        : Expression(std::move(expr)), Parameters(std::move(params)), Iterations(iters) {}
+    TypedValue codegen(CodegenContext& context) override;
+    bool containsYield() const override { return false; }
+};
+
+class VirtualProbeExprAST : public ExprAST {
+    std::unique_ptr<ExprAST> Signal;
+    std::string ProbeName;
+public:
+    VirtualProbeExprAST(std::unique_ptr<ExprAST> sig, std::string name)
+        : Signal(std::move(sig)), ProbeName(std::move(name)) {}
+    TypedValue codegen(CodegenContext& context) override;
+    bool containsYield() const override { return false; }
+};
+
+class HotSwapExprAST : public ExprAST {
+    std::unique_ptr<ExprAST> SubcktName;
+    std::unique_ptr<ExprAST> Model;
+public:
+    HotSwapExprAST(std::unique_ptr<ExprAST> name, std::unique_ptr<ExprAST> model)
+        : SubcktName(std::move(name)), Model(std::move(model)) {}
+    TypedValue codegen(CodegenContext& context) override;
+    bool containsYield() const override { return false; }
+};
+
+
 // Corner case analysis
 class CornerExprAST : public ExprAST {
     std::string Variable;
@@ -1363,26 +1411,6 @@ public:
     TypedValue codegen(CodegenContext& context) override;
     const std::string& getNodeName() const { return NodeName; }
     const ExprAST* getValue() const { return Value.get(); }
-};
-
-// Monte Carlo Analysis
-class MonteCarloExprAST : public ExprAST {
-    std::string OutputName;
-    std::map<std::string, double> ComponentNominal;
-    std::map<std::string, double> ComponentTolerance;
-    int Iterations;
-public:
-    MonteCarloExprAST(const std::string& output, int iterations)
-        : OutputName(output), Iterations(iterations) {}
-    void addComponent(const std::string& name, double nominal, double tolerance) {
-        ComponentNominal[name] = nominal;
-        ComponentTolerance[name] = tolerance;
-    }
-    TypedValue codegen(CodegenContext& context) override;
-    const std::string& getOutputName() const { return OutputName; }
-    int getIterations() const { return Iterations; }
-    const std::map<std::string, double>& getComponentNominal() const { return ComponentNominal; }
-    const std::map<std::string, double>& getComponentTolerance() const { return ComponentTolerance; }
 };
 
 // Worst-Case Analysis
