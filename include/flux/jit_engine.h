@@ -27,9 +27,6 @@
 #include "flux/jit/flux_jit.h"
 #include "flux/modules/module_loader.h"
 
-#ifdef FLUX_HAS_QT
-#include <QString>
-#endif
 
 #ifdef emit
 #undef emit
@@ -80,11 +77,6 @@ public:
     bool getDefine(const std::string& name) const;
     void setOptimizationLevelForModules(OptimizationLevel level);
 
-#ifdef FLUX_HAS_QT
-    // QString overloads (for Qt-based GUI)
-    bool executeString(const QString& code, QString* error = nullptr);
-    bool compileScript(const QString& code, QString* error = nullptr);
-#endif
 
     // std::string overloads (for minimal CLI)
     bool executeString(const std::string& code, std::string* error = nullptr);
@@ -95,10 +87,6 @@ public:
     // Call a compiled function.
     FluxValue callFunction(const std::string& name, const std::vector<double>& args, std::string* error = nullptr);
     void* getFunctionPointer(const std::string& name);
-#ifdef FLUX_HAS_QT
-    // Qt overload (only available when Qt is enabled)
-    FluxValue callFunction(const std::string& name, const std::vector<double>& args, QString* error);
-#endif
 
 private:
     JITEngine();

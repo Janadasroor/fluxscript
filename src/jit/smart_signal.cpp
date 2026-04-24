@@ -26,11 +26,6 @@
 
 #include "flux/jit/smart_signal.h"
 #include "flux/jit/jit_manager.h"
-#ifdef FLUX_HAS_QT
-#include <QColor>
-#include <QVector>
-#include <QString>
-#endif
 #include <iostream>
 #include <sstream>
 #include <algorithm>
@@ -203,12 +198,6 @@ std::vector<double> SmartSignalItem::evaluateAtTimes(const std::vector<double>& 
     return results;
 }
 
-#ifdef FLUX_HAS_QT
-void SmartSignalItem::setColor(const QColor& color) {
-    std::lock_guard<std::mutex> lock(m_mutex);
-    m_color = color;
-}
-#endif
 
 void SmartSignalItem::setVisible(bool visible) {
     std::lock_guard<std::mutex> lock(m_mutex);

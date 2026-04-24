@@ -28,14 +28,6 @@
 #include <map>
 
 // Include Qt headers if available, otherwise use stub types
-#ifdef FLUX_HAS_QT
-#include <QVector>
-#include <QColor>
-#include <QString>
-
-#ifdef emit
-#undef emit
-#endif
 #ifdef Q_SIGNALS  
 #undef Q_SIGNALS
 #endif
@@ -149,10 +141,6 @@ public:
     size_t numPoints() const { return m_values.size(); }
 
     // Display properties
-#ifdef FLUX_HAS_QT
-    void setColor(const QColor& color);
-    const QColor& color() const { return m_color; }
-#endif
 
     void setVisible(bool visible);
     bool isVisible() const { return m_visible; }
@@ -204,11 +192,6 @@ private:
     std::vector<double> m_values;
     
     // Display
-#ifdef FLUX_HAS_QT
-    QColor m_color = Qt::blue;
-#else
-    double m_color_rgba = 0.0;
-#endif
     bool m_visible = true;
     
     // Thread safety

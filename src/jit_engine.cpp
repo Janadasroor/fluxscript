@@ -79,28 +79,6 @@ bool JITEngine::isInitialized() const {
     return m_initialized;
 }
 
-#if defined(FLUX_HAS_QT)
-bool JITEngine::compileScript(const QString& code, QString* error) {
-    if (!m_initialized) initialize();
-    CompilerInstance compiler(m_compilerOptions);
-    std::string compileError;
-    auto artifacts = compiler.compileToIR(code.toStdString(), &compileError);
-    if (!artifacts) {
-        if (error) *error = QString::fromStdString(compileError);
-        return false;
-    }
-    m_functionReturnTypes = artifacts->functionReturnTypes;
-    m_codegenCtx = std::move(artifacts->codegenContext);
-    m_jit->addModule(std::move(m_codegenCtx->OwnedModule), std::move(m_codegenCtx->OwnedContext));
-    m_codegenCtx.reset();
-    return true;
-}
-
-bool JITEngine::executeString(const QString& code, QString* error) {
-    if (!compileScript(code, error)) return false;
-    return true;
-}
-#endif
 
 bool JITEngine::compileScript(const std::string& code, std::string* error) {
     if (!m_initialized) initialize();
@@ -156,59 +134,6 @@ bool JITEngine::executeString(const std::string& code, std::string* error) {
     return true;
 }
 
-#if defined(FLUX_HAS_QT)
-FluxValue JITEngine::callFunction(const std::string& name, const std::vector<double>& args, QString* error) {
-    if (!m_initialized) { if (error) *error = "JIT not initialized"; return 0.0; }
-    void* fnPtr = m_jit->getPointerToFunction(name);
-    if (!fnPtr) { if (error) *error = QString("Function not found: ") + QString::fromStdString(name); return 0.0; }
-    FluxType retType = m_functionReturnTypes[name];
-
-    if (retType.Kind == TypeKind::Matrix) {
-        struct MatrixRet { void* ptr; int rows; int cols; };
-        using MatrixFn = MatrixRet(*)();
-        using MatrixFn1 = MatrixRet(*)(double);
-        using MatrixFn2 = MatrixRet(*)(double, double);
-
-        MatrixRet r = {nullptr, 0, 0};
-        if (args.empty()) r = reinterpret_cast<MatrixFn>(fnPtr)();
-        else if (args.size() == 1) r = reinterpret_cast<MatrixFn1>(fnPtr)(args[0]);
-        else if (args.size() == 2) r = reinterpret_cast<MatrixFn2>(fnPtr)(args[0], args[1]);
-
-        return MatrixResult{r.ptr, r.rows, r.cols};
-    } else if (retType.Kind == TypeKind::Complex) {
-        // Complex return: LLVM returns small structs in registers or via hidden pointer.
-        // For {double, double}, it's usually returned as a pair of registers.
-        // The safest way to handle this across different ABIs without a wrapper is to 
-        // use a helper that returns by value and hope it matches, but for {double, double}
-        // it's often more reliable to call a function that takes a pointer to the result.
-
-        // However, since we are using JIT and casting fnPtr directly:
-        struct ComplexRet { double real; double imag; };
-        using ComplexFn = ComplexRet(*)();
-        using ComplexFn1 = ComplexRet(*)(double);
-        using ComplexFn2 = ComplexRet(*)(double, double);
-
-        if (args.empty()) {
-            ComplexRet r = reinterpret_cast<ComplexFn>(fnPtr)();
-            return std::complex<double>(r.real, r.imag);
-        }
-        if (args.size() == 1) {
-            ComplexRet r = reinterpret_cast<ComplexFn1>(fnPtr)(args[0]);
-            return std::complex<double>(r.real, r.imag);
-        }
-        if (args.size() == 2) {
-            ComplexRet r = reinterpret_cast<ComplexFn2>(fnPtr)(args[0], args[1]);
-            return std::complex<double>(r.real, r.imag);
-        }
-    } else {
-        if (args.empty()) return reinterpret_cast<double(*)()>(fnPtr)();
-        if (args.size() == 1) return reinterpret_cast<double(*)(double)>(fnPtr)(args[0]);
-        if (args.size() == 2) return reinterpret_cast<double(*)(double, double)>(fnPtr)(args[0], args[1]);
-    }
-    if (error) *error = "Unsupported arguments or return type";
-    return 0.0;
-}
-#endif
 
 void* JITEngine::getFunctionPointer(const std::string& name) {
     if (!m_initialized) return nullptr;
