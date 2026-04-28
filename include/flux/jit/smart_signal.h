@@ -255,4 +255,3 @@ private:
 
 } // namespace Flux
 
-#endif // FLUX_SMART_SIGNAL_H

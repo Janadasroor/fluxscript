@@ -344,7 +344,23 @@ TypedValue AssignExprAST::codegen(CodegenContext& context) {
     }
 
     if (!Variable) {
-        std::cerr << "Unknown variable name: " << TargetName << std::endl;
+        // CLEAN SYNTAX ENHANCEMENT: Implicit variable creation
+        // If variable doesn't exist, create it in the entry block of the current function
+        llvm::BasicBlock* EntryBB = context.Builder.GetInsertBlock();
+        if (EntryBB) {
+            llvm::Function* TheFunction = EntryBB->getParent();
+            if (TheFunction) {
+                llvm::IRBuilder<> TmpB(&TheFunction->getEntryBlock(), TheFunction->getEntryBlock().begin());
+                Variable = TmpB.CreateAlloca(llvm::Type::getDoubleTy(context.TheContext), nullptr, TargetName);
+                context.NamedValues[TargetName] = Variable;
+                // Store initial zero value
+                context.Builder.CreateStore(llvm::ConstantFP::get(context.TheContext, llvm::APFloat(0.0)), Variable);
+            }
+        }
+    }
+
+    if (!Variable) {
+        std::cerr << "Unknown variable name or scope error: " << TargetName << std::endl;
         return TypedValue();
     }
 
