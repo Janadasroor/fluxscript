@@ -1,4 +1,0 @@
-    src/compiler/advanced_features.cpp
-    src/compiler/netlist_generator.cpp
-    src/compiler/new_features_codegen.cpp
-    src/compiler/adevice_codegen.cpp
