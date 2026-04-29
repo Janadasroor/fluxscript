@@ -153,17 +153,17 @@ size_t NeuralNetworkSurrogate::numParameters() const { return 0; }
 size_t NeuralNetworkSurrogate::memorySize() const { return 0; }
 std::string NeuralNetworkSurrogate::getSummary() const { return "Neural Network Surrogate"; }
 
-double NeuralNetworkSurrogate::relu(double x) { return x > 0 ? x : 0; }
-double NeuralNetworkSurrogate::relu_derivative(double x) { return x > 0 ? 1.0 : 0.0; }
-double NeuralNetworkSurrogate::tanh_derivative(double x) { return 1.0 - x * x; }
-double NeuralNetworkSurrogate::sigmoid_derivative(double x) { return x * (1.0 - x); }
-double NeuralNetworkSurrogate::tanh(double x) { return std::tanh(x); }
-double NeuralNetworkSurrogate::sigmoid(double x) { 
+double NeuralNetworkSurrogate::relu(double x) const { return x > 0 ? x : 0; }
+double NeuralNetworkSurrogate::relu_derivative(double x) const { return x > 0 ? 1.0 : 0.0; }
+double NeuralNetworkSurrogate::tanh_derivative(double x) const { return 1.0 - x * x; }
+double NeuralNetworkSurrogate::sigmoid_derivative(double x) const { return x * (1.0 - x); }
+double NeuralNetworkSurrogate::tanh(double x) const { return std::tanh(x); }
+double NeuralNetworkSurrogate::sigmoid(double x) const { 
     if (x < -20.0) return 0.0;
     if (x > 20.0) return 1.0;
     return 1.0 / (1.0 + std::exp(-x)); 
 }
-double NeuralNetworkSurrogate::linear(double x) { return x; }
+double NeuralNetworkSurrogate::linear(double x) const { return x; }
 
 Eigen::VectorXd NeuralNetworkSurrogate::forward(const Eigen::VectorXd& input) const {
     m_activations.clear();
