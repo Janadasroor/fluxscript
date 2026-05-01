@@ -1,11 +1,11 @@
 *.flux
 BUILD_STATUS.json
 /build/
-/CMakeLists.txt
-/third_party/
+
+
 /docs/
 /examples/
-/cli/
+
 /editor/
 /gui/
 /scripts/

@@ -1,0 +1,277 @@
+cmake_minimum_required(VERSION 3.16)
+project(FluxScript VERSION 1.0.0 LANGUAGES CXX C)
+
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+# Suppress LLVM narrowing conversion warnings in codegen
+add_compile_options(-Wno-narrowing)
+
+# =============================================================================
+# Options
+# =============================================================================
+
+option(FLUX_BUILD_TESTS "Build tests" OFF)
+option(FLUX_ENABLE_MLIR "Enable optional MLIR integration" OFF)
+option(FLUX_VIO_MATRIXC_LIB_DIR "Path to VioMATRIXC libngspice directory" "")
+
+# =============================================================================
+# Find Dependencies
+# =============================================================================
+
+# Find LLVM
+find_package(LLVM REQUIRED CONFIG)
+message(STATUS "Found LLVM ${LLVM_PACKAGE_VERSION}")
+include_directories(${LLVM_INCLUDE_DIRS})
+add_definitions(${LLVM_DEFINITIONS})
+
+# Find CURL for package manager
+find_package(CURL REQUIRED)
+
+# Find ngspice for circuit simulation
+if(FLUX_VIO_MATRIXC_LIB_DIR)
+    message(STATUS "Using VioMATRIXC libngspice from: ${FLUX_VIO_MATRIXC_LIB_DIR}")
+    set(NGSPICE_LIBRARY "${FLUX_VIO_MATRIXC_LIB_DIR}/libngspice.so.0" CACHE FILEPATH "VioMATRIXC ngspice library" FORCE)
+    set(NGSPICE_INCLUDE_DIR "${FLUX_VIO_MATRIXC_LIB_DIR}/../../../src/include" CACHE PATH "VioMATRIXC ngspice include dir" FORCE)
+else()
+    find_path(NGSPICE_INCLUDE_DIR ngspice/sharedspice.h /usr/include /usr/local/include)
+    find_library(NGSPICE_LIBRARY ngspice /usr/lib/x86_64-linux-gnu /usr/lib /usr/local/lib)
+endif()
+
+if(NGSPICE_INCLUDE_DIR AND NGSPICE_LIBRARY)
+    message(STATUS "Found ngspice: ${NGSPICE_LIBRARY}")
+    set(NGSPICE_FOUND TRUE)
+    include_directories(${NGSPICE_INCLUDE_DIR})
+else()
+    message(WARNING "ngspice not found - simulation will use stub implementation")
+    set(NGSPICE_FOUND FALSE)
+endif()
+
+# Find Eigen
+find_package(Eigen3 3.4 QUIET)
+if(NOT Eigen3_FOUND)
+    set(EIGEN3_INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/third_party/eigen-3.4.0)
+    message(STATUS "Using bundled Eigen from: ${EIGEN3_INCLUDE_DIR}")
+else()
+    message(STATUS "Found Eigen ${EIGEN3_VERSION}")
+endif()
+
+# Map LLVM components
+llvm_map_components_to_libnames(llvm_libs
+    Core ExecutionEngine MCJIT OrcJIT Support native
+    BitWriter BitReader Linker IRReader X86
+)
+
+# =============================================================================
+# Include Directories
+# =============================================================================
+
+include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include)
+include_directories(${CMAKE_CURRENT_SOURCE_DIR}/src)
+
+# =============================================================================
+# Core Compiler Library
+# =============================================================================
+
+set(FLUXSCRIPT_SOURCES
+    src/compiler/compiler_instance.cpp
+    src/compiler/lexer.cpp
+    src/compiler/parser.cpp
+    src/compiler/codegen.cpp
+    src/compiler/module_loader.cpp
+    src/compiler/preprocessor.cpp
+    src/compiler/control_flow_parser.cpp
+    src/compiler/control_flow_codegen.cpp
+    src/compiler/extended_parser.cpp
+    src/compiler/extended_codegen.cpp
+    src/compiler/parallel_parser.cpp
+    src/compiler/parallel_codegen.cpp
+    src/compiler/schematic_parser.cpp
+    src/compiler/schematic_codegen.cpp
+    src/compiler/time_domain_parser.cpp
+    src/compiler/time_domain_codegen.cpp
+    src/compiler/component_modeling_parser.cpp
+    src/compiler/component_modeling_codegen.cpp
+    src/compiler/model_quality_parser.cpp
+    src/compiler/model_quality_codegen.cpp
+    src/compiler/mixed_signal_codegen.cpp
+    src/compiler/symbolic_parser.cpp
+    src/compiler/symbolic_codegen.cpp
+    src/compiler/advanced_features.cpp
+    src/compiler/netlist_generator.cpp
+    src/compiler/new_features_codegen.cpp
+    src/compiler/adevice_codegen.cpp
+    src/security/security.cpp
+    src/runtime/units.cpp
+    src/runtime/mixed_signal_runtime.cpp
+    src/runtime/autodiff.cpp
+    src/jit/flux_jit.cpp
+    src/jit/jit_manager.cpp
+    src/jit/simulation_hook.cpp
+    src/jit/scaling_security.cpp
+    src/jit/smart_signal.cpp
+    src/jit/zero_copy_data.cpp
+    src/jit_engine.cpp
+    src/runtime/flux_runtime.cpp
+    src/runtime/advanced_runtime.cpp
+    src/runtime/time_domain_api.cpp
+    src/runtime/model_quality_engine.cpp
+    src/runtime/symbolic_engine.cpp
+    src/runtime/parallel_runtime.cpp
+    src/runtime/ngspice_bridge.cpp
+    src/tooling/tooling.cpp
+    src/tooling/package_manager.cpp
+    src/tooling/repl.cpp
+    src/tooling/notebook_kernel.cpp
+    src/tooling/doc_generator.cpp
+    src/tooling/example_gallery.cpp
+    src/tooling/profiler.cpp
+    src/tooling/benchmark.cpp
+    src/tooling/circuit_diff.cpp
+    src/tooling/auto_docs.cpp
+    src/tooling/lsp_server.cpp
+    src/tooling/source_docs.cpp
+    src/analysis/advanced_analysis.cpp
+    src/analysis/fft_engine.cpp
+    src/doctor/circuit_doctor.cpp
+    src/instruments/instrument.cpp
+    src/sweep/parametric_sweep.cpp
+    src/testing/circuit_fuzz.cpp
+    src/toolbox/power.cpp
+    src/toolbox/control.cpp
+    src/ai/surrogate.cpp
+    src/phase3_stubs.cpp
+    src/phase4a_stubs.cpp
+    src/package/http_client.cpp
+    src/package/toml_parser.cpp
+    src/package/package_manager.cpp
+    src/package/dependency_resolver.cpp
+    src/analysis/component_substitution.cpp
+    src/verification/verification_dx.cpp
+    src/verification/property_testing.cpp
+    src/verification/cross_simulator_validation.cpp
+    src/simulation/monte_carlo.cpp
+)
+
+if(FLUX_ENABLE_MLIR)
+    find_package(MLIR QUIET CONFIG)
+    if(MLIR_FOUND)
+        set(FLUX_HAS_MLIR ON)
+        list(APPEND FLUXSCRIPT_SOURCES src/mlir/flux_mlir.cpp)
+        include_directories(${MLIR_INCLUDE_DIRS})
+        add_definitions(${MLIR_DEFINITIONS})
+        set(FLUX_MLIR_LIBS MLIRIR MLIRParser MLIRSupport MLIRFuncDialect MLIRArithDialect MLIRTensorDialect)
+    else()
+        list(APPEND FLUXSCRIPT_SOURCES src/mlir/flux_mlir_stub.cpp)
+    endif()
+else()
+    list(APPEND FLUXSCRIPT_SOURCES src/mlir/flux_mlir_stub.cpp)
+endif()
+
+add_library(FluxScript STATIC ${FLUXSCRIPT_SOURCES})
+
+target_link_libraries(FluxScript PUBLIC CURL::libcurl ${llvm_libs} ${FLUX_MLIR_LIBS})
+if(NGSPICE_FOUND)
+    target_link_libraries(FluxScript PUBLIC ${NGSPICE_LIBRARY})
+    target_compile_definitions(FluxScript PUBLIC FLUX_HAS_NGSPICE)
+endif()
+
+if(FLUX_HAS_MLIR)
+    target_compile_definitions(FluxScript PUBLIC FLUX_HAS_MLIR)
+endif()
+
+target_include_directories(FluxScript PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+    $<INSTALL_INTERFACE:include>
+    ${LLVM_INCLUDE_DIRS}
+    ${EIGEN3_INCLUDE_DIR}
+)
+
+# =============================================================================
+# CLI Tools
+# =============================================================================
+
+# Main CLI (replaces the old Qt-based flux)
+add_executable(flux cli/minimal.cpp)
+target_link_libraries(flux PRIVATE "-Wl,--whole-archive" FluxScript "-Wl,--no-whole-archive")
+
+add_executable(flux-pkg cli/flux-pkg.cpp)
+target_link_libraries(flux-pkg PRIVATE FluxScript)
+
+add_executable(flux-spice cli/flux-spice.cpp src/runtime/ngspice_bridge.cpp)
+if(NGSPICE_FOUND)
+    target_link_libraries(flux-spice PRIVATE ${NGSPICE_LIBRARY})
+endif()
+target_link_libraries(flux-spice PRIVATE FluxScript)
+
+add_executable(flux-run src/cli/flux_run.cpp src/runtime/ngspice_bridge.cpp)
+if(NGSPICE_FOUND)
+    target_link_libraries(flux-run PRIVATE ${NGSPICE_LIBRARY})
+    target_compile_definitions(flux-run PRIVATE FLUX_HAS_NGSPICE=1)
+endif()
+target_link_libraries(flux-run PRIVATE FluxScript)
+
+add_executable(flux-doctor src/cli/flux-doctor.cpp)
+target_link_libraries(flux-doctor PRIVATE FluxScript)
+
+add_executable(flux-sweep src/cli/flux-sweep.cpp)
+target_link_libraries(flux-sweep PRIVATE FluxScript)
+
+add_executable(flux-fft src/cli/flux_fft.cpp)
+target_link_libraries(flux-fft PRIVATE FluxScript)
+
+add_executable(flux-repl cli/repl.cpp)
+target_link_libraries(flux-repl PRIVATE "-Wl,--whole-archive" FluxScript "-Wl,--no-whole-archive")
+
+add_executable(fluxc cli/fluxc.cpp)
+target_link_libraries(fluxc PRIVATE "-Wl,--whole-archive" FluxScript "-Wl,--no-whole-archive")
+
+add_executable(flux-format cli/flux-format.cpp)
+target_link_libraries(flux-format PRIVATE "-Wl,--whole-archive" FluxScript "-Wl,--no-whole-archive")
+
+add_executable(flux-doc cli/flux-doc.cpp)
+target_link_libraries(flux-doc PRIVATE "-Wl,--whole-archive" FluxScript "-Wl,--no-whole-archive")
+
+add_executable(flux-test cli/flux-test.cpp)
+target_link_libraries(flux-test PRIVATE "-Wl,--whole-archive" FluxScript "-Wl,--no-whole-archive")
+
+# =============================================================================
+# Tests (Optional)
+# =============================================================================
+
+# Helper function to register test executables
+function(add_test_executable target_name source_file)
+    add_executable(${target_name} ${CMAKE_CURRENT_SOURCE_DIR}/${source_file})
+    target_link_libraries(${target_name} PRIVATE "-Wl,--whole-archive" FluxScript "-Wl,--no-whole-archive")
+endfunction()
+
+# Helper function to register test with CTest
+function(add_test_entry target_name label)
+    string(REPLACE "flux-" "" clean_label ${target_name})
+    add_test(NAME ${target_name}
+        COMMAND ${target_name}
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(${target_name} PROPERTIES
+        LABELS "${clean_label}"
+        TIMEOUT 120
+    )
+endfunction()
+
+if(FLUX_BUILD_TESTS)
+    enable_testing()
+    add_subdirectory(tests)
+endif()
+
+# =============================================================================
+# Installation
+# =============================================================================
+
+install(TARGETS FluxScript flux flux-pkg flux-spice flux-run flux-doctor flux-sweep flux-fft flux-repl fluxc flux-format flux-doc flux-test
+    EXPORT FluxScriptTargets
+    LIBRARY DESTINATION lib
+    ARCHIVE DESTINATION lib
+    RUNTIME DESTINATION bin
+)
+
+install(DIRECTORY include/flux DESTINATION include)
