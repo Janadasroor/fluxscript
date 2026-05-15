@@ -101,7 +101,6 @@ set(FLUXSCRIPT_SOURCES
     src/compiler/netlist_generator.cpp
     src/compiler/new_features_codegen.cpp
     src/compiler/adevice_codegen.cpp
-    src/compiler/spice_parser.cpp
     src/compiler/codegen_new.cpp
     src/security/security.cpp
     src/runtime/units.cpp
