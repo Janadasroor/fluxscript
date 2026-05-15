@@ -1183,11 +1183,31 @@ TypedValue CallExprAST::codegen(CodegenContext& context) {
             }
         }
         
-        // Automatically declare as extern double(double, ...) if not found
-        // but only if it's not a known non-function identifier.
-        std::vector<llvm::Type*> Doubles(Args.size(), llvm::Type::getDoubleTy(context.TheContext));
-        llvm::FunctionType* FT = llvm::FunctionType::get(llvm::Type::getDoubleTy(context.TheContext), Doubles, false);
-        CalleeF = llvm::Function::Create(FT, llvm::Function::ExternalLinkage, Callee, context.TheModule);
+        // Check for registered extern function types first
+        auto extIt = context.ExternFuncTypes.find(Callee);
+        if (extIt != context.ExternFuncTypes.end()) {
+            const auto& retType = extIt->second.first;
+            const auto& argTypes = extIt->second.second;
+            llvm::Type* VoidPtrTy = llvm::PointerType::get(context.TheContext, 0);
+            // Matrix returns: LLVM function returns void*, codegen wraps to {ptr,i32,i32}
+            llvm::Type* RetLTy = (retType.Kind == TypeKind::Matrix) ? VoidPtrTy : (
+                (retType.Kind == TypeKind::Void) ? llvm::Type::getVoidTy(context.TheContext) :
+                retType.getLLVMType(context.TheContext));
+            std::vector<llvm::Type*> ArgLTys;
+            for (const auto& at : argTypes) {
+                if (at.Kind == TypeKind::Matrix)
+                    ArgLTys.push_back(VoidPtrTy);
+                else
+                    ArgLTys.push_back(at.getLLVMType(context.TheContext));
+            }
+            llvm::FunctionType* FT = llvm::FunctionType::get(RetLTy, ArgLTys, false);
+            CalleeF = llvm::Function::Create(FT, llvm::Function::ExternalLinkage, Callee, context.TheModule);
+        } else {
+            // Automatically declare as extern double(double, ...) if not found
+            std::vector<llvm::Type*> Doubles(Args.size(), llvm::Type::getDoubleTy(context.TheContext));
+            llvm::FunctionType* FT = llvm::FunctionType::get(llvm::Type::getDoubleTy(context.TheContext), Doubles, false);
+            CalleeF = llvm::Function::Create(FT, llvm::Function::ExternalLinkage, Callee, context.TheModule);
+        }
     }
 
     std::vector<llvm::Value*> ArgsV;
@@ -1215,6 +1235,12 @@ TypedValue CallExprAST::codegen(CodegenContext& context) {
         TypedValue ArgTV = Args[i]->codegen(context);
         if (!ArgTV.Val) return TypedValue();
         llvm::Value* ArgV = ArgTV.Val;
+
+        // If extern function expects void* but arg is a matrix struct, extract pointer
+        llvm::Type* ArgExpectedTy = (i < (unsigned)CalleeF->arg_size()) ? CalleeF->getArg(i)->getType() : nullptr;
+        if (ArgExpectedTy && ArgExpectedTy->isPointerTy() && ArgTV.Type.Kind == TypeKind::Matrix) {
+            ArgV = context.Builder.CreateExtractValue(ArgV, 0, "mat_ptr");
+        }
 
         // Ensure string arguments are bitcasted to double for the new ABI
         if (ArgTV.Type.Kind == TypeKind::String && ArgV->getType()->isPointerTy()) {
@@ -1257,8 +1283,36 @@ TypedValue CallExprAST::codegen(CodegenContext& context) {
         }
         ArgsV.push_back(ArgV);
     }
+    auto extRetIt = context.ExternFuncTypes.find(Callee);
+    if (extRetIt != context.ExternFuncTypes.end() && extRetIt->second.first.Kind == TypeKind::Matrix) {
+        llvm::Value* RetPtr = context.Builder.CreateCall(CalleeF, ArgsV, "mat_ret");
+        llvm::Function* RowsF = context.TheModule->getFunction("flux_matrix_rows");
+        if (!RowsF) RowsF = llvm::Function::Create(
+            llvm::FunctionType::get(llvm::Type::getInt32Ty(context.TheContext),
+                {llvm::PointerType::get(context.TheContext, 0)}, false),
+            llvm::Function::ExternalLinkage, "flux_matrix_rows", context.TheModule);
+        llvm::Function* ColsF = context.TheModule->getFunction("flux_matrix_cols");
+        if (!ColsF) ColsF = llvm::Function::Create(
+            llvm::FunctionType::get(llvm::Type::getInt32Ty(context.TheContext),
+                {llvm::PointerType::get(context.TheContext, 0)}, false),
+            llvm::Function::ExternalLinkage, "flux_matrix_cols", context.TheModule);
+        llvm::Value* RetRows = context.Builder.CreateCall(RowsF, {RetPtr}, "mat_rows");
+        llvm::Value* RetCols = context.Builder.CreateCall(ColsF, {RetPtr}, "mat_cols");
+        llvm::StructType* MatSTy = llvm::cast<llvm::StructType>(
+            FluxType(TypeKind::Matrix).getLLVMType(context.TheContext));
+        llvm::Value* MatVal = llvm::PoisonValue::get(MatSTy);
+        MatVal = context.Builder.CreateInsertValue(MatVal, RetPtr, 0);
+        MatVal = context.Builder.CreateInsertValue(MatVal, RetRows, 1);
+        MatVal = context.Builder.CreateInsertValue(MatVal, RetCols, 2);
+        return TypedValue(MatVal, TypeKind::Matrix);
+    }
+    if (extRetIt != context.ExternFuncTypes.end() && extRetIt->second.first.Kind == TypeKind::Void) {
+        context.Builder.CreateCall(CalleeF, ArgsV);
+        return TypedValue(llvm::ConstantFP::get(context.TheContext, llvm::APFloat(0.0)), TypeKind::Double);
+    }
     return TypedValue(context.Builder.CreateCall(CalleeF, ArgsV, "calltmp"), typeFromLLVM(CalleeF->getReturnType()));
 }
+
 
 TypedValue IfExprAST::codegen(CodegenContext& context) {
     TypedValue CondTV = Cond->codegen(context);

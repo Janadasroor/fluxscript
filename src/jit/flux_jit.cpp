@@ -294,8 +294,10 @@ void* FluxJIT::getPointerToFunction(const std::string& Name) {
 void FluxJIT::registerFunction(const std::string& Name, void* FuncPtr) {
     if (!m_lljit || !m_runtimeDylib) return;
 
+    // Use intern() to keep the unmangled C name, matching LLVM IR declarations
+    auto internedName = m_lljit->getExecutionSession().intern(Name);
     llvm::orc::SymbolMap symMap;
-    symMap[m_lljit->mangleAndIntern(Name)] =
+    symMap[internedName] =
         { llvm::orc::ExecutorAddr::fromPtr(FuncPtr), llvm::JITSymbolFlags::Exported };
     if (auto Err = m_runtimeDylib->define(llvm::orc::absoluteSymbols(std::move(symMap)))) {
         llvm::handleAllErrors(std::move(Err), [](const llvm::ErrorInfoBase &EI) {

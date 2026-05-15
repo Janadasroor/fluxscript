@@ -195,6 +195,16 @@ extern "C" double flux_matrix_det(void* m_ptr) {
     return M ? M->determinant() : 0.0;
 }
 
+extern "C" void flux_matrix_set(void* m_ptr, int row, int col, double val) {
+    auto* M = g_matrix_tracker.get_matrix(m_ptr);
+    if (M && row >= 0 && row < M->rows() && col >= 0 && col < M->cols())
+        (*M)(row, col) = val;
+}
+
+extern "C" void* flux_matrix_zeros(int rows, int cols) {
+    return flux_create_matrix(nullptr, rows, cols);
+}
+
 extern "C" void* flux_matrix_inv(void* m_ptr) {
     auto* M = g_matrix_tracker.get_matrix(m_ptr);
     if (!M) return nullptr;
@@ -363,6 +373,22 @@ void registerRuntimeFunctions(FluxJIT& jit) {
     jit.registerFunction("flux_complex_matrix_mul", (void*)&flux_complex_matrix_mul);
     jit.registerFunction("print_complex_matrix", (void*)&flux_print_complex_matrix);
     jit.registerFunction("flux_promote_matrix_to_complex", (void*)&flux_promote_matrix_to_complex);
+
+    // Clean user-facing matrix API
+    jit.registerFunction("matrix_create", (void*)&flux_matrix_zeros);
+    jit.registerFunction("matrix_zeros", (void*)&flux_matrix_zeros);
+    jit.registerFunction("matrix_mul", (void*)&flux_matrix_mul);
+    jit.registerFunction("matrix_add", (void*)&flux_matrix_add);
+    jit.registerFunction("matrix_sub", (void*)&flux_matrix_sub);
+    jit.registerFunction("matrix_transpose", (void*)&flux_matrix_transpose);
+    jit.registerFunction("matrix_inv", (void*)&flux_matrix_inv);
+    jit.registerFunction("matrix_det", (void*)&flux_matrix_det);
+    jit.registerFunction("matrix_solve", (void*)&flux_matrix_solve);
+    jit.registerFunction("matrix_get", (void*)&flux_matrix_get);
+    jit.registerFunction("matrix_set", (void*)&flux_matrix_set);
+    jit.registerFunction("matrix_rows", (void*)&flux_matrix_rows);
+    jit.registerFunction("matrix_cols", (void*)&flux_matrix_cols);
+
     jit.registerFunction("gpu_available", (void*)&flux_gpu_available);
     jit.registerFunction("gpu_enable", (void*)&flux_gpu_set_enabled);
     jit.registerFunction("pi", (void*)&flux_pi);

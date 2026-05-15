@@ -98,6 +98,54 @@ void CompilerInstance::injectStandardLibrary(CodegenContext& context,
         returnTypes[name] = FluxType(TypeKind::Double);
     };
 
+    // Register extern function types for the codegen so it can emit
+    // correct LLVM call instructions instead of assuming double(double,...).
+    // Register extern function types for the codegen so it can emit
+    // correct LLVM call instructions instead of assuming double(double,...).
+    // LLVM return type for matrix-returning functions is void* (ptr).
+    // The post-call code in codegen wraps it into {ptr, i32, i32}.
+    auto regExtern = [&](const std::string& name, FluxType ret, std::vector<FluxType> argTypes) {
+        context.ExternFuncTypes[name] = {ret, std::move(argTypes)};
+    };
+
+    auto VoidPtr = [&]() { return FluxType(TypeKind::Double); }; // void* passed as opaque
+    auto IntTy = [&]() { return FluxType(TypeKind::Int); };
+    auto DblTy = [&]() { return FluxType(TypeKind::Double); };
+    auto MatTy = [&]() { return FluxType(TypeKind::Matrix); };
+
+    // Matrix functions returning void* (wrapped to Matrix by codegen)
+    regExtern("matrix_zeros",      MatTy(), {IntTy(), IntTy()});
+    regExtern("matrix_create",     MatTy(), {IntTy(), IntTy()});
+    regExtern("matrix_eye",        MatTy(), {IntTy(), IntTy()});
+    regExtern("matrix_ones",       MatTy(), {IntTy(), IntTy()});
+    regExtern("matrix_mul",        MatTy(), {MatTy(), MatTy()});
+    regExtern("matrix_add",        MatTy(), {MatTy(), MatTy()});
+    regExtern("matrix_sub",        MatTy(), {MatTy(), MatTy()});
+    regExtern("matrix_transpose",  MatTy(), {MatTy()});
+    regExtern("matrix_inv",        MatTy(), {MatTy()});
+    regExtern("matrix_solve",      MatTy(), {MatTy(), MatTy()});
+
+    // Matrix functions returning scalar
+    regExtern("matrix_det",        DblTy(), {MatTy()});
+    regExtern("matrix_get",        DblTy(), {MatTy(), IntTy(), IntTy()});
+    regExtern("matrix_rows",       IntTy(), {MatTy()});
+    regExtern("matrix_cols",       IntTy(), {MatTy()});
+
+    // Matrix functions returning void
+    regExtern("matrix_set",        FluxType(TypeKind::Void), {MatTy(), IntTy(), IntTy(), DblTy()});
+
+    // Decompositions (all return Matrix)
+    regExtern("matrix_lu",         MatTy(), {MatTy()});
+    regExtern("matrix_qr",         MatTy(), {MatTy()});
+    regExtern("matrix_svd",        MatTy(), {MatTy()});
+    regExtern("matrix_cholesky",   MatTy(), {MatTy()});
+    regExtern("matrix_eigenvalues",MatTy(), {MatTy()});
+    regExtern("matrix_eigenvectors",MatTy(), {MatTy()});
+    regExtern("matrix_rank",       DblTy(), {MatTy()});
+    regExtern("matrix_cond",       DblTy(), {MatTy()});
+    regExtern("matrix_norm",       DblTy(), {MatTy(), DblTy()});
+
+    // Math functions: double in, double out
     inject("sin", 1);
     inject("cos", 1);
     inject("tan", 1);

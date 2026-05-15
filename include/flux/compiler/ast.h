@@ -202,6 +202,7 @@ public:
     llvm::Module* TheModule = nullptr;
     std::map<std::string, llvm::Value*> NamedValues;
     std::map<std::string, FluxType> NamedTypes;
+    std::map<std::string, std::pair<FluxType, std::vector<FluxType>>> ExternFuncTypes;
     
     // For return statements
     llvm::BasicBlock* CurrentReturnBB = nullptr;
