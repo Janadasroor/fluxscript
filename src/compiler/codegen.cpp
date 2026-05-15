@@ -1846,7 +1846,10 @@ llvm::Function* FunctionAST::codegen(CodegenContext& context) {
         }
 
         if (RetVal && RetVal->getType() != RetTy) {
-            if (RetTy->isIntegerTy() && RetVal->getType()->isFloatingPointTy()) RetVal = context.Builder.CreateFPToSI(RetVal, RetTy, "cast_final");
+            // Complex (<2 x double>) → double: extract real part
+            if (RetTy->isDoubleTy() && RetVal->getType()->isVectorTy()) {
+                RetVal = context.Builder.CreateExtractElement(RetVal, (uint64_t)0, "ret_real");
+            } else if (RetTy->isIntegerTy() && RetVal->getType()->isFloatingPointTy()) RetVal = context.Builder.CreateFPToSI(RetVal, RetTy, "cast_final");
             else if (RetTy->isFloatingPointTy() && RetVal->getType()->isIntegerTy()) RetVal = context.Builder.CreateSIToFP(RetVal, RetTy, "cast_final");
             else if (RetTy->isFloatingPointTy() && RetVal->getType()->isPointerTy()) {
                 llvm::Type* Int64Ty = llvm::Type::getInt64Ty(context.TheContext);
