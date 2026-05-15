@@ -95,37 +95,13 @@ bool JITEngine::compileScript(const std::string& code, std::string* error) {
     const std::filesystem::path objectPath = cacheDir / (cacheKey + ".o");
     const std::filesystem::path metaPath = cacheDir / (cacheKey + ".meta");
 
-    if (m_cacheEnabled && std::filesystem::exists(objectPath) && std::filesystem::exists(metaPath)) {
-        auto objectBuffer = llvm::MemoryBuffer::getFile(objectPath.string());
-        if (objectBuffer && Tooling::loadReturnTypes(metaPath.string(), m_functionReturnTypes, error)) {
-            m_jit->addObjectFile(std::move(*objectBuffer));
-            m_lastCompileUsedCache = true;
-            if (error)
-                error->clear();
-            return true;
-        }
+    if (m_cacheEnabled && std::filesystem::exists(metaPath)) {
+        Tooling::loadReturnTypes(metaPath.string(), m_functionReturnTypes, nullptr);
     }
 
     auto artifacts = compiler.compileToIR(code, error);
     if (!artifacts) return false;
     m_functionReturnTypes = artifacts->functionReturnTypes;
-
-    if (m_cacheEnabled) {
-        std::filesystem::create_directories(cacheDir);
-        std::unique_ptr<llvm::MemoryBuffer> objectBuffer;
-        std::string cacheError;
-        if (Tooling::emitObjectBuffer(*artifacts, m_compilerOptions.optimizationLevel, objectBuffer, &cacheError) && objectBuffer) {
-            auto jitObject = llvm::MemoryBuffer::getMemBufferCopy(objectBuffer->getBuffer(), objectPath.filename().string());
-            m_jit->addObjectFile(std::move(jitObject));
-            Tooling::saveReturnTypes(metaPath.string(), m_functionReturnTypes, nullptr);
-            std::error_code ec;
-            llvm::raw_fd_ostream stream(objectPath.string(), ec, llvm::sys::fs::OF_None);
-            if (!ec)
-                stream << objectBuffer->getBuffer();
-            m_lastCompileUsedCache = false;
-            return true;
-        }
-    }
 
     m_codegenCtx = std::move(artifacts->codegenContext);
     m_jit->addModule(std::move(m_codegenCtx->OwnedModule), std::move(m_codegenCtx->OwnedContext));
