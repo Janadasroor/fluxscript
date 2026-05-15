@@ -186,7 +186,7 @@ int runJIT(const std::string& code) {
 
     std::string actualEntryPoint = EntryPoint;
     if (actualEntryPoint == "__anon_expr") {
-        actualEntryPoint = "FluxModule_anon_expr";
+        actualEntryPoint = "__anon_expr";
 
     }
 

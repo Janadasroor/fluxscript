@@ -1006,7 +1006,7 @@ TypedValue CallExprAST::codegen(CodegenContext& context) {
         if (Name == "println") {
             llvm::Function* PrintStr = context.TheModule->getFunction("flux_print_string");
             if (PrintStr) {
-                llvm::Value* NewLine = context.Builder.CreateGlobalStringPtr("\n");
+                llvm::Value* NewLine = context.Builder.CreateGlobalString("\n");
                 context.Builder.CreateCall(PrintStr, {NewLine});
             }
         }
@@ -2033,10 +2033,10 @@ TypedValue BSourceExprAST::codegen(CodegenContext& context) {
     }
     
     return TypedValue(context.Builder.CreateCall(RegisterBSource, {
-        context.Builder.CreateGlobalStringPtr(Name),
-        context.Builder.CreateGlobalStringPtr(PositiveNode),
-        context.Builder.CreateGlobalStringPtr(NegativeNode),
-        context.Builder.CreateGlobalStringPtr(SourceType)
+        context.Builder.CreateGlobalString(Name),
+        context.Builder.CreateGlobalString(PositiveNode),
+        context.Builder.CreateGlobalString(NegativeNode),
+        context.Builder.CreateGlobalString(SourceType)
     }), TypeKind::Double);
 }
 
@@ -2061,11 +2061,11 @@ TypedValue ESourceExprAST::codegen(CodegenContext& context) {
     }
     
     return TypedValue(context.Builder.CreateCall(RegisterESource, {
-        context.Builder.CreateGlobalStringPtr(Name),
-        context.Builder.CreateGlobalStringPtr(PositiveNode),
-        context.Builder.CreateGlobalStringPtr(NegativeNode),
-        context.Builder.CreateGlobalStringPtr(ControlPosNode),
-        context.Builder.CreateGlobalStringPtr(ControlNegNode),
+        context.Builder.CreateGlobalString(Name),
+        context.Builder.CreateGlobalString(PositiveNode),
+        context.Builder.CreateGlobalString(NegativeNode),
+        context.Builder.CreateGlobalString(ControlPosNode),
+        context.Builder.CreateGlobalString(ControlNegNode),
         llvm::ConstantFP::get(context.TheContext, llvm::APFloat(GainVal))
     }), TypeKind::Double);
 }
@@ -2090,10 +2090,10 @@ TypedValue FSourceExprAST::codegen(CodegenContext& context) {
     }
     
     return TypedValue(context.Builder.CreateCall(RegisterFSource, {
-        context.Builder.CreateGlobalStringPtr(Name),
-        context.Builder.CreateGlobalStringPtr(PositiveNode),
-        context.Builder.CreateGlobalStringPtr(NegativeNode),
-        context.Builder.CreateGlobalStringPtr(VoltageSourceName),
+        context.Builder.CreateGlobalString(Name),
+        context.Builder.CreateGlobalString(PositiveNode),
+        context.Builder.CreateGlobalString(NegativeNode),
+        context.Builder.CreateGlobalString(VoltageSourceName),
         llvm::ConstantFP::get(context.TheContext, llvm::APFloat(GainVal))
     }), TypeKind::Double);
 }
@@ -2118,11 +2118,11 @@ TypedValue GSourceExprAST::codegen(CodegenContext& context) {
     }
     
     return TypedValue(context.Builder.CreateCall(RegisterGSource, {
-        context.Builder.CreateGlobalStringPtr(Name),
-        context.Builder.CreateGlobalStringPtr(PositiveNode),
-        context.Builder.CreateGlobalStringPtr(NegativeNode),
-        context.Builder.CreateGlobalStringPtr(ControlPosNode),
-        context.Builder.CreateGlobalStringPtr(ControlNegNode),
+        context.Builder.CreateGlobalString(Name),
+        context.Builder.CreateGlobalString(PositiveNode),
+        context.Builder.CreateGlobalString(NegativeNode),
+        context.Builder.CreateGlobalString(ControlPosNode),
+        context.Builder.CreateGlobalString(ControlNegNode),
         llvm::ConstantFP::get(context.TheContext, llvm::APFloat(TranscondVal))
     }), TypeKind::Double);
 }
@@ -2147,10 +2147,10 @@ TypedValue HSourceExprAST::codegen(CodegenContext& context) {
     }
     
     return TypedValue(context.Builder.CreateCall(RegisterHSource, {
-        context.Builder.CreateGlobalStringPtr(Name),
-        context.Builder.CreateGlobalStringPtr(PositiveNode),
-        context.Builder.CreateGlobalStringPtr(NegativeNode),
-        context.Builder.CreateGlobalStringPtr(VoltageSourceName),
+        context.Builder.CreateGlobalString(Name),
+        context.Builder.CreateGlobalString(PositiveNode),
+        context.Builder.CreateGlobalString(NegativeNode),
+        context.Builder.CreateGlobalString(VoltageSourceName),
         llvm::ConstantFP::get(context.TheContext, llvm::APFloat(TransresVal))
     }), TypeKind::Double);
 }
@@ -2186,7 +2186,7 @@ TypedValue AnalysisExprAST::codegen(CodegenContext& context) {
     }
     
     return TypedValue(context.Builder.CreateCall(RegisterAnalysis, {
-        context.Builder.CreateGlobalStringPtr(AnalysisName)
+        context.Builder.CreateGlobalString(AnalysisName)
     }), TypeKind::Double);
 }
 
@@ -2219,8 +2219,8 @@ TypedValue MeasureExprAST::codegen(CodegenContext& context) {
     }
     
     return TypedValue(context.Builder.CreateCall(RegisterMeasure, {
-        context.Builder.CreateGlobalStringPtr(Name),
-        context.Builder.CreateGlobalStringPtr(MeasureName)
+        context.Builder.CreateGlobalString(Name),
+        context.Builder.CreateGlobalString(MeasureName)
     }), TypeKind::Double);
 }
 
@@ -2235,8 +2235,8 @@ TypedValue ProbeExprAST::codegen(CodegenContext& context) {
     }
     
     return TypedValue(context.Builder.CreateCall(RegisterProbe, {
-        context.Builder.CreateGlobalStringPtr(VariableName),
-        context.Builder.CreateGlobalStringPtr(OutputName.empty() ? VariableName : OutputName)
+        context.Builder.CreateGlobalString(VariableName),
+        context.Builder.CreateGlobalString(OutputName.empty() ? VariableName : OutputName)
     }), TypeKind::Double);
 }
 
@@ -2251,7 +2251,7 @@ TypedValue SaveExprAST::codegen(CodegenContext& context) {
     }
     
     return TypedValue(context.Builder.CreateCall(RegisterSave, {
-        context.Builder.CreateGlobalStringPtr(VariableName)
+        context.Builder.CreateGlobalString(VariableName)
     }), TypeKind::Double);
 }
 
@@ -2362,7 +2362,7 @@ TypedValue ParamExprAST::codegen(CodegenContext& context) {
     }
     
     return TypedValue(context.Builder.CreateCall(RegisterParam, {
-        context.Builder.CreateGlobalStringPtr(Name),
+        context.Builder.CreateGlobalString(Name),
         llvm::ConstantFP::get(context.TheContext, llvm::APFloat(Val))
     }), TypeKind::Double);
 }
@@ -2383,7 +2383,7 @@ TypedValue ICExprAST::codegen(CodegenContext& context) {
     }
 
     return TypedValue(context.Builder.CreateCall(RegisterIC, {
-        context.Builder.CreateGlobalStringPtr(NodeName),
+        context.Builder.CreateGlobalString(NodeName),
         llvm::ConstantFP::get(context.TheContext, llvm::APFloat(Val))
     }), TypeKind::Double);
 }
@@ -2400,7 +2400,7 @@ TypedValue WorstCaseExprAST::codegen(CodegenContext& context) {
     }
 
     return TypedValue(context.Builder.CreateCall(RegisterWC, {
-        context.Builder.CreateGlobalStringPtr(OutputName)
+        context.Builder.CreateGlobalString(OutputName)
     }), TypeKind::Int);
 }
 
@@ -2414,7 +2414,7 @@ TypedValue StabilityExprAST::codegen(CodegenContext& context) {
             llvm::Function::ExternalLinkage, "flux_stability_analyze", context.TheModule);
     }
     return TypedValue(context.Builder.CreateCall(Fn, {
-        context.Builder.CreateGlobalStringPtr(OutputName)
+        context.Builder.CreateGlobalString(OutputName)
     }), TypeKind::Int);
 }
 
@@ -2428,7 +2428,7 @@ TypedValue SensitivityExprAST::codegen(CodegenContext& context) {
             llvm::Function::ExternalLinkage, "flux_sensitivity_analyze", context.TheModule);
     }
     return TypedValue(context.Builder.CreateCall(Fn, {
-        context.Builder.CreateGlobalStringPtr(OutputName)
+        context.Builder.CreateGlobalString(OutputName)
     }), TypeKind::Int);
 }
 
@@ -2442,7 +2442,7 @@ TypedValue OptimizationExprAST::codegen(CodegenContext& context) {
             llvm::Function::ExternalLinkage, "flux_optimizer_run", context.TheModule);
     }
     return TypedValue(context.Builder.CreateCall(Fn, {
-        context.Builder.CreateGlobalStringPtr(OutputName)
+        context.Builder.CreateGlobalString(OutputName)
     }), TypeKind::Int);
 }
 
@@ -2456,7 +2456,7 @@ TypedValue FFTExprAST::codegen(CodegenContext& context) {
             llvm::Function::ExternalLinkage, "flux_fft_analyze", context.TheModule);
     }
     return TypedValue(context.Builder.CreateCall(Fn, {
-        context.Builder.CreateGlobalStringPtr(SignalName)
+        context.Builder.CreateGlobalString(SignalName)
     }), TypeKind::Int);
 }
 
@@ -2842,7 +2842,7 @@ TypedValue MonteCarloExprAST::codegen(CodegenContext& context) {
     // Convert parameters to C strings
     std::vector<llvm::Value*> ParamNames;
     for (const auto& p : Parameters) {
-        ParamNames.push_back(context.Builder.CreateGlobalStringPtr(p));
+        ParamNames.push_back(context.Builder.CreateGlobalString(p));
     }
     
     llvm::ArrayType* ArrayTy = llvm::ArrayType::get(VoidPtrTy, ParamNames.size());
@@ -2890,7 +2890,7 @@ TypedValue VirtualProbeExprAST::codegen(CodegenContext& context) {
             llvm::Function::ExternalLinkage, "flux_virtual_probe", TheModule);
     }
     
-    context.Builder.CreateCall(Fn, {SigTV.Val, context.Builder.CreateGlobalStringPtr(ProbeName)});
+    context.Builder.CreateCall(Fn, {SigTV.Val, context.Builder.CreateGlobalString(ProbeName)});
     
     return TypedValue(SigTV.Val, TypeKind::Double);
 }

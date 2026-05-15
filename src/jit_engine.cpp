@@ -63,6 +63,10 @@ void JITEngine::initialize() {
     std::cout << "FluxScript C++ LLVM JIT Engine Initialized." << std::endl;
 }
 
+void JITEngine::registerFunction(const std::string& name, void* funcPtr) {
+    if (m_jit) m_jit->registerFunction(name, funcPtr);
+}
+
 void JITEngine::registerEigenFunctions() {
     if (!m_jit) return;
 
@@ -143,6 +147,12 @@ void* JITEngine::getFunctionPointer(const std::string& name) {
 FluxValue JITEngine::callFunction(const std::string& name, const std::vector<double>& args, std::string* error) {
     if (!m_initialized) { if (error) *error = "JIT not initialized"; return 0.0; }
     void* fnPtr = m_jit->getPointerToFunction(name);
+    if (!fnPtr && name == "__anon_expr") {
+        std::string base = m_compilerOptions.moduleName + "_anon_expr";
+        fnPtr = m_jit->getPointerToFunction(base);
+        for (int i = 0; !fnPtr && i < 100; i++)
+            fnPtr = m_jit->getPointerToFunction(base + "_" + std::to_string(i));
+    }
     if (!fnPtr) { if (error) *error = "Function not found: " + name; return 0.0; }
     FluxType retType = m_functionReturnTypes[name];
 

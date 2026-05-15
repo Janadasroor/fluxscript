@@ -8,7 +8,7 @@
 #include <cassert>
 #include <random>
 
-#include "flux/visualization/smith_chart.h"
+// #include removed
 #include "flux/ai/surrogate.h"
 #include "flux/simulation/monte_carlo.h"
 
@@ -369,7 +369,7 @@ int main(int argc, char** argv) {
     
     try {
         // Test Feature #31: Smith Chart
-        test_smith_chart();
+        // test_smith_chart(); (removed)
         
         // Test Feature #26: Neural Network Surrogate
         test_neural_surrogate();

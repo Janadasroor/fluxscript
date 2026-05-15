@@ -108,7 +108,7 @@ FluxJIT::FluxJIT(OptimizationLevel optLevel)
     
     auto JIT = llvm::orc::LLJITBuilder()
         .setJITTargetMachineBuilder(std::move(*JTMB))
-        .setObjectLinkingLayerCreator([&](llvm::orc::ExecutionSession &ES, const llvm::Triple &TT) {
+        .setObjectLinkingLayerCreator([&](llvm::orc::ExecutionSession &ES) {
             auto Layer = std::make_unique<llvm::orc::ObjectLinkingLayer>(ES, std::make_unique<llvm::jitlink::InProcessMemoryManager>(16384));
             return Layer;
         })
@@ -243,7 +243,7 @@ void FluxJIT::prepareModule(llvm::Module& M) {
         return;
 
     M.setDataLayout(m_dataLayout);
-    M.setTargetTriple(m_targetTriple);
+    M.setTargetTriple(llvm::Triple(m_targetTriple));
     M.setCodeModel(llvm::CodeModel::Large);
     M.setPICLevel(llvm::PICLevel::BigPIC);
 }
@@ -298,7 +298,11 @@ void FluxJIT::registerFunction(const std::string& Name, void* FuncPtr) {
     symMap[m_lljit->mangleAndIntern(Name)] =
         { llvm::orc::ExecutorAddr::fromPtr(FuncPtr), llvm::JITSymbolFlags::Exported };
     if (auto Err = m_runtimeDylib->define(llvm::orc::absoluteSymbols(std::move(symMap)))) {
-        logError(std::move(Err), "Failed to register JIT symbol: " + Name);
+        llvm::handleAllErrors(std::move(Err), [](const llvm::ErrorInfoBase &EI) {
+            std::string msg = EI.message();
+            if (msg.find("duplicate definition") == std::string::npos)
+                llvm::errs() << "JIT symbol error: " << msg << "\n";
+        });
     }
 }
 

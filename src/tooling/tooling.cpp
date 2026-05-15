@@ -171,7 +171,7 @@ bool emitObjectBuffer(CompileArtifacts& artifacts,
         return false;
 
     auto& module = *artifacts.codegenContext->TheModule;
-    module.setTargetTriple(llvm::sys::getProcessTriple());
+    module.setTargetTriple(llvm::Triple(llvm::sys::getProcessTriple()));
     module.setDataLayout(targetMachine->createDataLayout());
 
     llvm::SmallVector<char, 0> objectBytes;

@@ -75,6 +75,7 @@ public:
     // Configuration
     void setDefine(const std::string& name, bool value);
     bool getDefine(const std::string& name) const;
+    void registerFunction(const std::string& name, void* funcPtr);
     void setOptimizationLevelForModules(OptimizationLevel level);
 
 

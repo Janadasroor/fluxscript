@@ -389,10 +389,12 @@ bool CompilerInstance::compileParser(Parser& parser,
             
             if (!Exprs.empty()) {
                 auto Block = std::make_unique<BlockExprAST>(std::move(Exprs));
+                static unsigned anonCounter = 0;
                 std::string anonName = "__anon_expr";
                 if (!m_options.moduleName.empty() && m_options.moduleName != "Flux Module") {
                     anonName = m_options.moduleName + "_anon_expr";
                 }
+                anonName += "_" + std::to_string(anonCounter++);
                 auto Proto = std::make_unique<PrototypeAST>(anonName, std::vector<std::pair<std::string, FluxType>>(), FluxType(TypeKind::Double));
                 functionAst = std::make_unique<FunctionAST>(std::move(Proto), std::move(Block));
             }
