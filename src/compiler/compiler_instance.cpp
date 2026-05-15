@@ -116,8 +116,14 @@ void CompilerInstance::injectStandardLibrary(CodegenContext& context,
     // Matrix functions returning void* (wrapped to Matrix by codegen)
     regExtern("matrix_zeros",      MatTy(), {IntTy(), IntTy()});
     regExtern("matrix_create",     MatTy(), {IntTy(), IntTy()});
-    regExtern("matrix_eye",        MatTy(), {IntTy(), IntTy()});
+    regExtern("matrix_eye",        MatTy(), {IntTy()});
     regExtern("matrix_ones",       MatTy(), {IntTy(), IntTy()});
+    regExtern("matrix_copy",       MatTy(), {MatTy()});
+    regExtern("matrix_diag",       MatTy(), {MatTy()});
+    regExtern("matrix_hcat",       MatTy(), {MatTy(), MatTy()});
+    regExtern("matrix_vcat",       MatTy(), {MatTy(), MatTy()});
+    regExtern("matrix_sum",        DblTy(), {MatTy()});
+    regExtern("matrix_mean",       DblTy(), {MatTy()});
     regExtern("matrix_mul",        MatTy(), {MatTy(), MatTy()});
     regExtern("matrix_add",        MatTy(), {MatTy(), MatTy()});
     regExtern("matrix_sub",        MatTy(), {MatTy(), MatTy()});

@@ -205,6 +205,62 @@ extern "C" void* flux_matrix_zeros(int rows, int cols) {
     return flux_create_matrix(nullptr, rows, cols);
 }
 
+extern "C" void* flux_matrix_ones(int rows, int cols) {
+    auto* M = new Eigen::MatrixXd(rows, cols);
+    M->setOnes();
+    return g_matrix_tracker.register_matrix(std::unique_ptr<Eigen::MatrixXd>(M));
+}
+
+extern "C" void* flux_matrix_eye(int n) {
+    auto* M = new Eigen::MatrixXd(n, n);
+    M->setIdentity();
+    return g_matrix_tracker.register_matrix(std::unique_ptr<Eigen::MatrixXd>(M));
+}
+
+extern "C" void* flux_matrix_copy(void* m_ptr) {
+    auto* M = g_matrix_tracker.get_matrix(m_ptr);
+    if (!M) return nullptr;
+    return flux_create_matrix(M->data(), M->rows(), M->cols());
+}
+
+extern "C" void* flux_matrix_diag(void* v_ptr) {
+    auto* V = g_matrix_tracker.get_matrix(v_ptr);
+    if (!V || V->cols() != 1) return nullptr;
+    int n = V->rows();
+    auto* M = new Eigen::MatrixXd(n, n);
+    M->setZero();
+    for (int i = 0; i < n; i++) (*M)(i, i) = (*V)(i, 0);
+    return g_matrix_tracker.register_matrix(std::unique_ptr<Eigen::MatrixXd>(M));
+}
+
+extern "C" void* flux_matrix_hcat(void* a_ptr, void* b_ptr) {
+    auto* A = g_matrix_tracker.get_matrix(a_ptr);
+    auto* B = g_matrix_tracker.get_matrix(b_ptr);
+    if (!A || !B) return nullptr;
+    Eigen::MatrixXd C(A->rows(), A->cols() + B->cols());
+    C << *A, *B;
+    return g_matrix_tracker.register_matrix(std::make_unique<Eigen::MatrixXd>(std::move(C)));
+}
+
+extern "C" void* flux_matrix_vcat(void* a_ptr, void* b_ptr) {
+    auto* A = g_matrix_tracker.get_matrix(a_ptr);
+    auto* B = g_matrix_tracker.get_matrix(b_ptr);
+    if (!A || !B) return nullptr;
+    Eigen::MatrixXd C(A->rows() + B->rows(), A->cols());
+    C << *A, *B;
+    return g_matrix_tracker.register_matrix(std::make_unique<Eigen::MatrixXd>(std::move(C)));
+}
+
+extern "C" double flux_matrix_sum(void* m_ptr) {
+    auto* M = g_matrix_tracker.get_matrix(m_ptr);
+    return M ? M->sum() : 0.0;
+}
+
+extern "C" double flux_matrix_mean(void* m_ptr) {
+    auto* M = g_matrix_tracker.get_matrix(m_ptr);
+    return M ? M->mean() : 0.0;
+}
+
 extern "C" void* flux_matrix_inv(void* m_ptr) {
     auto* M = g_matrix_tracker.get_matrix(m_ptr);
     if (!M) return nullptr;
@@ -377,6 +433,14 @@ void registerRuntimeFunctions(FluxJIT& jit) {
     // Clean user-facing matrix API
     jit.registerFunction("matrix_create", (void*)&flux_matrix_zeros);
     jit.registerFunction("matrix_zeros", (void*)&flux_matrix_zeros);
+    jit.registerFunction("matrix_ones", (void*)&flux_matrix_ones);
+    jit.registerFunction("matrix_eye", (void*)&flux_matrix_eye);
+    jit.registerFunction("matrix_copy", (void*)&flux_matrix_copy);
+    jit.registerFunction("matrix_diag", (void*)&flux_matrix_diag);
+    jit.registerFunction("matrix_hcat", (void*)&flux_matrix_hcat);
+    jit.registerFunction("matrix_vcat", (void*)&flux_matrix_vcat);
+    jit.registerFunction("matrix_sum", (void*)&flux_matrix_sum);
+    jit.registerFunction("matrix_mean", (void*)&flux_matrix_mean);
     jit.registerFunction("matrix_mul", (void*)&flux_matrix_mul);
     jit.registerFunction("matrix_add", (void*)&flux_matrix_add);
     jit.registerFunction("matrix_sub", (void*)&flux_matrix_sub);

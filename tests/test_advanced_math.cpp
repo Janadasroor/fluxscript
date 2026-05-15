@@ -5,6 +5,7 @@
 #include <cstdlib>
 #include "flux/runtime/advanced_math.h"
 #include "flux/flux_eigen.h"
+#include <Eigen/Dense>
 
 // Functions defined in flux_runtime.cpp (no public header)
 extern "C" int flux_matrix_rows(void*);
@@ -13,6 +14,16 @@ extern "C" void* flux_matrix_inv(void*);
 extern "C" void* flux_matrix_mul(void*, void*);
 extern "C" void* flux_matrix_transpose(void*);
 extern "C" void* flux_create_matrix(double*, int, int);
+extern "C" void* flux_lookup_matrix(void*);
+extern "C" void* flux_matrix_eye(int);
+extern "C" void* flux_matrix_zeros(int, int);
+extern "C" void* flux_matrix_ones(int, int);
+extern "C" void* flux_matrix_copy(void*);
+extern "C" void* flux_matrix_hcat(void*, void*);
+extern "C" void* flux_matrix_vcat(void*, void*);
+extern "C" void* flux_matrix_diag(void*);
+extern "C" double flux_matrix_sum(void*);
+extern "C" double flux_matrix_mean(void*);
 
 static int g_passed = 0, g_failed = 0;
 #define TEST(x) std::cout << "  " << x << "... "
@@ -111,6 +122,49 @@ void test_cholesky() {
     void* L = flux_matrix_cholesky(m);
     TC(L != nullptr, "Cholesky computed");
     TC(rows(L) == 2 && cols(L) == 2, "Cholesky L matrix dimensions");
+    TPASS;
+}
+
+void test_matrix_eye() {
+    TEST("matrix_eye");
+    void* e = flux_matrix_eye(3);
+    auto* M = (Eigen::MatrixXd*)flux_lookup_matrix(e);
+    TC(M != nullptr && M->rows() == 3, "eye created");
+    TN((*M)(0,0), 1.0, 1e-15, "I[0,0]=1");
+    TN((*M)(1,1), 1.0, 1e-15, "I[1,1]=1");
+    TN((*M)(0,1), 0.0, 1e-15, "I[0,1]=0");
+    TPASS;
+}
+
+void test_matrix_ones_zeros() {
+    TEST("matrix_ones/zeros");
+    void* z = flux_matrix_zeros(2, 3);
+    auto* Z = (Eigen::MatrixXd*)flux_lookup_matrix(z);
+    TC(Z != nullptr && Z->rows() == 2 && Z->cols() == 3, "zeros dims");
+    TC(Z->sum() == 0.0, "all zeros");
+    void* o = flux_matrix_ones(2, 2);
+    auto* O = (Eigen::MatrixXd*)flux_lookup_matrix(o);
+    TN(O->sum(), 4.0, 1e-15, "ones sum");
+    TPASS;
+}
+
+void test_matrix_copy() {
+    TEST("matrix_copy");
+    double d[] = {1,2,3,4};
+    void* m = flux_create_matrix(d, 2, 2);
+    void* c = flux_matrix_copy(m);
+    auto* C = (Eigen::MatrixXd*)flux_lookup_matrix(c);
+    TN((*C)(0,0), 1.0, 1e-15, "copy[0,0]");
+    TN((*C)(1,1), 4.0, 1e-15, "copy[1,1]");
+    TPASS;
+}
+
+void test_matrix_sum_mean() {
+    TEST("matrix_sum/mean");
+    double d[] = {1,2,3,4};
+    void* m = flux_create_matrix(d, 2, 2);
+    TN(flux_matrix_sum(m), 10.0, 1e-15, "sum=10");
+    TN(flux_matrix_mean(m), 2.5, 1e-15, "mean=2.5");
     TPASS;
 }
 
@@ -329,6 +383,10 @@ int main() {
     test_cholesky();
     test_matrix_operations();
     test_matrix_inv();
+    test_matrix_eye();
+    test_matrix_ones_zeros();
+    test_matrix_copy();
+    test_matrix_sum_mean();
 
     std::cout << "\n  -- Statistics & Probability --\n\n";
     test_random();
