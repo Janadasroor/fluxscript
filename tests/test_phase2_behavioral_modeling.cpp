@@ -5,9 +5,12 @@
 #include <iomanip>
 #include <cmath>
 #include <vector>
-#include <cassert>
 #include <chrono>
 #include <thread>
+#ifdef NDEBUG
+#undef NDEBUG
+#endif
+#include <cassert>
 
 #include "flux/jit/smart_signal.h"
 #include "flux/jit/jit_manager.h"

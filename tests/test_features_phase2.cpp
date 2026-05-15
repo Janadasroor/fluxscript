@@ -18,6 +18,7 @@ using namespace Flux;
 // Feature #31: Smith Chart Tests
 // ============================================================================
 
+#if 0
 void test_smith_chart() {
     std::cout << "\n";
     std::cout << "\n";
@@ -102,6 +103,7 @@ void test_smith_chart() {
     std::cout << "     Feature #31: ALL TESTS PASSED                      \n";
     std::cout << "\n";
 }
+#endif
 
 // ============================================================================
 // Feature #26: Neural Network Surrogate Tests

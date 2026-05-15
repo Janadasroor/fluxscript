@@ -132,17 +132,20 @@ private:
 
 // Convenience macros
 #define FLUX_BENCHMARK(name, language, category) \
-    FLUX_BENCHMARK_IMPL(name, language, category, __FUNCTION__)
+    FLUX_BENCHMARK_CONCAT(name, language, category, __LINE__)
 
-#define FLUX_BENCHMARK_IMPL(name, language, category, func_name) \
-    static void func_name(); \
-    static struct func_name##_reg { \
-        func_name##_reg() { \
+#define FLUX_BENCHMARK_CONCAT(name, language, category, line) \
+    FLUX_BENCHMARK_IMPL(name, language, category, line)
+
+#define FLUX_BENCHMARK_IMPL(name, language, category, id) \
+    static void flux_bench_##id(); \
+    static struct flux_bench_##id##_reg { \
+        flux_bench_##id##_reg() { \
             Flux::Benchmark::BenchmarkRunner::instance().registerTest( \
-                name, language, category, func_name); \
+                name, language, category, flux_bench_##id); \
         } \
-    } func_name##_instance; \
-    static void func_name()
+    } flux_bench_##id##_instance; \
+    static void flux_bench_##id()
 
 // Predefined benchmark categories
 namespace Categories {

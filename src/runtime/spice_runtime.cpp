@@ -105,24 +105,6 @@ namespace {
 
 extern "C" {
 
-// Get current simulation time
-double flux_get_time() {
-    std::lock_guard<std::mutex> lock(g_sim_mutex);
-    return g_sim_time;
-}
-
-// Get current time step
-double flux_get_dt() {
-    std::lock_guard<std::mutex> lock(g_sim_mutex);
-    return g_sim_dt;
-}
-
-// Get simulation temperature
-double flux_get_temp() {
-    std::lock_guard<std::mutex> lock(g_sim_mutex);
-    return g_sim_temp;
-}
-
 // Get voltage at node
 double flux_get_voltage(const char* node_name) {
     std::lock_guard<std::mutex> lock(g_sim_mutex);
@@ -173,13 +155,6 @@ void flux_update_state(double time, double dt, const char** node_names, double* 
 // ============================================================================
 // Behavioral Source Registration
 // ============================================================================
-
-double flux_register_bsource(const char* name, const char* pos_node, const char* neg_node, const char* type) {
-    std::lock_guard<std::mutex> lock(g_sim_mutex);
-    g_bsources.push_back({name, pos_node, neg_node, type});
-    printf("[SPICE] Registered B-source: %s (%s) between nodes %s and %s\n", name, type, pos_node, neg_node);
-    return 0.0;
-}
 
 double flux_register_esource(const char* name, const char* pos_node, const char* neg_node,
                              const char* ctrl_pos, const char* ctrl_neg, double gain) {
@@ -249,29 +224,6 @@ double flux_register_save(const char* var_name) {
 // Subcircuits and Models
 // ============================================================================
 
-double flux_register_subckt(double name_ptr_double, double pins_ptr_double) {
-    std::lock_guard<std::mutex> lock(g_sim_mutex);
-    
-    const char* name = bit_cast<const char*>(name_ptr_double);
-    const char* pins = bit_cast<const char*>(pins_ptr_double);
-    
-    SubcktInfo info;
-    info.name = name;
-    
-    // Parse pin list
-    char* pins_copy = strdup(pins);
-    char* token = strtok(pins_copy, " ");
-    while (token) {
-        info.pins.push_back(token);
-        token = strtok(nullptr, " ");
-    }
-    free(pins_copy);
-    
-    g_subckts[name] = info;
-    printf("[SPICE] Registered subcircuit: %s with %zu pins\n", name, info.pins.size());
-    return 0.0;
-}
-
 double flux_register_model(double name_ptr_double, double model_type_ptr_double) {
     std::lock_guard<std::mutex> lock(g_sim_mutex);
     
@@ -329,6 +281,8 @@ void flux_reset_simulation() {
     g_node_voltages.clear();
     g_branch_currents.clear();
     g_bsources.clear();
+    g_adevices.clear();
+    g_wavefiles.clear();
     g_probes.clear();
     g_save_vars.clear();
     g_measures.clear();
@@ -387,15 +341,7 @@ void flux_register_adevice(const char* name, int deviceType,
 // VioMATRIXC Integration: WAVEFILE Source Registration
 // ============================================================================
 
-struct WaveFileInfo {
-    std::string instanceName;
-    std::string positiveNode;
-    std::string negativeNode;
-    std::string filePath;
-    int channel;
-    bool isCurrent;
-};
-std::vector<WaveFileInfo> g_wavefiles;
+// WaveFileInfo and g_wavefiles defined above at line 312
 
 void flux_register_wavefile(const char* name, const char* posNode, const char* negNode,
                             const char* filePath, int channel) {
@@ -416,20 +362,6 @@ void flux_register_wavefile(const char* name, const char* posNode, const char* n
 // ngspice Callback Interface
 // ============================================================================
 
-// This function is called by ngspice during transient analysis
-// It evaluates the behavioral source expression and returns the result
-double flux_evaluate_bsource(const char* bsource_name, double time, double dt,
-                             const char** node_names, double* node_values, int num_nodes) {
-    // Update global state
-    flux_update_state(time, dt, node_names, node_values, num_nodes);
-    
-    // The actual expression evaluation is done by the JIT-compiled update() function
-    // This is just a placeholder for the callback mechanism
-    printf("[SPICE] Evaluating B-source: %s at time=%g\n", bsource_name, time);
-    
-    return 0.0;  // Placeholder
-}
-
 // Print simulation summary
 void flux_print_summary() {
     std::lock_guard<std::mutex> lock(g_sim_mutex);
@@ -445,21 +377,6 @@ void flux_print_summary() {
     printf("Save variables: %zu\n", g_save_vars.size());
     printf("Measures: %zu\n", g_measures.size());
     printf("==========================================\n\n");
-}
-
-// Reset simulation state
-void flux_reset_simulation() {
-    std::lock_guard<std::mutex> lock(g_sim_mutex);
-    g_sim_time = 0.0;
-    g_sim_dt = 1e-12;
-    g_node_voltages.clear();
-    g_branch_currents.clear();
-    g_bsources.clear();
-    g_adevices.clear();
-    g_wavefiles.clear();
-    g_probes.clear();
-    g_save_vars.clear();
-    g_measures.clear();
 }
 
 } // extern "C"

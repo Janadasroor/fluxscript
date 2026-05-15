@@ -12,6 +12,7 @@
  limitations under the License. */
 
 #include "flux/runtime/flux_runtime.h"
+#include "flux/runtime/advanced_math.h"
 #include "flux/jit/flux_jit.h"
 #include "flux/runtime/symbolic_engine.h"
 #include "flux/ai/surrogate.h"
@@ -116,6 +117,25 @@ extern "C" double flux_print_double(double x);
 
 extern "C" void flux_free_matrix(void* ptr) {
     g_matrix_tracker.unregister_matrix(ptr);
+}
+
+// Access matrix from data pointer (for advanced_math.cpp)
+extern "C" void* flux_lookup_matrix(void* data_ptr) {
+    return g_matrix_tracker.get_matrix(data_ptr);
+}
+
+// Register a newly allocated matrix and return its data pointer
+extern "C" void* flux_register_new_matrix(int rows, int cols) {
+    auto mat = std::make_unique<Eigen::MatrixXd>(rows, cols);
+    mat->setZero();
+    return g_matrix_tracker.register_matrix(std::move(mat));
+}
+
+// Copy data into a tracked matrix
+extern "C" void flux_matrix_set_data(void* data_ptr, double* data, int rows, int cols) {
+    auto* M = g_matrix_tracker.get_matrix(data_ptr);
+    if (!M || M->rows() != rows || M->cols() != cols) return;
+    std::memcpy(M->data(), data, rows * cols * sizeof(double));
 }
 
 extern "C" void* flux_create_matrix(double* data, int rows, int cols) {
@@ -374,6 +394,65 @@ void registerRuntimeFunctions(FluxJIT& jit) {
     jit.registerFunction("flux_sym_pdiff", (void*)&flux_sym_pdiff);
     jit.registerFunction("flux_sym_eq", (void*)&flux_sym_eq);
     jit.registerFunction("flux_sym_ne", (void*)&flux_sym_ne);
+
+    // Advanced math: linear algebra
+    jit.registerFunction("matrix_lu",        (void*)&flux_matrix_lu);
+    jit.registerFunction("matrix_qr",        (void*)&flux_matrix_qr);
+    jit.registerFunction("matrix_svd",       (void*)&flux_matrix_svd);
+    jit.registerFunction("matrix_cholesky",  (void*)&flux_matrix_cholesky);
+    jit.registerFunction("matrix_eigenvalues",  (void*)&flux_matrix_eigenvalues);
+    jit.registerFunction("matrix_eigenvectors", (void*)&flux_matrix_eigenvectors);
+    jit.registerFunction("matrix_rank",      (void*)&flux_matrix_rank);
+    jit.registerFunction("matrix_cond",      (void*)&flux_matrix_cond);
+    jit.registerFunction("matrix_norm",      (void*)&flux_matrix_norm);
+
+    // Advanced math: statistics
+    jit.registerFunction("randn",            (void*)&flux_randn);
+    jit.registerFunction("rand_uniform",     (void*)&flux_rand_uniform);
+    jit.registerFunction("normal_pdf",       (void*)&flux_normal_pdf);
+    jit.registerFunction("normal_cdf",       (void*)&flux_normal_cdf);
+    jit.registerFunction("uniform_pdf",      (void*)&flux_uniform_pdf);
+    jit.registerFunction("exponential_pdf",  (void*)&flux_exponential_pdf);
+    jit.registerFunction("covariance",       (void*)&flux_covariance);
+    jit.registerFunction("correlation",      (void*)&flux_correlation);
+    jit.registerFunction("percentile",       (void*)&flux_percentile);
+    jit.registerFunction("skewness",         (void*)&flux_skewness);
+    jit.registerFunction("kurtosis",         (void*)&flux_kurtosis);
+    jit.registerFunction("median_filter",    (void*)&flux_median_filter);
+
+    // Advanced math: numerical methods
+    jit.registerFunction("ode_rk4",          (void*)&flux_ode_rk4);
+    jit.registerFunction("ode_euler",        (void*)&flux_ode_euler);
+    jit.registerFunction("root_bisection",   (void*)&flux_root_bisection);
+    jit.registerFunction("root_newton",      (void*)&flux_root_newton);
+    jit.registerFunction("integrate_adaptive", (void*)&flux_integrate_adaptive);
+    jit.registerFunction("interp1_linear",   (void*)&flux_interp1_linear);
+    jit.registerFunction("interp1_spline",   (void*)&flux_interp1_spline);
+
+    // Advanced math: special functions
+    jit.registerFunction("erf",              (void*)&flux_erf);
+    jit.registerFunction("erfc",             (void*)&flux_erfc);
+    jit.registerFunction("gamma",            (void*)&flux_gamma);
+    jit.registerFunction("lgamma",           (void*)&flux_lgamma);
+    jit.registerFunction("bessel_j0",        (void*)&flux_bessel_j0);
+    jit.registerFunction("bessel_j1",        (void*)&flux_bessel_j1);
+    jit.registerFunction("bessel_y0",        (void*)&flux_bessel_y0);
+    jit.registerFunction("bessel_y1",        (void*)&flux_bessel_y1);
+
+    // Advanced math: signal processing
+    jit.registerFunction("conv",             (void*)&flux_conv);
+    jit.registerFunction("corr",             (void*)&flux_corr);
+    jit.registerFunction("lowpass",          (void*)&flux_lowpass);
+    jit.registerFunction("highpass",         (void*)&flux_highpass);
+
+    // Advanced math: polynomials
+    jit.registerFunction("polyval",          (void*)&flux_polyval);
+    jit.registerFunction("polyfit",          (void*)&flux_polyfit);
+    jit.registerFunction("polyroots",        (void*)&flux_polyroots);
+
+    // Advanced math: optimization
+    jit.registerFunction("least_squares",    (void*)&flux_least_squares);
+    jit.registerFunction("gradient_descent", (void*)&flux_gradient_descent);
 }
 
 typedef void (*ParallelBodyFunc)(int64_t, void*);

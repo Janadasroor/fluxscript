@@ -129,13 +129,16 @@ public:
                                         const std::vector<std::string>& nodes,
                                         const std::map<std::string, double>& params);
 
+public:
+    // Public for testing
+    std::string expressionToSpice(const ExprAST* expr);
+
 private:
     std::ostringstream m_netlist;
     int m_nodeCounter;
     std::map<std::string, int> m_nodeMap;
     
     std::string getInternalNode(const std::string& name);
-    std::string expressionToSpice(const ExprAST* expr);
     std::string valueToSpice(double value);
 };
 

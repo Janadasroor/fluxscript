@@ -1,3 +1,4 @@
+#if 0
 /* Copyright 2026 Janada Sroor
  SPDX-License-Identifier: Apache-2.0
  http://www.apache.org/licenses/LICENSE-2.0
@@ -11,14 +12,21 @@
  See the License for the specific language governing permissions and
  limitations under the License. */
 
+// SPICE Parser Extension (NOT YET INTEGRATED - API OUT OF DATE)
+// Implements parsing of .PARAM, .IC, .AC, .TRAN, .MEASURE, .PROBE, .SAVE,
+// .SUBCKT, .MODEL, StateGet(@), StateSet($) statements
+
 #include "flux/compiler/parser.h"
-#include "flux/compiler/ast.h"
-#include <cmath>
+
+#include <iostream>
+#include <sstream>
+#include <algorithm>
 
 namespace Flux {
 
-// ============ SPICE Simulation Parser Implementations ============
-
+// ============================================================================
+// Parse .PARAM (Parameter) declaration
+// ============================================================================
 std::unique_ptr<ExprAST> Parser::ParseParamDecl() {
     getNextToken(); // eat param
     
@@ -391,3 +399,4 @@ std::unique_ptr<ModelAST> Parser::ParseModel() {
 }
 
 } // namespace Flux
+#endif

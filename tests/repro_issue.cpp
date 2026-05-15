@@ -10,9 +10,9 @@
 
 using namespace Flux;
 
-// Mock for flux_get_voltage
+// Mock for flux_get_voltage (renamed to avoid symbol conflict with library)
 double g_voltage = 0.0;
-extern "C" double flux_get_voltage(double namePtr) {
+extern "C" double flux_mock_get_voltage(double namePtr) {
     return g_voltage;
 }
 
@@ -21,7 +21,7 @@ int main() {
     FluxJIT jit;
 
     // Register the mock function
-    jit.registerFunction("flux_get_voltage", (void*)flux_get_voltage);
+    jit.registerFunction("flux_get_voltage", (void*)flux_mock_get_voltage);
 
     std::string code = R"(
         def update(t, inputs) {

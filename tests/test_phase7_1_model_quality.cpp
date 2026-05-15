@@ -5,8 +5,11 @@
 #include <iomanip>
 #include <cmath>
 #include <vector>
-#include <cassert>
 #include <map>
+#ifdef NDEBUG
+#undef NDEBUG
+#endif
+#include <cassert>
 
 #include "flux/verification/property_testing.h"
 #include "flux/verification/cross_simulator_validation.h"

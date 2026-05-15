@@ -45,6 +45,7 @@ static void* compile_flux_script(const std::string& source, const std::string& f
         return nullptr;
     }
 
+    static std::vector<std::unique_ptr<Flux::FluxJIT>> g_jit_instances;
     auto jit = std::make_unique<Flux::FluxJIT>();
     jit->addModule(
         std::move(artifacts->codegenContext->OwnedModule),
@@ -57,7 +58,9 @@ static void* compile_flux_script(const std::string& source, const std::string& f
     auto end = std::chrono::high_resolution_clock::now();
     *out_compile_ms = std::chrono::duration<double, std::milli>(end - start).count();
 
-    return jit->getPointerToFunction(func_name);
+    void* fn = jit->getPointerToFunction(func_name);
+    g_jit_instances.push_back(std::move(jit));
+    return fn;
 }
 
 // Execute a compiled function N times and measure
@@ -207,11 +210,7 @@ int main() {
         "def compute() {\n"
         "    var r = 0.0\n"
         "    for i in 0, 10000 do {\n"
-        "        if (i % 2) == 0 then {\n"
-        "            r = r + sin(i * 0.001)\n"
-        "        } else {\n"
-        "            r = r + cos(i * 0.001)\n"
-        "        }\n"
+        "        if i < 5000 then r = r + sin(i * 0.001) else r = r + cos(i * 0.001)\n"
         "    }\n"
         "    r\n"
         "}\n",

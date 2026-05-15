@@ -4,19 +4,6 @@
 # =============================================================================
 
 # 
-#  Phase 2: Behavioral Modeling                                
-#  (target defined in main CMakeLists.txt)                     
-# 
-add_test(NAME flux-test-phase2
-    COMMAND flux-test-phase2
-    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
-)
-set_tests_properties(flux-test-phase2 PROPERTIES
-    LABELS "phase2;behavioral"
-    TIMEOUT 120
-)
-
-# 
 #  Phase 5: Component Substitution                             
 # 
 add_test_executable(flux-test-phase5 test_phase5.cpp)
@@ -24,38 +11,18 @@ add_test_entry(flux-test-phase5 "Phase 5: Component Substitution")
 
 # 
 #  Phase 7.1: Model Quality & Verification                     
-#  (target defined in main CMakeLists.txt)                     
 # 
-add_test(NAME flux-test-phase7-1
-    COMMAND flux-test-phase7-1
-    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
-)
-set_tests_properties(flux-test-phase7-1 PROPERTIES
-    LABELS "phase7-1;model-quality"
-    TIMEOUT 120
-)
+add_test_executable(flux-test-phase7-1 test_phase7_1_model_quality.cpp)
+add_test_entry(flux-test-phase7-1 "Phase 7.1: Model Quality & Verification")
 
 # 
 #  Phase 7.4: Tooling & Developer Experience                   
-#  (targets defined in main CMakeLists.txt)                    
 # 
-add_test(NAME flux-test-phase7-4
-    COMMAND flux-test-phase7-4
-    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
-)
-set_tests_properties(flux-test-phase7-4 PROPERTIES
-    LABELS "phase7-4;tooling"
-    TIMEOUT 120
-)
+add_test_executable(flux-test-phase7-4 test_phase7_4_tooling.cpp)
+add_test_entry(flux-test-phase7-4 "Phase 7.4: Tooling & Developer Experience")
 
-add_test(NAME flux-test-phase7-4b
-    COMMAND flux-test-phase7-4b
-    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
-)
-set_tests_properties(flux-test-phase7-4b PROPERTIES
-    LABELS "phase7-4b;tooling"
-    TIMEOUT 120
-)
+add_test_executable(flux-test-phase7-4b test_phase7_4_part2.cpp)
+add_test_entry(flux-test-phase7-4b "Phase 7.4 Part 2: Example Gallery & Dep. Resolver")
 
 # 
 #  Advanced Analysis Tools                                     
@@ -133,8 +100,40 @@ add_test_executable(flux-test-waveform-extraction test_waveform_extraction.cpp)
 add_test_entry(flux-test-waveform-extraction "Waveform Extraction")
 
 # 
-#  Benchmark Suite (real FluxScript JIT)                       
-#  flux-benchmark is defined in main CMakeLists.txt            
+#  A-Device Netlist Generation                                  
+# 
+add_test_executable(flux-test-adevice-netlist test_adevice_netlist.cpp)
+add_test_entry(flux-test-adevice-netlist "A-Device Netlist")
+
+# 
+#  SPICE Bridge                                                 
+# 
+add_test_executable(flux-test-spice-bridge test_spice_bridge.cpp)
+add_test_entry(flux-test-spice-bridge "SPICE Bridge")
+
+# 
+#  Phase 2 Behavioral Modeling                                  
+# 
+add_test_executable(flux-test-phase2-behavioral test_phase2_behavioral_modeling.cpp)
+add_test_entry(flux-test-phase2-behavioral "Phase 2 Behavioral Modeling")
+
+# 
+#  Issue Repro                                                  
+# 
+add_test_executable(flux-test-repro-issue repro_issue.cpp)
+add_test_entry(flux-test-repro-issue "Issue Repro")
+
+# 
+#  Benchmark Suite (FluxScript JIT)                             
+# 
+add_test_executable(flux-test-benchmark-jit benchmark_fluxscript_jit.cpp)
+add_test_entry(flux-test-benchmark-jit "JIT Benchmark")
+
+# 
+#  Benchmark Suite (Comprehensive)                              
+# 
+add_test_executable(flux-test-benchmark-suite benchmark_suite.cpp)
+add_test_entry(flux-test-benchmark-suite "Comprehensive Benchmark")
 # 
 
 # 
@@ -152,19 +151,6 @@ set_tests_properties(flux-test-module-system PROPERTIES
 )
 
 # 
-#  Inline .flux file tests                                     
-# 
-# flux-test discovers and runs # TEST: assertions in .flux files
-add_test(NAME flux-test-inline
-    COMMAND flux-test
-    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
-)
-set_tests_properties(flux-test-inline PROPERTIES
-    LABELS "inline;compiler"
-    TIMEOUT 120
-)
-
-# 
 #  Integration Tests (.flux snippets via flux-minimal)         
 # 
 add_test(NAME flux-test-integration
@@ -179,8 +165,28 @@ set_tests_properties(flux-test-integration PROPERTIES
 # 
 #  Set common test properties                                  
 # 
+# 
+#  Runtime Subsystem Tests                                             
+# 
+add_test_executable(flux-test-runtime-autodiff test_runtime_autodiff.cpp)
+add_test_entry(flux-test-runtime-autodiff "Runtime: Autodiff")
+
+add_test_executable(flux-test-runtime-units test_runtime_units.cpp)
+add_test_entry(flux-test-runtime-units "Runtime: Units")
+
+add_test_executable(flux-test-runtime-mixed-signal test_runtime_mixed_signal.cpp)
+add_test_entry(flux-test-runtime-mixed-signal "Runtime: Mixed-Signal")
+
+add_test_executable(flux-test-runtime-parallel test_runtime_parallel.cpp)
+add_test_entry(flux-test-runtime-parallel "Runtime: Parallel")
+
+add_test_executable(flux-test-runtime-symbolic test_runtime_symbolic.cpp)
+add_test_entry(flux-test-runtime-symbolic "Runtime: Symbolic Engine")
+
+add_test_executable(flux-test-advanced-math test_advanced_math.cpp)
+add_test_entry(flux-test-advanced-math "Advanced Math")
+
 set_tests_properties(
-    flux-test-phase2
     flux-test-phase5
     flux-test-phase7-1
     flux-test-phase7-4
@@ -199,6 +205,18 @@ set_tests_properties(
     flux-test-ngspice
     flux-test-instruments
     flux-test-waveform-extraction
+    flux-test-adevice-netlist
+    flux-test-spice-bridge
+    flux-test-phase2-behavioral
+    flux-test-repro-issue
+    flux-test-benchmark-jit
+    flux-test-benchmark-suite
+    flux-test-runtime-autodiff
+    flux-test-runtime-units
+    flux-test-runtime-mixed-signal
+    flux-test-runtime-parallel
+    flux-test-runtime-symbolic
+    flux-test-advanced-math
     PROPERTIES
         WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
         TIMEOUT 120

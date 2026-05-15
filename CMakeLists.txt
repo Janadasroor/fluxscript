@@ -101,6 +101,8 @@ set(FLUXSCRIPT_SOURCES
     src/compiler/netlist_generator.cpp
     src/compiler/new_features_codegen.cpp
     src/compiler/adevice_codegen.cpp
+    src/compiler/spice_parser.cpp
+    src/compiler/codegen_new.cpp
     src/security/security.cpp
     src/runtime/units.cpp
     src/runtime/mixed_signal_runtime.cpp
@@ -119,6 +121,7 @@ set(FLUXSCRIPT_SOURCES
     src/runtime/symbolic_engine.cpp
     src/runtime/parallel_runtime.cpp
     src/runtime/ngspice_bridge.cpp
+    src/runtime/spice_runtime.cpp
     src/tooling/tooling.cpp
     src/tooling/package_manager.cpp
     src/tooling/repl.cpp
@@ -139,6 +142,7 @@ set(FLUXSCRIPT_SOURCES
     src/testing/circuit_fuzz.cpp
     src/toolbox/power.cpp
     src/toolbox/control.cpp
+    src/runtime/advanced_math.cpp
     src/ai/surrogate.cpp
     src/phase3_stubs.cpp
     src/phase4a_stubs.cpp
@@ -169,6 +173,18 @@ else()
 endif()
 
 add_library(FluxScript STATIC ${FLUXSCRIPT_SOURCES})
+
+# Work around -O2 optimizer issues in verification and JIT code
+set_source_files_properties(
+    src/verification/property_testing.cpp
+    src/verification/cross_simulator_validation.cpp
+    src/jit/jit_manager.cpp
+    src/jit/smart_signal.cpp
+    src/jit/simulation_hook.cpp
+    src/jit/zero_copy_data.cpp
+    src/jit/scaling_security.cpp
+    PROPERTIES COMPILE_FLAGS "-O1"
+)
 
 target_link_libraries(FluxScript PUBLIC CURL::libcurl ${llvm_libs} ${FLUX_MLIR_LIBS})
 if(NGSPICE_FOUND)
@@ -235,6 +251,24 @@ target_link_libraries(flux-doc PRIVATE "-Wl,--whole-archive" FluxScript "-Wl,--n
 add_executable(flux-test cli/flux-test.cpp)
 target_link_libraries(flux-test PRIVATE "-Wl,--whole-archive" FluxScript "-Wl,--no-whole-archive")
 
+add_executable(flux-instrument cli/flux-instrument.cpp)
+target_link_libraries(flux-instrument PRIVATE "-Wl,--whole-archive" FluxScript "-Wl,--no-whole-archive")
+
+add_executable(flux-optimize cli/flux-optimize.cpp)
+target_link_libraries(flux-optimize PRIVATE "-Wl,--whole-archive" FluxScript "-Wl,--no-whole-archive")
+
+add_executable(flux-lsp cli/flux-lsp.cpp)
+target_link_libraries(flux-lsp PRIVATE "-Wl,--whole-archive" FluxScript "-Wl,--no-whole-archive")
+
+add_executable(flux-worstcase cli/flux-worstcase.cpp)
+target_link_libraries(flux-worstcase PRIVATE "-Wl,--whole-archive" FluxScript "-Wl,--no-whole-archive")
+
+add_executable(flux-stability cli/flux-stability.cpp)
+target_link_libraries(flux-stability PRIVATE "-Wl,--whole-archive" FluxScript "-Wl,--no-whole-archive")
+
+add_executable(flux-monte-carlo cli/flux-monte-carlo.cpp)
+target_link_libraries(flux-monte-carlo PRIVATE "-Wl,--whole-archive" FluxScript "-Wl,--no-whole-archive")
+
 # =============================================================================
 # Tests (Optional)
 # =============================================================================
@@ -267,7 +301,7 @@ endif()
 # Installation
 # =============================================================================
 
-install(TARGETS FluxScript flux flux-pkg flux-spice flux-run flux-doctor flux-sweep flux-fft flux-repl fluxc flux-format flux-doc flux-test
+install(TARGETS FluxScript flux flux-pkg flux-spice flux-run flux-doctor flux-sweep flux-fft flux-repl fluxc flux-format flux-doc flux-test flux-instrument flux-optimize flux-lsp flux-worstcase flux-stability flux-monte-carlo
     EXPORT FluxScriptTargets
     LIBRARY DESTINATION lib
     ARCHIVE DESTINATION lib

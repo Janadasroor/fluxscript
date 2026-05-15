@@ -1027,10 +1027,11 @@ TypedValue CallExprAST::codegen(CodegenContext& context) {
             if (Name == "imag") return TypedValue(Imag, TypeKind::Double);
             if (Name == "conj") {
                 llvm::Value* NegImag = context.Builder.CreateFNeg(Imag, "negimag");
-                llvm::Value* Res = llvm::UndefValue::get(
-                    llvm::VectorType::get(llvm::Type::getDoubleTy(context.TheContext), 2, false));
-                Res = context.Builder.CreateInsertElement(Res, Real, (uint64_t)0);
-                return TypedValue(context.Builder.CreateInsertElement(Res, NegImag, (uint64_t)1), TypeKind::Complex);
+                llvm::Value* Vec = context.Builder.CreateInsertElement(
+                    llvm::PoisonValue::get(llvm::VectorType::get(
+                        llvm::Type::getDoubleTy(context.TheContext), 2, false)),
+                    Real, (uint64_t)0);
+                return TypedValue(context.Builder.CreateInsertElement(Vec, NegImag, (uint64_t)1), TypeKind::Complex);
             }
             if (Name == "abs" || Name == "mag") {
                 llvm::Value* Re2 = context.Builder.CreateFMul(Real, Real, "re2");
