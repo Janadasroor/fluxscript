@@ -16,6 +16,12 @@ extern "C" void* flux_matrix_transpose(void*);
 extern "C" void* flux_create_matrix(double*, int, int);
 extern "C" void* flux_lookup_matrix(void*);
 extern "C" void* flux_matrix_eye(int);
+extern "C" void* flux_matrix_diag_extract(void*);
+extern "C" double flux_matrix_trace(void*);
+extern "C" double* flux_polyroots(double*, int);
+extern "C" void* flux_fft(void*, double);
+extern "C" double flux_fft_thd(void*, double);
+extern "C" double flux_fft_snr(void*, double);
 extern "C" void* flux_matrix_zeros(int, int);
 extern "C" void* flux_matrix_ones(int, int);
 extern "C" void* flux_matrix_copy(void*);
@@ -305,17 +311,44 @@ void test_interpolation() {
 void test_special_functions() {
     TEST("Special functions");
     TN(flux_erf(0.0), 0.0, 1e-15, "erf(0)=0");
+    TN(flux_erf(1.0), 0.8427, 1e-4, "erf(1)");
+    TN(flux_erfc(0.0), 1.0, 1e-15, "erfc(0)=1");
+    TN(flux_erfc(1.0), 0.1573, 1e-4, "erfc(1)");
     TN(flux_gamma(1.0), 1.0, 1e-15, "gamma(1)=1");
     TN(flux_gamma(3.0), 2.0, 1e-14, "gamma(3)=2");
     TN(flux_lgamma(1.0), 0.0, 1e-15, "lgamma(1)=0");
     TN(flux_bessel_j0(0.0), 1.0, 1e-15, "bessel_j0(0)=1");
     TN(flux_bessel_j1(0.0), 0.0, 1e-15, "bessel_j1(0)=0");
+    double y0 = flux_bessel_y0(1.0);
+    TC(std::isfinite(y0), "bessel_y0(1) finite");
+    double y1 = flux_bessel_y1(1.0);
+    TC(std::isfinite(y1), "bessel_y1(1) finite");
     TPASS;
 }
 
 // ---------------------------------------------------------------------------
 // Signal Processing
 // ---------------------------------------------------------------------------
+
+void test_fft() {
+    TEST("FFT");
+    double sig[] = {1,2,3,4,5,6,7,8};
+    void* m = flux_create_matrix(sig, 8, 1);
+    void* S = flux_fft(m, 1000.0);
+    TC(S != nullptr, "FFT computed");
+    TC(flux_matrix_rows(S) > 0 && flux_matrix_cols(S) == 3, "FFT result [n x 3]");
+    double thd = flux_fft_thd(m, 1000.0);
+    TC(thd >= 0.0, "THD non-negative");
+    double snr = flux_fft_snr(m, 1000.0);
+    TC(std::isfinite(snr), "SNR finite");
+    // matrix_trace and matrix_diag
+    double d[] = {1,2,3,4};
+    void* sq = flux_create_matrix(d, 2, 2);
+    TN(flux_matrix_trace(sq), 5.0, 1e-15, "trace = 1+4");
+    void* diag = flux_matrix_diag_extract(sq);
+    TC(diag != nullptr && flux_matrix_rows(diag) == 2 && flux_matrix_cols(diag) == 1, "diag [n x 1]");
+    TPASS;
+}
 
 void test_convolution() {
     TEST("Convolution");
@@ -333,6 +366,9 @@ void test_filters() {
     TC(std::isfinite(lp[8]), "lowpass finite");
     double* hp = flux_highpass(data, 9, 0.3);
     TC(std::isfinite(hp[8]), "highpass finite");
+    double md[] = {1, 2, 100, 3, 4};
+    flux_median_filter(md, 5, 3);
+    TC(md[2] < 50, "median_filter removed spike");
     TPASS;
 }
 
@@ -344,6 +380,16 @@ void test_polyval() {
     TEST("Polynomial evaluation");
     TN(flux_polyval(new double[3]{1,0,0}, 2, 5.0), 1.0, 1e-15, "constant");
     TN(flux_polyval(new double[3]{1,2,3}, 2, 2.0), 17.0, 1e-12, "quadratic");
+    TPASS;
+}
+
+void test_polyroots() {
+    TEST("Polynomial roots");
+    // p(x) = x^2 - 3x + 2 = (x-1)(x-2), roots at 1 and 2
+    double c[] = {2, -3, 1};
+    double* r = flux_polyroots(c, 2);
+    TC(r != nullptr, "roots computed");
+    TC(std::isfinite(r[0]) && std::isfinite(r[1]), "roots are finite");
     TPASS;
 }
 
@@ -405,10 +451,12 @@ int main() {
 
     std::cout << "\n  -- Signal Processing --\n\n";
     test_convolution();
+    test_fft();
     test_filters();
 
     std::cout << "\n  -- Polynomials --\n\n";
     test_polyval();
+    test_polyroots();
     test_polyfit();
 
     std::cout << "\n  -- Optimization --\n\n";

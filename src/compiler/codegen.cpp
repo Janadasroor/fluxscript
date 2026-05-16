@@ -877,12 +877,42 @@ TypedValue BinaryExprAST::codegen(CodegenContext& context) {
         }
         return TypedValue(context.Builder.CreateCall(PowF, {LV, RV}, "powtmp"), FluxType(TypeKind::Double, L.Type.Dimensions));
     }
-    case '<': return createBoolResult(context.Builder.CreateFCmpOLT(LV, RV, "cmptmp"));
-    case '>': return createBoolResult(context.Builder.CreateFCmpOGT(LV, RV, "cmptmp"));
-    case static_cast<int>(TokenType::tok_less_equal): return createBoolResult(context.Builder.CreateFCmpOLE(LV, RV, "cmptmp"));
-    case static_cast<int>(TokenType::tok_greater_equal): return createBoolResult(context.Builder.CreateFCmpOGE(LV, RV, "cmptmp"));
-    case static_cast<int>(TokenType::tok_equal): return createBoolResult(context.Builder.CreateFCmpOEQ(LV, RV, "cmptmp"));
-    case static_cast<int>(TokenType::tok_not_equal): return createBoolResult(context.Builder.CreateFCmpUNE(LV, RV, "cmptmp"));
+    case '<':
+        if (LV->getType()->isIntegerTy() && RV->getType()->isIntegerTy())
+            return createBoolResult(context.Builder.CreateICmpSLT(LV, RV, "cmptmp"));
+        if (LV->getType()->isIntegerTy()) LV = context.Builder.CreateSIToFP(LV, llvm::Type::getDoubleTy(context.TheContext), "promote");
+        if (RV->getType()->isIntegerTy()) RV = context.Builder.CreateSIToFP(RV, llvm::Type::getDoubleTy(context.TheContext), "promote");
+        return createBoolResult(context.Builder.CreateFCmpOLT(LV, RV, "cmptmp"));
+    case '>':
+        if (LV->getType()->isIntegerTy() && RV->getType()->isIntegerTy())
+            return createBoolResult(context.Builder.CreateICmpSGT(LV, RV, "cmptmp"));
+        if (LV->getType()->isIntegerTy()) LV = context.Builder.CreateSIToFP(LV, llvm::Type::getDoubleTy(context.TheContext), "promote");
+        if (RV->getType()->isIntegerTy()) RV = context.Builder.CreateSIToFP(RV, llvm::Type::getDoubleTy(context.TheContext), "promote");
+        return createBoolResult(context.Builder.CreateFCmpOGT(LV, RV, "cmptmp"));
+    case static_cast<int>(TokenType::tok_less_equal):
+        if (LV->getType()->isIntegerTy() && RV->getType()->isIntegerTy())
+            return createBoolResult(context.Builder.CreateICmpSLE(LV, RV, "cmptmp"));
+        if (LV->getType()->isIntegerTy()) LV = context.Builder.CreateSIToFP(LV, llvm::Type::getDoubleTy(context.TheContext), "promote");
+        if (RV->getType()->isIntegerTy()) RV = context.Builder.CreateSIToFP(RV, llvm::Type::getDoubleTy(context.TheContext), "promote");
+        return createBoolResult(context.Builder.CreateFCmpOLE(LV, RV, "cmptmp"));
+    case static_cast<int>(TokenType::tok_greater_equal):
+        if (LV->getType()->isIntegerTy() && RV->getType()->isIntegerTy())
+            return createBoolResult(context.Builder.CreateICmpSGE(LV, RV, "cmptmp"));
+        if (LV->getType()->isIntegerTy()) LV = context.Builder.CreateSIToFP(LV, llvm::Type::getDoubleTy(context.TheContext), "promote");
+        if (RV->getType()->isIntegerTy()) RV = context.Builder.CreateSIToFP(RV, llvm::Type::getDoubleTy(context.TheContext), "promote");
+        return createBoolResult(context.Builder.CreateFCmpOGE(LV, RV, "cmptmp"));
+    case static_cast<int>(TokenType::tok_equal):
+        if (LV->getType()->isIntegerTy() && RV->getType()->isIntegerTy())
+            return createBoolResult(context.Builder.CreateICmpEQ(LV, RV, "cmptmp"));
+        if (LV->getType()->isIntegerTy()) LV = context.Builder.CreateSIToFP(LV, llvm::Type::getDoubleTy(context.TheContext), "promote");
+        if (RV->getType()->isIntegerTy()) RV = context.Builder.CreateSIToFP(RV, llvm::Type::getDoubleTy(context.TheContext), "promote");
+        return createBoolResult(context.Builder.CreateFCmpOEQ(LV, RV, "cmptmp"));
+    case static_cast<int>(TokenType::tok_not_equal):
+        if (LV->getType()->isIntegerTy() && RV->getType()->isIntegerTy())
+            return createBoolResult(context.Builder.CreateICmpNE(LV, RV, "cmptmp"));
+        if (LV->getType()->isIntegerTy()) LV = context.Builder.CreateSIToFP(LV, llvm::Type::getDoubleTy(context.TheContext), "promote");
+        if (RV->getType()->isIntegerTy()) RV = context.Builder.CreateSIToFP(RV, llvm::Type::getDoubleTy(context.TheContext), "promote");
+        return createBoolResult(context.Builder.CreateFCmpUNE(LV, RV, "cmptmp"));
     case static_cast<int>(TokenType::tok_logical_and): {
         llvm::Value* LCmp = context.Builder.CreateFCmpONE(LV, llvm::ConstantFP::get(context.TheContext, llvm::APFloat(0.0)), "andlhs");
         llvm::Value* RCmp = context.Builder.CreateFCmpONE(RV, llvm::ConstantFP::get(context.TheContext, llvm::APFloat(0.0)), "andrhs");

@@ -163,6 +163,21 @@ set_tests_properties(flux-test-integration PROPERTIES
 )
 
 # 
+#  FluxScript Feature Tests (runs all .flux script tests)     
+# 
+add_test(NAME flux-test-all-features
+    COMMAND sh ${CMAKE_SOURCE_DIR}/tests/run_flux_tests.sh
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}/tests
+)
+set_tests_properties(flux-test-all-features PROPERTIES
+    ENVIRONMENT "FLUX=${CMAKE_BINARY_DIR}/flux"
+)
+set_tests_properties(flux-test-all-features PROPERTIES
+    LABELS "fluxscript;features"
+    TIMEOUT 120
+)
+
+# 
 #  Set common test properties                                  
 # 
 # 
