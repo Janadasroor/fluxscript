@@ -140,6 +140,56 @@ extern "C" double flux_strlen(double s_ptr) {
     return s ? static_cast<double>(std::strlen(s)) : 0.0;
 }
 
+extern "C" double flux_string_at(double s_ptr, double index) {
+    auto* s = reinterpret_cast<const char*>(jit_bitcast<uintptr_t>(s_ptr));
+    if (!s) return 0.0;
+    int i = static_cast<int>(index);
+    if (i < 0 || i >= static_cast<int>(std::strlen(s))) return 0.0;
+    return static_cast<double>(static_cast<unsigned char>(s[i]));
+}
+
+extern "C" double flux_string_slice(double s_ptr, double start, double end) {
+    auto* s = reinterpret_cast<const char*>(jit_bitcast<uintptr_t>(s_ptr));
+    if (!s) return 0.0;
+    int lo = std::max(0, static_cast<int>(start));
+    int hi = std::min(static_cast<int>(std::strlen(s)), static_cast<int>(end));
+    if (lo >= hi) return 0.0;
+    g_fileio_pool.push_back(std::string(s + lo, s + hi));
+    return jit_bitcast<double>(reinterpret_cast<uintptr_t>(g_fileio_pool.back().c_str()));
+}
+
+extern "C" double flux_string_find(double s_ptr, double c) {
+    auto* s = reinterpret_cast<const char*>(jit_bitcast<uintptr_t>(s_ptr));
+    if (!s) return -1.0;
+    char ch = static_cast<char>(static_cast<int>(c));
+    const char* p = std::strchr(s, ch);
+    if (!p) return -1.0;
+    return static_cast<double>(p - s);
+}
+
+extern "C" double flux_parse_number(double s_ptr) {
+    auto* s = reinterpret_cast<const char*>(jit_bitcast<uintptr_t>(s_ptr));
+    if (!s || !*s) return 0.0;
+    char* end = nullptr;
+    double val = std::strtod(s, &end);
+    if (end && *end) {
+        switch (*end) {
+            case 'k': case 'K': val *= 1e3; break;
+            case 'M': case 'm':
+                if (*(end+1) == 'e' || *(end+1) == 'E') { val *= 1e6; break; }
+                if (end > s && (*(end-1) == 'm')) { /* already handled */ break; }
+                val *= 1e-3; break;
+            case 'u': case 'U': val *= 1e-6; break;
+            case 'n': case 'N': val *= 1e-9; break;
+            case 'p': case 'P': val *= 1e-12; break;
+            case 'f': case 'F': val *= 1e-15; break;
+            case 'R': case 'r': break; // Ohm suffix
+            case 'e': case 'E': break; // Already handled by strtod
+        }
+    }
+    return val;
+}
+
 namespace Flux {
 
 template <typename To, typename From>
@@ -678,6 +728,10 @@ void registerRuntimeFunctions(FluxJIT& jit) {
     jit.registerFunction("flux_fprintf", (void*)&flux_fprintf);
     jit.registerFunction("flux_strcmp",  (void*)&flux_strcmp);
     jit.registerFunction("flux_strlen",  (void*)&flux_strlen);
+    jit.registerFunction("flux_string_at",    (void*)&flux_string_at);
+    jit.registerFunction("flux_string_slice", (void*)&flux_string_slice);
+    jit.registerFunction("flux_string_find",  (void*)&flux_string_find);
+    jit.registerFunction("flux_parse_number", (void*)&flux_parse_number);
 
     // FFT
     jit.registerFunction("fft",             (void*)&flux_fft);

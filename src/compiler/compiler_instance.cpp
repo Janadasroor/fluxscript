@@ -135,7 +135,11 @@ void CompilerInstance::injectStandardLibrary(CodegenContext& context,
     regExtern("flux_fgets",   DblTy(), {DblTy()});
     regExtern("flux_fprintf", DblTy(), {DblTy(), DblTy(), DblTy()});
     regExtern("flux_strcmp",  DblTy(), {DblTy(), DblTy()});
-    regExtern("flux_strlen",  DblTy(), {DblTy()});
+    regExtern("flux_strlen",        DblTy(), {DblTy()});
+    regExtern("flux_string_at",     DblTy(), {DblTy(), DblTy()});
+    regExtern("flux_string_slice",  DblTy(), {DblTy(), DblTy(), DblTy()});
+    regExtern("flux_string_find",   DblTy(), {DblTy(), DblTy()});
+    regExtern("flux_parse_number",  DblTy(), {DblTy()});
 
     // FFT
     regExtern("fft",               MatTy(), {MatTy(), DblTy()});
