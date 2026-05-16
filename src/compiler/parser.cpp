@@ -46,6 +46,7 @@ Parser::Parser(const std::string& input) : m_lexer(input), m_hasError(false) {
     m_binopPrecedence[static_cast<int>(TokenType::tok_ew_div)] = 40;
     m_binopPrecedence[static_cast<int>(TokenType::tok_ew_power)] = 50;
     m_binopPrecedence[static_cast<int>(TokenType::tok_power)] = 50;
+    m_binopPrecedence['['] = 60;
     getNextToken();
 }
 
@@ -868,6 +869,19 @@ std::unique_ptr<ExprAST> Parser::ParseBinOpRHS(int ExprPrec, std::unique_ptr<Exp
         if (TokPrec < NextPrec) { RHS = ParseBinOpRHS(TokPrec + 1, std::move(RHS)); if (!RHS) return nullptr; }
         if (BinOp == '=') {
             LHS = std::make_unique<AssignExprAST>(std::move(LHS), std::move(RHS));
+        } else if (BinOp == '[') {
+            // A[i, j] — matrix indexing
+            auto rowIdx = std::move(RHS);
+            std::unique_ptr<ExprAST> colIdx;
+            if (CurTok == ',') {
+                getNextToken();
+                colIdx = ParseExpression();
+                if (!colIdx) return nullptr;
+            }
+            if (CurTok != ']') { ReportError("expected ']' after index"); return nullptr; }
+            getNextToken();
+            LHS = std::make_unique<IndexExprAST>(
+                std::move(LHS), std::move(rowIdx), std::move(colIdx));
         } else {
             LHS = std::make_unique<BinaryExprAST>(BinOp, std::move(LHS), std::move(RHS));
         }

@@ -450,6 +450,7 @@ void registerRuntimeFunctions(FluxJIT& jit) {
     jit.registerFunction("matrix_solve", (void*)&flux_matrix_solve);
     jit.registerFunction("matrix_get", (void*)&flux_matrix_get);
     jit.registerFunction("matrix_set", (void*)&flux_matrix_set);
+    jit.registerFunction("flux_matrix_set", (void*)&flux_matrix_set);
     jit.registerFunction("matrix_rows", (void*)&flux_matrix_rows);
     jit.registerFunction("matrix_cols", (void*)&flux_matrix_cols);
 

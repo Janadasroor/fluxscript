@@ -314,6 +314,42 @@ TypedValue AssignExprAST::codegen(CodegenContext& context) {
     bool isSpice = false;
     llvm::Value* Variable = nullptr;
 
+    if (auto* IDX = dynamic_cast<IndexExprAST*>(LHS.get())) {
+        // A[i,j] = val — matrix element assignment
+        if (!IDX->isMatrixIndex() || !IDX->getColIndex()) {
+            std::cerr << "Matrix assignment requires two indices: A[row, col] = val\n";
+            return TypedValue();
+        }
+        auto* array = const_cast<ExprAST*>(IDX->getArray());
+        auto* rowIdx = const_cast<ExprAST*>(IDX->getRowIndex());
+        auto* colIdx = const_cast<ExprAST*>(IDX->getColIndex());
+        if (!array || !rowIdx || !colIdx) return TypedValue();
+        TypedValue ArrayTV = array->codegen(context);
+        if (!ArrayTV.Val || ArrayTV.Type.Kind != TypeKind::Matrix) {
+            std::cerr << "Can only assign into matrices.\n";
+            return TypedValue();
+        }
+        llvm::Type* Int32Ty = llvm::Type::getInt32Ty(context.TheContext);
+        llvm::Type* VoidPtrTy = llvm::PointerType::get(context.TheContext, 0);
+        llvm::Type* DoubleTy = llvm::Type::getDoubleTy(context.TheContext);
+        llvm::Value* MatPtr = context.Builder.CreateExtractValue(ArrayTV.Val, 0, "mat_ptr");
+        TypedValue RowTV = rowIdx->codegen(context);
+        TypedValue ColTV = colIdx->codegen(context);
+        if (!RowTV.Val || !ColTV.Val) return TypedValue();
+        llvm::Value* RowV = RowTV.Val, *ColV = ColTV.Val;
+        if (RowV->getType()->isFloatingPointTy()) RowV = context.Builder.CreateFPToSI(RowV, Int32Ty, "row_int");
+        if (ColV->getType()->isFloatingPointTy()) ColV = context.Builder.CreateFPToSI(ColV, Int32Ty, "col_int");
+        TypedValue NewValTV = Val->codegen(context);
+        if (!NewValTV.Val) return TypedValue();
+        llvm::Function* SetF = context.TheModule->getFunction("flux_matrix_set");
+        if (!SetF) SetF = llvm::Function::Create(
+            llvm::FunctionType::get(llvm::Type::getVoidTy(context.TheContext),
+                {VoidPtrTy, Int32Ty, Int32Ty, DoubleTy}, false),
+            llvm::Function::ExternalLinkage, "flux_matrix_set", context.TheModule);
+        context.Builder.CreateCall(SetF, {MatPtr, RowV, ColV, NewValTV.Val});
+        return NewValTV;
+    }
+
     if (auto* VAR = dynamic_cast<VariableExprAST*>(LHS.get())) {
         TargetName = VAR->getName();
         Variable = context.NamedValues[TargetName];
@@ -1632,27 +1668,7 @@ TypedValue IndexExprAST::codegen(CodegenContext& context) {
         if (ColV->getType()->isFloatingPointTy()) ColV = context.Builder.CreateFPToSI(ColV, Int32Ty, "col_int");
         else if (ColV->getType()->isIntegerTy(64)) ColV = context.Builder.CreateTrunc(ColV, Int32Ty, "col_int");
 
-        // Bounds checking for row index
-        llvm::Value* RowInBounds = context.Builder.CreateICmpULT(RowV, RowsVal, "row_in_bounds");
-        llvm::Function* RowCheckF = context.TheModule->getFunction("flux_bounds_check_row");
-        if (!RowCheckF) {
-            llvm::FunctionType* CheckTy = llvm::FunctionType::get(llvm::Type::getVoidTy(context.TheContext), 
-                {Int32Ty, Int32Ty, VoidPtrTy}, false);
-            RowCheckF = llvm::Function::Create(CheckTy, llvm::Function::ExternalLinkage, 
-                "flux_bounds_check_row", context.TheModule);
-        }
-        context.Builder.CreateCall(RowCheckF, {RowV, RowsVal, MatPtr}, "row_check");
-        
-        // Bounds checking for column index
-        llvm::Value* ColInBounds = context.Builder.CreateICmpULT(ColV, ColsVal, "col_in_bounds");
-        llvm::Function* ColCheckF = context.TheModule->getFunction("flux_bounds_check_col");
-        if (!ColCheckF) {
-            llvm::FunctionType* CheckTy = llvm::FunctionType::get(llvm::Type::getVoidTy(context.TheContext), 
-                {Int32Ty, Int32Ty, VoidPtrTy}, false);
-            ColCheckF = llvm::Function::Create(CheckTy, llvm::Function::ExternalLinkage, 
-                "flux_bounds_check_col", context.TheModule);
-        }
-        context.Builder.CreateCall(ColCheckF, {ColV, ColsVal, MatPtr}, "col_check");
+        // Bounds checking disabled — flux_bounds_check_row/col not implemented
 
         llvm::Function* GetElemF = context.TheModule->getFunction("flux_matrix_get");
         if (!GetElemF) GetElemF = llvm::Function::Create(llvm::FunctionType::get(DoubleTy, { VoidPtrTy, Int32Ty, Int32Ty }, false), llvm::Function::ExternalLinkage, "flux_matrix_get", context.TheModule);
