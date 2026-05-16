@@ -82,6 +82,64 @@ double jit_register_ic(double node_ptr, double value) {
     return flux_register_ic(reinterpret_cast<const char*>(jit_bitcast<uintptr_t>(node_ptr)), value);
 }
 
+// File I/O and string utilities for FluxScript
+#include <cstdio>
+static thread_local std::string g_fileio_buffer;
+static thread_local std::vector<std::string> g_fileio_pool;
+
+// File I/O wrappers (flux_ prefix avoids symbol conflicts with libc)
+extern "C" double flux_fopen(double filename_ptr, double mode_ptr) {
+    auto* fn = reinterpret_cast<const char*>(jit_bitcast<uintptr_t>(filename_ptr));
+    auto* md = reinterpret_cast<const char*>(jit_bitcast<uintptr_t>(mode_ptr));
+    auto* fp = std::fopen(fn ? fn : "", md ? md : "r");
+    return jit_bitcast<double>(reinterpret_cast<uintptr_t>(fp));
+}
+
+extern "C" double flux_fclose(double handle) {
+    auto* fp = reinterpret_cast<std::FILE*>(jit_bitcast<uintptr_t>(handle));
+    if (!fp) return 0.0;
+    return std::fclose(fp) == 0 ? 1.0 : 0.0;
+}
+
+extern "C" double flux_feof(double handle) {
+    auto* fp = reinterpret_cast<std::FILE*>(jit_bitcast<uintptr_t>(handle));
+    if (!fp) return 1.0;
+    return std::feof(fp) ? 1.0 : 0.0;
+}
+
+extern "C" double flux_fgets(double handle) {
+    auto* fp = reinterpret_cast<std::FILE*>(jit_bitcast<uintptr_t>(handle));
+    if (!fp || std::feof(fp)) return 0.0;
+    g_fileio_buffer.clear();
+    g_fileio_buffer.resize(4096);
+    if (!std::fgets(&g_fileio_buffer[0], g_fileio_buffer.size(), fp))
+        return 0.0;
+    g_fileio_buffer.resize(std::strlen(g_fileio_buffer.c_str()));
+    while (!g_fileio_buffer.empty() && (g_fileio_buffer.back() == '\n' || g_fileio_buffer.back() == '\r'))
+        g_fileio_buffer.pop_back();
+    g_fileio_pool.push_back(g_fileio_buffer);
+    return jit_bitcast<double>(reinterpret_cast<uintptr_t>(g_fileio_pool.back().c_str()));
+}
+
+extern "C" double flux_fprintf(double handle, double format_ptr, double arg) {
+    auto* fp = reinterpret_cast<std::FILE*>(jit_bitcast<uintptr_t>(handle));
+    auto* fmt = reinterpret_cast<const char*>(jit_bitcast<uintptr_t>(format_ptr));
+    if (!fp || !fmt) return 0.0;
+    return std::fprintf(fp, fmt, arg);
+}
+
+extern "C" double flux_strcmp(double a_ptr, double b_ptr) {
+    auto* a = reinterpret_cast<const char*>(jit_bitcast<uintptr_t>(a_ptr));
+    auto* b = reinterpret_cast<const char*>(jit_bitcast<uintptr_t>(b_ptr));
+    if (!a || !b) return (a == b) ? 0.0 : 1.0;
+    return static_cast<double>(std::strcmp(a, b));
+}
+
+extern "C" double flux_strlen(double s_ptr) {
+    auto* s = reinterpret_cast<const char*>(jit_bitcast<uintptr_t>(s_ptr));
+    return s ? static_cast<double>(std::strlen(s)) : 0.0;
+}
+
 namespace Flux {
 
 template <typename To, typename From>
@@ -611,6 +669,15 @@ void registerRuntimeFunctions(FluxJIT& jit) {
     jit.registerFunction("register_save", (void*)&jit_register_save);
     jit.registerFunction("register_param", (void*)&jit_register_param);
     jit.registerFunction("register_ic", (void*)&jit_register_ic);
+
+    // File I/O and string utilities (flux_ prefix avoids libc symbol conflicts)
+    jit.registerFunction("flux_fopen",   (void*)&flux_fopen);
+    jit.registerFunction("flux_fclose",  (void*)&flux_fclose);
+    jit.registerFunction("flux_feof",    (void*)&flux_feof);
+    jit.registerFunction("flux_fgets",   (void*)&flux_fgets);
+    jit.registerFunction("flux_fprintf", (void*)&flux_fprintf);
+    jit.registerFunction("flux_strcmp",  (void*)&flux_strcmp);
+    jit.registerFunction("flux_strlen",  (void*)&flux_strlen);
 
     // FFT
     jit.registerFunction("fft",             (void*)&flux_fft);

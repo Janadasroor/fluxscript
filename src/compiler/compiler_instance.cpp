@@ -128,6 +128,15 @@ void CompilerInstance::injectStandardLibrary(CodegenContext& context,
     regExtern("matrix_trace",      DblTy(), {MatTy()});
     regExtern("matrix_diag",       MatTy(), {MatTy()});
 
+    // File I/O and string utilities (flux_ prefix avoids libc symbol conflicts)
+    regExtern("flux_fopen",   DblTy(), {DblTy(), DblTy()});
+    regExtern("flux_fclose",  DblTy(), {DblTy()});
+    regExtern("flux_feof",    DblTy(), {DblTy()});
+    regExtern("flux_fgets",   DblTy(), {DblTy()});
+    regExtern("flux_fprintf", DblTy(), {DblTy(), DblTy(), DblTy()});
+    regExtern("flux_strcmp",  DblTy(), {DblTy(), DblTy()});
+    regExtern("flux_strlen",  DblTy(), {DblTy()});
+
     // FFT
     regExtern("fft",               MatTy(), {MatTy(), DblTy()});
     regExtern("fft_thd",           DblTy(), {MatTy(), DblTy()});
