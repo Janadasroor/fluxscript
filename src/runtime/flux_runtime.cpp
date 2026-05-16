@@ -286,6 +286,20 @@ extern "C" void* flux_matrix_vcat(void* a_ptr, void* b_ptr) {
     return g_matrix_tracker.register_matrix(std::make_unique<Eigen::MatrixXd>(std::move(C)));
 }
 
+extern "C" double flux_matrix_trace(void* m_ptr) {
+    auto* M = g_matrix_tracker.get_matrix(m_ptr);
+    return M ? M->trace() : 0.0;
+}
+
+extern "C" void* flux_matrix_diag_extract(void* m_ptr) {
+    auto* M = g_matrix_tracker.get_matrix(m_ptr);
+    if (!M) return nullptr;
+    int n = std::min(M->rows(), M->cols());
+    auto* V = new Eigen::MatrixXd(n, 1);
+    for (int i = 0; i < n; i++) (*V)(i, 0) = (*M)(i, i);
+    return g_matrix_tracker.register_matrix(std::unique_ptr<Eigen::MatrixXd>(V));
+}
+
 extern "C" void* flux_matrix_slice(void* m_ptr, int r0, int r1, int c0, int c1) {
     auto* M = g_matrix_tracker.get_matrix(m_ptr);
     if (!M) return nullptr;
@@ -498,6 +512,8 @@ void registerRuntimeFunctions(FluxJIT& jit) {
     jit.registerFunction("flux_matrix_set", (void*)&flux_matrix_set);
     jit.registerFunction("matrix_slice", (void*)&flux_matrix_slice);
     jit.registerFunction("flux_matrix_slice", (void*)&flux_matrix_slice);
+    jit.registerFunction("matrix_trace", (void*)&flux_matrix_trace);
+    jit.registerFunction("matrix_diag", (void*)&flux_matrix_diag_extract);
     jit.registerFunction("matrix_rows", (void*)&flux_matrix_rows);
     jit.registerFunction("matrix_cols", (void*)&flux_matrix_cols);
 
