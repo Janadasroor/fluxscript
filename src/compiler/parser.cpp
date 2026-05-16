@@ -863,14 +863,14 @@ std::unique_ptr<ExprAST> Parser::ParseBinOpRHS(int ExprPrec, std::unique_ptr<Exp
         if (TokPrec < ExprPrec) return LHS;
         int BinOp = CurTok;
         getNextToken();
-        auto RHS = ParseUnaryExpr();
+        auto RHS = ParseExpression();
         if (!RHS) return nullptr;
         int NextPrec = GetTokPrecedence();
         if (TokPrec < NextPrec) { RHS = ParseBinOpRHS(TokPrec + 1, std::move(RHS)); if (!RHS) return nullptr; }
         if (BinOp == '=') {
             LHS = std::make_unique<AssignExprAST>(std::move(LHS), std::move(RHS));
         } else if (BinOp == '[') {
-            // A[i, j] — matrix indexing
+            // A[i, j] — matrix indexing; A[i:j, k:l] — slicing
             auto rowIdx = std::move(RHS);
             std::unique_ptr<ExprAST> colIdx;
             if (CurTok == ',') {
@@ -891,6 +891,13 @@ std::unique_ptr<ExprAST> Parser::ParseBinOpRHS(int ExprPrec, std::unique_ptr<Exp
 std::unique_ptr<ExprAST> Parser::ParseExpression() {
     auto LHS = ParseUnaryExpr();
     if (!LHS) return nullptr;
+    // Handle range expressions (start:end)
+    if (CurTok == static_cast<int>(TokenType::tok_colon)) {
+        getNextToken();
+        auto RHS = ParseUnaryExpr();
+        if (!RHS) return nullptr;
+        return ParseBinOpRHS(0, std::make_unique<RangeExprAST>(std::move(LHS), std::move(RHS)));
+    }
     return ParseBinOpRHS(0, std::move(LHS));
 }
 

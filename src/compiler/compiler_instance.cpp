@@ -124,6 +124,7 @@ void CompilerInstance::injectStandardLibrary(CodegenContext& context,
     regExtern("matrix_vcat",       MatTy(), {MatTy(), MatTy()});
     regExtern("matrix_sum",        DblTy(), {MatTy()});
     regExtern("matrix_mean",       DblTy(), {MatTy()});
+    regExtern("matrix_slice",      MatTy(), {MatTy(), IntTy(), IntTy(), IntTy(), IntTy()});
     regExtern("matrix_mul",        MatTy(), {MatTy(), MatTy()});
     regExtern("matrix_add",        MatTy(), {MatTy(), MatTy()});
     regExtern("matrix_sub",        MatTy(), {MatTy(), MatTy()});

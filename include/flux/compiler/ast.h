@@ -768,6 +768,8 @@ public:
     const ExprAST* getArray() const { return Array.get(); }
     const ExprAST* getRowIndex() const { return RowIndex.get(); }
     const ExprAST* getColIndex() const { return ColIndex.get(); }
+    ExprAST* getRowIndexMut() { return RowIndex.get(); }
+    ExprAST* getColIndexMut() { return ColIndex.get(); }
     bool isMatrixIndex() const { return IsMatrixIndex; }
     bool containsYield() const override {
         if (Array && Array->containsYield()) return true;

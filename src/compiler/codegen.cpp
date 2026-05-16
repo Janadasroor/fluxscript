@@ -1655,6 +1655,58 @@ TypedValue IndexExprAST::codegen(CodegenContext& context) {
     llvm::Value* ColsVal = context.Builder.CreateExtractValue(ArrayTV.Val, 2, "mat_cols");
 
     if (IsMatrixIndex) {
+        // Check if either index is a RangeExprAST (for slicing)
+        auto codegenRange = [&](std::unique_ptr<ExprAST>& idx, llvm::Value* dim,
+                                llvm::Value*& lo, llvm::Value*& hi) -> bool {
+            auto* r = dynamic_cast<RangeExprAST*>(idx.get());
+            if (!r) { lo = llvm::ConstantInt::get(Int32Ty, 0); hi = dim; return true; }
+            auto* sPtr = const_cast<ExprAST*>(r->getStart());
+            auto* ePtr = const_cast<ExprAST*>(r->getEnd());
+            if (!sPtr || !ePtr) return false;
+            TypedValue s = sPtr->codegen(context);
+            TypedValue e = ePtr->codegen(context);
+            lo = s.Val; hi = e.Val;
+            if (lo->getType()->isFloatingPointTy()) lo = context.Builder.CreateFPToSI(lo, Int32Ty, "slice_lo");
+            if (hi->getType()->isFloatingPointTy()) hi = context.Builder.CreateFPToSI(hi, Int32Ty, "slice_hi");
+            return true;
+        };
+
+        bool hasRowRange = dynamic_cast<RangeExprAST*>(RowIndex.get()) != nullptr;
+        bool hasColRange = ColIndex ? dynamic_cast<RangeExprAST*>(ColIndex.get()) != nullptr : false;
+
+        if (hasRowRange || hasColRange) {
+            llvm::Value* r0, *r1, *c0, *c1;
+            if (!codegenRange(RowIndex, RowsVal, r0, r1)) return TypedValue();
+            if (!codegenRange(ColIndex ? ColIndex : RowIndex,
+                              ColsVal, c0, c1)) return TypedValue();
+
+            llvm::Function* SliceF = context.TheModule->getFunction("flux_matrix_slice");
+            if (!SliceF) SliceF = llvm::Function::Create(
+                llvm::FunctionType::get(VoidPtrTy, {VoidPtrTy, Int32Ty, Int32Ty, Int32Ty, Int32Ty}, false),
+                llvm::Function::ExternalLinkage, "flux_matrix_slice", context.TheModule);
+            llvm::Value* SlicePtr = context.Builder.CreateCall(SliceF, {MatPtr, r0, r1, c0, c1}, "slice_ptr");
+
+            // Get slice dimensions and wrap in matrix struct
+            llvm::Function* RowsF = context.TheModule->getFunction("flux_matrix_rows");
+            if (!RowsF) RowsF = llvm::Function::Create(
+                llvm::FunctionType::get(Int32Ty, {VoidPtrTy}, false),
+                llvm::Function::ExternalLinkage, "flux_matrix_rows", context.TheModule);
+            llvm::Function* ColsF = context.TheModule->getFunction("flux_matrix_cols");
+            if (!ColsF) ColsF = llvm::Function::Create(
+                llvm::FunctionType::get(Int32Ty, {VoidPtrTy}, false),
+                llvm::Function::ExternalLinkage, "flux_matrix_cols", context.TheModule);
+            llvm::Value* SR = context.Builder.CreateCall(RowsF, {SlicePtr}, "sli_rows");
+            llvm::Value* SC = context.Builder.CreateCall(ColsF, {SlicePtr}, "sli_cols");
+            llvm::StructType* MatSTy = llvm::cast<llvm::StructType>(
+                FluxType(TypeKind::Matrix).getLLVMType(context.TheContext));
+            llvm::Value* MV = llvm::PoisonValue::get(MatSTy);
+            MV = context.Builder.CreateInsertValue(MV, SlicePtr, 0);
+            MV = context.Builder.CreateInsertValue(MV, SR, 1);
+            MV = context.Builder.CreateInsertValue(MV, SC, 2);
+            return TypedValue(MV, TypeKind::Matrix);
+        }
+
+        // Scalar element access: A[row, col]
         TypedValue RowTV = RowIndex->codegen(context);
         TypedValue ColTV = ColIndex ? ColIndex->codegen(context) : TypedValue();
         if (!RowTV.Val || !ColTV.Val) return TypedValue();
@@ -1667,8 +1719,6 @@ TypedValue IndexExprAST::codegen(CodegenContext& context) {
 
         if (ColV->getType()->isFloatingPointTy()) ColV = context.Builder.CreateFPToSI(ColV, Int32Ty, "col_int");
         else if (ColV->getType()->isIntegerTy(64)) ColV = context.Builder.CreateTrunc(ColV, Int32Ty, "col_int");
-
-        // Bounds checking disabled — flux_bounds_check_row/col not implemented
 
         llvm::Function* GetElemF = context.TheModule->getFunction("flux_matrix_get");
         if (!GetElemF) GetElemF = llvm::Function::Create(llvm::FunctionType::get(DoubleTy, { VoidPtrTy, Int32Ty, Int32Ty }, false), llvm::Function::ExternalLinkage, "flux_matrix_get", context.TheModule);
