@@ -1,10 +1,11 @@
 *.flux
+!tests/flux/*.flux
 BUILD_STATUS.json
 /build/
 
 
 /docs/
-/examples/
+/examples/*.md
 
 /editor/
 /gui/
