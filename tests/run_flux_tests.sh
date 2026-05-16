@@ -7,7 +7,7 @@ if [ ! -x "$FLUX" ]; then
     exit 1
 fi
 DIR="$(dirname "$0")"
-TEST_FILE="$DIR/test_all_features.flux"
+TEST_FILE="$DIR/flux/test_all_features.flux"
 PASSED=0
 FAILED=0
 
