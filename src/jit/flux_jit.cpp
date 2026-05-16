@@ -195,23 +195,30 @@ TCOOptions FluxJIT::getTCOOptions() const {
 void FluxJIT::optimizeModule(llvm::Module* M) {
     if (!M || m_optLevel == OptimizationLevel::O0) return;
 
-    // Create the analysis managers
+    // Skip optimization for very large modules (can crash LLVM's optimizer
+    // on complex control flow with deeply nested while/if blocks).
+    size_t totalInsts = 0;
+    for (auto& F : *M) {
+        for (auto& BB : F) totalInsts += BB.size();
+    }
+    if (totalInsts > 2000) {
+        llvm::errs() << "Module too large for optimization (" << totalInsts
+                     << " instrs, skipping). Use -O0 or split functions.\n";
+        return;
+    }
+
     llvm::LoopAnalysisManager LAM;
     llvm::FunctionAnalysisManager FAM;
     llvm::CGSCCAnalysisManager CGAM;
     llvm::ModuleAnalysisManager MAM;
 
-    // Register the passes
     m_passBuilder->registerModuleAnalyses(MAM);
     m_passBuilder->registerCGSCCAnalyses(CGAM);
     m_passBuilder->registerFunctionAnalyses(FAM);
     m_passBuilder->registerLoopAnalyses(LAM);
     m_passBuilder->crossRegisterProxies(LAM, FAM, CGAM, MAM);
 
-    // Create the optimization pipeline based on level
-    // O2 and O3 include loop vectorization and SLP vectorization by default
     llvm::ModulePassManager MPM;
-
     switch (m_optLevel) {
         case OptimizationLevel::O1:
             MPM = m_passBuilder->buildPerModuleDefaultPipeline(llvm::OptimizationLevel::O1);
@@ -227,14 +234,6 @@ void FluxJIT::optimizeModule(llvm::Module* M) {
             return;
     }
 
-    // Run the optimization pipeline
-    // Note: LLVM's O1, O2, and O3 pipelines automatically include:
-    // - Tail Call Elimination (converts tail-recursive calls to jumps)
-    // - Loop Vectorize Pass (for loop-level SIMD)
-    // - SLP Vectorizer Pass (for straight-line code SIMD)
-    // These passes detect opportunities for:
-    //   * TCO: Converts eligible tail calls to jumps, preventing stack overflow
-    //   * SIMD: AVX/AVX2/AVX-512 instructions based on target CPU
     MPM.run(*M, MAM);
 }
 
