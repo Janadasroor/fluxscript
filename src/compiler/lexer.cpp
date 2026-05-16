@@ -289,7 +289,7 @@ int Lexer::gettok() {
         if (IdentifierStr == "stability") return static_cast<int>(TokenType::tok_stability);
         if (IdentifierStr == "sensitivity") return static_cast<int>(TokenType::tok_sensitivity);
         if (IdentifierStr == "optimize") return static_cast<int>(TokenType::tok_optimize);
-        if (IdentifierStr == "fft") return static_cast<int>(TokenType::tok_fft);
+        // fft handled as regular identifier (function name)
         if (IdentifierStr == "phasor") return static_cast<int>(TokenType::tok_phasor);
         if (IdentifierStr == "bode") return static_cast<int>(TokenType::tok_bode);
         if (IdentifierStr == "esource") return static_cast<int>(TokenType::tok_esource);

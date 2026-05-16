@@ -126,6 +126,11 @@ void CompilerInstance::injectStandardLibrary(CodegenContext& context,
     regExtern("matrix_mean",       DblTy(), {MatTy()});
     regExtern("matrix_slice",      MatTy(), {MatTy(), IntTy(), IntTy(), IntTy(), IntTy()});
 
+    // FFT
+    regExtern("fft",               MatTy(), {MatTy(), DblTy()});
+    regExtern("fft_thd",           DblTy(), {MatTy(), DblTy()});
+    regExtern("fft_snr",           DblTy(), {MatTy(), DblTy()});
+
     // SPICE simulation API (strings passed as double bitcast in JIT calling convention)
     regExtern("register_analysis", DblTy(), {DblTy()});
     regExtern("register_measure",  DblTy(), {DblTy(), DblTy()});

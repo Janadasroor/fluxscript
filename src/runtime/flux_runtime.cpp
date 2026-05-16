@@ -596,6 +596,11 @@ void registerRuntimeFunctions(FluxJIT& jit) {
     jit.registerFunction("register_param", (void*)&jit_register_param);
     jit.registerFunction("register_ic", (void*)&jit_register_ic);
 
+    // FFT
+    jit.registerFunction("fft",             (void*)&flux_fft);
+    jit.registerFunction("fft_thd",         (void*)&flux_fft_thd);
+    jit.registerFunction("fft_snr",         (void*)&flux_fft_snr);
+
     // Advanced math: optimization
     jit.registerFunction("least_squares",    (void*)&flux_least_squares);
     jit.registerFunction("gradient_descent", (void*)&flux_gradient_descent);

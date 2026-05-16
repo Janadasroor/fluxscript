@@ -144,7 +144,7 @@ private:
     std::unique_ptr<ExprAST> ParseStabilityAnalysis();
     std::unique_ptr<ExprAST> ParseSensitivityAnalysis();
     std::unique_ptr<ExprAST> ParseOptimization();
-    std::unique_ptr<ExprAST> ParseFFTAnalysis();
+
     std::unique_ptr<ExprAST> ParseProbe();
     std::unique_ptr<ExprAST> ParseSave();
     

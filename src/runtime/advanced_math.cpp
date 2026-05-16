@@ -248,6 +248,55 @@ double* flux_interp1_spline(double* xq, int nq, double* xp, double* yp, int np) 
 }
 
 // ============================================================================
+// FFT (Fast Fourier Transform)
+// ============================================================================
+
+#include "flux/analysis/fft_engine.h"
+
+static thread_local Flux::FFT::FFTEngine g_fft_engine;
+
+extern "C" void* flux_fft(void* sig_matrix, double sample_rate) {
+    auto* M = (Eigen::MatrixXd*)flux_lookup_matrix(sig_matrix);
+    if (!M || M->cols() != 1) return nullptr;
+    int n = M->rows();
+    g_fft_engine.setSampleRate(sample_rate);
+    g_fft_engine.setWindowType("hanning");
+    std::vector<double> sig(n);
+    for (int i = 0; i < n; i++) sig[i] = (*M)(i, 0);
+    auto report = g_fft_engine.compute(sig);
+    int m = report.spectrum.size();
+    void* ret = flux_register_new_matrix(m, 3);
+    auto* R = (Eigen::MatrixXd*)flux_lookup_matrix(ret);
+    if (!R) return nullptr;
+    for (int i = 0; i < m; i++) {
+        (*R)(i, 0) = report.spectrum[i].frequency;
+        (*R)(i, 1) = report.spectrum[i].magnitude;
+        (*R)(i, 2) = report.spectrum[i].phase;
+    }
+    return ret;
+}
+
+extern "C" double flux_fft_thd(void* sig_matrix, double sample_rate) {
+    auto* M = (Eigen::MatrixXd*)flux_lookup_matrix(sig_matrix);
+    if (!M || M->cols() != 1) return 0.0;
+    g_fft_engine.setSampleRate(sample_rate);
+    std::vector<double> sig(M->rows());
+    for (int i = 0; i < M->rows(); i++) sig[i] = (*M)(i, 0);
+    auto report = g_fft_engine.compute(sig);
+    return report.thd;
+}
+
+extern "C" double flux_fft_snr(void* sig_matrix, double sample_rate) {
+    auto* M = (Eigen::MatrixXd*)flux_lookup_matrix(sig_matrix);
+    if (!M || M->cols() != 1) return 0.0;
+    g_fft_engine.setSampleRate(sample_rate);
+    std::vector<double> sig(M->rows());
+    for (int i = 0; i < M->rows(); i++) sig[i] = (*M)(i, 0);
+    auto report = g_fft_engine.compute(sig);
+    return report.snr;
+}
+
+// ============================================================================
 // Special Functions
 // ============================================================================
 

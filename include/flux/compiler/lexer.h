@@ -205,7 +205,7 @@ enum class TokenType {
     tok_stability = -302,          // Stability analysis
     // tok_sensitivity already defined at -137
     tok_optimize = -303,           // Optimization
-    tok_fft = -304,                // FFT analysis
+
     tok_phasor = -305,             // Phasor type
     tok_bode = -306,               // Bode plot
     tok_esource = -190,            // E-source (VCVS)

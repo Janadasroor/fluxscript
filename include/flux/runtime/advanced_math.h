@@ -58,6 +58,13 @@ double flux_bessel_y0(double x);
 double flux_bessel_y1(double x);
 
 // ============================================================================
+// FFT (Fast Fourier Transform)
+// ============================================================================
+void* flux_fft(void* sig_matrix, double sample_rate);
+double flux_fft_thd(void* sig_matrix, double sample_rate);
+double flux_fft_snr(void* sig_matrix, double sample_rate);
+
+// ============================================================================
 // Signal Processing
 // ============================================================================
 double* flux_conv(double* x, int nx, double* y, int ny);
