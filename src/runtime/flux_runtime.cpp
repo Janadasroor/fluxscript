@@ -45,6 +45,41 @@ extern "C" {
     void flux_hot_swap(const char* name, double model_ptr);
     double flux_optimize();
     double flux_edge_detect(double value, double edge_type);
+
+    // SPICE simulation API (defined in spice_runtime.cpp)
+    double flux_register_analysis(const char* analysis_type);
+    double flux_register_measure(const char* name, const char* measure_type);
+    double flux_register_probe(const char* var_name, const char* output_name);
+    double flux_register_save(const char* var_name);
+    double flux_register_param(const char* name, double value);
+    double flux_register_ic(const char* node_name, double value);
+}
+
+// JIT-callable wrappers (C++ linkage, call extern "C" functions internally)
+template <typename To, typename From>
+inline To jit_bitcast(const From& src) noexcept {
+    static_assert(sizeof(To) == sizeof(From), "bitcast sizes must match");
+    To dst; std::memcpy(&dst, &src, sizeof(To)); return dst;
+}
+double jit_register_analysis(double name_ptr) {
+    return flux_register_analysis(reinterpret_cast<const char*>(jit_bitcast<uintptr_t>(name_ptr)));
+}
+double jit_register_measure(double name_ptr, double type_ptr) {
+    return flux_register_measure(reinterpret_cast<const char*>(jit_bitcast<uintptr_t>(name_ptr)),
+                                 reinterpret_cast<const char*>(jit_bitcast<uintptr_t>(type_ptr)));
+}
+double jit_register_probe(double var_ptr, double out_ptr) {
+    return flux_register_probe(reinterpret_cast<const char*>(jit_bitcast<uintptr_t>(var_ptr)),
+                               reinterpret_cast<const char*>(jit_bitcast<uintptr_t>(out_ptr)));
+}
+double jit_register_save(double name_ptr) {
+    return flux_register_save(reinterpret_cast<const char*>(jit_bitcast<uintptr_t>(name_ptr)));
+}
+double jit_register_param(double name_ptr, double value) {
+    return flux_register_param(reinterpret_cast<const char*>(jit_bitcast<uintptr_t>(name_ptr)), value);
+}
+double jit_register_ic(double node_ptr, double value) {
+    return flux_register_ic(reinterpret_cast<const char*>(jit_bitcast<uintptr_t>(node_ptr)), value);
 }
 
 namespace Flux {
@@ -552,6 +587,14 @@ void registerRuntimeFunctions(FluxJIT& jit) {
     jit.registerFunction("polyval",          (void*)&flux_polyval);
     jit.registerFunction("polyfit",          (void*)&flux_polyfit);
     jit.registerFunction("polyroots",        (void*)&flux_polyroots);
+
+    // SPICE Simulation API (JIT-callable wrappers)
+    jit.registerFunction("register_analysis", (void*)&jit_register_analysis);
+    jit.registerFunction("register_measure", (void*)&jit_register_measure);
+    jit.registerFunction("register_probe", (void*)&jit_register_probe);
+    jit.registerFunction("register_save", (void*)&jit_register_save);
+    jit.registerFunction("register_param", (void*)&jit_register_param);
+    jit.registerFunction("register_ic", (void*)&jit_register_ic);
 
     // Advanced math: optimization
     jit.registerFunction("least_squares",    (void*)&flux_least_squares);

@@ -125,6 +125,14 @@ void CompilerInstance::injectStandardLibrary(CodegenContext& context,
     regExtern("matrix_sum",        DblTy(), {MatTy()});
     regExtern("matrix_mean",       DblTy(), {MatTy()});
     regExtern("matrix_slice",      MatTy(), {MatTy(), IntTy(), IntTy(), IntTy(), IntTy()});
+
+    // SPICE simulation API (strings passed as double bitcast in JIT calling convention)
+    regExtern("register_analysis", DblTy(), {DblTy()});
+    regExtern("register_measure",  DblTy(), {DblTy(), DblTy()});
+    regExtern("register_probe",    DblTy(), {DblTy(), DblTy()});
+    regExtern("register_save",     DblTy(), {DblTy()});
+    regExtern("register_param",    DblTy(), {DblTy(), DblTy()});
+    regExtern("register_ic",       DblTy(), {DblTy(), DblTy()});
     regExtern("matrix_mul",        MatTy(), {MatTy(), MatTy()});
     regExtern("matrix_add",        MatTy(), {MatTy(), MatTy()});
     regExtern("matrix_sub",        MatTy(), {MatTy(), MatTy()});
