@@ -211,6 +211,10 @@ TypedValue BlockExprAST::codegen(CodegenContext& context) {
     auto OldNamedTypes = context.NamedTypes;
 
     std::cerr << "[DEBUG] BlockExprAST: generating " << Statements.size() << " statements" << std::endl;
+    for (size_t di = 0; di < Statements.size(); ++di) {
+        auto* vare = dynamic_cast<LetExprAST*>(Statements[di].get());
+        if (vare) std::cerr << "  stmt " << di << ": LET " << vare->getVarName() << std::endl;
+    }
 
     for (size_t i = 0; i < Statements.size(); ++i) {
         if (context.Builder.GetInsertBlock()->getTerminator()) {
@@ -249,10 +253,15 @@ TypedValue VariableExprAST::codegen(CodegenContext& context) {
         }
     }
     if (!V) {
-        std::cerr << "Unknown variable name: " << Name << std::endl;
+        std::cerr << "Unknown variable name: " << Name << " (trimmed: '" << trimmedName << "')" << std::endl;
         std::cerr << "  Available variables: ";
         for (const auto& [k, v] : context.NamedValues) {
-            std::cerr << k << " ";
+            std::cerr << "'" << k << "' ";
+        }
+        std::cerr << std::endl;
+        std::cerr << "  NamedTypes: ";
+        for (const auto& [k, v] : context.NamedTypes) {
+            std::cerr << "'" << k << "'=" << static_cast<int>(v.Kind) << " ";
         }
         std::cerr << std::endl;
         return TypedValue();

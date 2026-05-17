@@ -657,8 +657,13 @@ std::unique_ptr<ExprAST> Parser::ParseBlockExpr() {
     getNextToken();
     std::vector<std::unique_ptr<ExprAST>> Stmts;
     while (CurTok != static_cast<int>(TokenType::tok_rbrace) && CurTok != static_cast<int>(TokenType::tok_eof)) {
-        if (auto Expr = ParseExpression()) Stmts.push_back(std::move(Expr));
-        else return nullptr;
+        if (auto Expr = ParseExpression()) {
+            Stmts.push_back(std::move(Expr));
+            clearError();  // Clear any transient parse errors — we recovered
+        } else {
+            SkipToSynchronizationPoint();
+            clearError();
+        }
         while (CurTok == static_cast<int>(TokenType::tok_semicolon)) getNextToken();
     }
     if (CurTok != static_cast<int>(TokenType::tok_rbrace)) { ReportError("expected '}'"); return nullptr; }

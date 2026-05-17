@@ -465,8 +465,8 @@ bool CompilerInstance::compileParser(Parser& parser,
                 if (auto E = parser.ParseExpression()) {
                     Exprs.push_back(std::move(E));
                 } else {
-                    // Parser already reported error
-                    break;
+                    // Parser reported error — skip to next sync point and continue
+                    parser.SkipToSynchronizationPoint();
                 }
             }
             
