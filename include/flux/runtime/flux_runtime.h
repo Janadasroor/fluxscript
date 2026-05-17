@@ -25,7 +25,7 @@ void registerRuntimeFunctions(FluxJIT& jit);
 } // namespace Flux
 
 extern "C" {
-double flux_print_string(const char* str);
+double flux_print_string(double str_dbl);
 
 double flux_get_voltage(double node);
 double flux_get_current(double branch);

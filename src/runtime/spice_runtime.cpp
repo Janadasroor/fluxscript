@@ -106,7 +106,8 @@ namespace {
 extern "C" {
 
 // Get voltage at node
-double flux_get_voltage(const char* node_name) {
+double flux_get_voltage(double node_dbl) {
+    const char* node_name = bit_cast<const char*>(node_dbl);
     std::lock_guard<std::mutex> lock(g_sim_mutex);
     auto it = g_node_voltages.find(node_name);
     if (it != g_node_voltages.end()) {
@@ -116,7 +117,8 @@ double flux_get_voltage(const char* node_name) {
 }
 
 // Get current through branch
-double flux_get_current(const char* branch_name) {
+double flux_get_current(double branch_dbl) {
+    const char* branch_name = bit_cast<const char*>(branch_dbl);
     std::lock_guard<std::mutex> lock(g_sim_mutex);
     auto it = g_branch_currents.find(branch_name);
     if (it != g_branch_currents.end()) {
@@ -126,7 +128,8 @@ double flux_get_current(const char* branch_name) {
 }
 
 // Get parameter value
-double flux_get_parameter(const char* param_name) {
+double flux_get_parameter(double param_dbl) {
+    const char* param_name = bit_cast<const char*>(param_dbl);
     std::lock_guard<std::mutex> lock(g_sim_mutex);
     auto it = g_parameters.find(param_name);
     if (it != g_parameters.end()) {
@@ -136,7 +139,8 @@ double flux_get_parameter(const char* param_name) {
 }
 
 // Set parameter value
-void flux_set_parameter(const char* param_name, double value) {
+void flux_set_parameter(double param_dbl, double value) {
+    const char* param_name = bit_cast<const char*>(param_dbl);
     std::lock_guard<std::mutex> lock(g_sim_mutex);
     g_parameters[param_name] = value;
 }
@@ -192,28 +196,34 @@ double flux_register_hsource(const char* name, const char* pos_node, const char*
 // Analysis Control
 // ============================================================================
 
-double flux_register_analysis(const char* analysis_type) {
+double flux_register_analysis(double analysis_dbl) {
+    const char* analysis_type = bit_cast<const char*>(analysis_dbl);
     std::lock_guard<std::mutex> lock(g_sim_mutex);
     g_current_analysis = analysis_type;
     printf("[SPICE] Registered analysis: .%s\n", analysis_type);
     return 0.0;
 }
 
-double flux_register_measure(const char* name, const char* measure_type) {
+double flux_register_measure(double name_dbl, double type_dbl) {
+    const char* name = bit_cast<const char*>(name_dbl);
+    const char* measure_type = bit_cast<const char*>(type_dbl);
     std::lock_guard<std::mutex> lock(g_sim_mutex);
     g_measures[name] = {name, measure_type, 0.0, false};
     printf("[SPICE] Registered measure: %s (%s)\n", name, measure_type);
     return 0.0;
 }
 
-double flux_register_probe(const char* var_name, const char* output_name) {
+double flux_register_probe(double var_dbl, double output_dbl) {
+    const char* var_name = bit_cast<const char*>(var_dbl);
+    const char* output_name = bit_cast<const char*>(output_dbl);
     std::lock_guard<std::mutex> lock(g_sim_mutex);
     g_probes.push_back({var_name, output_name});
     printf("[SPICE] Registered probe: %s as \"%s\"\n", var_name, output_name);
     return 0.0;
 }
 
-double flux_register_save(const char* var_name) {
+double flux_register_save(double var_dbl) {
+    const char* var_name = bit_cast<const char*>(var_dbl);
     std::lock_guard<std::mutex> lock(g_sim_mutex);
     g_save_vars.push_back(var_name);
     printf("[SPICE] Registered save: %s\n", var_name);
@@ -235,14 +245,16 @@ double flux_register_model(double name_ptr_double, double model_type_ptr_double)
     return 0.0;
 }
 
-double flux_register_param(const char* name, double value) {
+double flux_register_param(double name_dbl, double value) {
+    const char* name = bit_cast<const char*>(name_dbl);
     std::lock_guard<std::mutex> lock(g_sim_mutex);
     g_parameters[name] = value;
     printf("[SPICE] Registered parameter: %s = %g\n", name, value);
     return 0.0;
 }
 
-double flux_register_ic(const char* node_name, double value) {
+double flux_register_ic(double node_dbl, double value) {
+    const char* node_name = bit_cast<const char*>(node_dbl);
     std::lock_guard<std::mutex> lock(g_sim_mutex);
     g_node_voltages[node_name] = value;
     printf("[SPICE] Registered initial condition: V(%s) = %g\n", node_name, value);

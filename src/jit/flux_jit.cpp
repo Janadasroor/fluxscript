@@ -308,11 +308,8 @@ void* FluxJIT::getPointerToFunction(const std::string& Name) {
     {
         std::lock_guard<std::mutex> lock(m_fnMapMutex);
         auto it = m_functionPtrs.find(Name);
-        if (it != m_functionPtrs.end()) {
-            llvm::errs() << "[FluxJIT] cache HIT: " << Name << "\n";
+        if (it != m_functionPtrs.end())
             return it->second;
-        }
-        llvm::errs() << "[FluxJIT] cache MISS: " << Name << " (cache size=" << m_functionPtrs.size() << ")\n";
     }
 
     if (!m_lljit) return nullptr;

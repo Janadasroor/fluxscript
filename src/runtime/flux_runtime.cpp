@@ -42,17 +42,17 @@ extern "C" {
     double flux_register_subckt(double name_ptr, double pins_ptr);
     double flux_register_bsource(double name_ptr, double out_ptr, double ref_ptr);
     void flux_register_goal(double current, double target);
-    void flux_hot_swap(const char* name, double model_ptr);
+    void flux_hot_swap(double name_dbl, double model_ptr);
     double flux_optimize();
     double flux_edge_detect(double value, double edge_type);
 
     // SPICE simulation API (defined in spice_runtime.cpp)
-    double flux_register_analysis(const char* analysis_type);
-    double flux_register_measure(const char* name, const char* measure_type);
-    double flux_register_probe(const char* var_name, const char* output_name);
-    double flux_register_save(const char* var_name);
-    double flux_register_param(const char* name, double value);
-    double flux_register_ic(const char* node_name, double value);
+    double flux_register_analysis(double analysis_dbl);
+    double flux_register_measure(double name_dbl, double type_dbl);
+    double flux_register_probe(double var_dbl, double output_dbl);
+    double flux_register_save(double var_dbl);
+    double flux_register_param(double name_dbl, double value);
+    double flux_register_ic(double node_dbl, double value);
 }
 
 // JIT-callable wrappers (C++ linkage, call extern "C" functions internally)
@@ -62,24 +62,22 @@ inline To jit_bitcast(const From& src) noexcept {
     To dst; std::memcpy(&dst, &src, sizeof(To)); return dst;
 }
 double jit_register_analysis(double name_ptr) {
-    return flux_register_analysis(reinterpret_cast<const char*>(jit_bitcast<uintptr_t>(name_ptr)));
+    return flux_register_analysis(name_ptr);
 }
 double jit_register_measure(double name_ptr, double type_ptr) {
-    return flux_register_measure(reinterpret_cast<const char*>(jit_bitcast<uintptr_t>(name_ptr)),
-                                 reinterpret_cast<const char*>(jit_bitcast<uintptr_t>(type_ptr)));
+    return flux_register_measure(name_ptr, type_ptr);
 }
-double jit_register_probe(double var_ptr, double out_ptr) {
-    return flux_register_probe(reinterpret_cast<const char*>(jit_bitcast<uintptr_t>(var_ptr)),
-                               reinterpret_cast<const char*>(jit_bitcast<uintptr_t>(out_ptr)));
+double jit_register_probe(double name_ptr, double out_ptr) {
+    return flux_register_probe(name_ptr, out_ptr);
 }
 double jit_register_save(double name_ptr) {
-    return flux_register_save(reinterpret_cast<const char*>(jit_bitcast<uintptr_t>(name_ptr)));
+    return flux_register_save(name_ptr);
 }
 double jit_register_param(double name_ptr, double value) {
-    return flux_register_param(reinterpret_cast<const char*>(jit_bitcast<uintptr_t>(name_ptr)), value);
+    return flux_register_param(name_ptr, value);
 }
-double jit_register_ic(double node_ptr, double value) {
-    return flux_register_ic(reinterpret_cast<const char*>(jit_bitcast<uintptr_t>(node_ptr)), value);
+double jit_register_ic(double name_ptr, double value) {
+    return flux_register_ic(name_ptr, value);
 }
 
 // File I/O and string utilities for FluxScript
@@ -255,7 +253,7 @@ static double make_sym_ptr(std::shared_ptr<SymbolicExpr> expr) {
     return (double)(uintptr_t)engine.registerExpr(expr).get();
 }
 
-extern "C" double flux_print_string(const char* str);
+extern "C" double flux_print_string(double str_dbl);
 extern "C" double flux_print_double(double x);
 
 extern "C" void flux_free_matrix(void* ptr) {
@@ -491,7 +489,10 @@ extern "C" double flux_print_complex_matrix(void* m_ptr) {
     return 1.0;
 }
 
-extern "C" double flux_sym_decl(const char* name) { return make_sym_ptr(SymbolicEngine::instance().sym(name)); }
+extern "C" double flux_sym_decl(double name_dbl) {
+    const char* name = reinterpret_cast<const char*>(static_cast<uintptr_t>(jit_bitcast<uint64_t>(name_dbl)));
+    return make_sym_ptr(SymbolicEngine::instance().sym(name));
+}
 extern "C" double flux_sym_number(double val) { return make_sym_ptr(SymbolicExpr::makeNumber(val)); }
 extern "C" double flux_sym_add(double a, double b) { return make_sym_ptr(SymbolicEngine::instance().add(get_sym_ptr(a), get_sym_ptr(b))); }
 extern "C" double flux_sym_sub(double a, double b) {
@@ -507,7 +508,10 @@ extern "C" double flux_sym_div(double a, double b) {
 }
 extern "C" double flux_sym_pow(double a, double b) { return make_sym_ptr(SymbolicEngine::instance().power(get_sym_ptr(a), get_sym_ptr(b))); }
 extern "C" double flux_sym_simplify(double e) { return make_sym_ptr(SymbolicEngine::instance().simplify(get_sym_ptr(e))); }
-extern "C" double flux_sym_pdiff(double e, const char* v, int o) { return make_sym_ptr(SymbolicEngine::instance().partial_differentiate(get_sym_ptr(e), v, o)); }
+extern "C" double flux_sym_pdiff(double e, double v_dbl, int o) {
+    const char* v = reinterpret_cast<const char*>(static_cast<uintptr_t>(jit_bitcast<uint64_t>(v_dbl)));
+    return make_sym_ptr(SymbolicEngine::instance().partial_differentiate(get_sym_ptr(e), v, o));
+}
 extern "C" double flux_sym_eq(double a, double b) { return make_sym_ptr(SymbolicEngine::instance().eq(get_sym_ptr(a), get_sym_ptr(b))); }
 extern "C" double flux_sym_ne(double a, double b) { return make_sym_ptr(SymbolicEngine::instance().ne(get_sym_ptr(a), get_sym_ptr(b))); }
 
@@ -762,7 +766,10 @@ extern "C" void flux_parallel_for(int64_t start, int64_t end, int64_t chunk_size
 
 } // namespace Flux
 
-extern "C" double flux_print_string(const char* str) { if(str) { printf("%s", str); fflush(stdout); } return 0.0; }
+extern "C" double flux_print_string(double str_dbl) {
+    const char* str = reinterpret_cast<const char*>(static_cast<uintptr_t>(jit_bitcast<uint64_t>(str_dbl)));
+    if(str) { printf("%s", str); fflush(stdout); } return 0.0;
+}
 extern "C" double flux_print_double(double x) { printf("%g", x); fflush(stdout); return x; }
 extern "C" const char* flux_string_concat_double(const char* s, double d) {
     std::string res = std::string(s?s:"") + std::to_string(d);
@@ -783,7 +790,8 @@ extern "C" double flux_optimize() {
 
 extern "C" double flux_register_subckt(double name_ptr, double pins_ptr) { return 0.0; }
 
-extern "C" void flux_hot_swap(const char* name, double model_ptr) {
+extern "C" void flux_hot_swap(double name_dbl, double model_ptr) {
+    const char* name = reinterpret_cast<const char*>(static_cast<uintptr_t>(jit_bitcast<uint64_t>(name_dbl)));
     std::string subckt_name = name ? name : "anonymous";
     std::cout << "[FLUX AI] Hot-swapping subcircuit '" << subckt_name << "' with NN Surrogate model at " << std::hex << (uintptr_t)model_ptr << std::dec << "..." << std::endl;
 }
