@@ -19,3 +19,4 @@ tests/integration/results/test_*.txt
 tests/integration/results/test_*.raw
 todo/
 TODO.md
+progress.md

@@ -51,7 +51,7 @@ OptimizationLevel JITEngine::getOptimizationLevel() const {
 void JITEngine::initialize() {
     if (m_initialized) return;
     m_jit = std::make_unique<FluxJIT>(OptimizationLevel::O2);
-    m_compilerOptions.moduleName = "Flux JIT Core";
+    m_compilerOptions.moduleName = "FluxJITCore";
     m_compilerOptions.injectStdlib = true;
     if (m_cacheDirectory.empty())
         m_cacheDirectory = Tooling::defaultCacheDirectory();
