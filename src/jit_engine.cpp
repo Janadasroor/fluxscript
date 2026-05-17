@@ -85,6 +85,8 @@ bool JITEngine::isInitialized() const {
 
 
 bool JITEngine::compileScript(const std::string& code, std::string* error) {
+    llvm::errs() << "[JITEngine] compileScript called (code len=" << code.size() << ")\n";
+    llvm::errs().flush();
     if (!m_initialized) initialize();
     CompilerInstance compiler(m_compilerOptions);
     m_overloadedFunctions.clear();

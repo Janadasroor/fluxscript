@@ -28,6 +28,9 @@
 #include <llvm/IR/DataLayout.h>
 #include <memory>
 #include <string>
+#include <mutex>
+#include <unordered_map>
+#include <vector>
 
 namespace Flux {
 
@@ -87,6 +90,10 @@ private:
     OptimizationLevel m_optLevel;
     SIMDOptions m_simdOptions;
     TCOOptions m_tcoOptions;
+
+    // Eagerly compiled function pointer cache (avoids ORC lazy materialization issues)
+    std::unordered_map<std::string, void*> m_functionPtrs;
+    std::mutex m_fnMapMutex;
 };
 
 } // namespace Flux

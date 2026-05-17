@@ -259,6 +259,17 @@ void FluxJIT::addModule(std::unique_ptr<llvm::Module> M,
         return;
     }
 
+    // Collect user function names before moving the module
+    std::vector<std::string> userFns;
+    for (auto& F : *M) {
+        if (!F.isDeclaration() && F.hasExternalLinkage() && !F.getName().empty()) {
+            std::string name = F.getName().str();
+            // Skip anon expr functions
+            if (name.find("anon_expr") == std::string::npos)
+                userFns.push_back(std::move(name));
+        }
+    }
+
     // Optimize the module before adding to JIT
     optimizeModule(M.get());
 
@@ -266,6 +277,20 @@ void FluxJIT::addModule(std::unique_ptr<llvm::Module> M,
     auto Err = m_lljit->addIRModule(std::move(TSM));
     if (Err) {
         logError(std::move(Err), "Failed to add module to JIT");
+        return;
+    }
+
+    // Eagerly compile all user functions and cache their pointers
+    // This avoids opaque "Failed to materialize" errors during callFunction
+    for (const auto& name : userFns) {
+        auto sym = m_lljit->lookup(name);
+        if (sym) {
+            std::lock_guard<std::mutex> lock(m_fnMapMutex);
+            m_functionPtrs[name] = reinterpret_cast<void*>(sym->getValue());
+        } else {
+            llvm::errs() << "[FluxJIT] Failed to compile: " << name << "\n";
+            logError(sym.takeError(), "  reason:");
+        }
     }
 }
 
@@ -279,11 +304,26 @@ void FluxJIT::addObjectFile(std::unique_ptr<llvm::MemoryBuffer> ObjectBuffer) {
 }
 
 void* FluxJIT::getPointerToFunction(const std::string& Name) {
+    // Check eagerly compiled cache first
+    {
+        std::lock_guard<std::mutex> lock(m_fnMapMutex);
+        auto it = m_functionPtrs.find(Name);
+        if (it != m_functionPtrs.end()) {
+            llvm::errs() << "[FluxJIT] cache HIT: " << Name << "\n";
+            return it->second;
+        }
+        llvm::errs() << "[FluxJIT] cache MISS: " << Name << " (cache size=" << m_functionPtrs.size() << ")\n";
+    }
+
     if (!m_lljit) return nullptr;
 
     auto ExprSymbol = m_lljit->lookup(Name);
     if (!ExprSymbol) {
-        logError(ExprSymbol.takeError(), "Failed to find symbol: " + Name);
+        auto Err = ExprSymbol.takeError();
+        llvm::errs() << "[FluxJIT] lookup failed: " << Name << "\n";
+        llvm::handleAllErrors(std::move(Err), [](const llvm::ErrorInfoBase& EI) {
+            llvm::errs() << "  " << EI.message() << "\n";
+        });
         return nullptr;
     }
 
