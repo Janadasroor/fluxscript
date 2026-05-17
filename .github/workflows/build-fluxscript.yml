@@ -21,20 +21,20 @@ jobs:
             lsb-release wget software-properties-common gnupg \
             libcurl4-openssl-dev libeigen3-dev
 
-      - name: Install LLVM 18
+      - name: Install LLVM 21
         run: |
           wget https://apt.llvm.org/llvm.sh
           chmod +x llvm.sh
-          sudo ./llvm.sh 18
-          sudo apt-get install -y libclang-18-dev liblld-18-dev
+          sudo ./llvm.sh 21
+          sudo apt-get install -y libclang-21-dev liblld-21-dev
 
       - name: Build
         run: |
           cmake -B build \
             -DCMAKE_BUILD_TYPE=Release \
-            -DLLVM_DIR=/usr/lib/llvm-18/lib/cmake/llvm \
-            -DClang_DIR=/usr/lib/llvm-18/lib/cmake/clang \
-            -DLLD_DIR=/usr/lib/llvm-18/lib/cmake/lld
+            -DLLVM_DIR=/usr/lib/llvm-21/lib/cmake/llvm \
+            -DClang_DIR=/usr/lib/llvm-21/lib/cmake/clang \
+            -DLLD_DIR=/usr/lib/llvm-21/lib/cmake/lld
           cmake --build build -j$(nproc)
 
       - name: Package
