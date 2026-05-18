@@ -4,6 +4,11 @@ project(FluxScript VERSION 1.0.0 LANGUAGES CXX C)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# MSVC needs this to expose M_PI, M_SQRT2 etc. from <cmath>
+if(MSVC)
+    add_compile_definitions(_USE_MATH_DEFINES)
+endif()
+
 # Suppress LLVM narrowing conversion warnings in codegen
 if(NOT MSVC)
     add_compile_options(-Wno-narrowing)
