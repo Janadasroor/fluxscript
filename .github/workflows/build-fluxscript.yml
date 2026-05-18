@@ -32,7 +32,10 @@ jobs:
 
       - name: Install LLVM (Windows)
         if: runner.os == 'Windows'
-        run: choco install llvm --version=21.1.8
+        run: |
+          choco install llvm
+          # Chocolatey installs LLVM to C:\Program Files\LLVM\
+          echo "LLVM_DIR=C:/Program Files/LLVM/lib/cmake/llvm" >> $env:GITHUB_ENV
 
       - name: Build (Linux)
         if: runner.os == 'Linux'
@@ -47,7 +50,7 @@ jobs:
       - name: Build (Windows)
         if: runner.os == 'Windows'
         run: |
-          cmake -B build -DCMAKE_BUILD_TYPE=Release
+          cmake -B build -DCMAKE_BUILD_TYPE=Release -DLLVM_DIR="$env:LLVM_DIR"
           cmake --build build -j --config Release
 
       - name: Package (Linux)
@@ -84,41 +87,12 @@ jobs:
           copy build\Release\FluxScript.lib install\lib\
 
           # Find LLVM DLLs from the LLVM installation
-          $llvmDir = (Get-Command llvm-config).Source | Split-Path | Split-Path
+          $llvmDir = "C:\Program Files\LLVM"
           $llvmDlls = Get-ChildItem -Path "$llvmDir\bin" -Filter "LLVM*.dll"
           Copy-Item $llvmDlls.FullName install\lib\
 
-          # Bundle transitive DLLs needed by FluxScript and LLVM
-          $deps = @()
-          $deps += (Get-ChildItem build\Release\FluxScript.dll).DirectoryName
-          $deps += $llvmDir + "\bin"
-          $processed = @{}
-          $queue = New-Object System.Collections.Queue
-          $queue.Enqueue("install\lib\FluxScript.dll")
-          foreach ($dll in $llvmDlls) { $queue.Enqueue($dll.FullName) }
-
-          while ($queue.Count -gt 0) {
-            $dll = $queue.Dequeue()
-            if ($processed[$dll]) { continue }
-            $processed[$dll] = $true
-            $depInfo = & "$llvmDir\bin\llvm-objdump" -p $dll 2>$null
-            if (-not $depInfo) { continue }
-            $matches = [regex]::Matches($depInfo, 'DLL Name:\s*(\S+\.dll)')
-            foreach ($m in $matches) {
-              $depName = $m.Groups[1].Value
-              if ($processed[$depName]) { continue }
-              $depPath = Get-ChildItem -Path "install\lib" -Filter $depName -ErrorAction SilentlyContinue
-              if (-not $depPath) { $depPath = Get-ChildItem -Path $llvmDir\bin -Filter $depName -ErrorAction SilentlyContinue }
-              if (-not $depPath) { $depPath = Get-ChildItem -Path C:\Windows\System32 -Filter $depName -ErrorAction SilentlyContinue }
-              if ($depPath) {
-                Copy-Item $depPath.FullName install\lib\ -ErrorAction SilentlyContinue
-                $queue.Enqueue($depPath.FullName)
-              }
-            }
-          }
-
-          # Bundle curl DLL (needed at build time, might not be in LLVM deps)
-          $curlDll = Get-ChildItem -Path "$llvmDir\..\..\bin" -Filter "libcurl*.dll" -ErrorAction SilentlyContinue
+          # Bundle CURL DLL from build dependencies
+          $curlDll = Get-ChildItem -Path "vcpkg_installed" -Filter "libcurl*.dll" -Recurse -ErrorAction SilentlyContinue
           if ($curlDll) { Copy-Item $curlDll.FullName install\lib\ }
 
           Compress-Archive -Path install\* -DestinationPath fluxscript-windows-x86_64.zip
