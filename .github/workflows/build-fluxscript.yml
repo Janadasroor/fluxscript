@@ -30,12 +30,13 @@ jobs:
           sudo ./llvm.sh 21
           sudo apt-get install -y libclang-21-dev liblld-21-dev
 
-      - name: Install LLVM (Windows)
+      - name: Install LLVM + curl (Windows)
         if: runner.os == 'Windows'
         run: |
-          choco install llvm
-          # Chocolatey installs LLVM to C:\Program Files\LLVM\
-          echo "LLVM_DIR=C:/Program Files/LLVM/lib/cmake/llvm" >> $env:GITHUB_ENV
+          choco install llvm curl
+          # LLVM cmake files are at C:\Program Files\LLVM\lib\cmake\llvm\
+          # curl cmake files are at C:\Program Files\curl\lib\cmake\curl\ or similar
+          echo "LLVM_DIR=C:/Program Files/LLVM/lib/cmake/llvm" | Out-File -FilePath $env:GITHUB_ENV -Append
 
       - name: Build (Linux)
         if: runner.os == 'Linux'
@@ -50,7 +51,8 @@ jobs:
       - name: Build (Windows)
         if: runner.os == 'Windows'
         run: |
-          cmake -B build -DCMAKE_BUILD_TYPE=Release -DLLVM_DIR="$env:LLVM_DIR"
+          cmake -B build -DCMAKE_BUILD_TYPE=Release `
+            -DLLVM_DIR="C:/Program Files/LLVM/lib/cmake/llvm"
           cmake --build build -j --config Release
 
       - name: Package (Linux)

@@ -5,7 +5,9 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # Suppress LLVM narrowing conversion warnings in codegen
-add_compile_options(-Wno-narrowing)
+if(NOT MSVC)
+    add_compile_options(-Wno-narrowing)
+endif()
 
 # =============================================================================
 # Options
@@ -25,8 +27,8 @@ message(STATUS "Found LLVM ${LLVM_PACKAGE_VERSION}")
 include_directories(${LLVM_INCLUDE_DIRS})
 add_definitions(${LLVM_DEFINITIONS})
 
-# Find CURL for package manager
-find_package(CURL REQUIRED)
+# Find CURL for package manager (optional on Windows)
+find_package(CURL QUIET)
 
 # Find ngspice for circuit simulation
 if(FLUX_VIO_MATRIXC_LIB_DIR)
@@ -190,7 +192,11 @@ set_source_files_properties(
     PROPERTIES COMPILE_FLAGS "-O1"
 )
 
-target_link_libraries(FluxScript PUBLIC CURL::libcurl ${LLVM_LIB} ${FLUX_MLIR_LIBS})
+target_link_libraries(FluxScript PUBLIC ${LLVM_LIB} ${FLUX_MLIR_LIBS})
+if(CURL_FOUND)
+    target_link_libraries(FluxScript PUBLIC CURL::libcurl)
+    target_compile_definitions(FluxScript PUBLIC FLUX_HAS_CURL)
+endif()
 if(NGSPICE_FOUND)
     target_link_libraries(FluxScript PUBLIC ${NGSPICE_LIBRARY})
     target_compile_definitions(FluxScript PUBLIC FLUX_HAS_NGSPICE)
@@ -213,7 +219,7 @@ target_include_directories(FluxScript PUBLIC
 
 # Main CLI (replaces the old Qt-based flux)
 add_executable(flux cli/minimal.cpp)
-target_link_libraries(flux PRIVATE "-Wl,--whole-archive" FluxScript "-Wl,--no-whole-archive")
+target_link_libraries(flux PRIVATE FluxScript)
 
 add_executable(flux-pkg cli/flux-pkg.cpp)
 target_link_libraries(flux-pkg PRIVATE FluxScript)
@@ -241,37 +247,37 @@ add_executable(flux-fft src/cli/flux_fft.cpp)
 target_link_libraries(flux-fft PRIVATE FluxScript)
 
 add_executable(flux-repl cli/repl.cpp)
-target_link_libraries(flux-repl PRIVATE "-Wl,--whole-archive" FluxScript "-Wl,--no-whole-archive")
+target_link_libraries(flux-repl PRIVATE FluxScript)
 
 add_executable(fluxc cli/fluxc.cpp)
-target_link_libraries(fluxc PRIVATE "-Wl,--whole-archive" FluxScript "-Wl,--no-whole-archive")
+target_link_libraries(fluxc PRIVATE FluxScript)
 
 add_executable(flux-format cli/flux-format.cpp)
-target_link_libraries(flux-format PRIVATE "-Wl,--whole-archive" FluxScript "-Wl,--no-whole-archive")
+target_link_libraries(flux-format PRIVATE FluxScript)
 
 add_executable(flux-doc cli/flux-doc.cpp)
-target_link_libraries(flux-doc PRIVATE "-Wl,--whole-archive" FluxScript "-Wl,--no-whole-archive")
+target_link_libraries(flux-doc PRIVATE FluxScript)
 
 add_executable(flux-test cli/flux-test.cpp)
-target_link_libraries(flux-test PRIVATE "-Wl,--whole-archive" FluxScript "-Wl,--no-whole-archive")
+target_link_libraries(flux-test PRIVATE FluxScript)
 
 add_executable(flux-instrument cli/flux-instrument.cpp)
-target_link_libraries(flux-instrument PRIVATE "-Wl,--whole-archive" FluxScript "-Wl,--no-whole-archive")
+target_link_libraries(flux-instrument PRIVATE FluxScript)
 
 add_executable(flux-optimize cli/flux-optimize.cpp)
-target_link_libraries(flux-optimize PRIVATE "-Wl,--whole-archive" FluxScript "-Wl,--no-whole-archive")
+target_link_libraries(flux-optimize PRIVATE FluxScript)
 
 add_executable(flux-lsp cli/flux-lsp.cpp)
-target_link_libraries(flux-lsp PRIVATE "-Wl,--whole-archive" FluxScript "-Wl,--no-whole-archive")
+target_link_libraries(flux-lsp PRIVATE FluxScript)
 
 add_executable(flux-worstcase cli/flux-worstcase.cpp)
-target_link_libraries(flux-worstcase PRIVATE "-Wl,--whole-archive" FluxScript "-Wl,--no-whole-archive")
+target_link_libraries(flux-worstcase PRIVATE FluxScript)
 
 add_executable(flux-stability cli/flux-stability.cpp)
-target_link_libraries(flux-stability PRIVATE "-Wl,--whole-archive" FluxScript "-Wl,--no-whole-archive")
+target_link_libraries(flux-stability PRIVATE FluxScript)
 
 add_executable(flux-monte-carlo cli/flux-monte-carlo.cpp)
-target_link_libraries(flux-monte-carlo PRIVATE "-Wl,--whole-archive" FluxScript "-Wl,--no-whole-archive")
+target_link_libraries(flux-monte-carlo PRIVATE FluxScript)
 
 # =============================================================================
 # Tests (Optional)
@@ -280,7 +286,7 @@ target_link_libraries(flux-monte-carlo PRIVATE "-Wl,--whole-archive" FluxScript 
 # Helper function to register test executables
 function(add_test_executable target_name source_file)
     add_executable(${target_name} ${CMAKE_CURRENT_SOURCE_DIR}/${source_file})
-    target_link_libraries(${target_name} PRIVATE "-Wl,--whole-archive" FluxScript "-Wl,--no-whole-archive")
+    target_link_libraries(${target_name} PRIVATE FluxScript)
 endfunction()
 
 # Helper function to register test with CTest
