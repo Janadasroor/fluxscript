@@ -8,12 +8,13 @@ jobs:
   build:
     strategy:
       matrix:
-        os: [ubuntu-24.04]
+        os: [ubuntu-24.04, windows-2022]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install deps
+      - name: Install deps (Linux)
+        if: runner.os == 'Linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y \
@@ -21,14 +22,20 @@ jobs:
             libcurl4-openssl-dev libeigen3-dev \
             patchelf
 
-      - name: Install LLVM 21
+      - name: Install LLVM 21 (Linux)
+        if: runner.os == 'Linux'
         run: |
           wget https://apt.llvm.org/llvm.sh
           chmod +x llvm.sh
           sudo ./llvm.sh 21
           sudo apt-get install -y libclang-21-dev liblld-21-dev
 
-      - name: Build
+      - name: Install LLVM (Windows)
+        if: runner.os == 'Windows'
+        run: choco install llvm --version=21.1.8
+
+      - name: Build (Linux)
+        if: runner.os == 'Linux'
         run: |
           cmake -B build \
             -DCMAKE_BUILD_TYPE=Release \
@@ -37,7 +44,14 @@ jobs:
             -DLLD_DIR=/usr/lib/llvm-21/lib/cmake/lld
           cmake --build build -j$(nproc)
 
-      - name: Package
+      - name: Build (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          cmake -B build -DCMAKE_BUILD_TYPE=Release
+          cmake --build build -j --config Release
+
+      - name: Package (Linux)
+        if: runner.os == 'Linux'
         run: |
           mkdir -p install/include install/lib
           cp -r include/flux install/include/
@@ -46,7 +60,6 @@ jobs:
           # Bundle LLVM shared library and its non-standard deps
           LLVM_REAL="$(readlink -f /usr/lib/llvm-21/lib/libLLVM-21.so)"
           cp -L "$LLVM_REAL" install/lib/
-          # Create the SONAME symlink that libFluxScript.so expects
           ln -sf "$(basename "$LLVM_REAL")" install/lib/libLLVM-21.so
 
           # Bundle all non-standard deps of libFluxScript.so and LLVM
@@ -58,13 +71,66 @@ jobs:
             esac
           done
 
-          # Set RPATH so libFluxScript.so finds bundled LLVM
           patchelf --set-rpath '$ORIGIN' install/lib/libFluxScript.so
-
           tar czf fluxscript-linux-x86_64.tar.gz -C install .
 
-      - name: Upload release asset
-        if: startsWith(github.ref, 'refs/tags/v')
+      - name: Package (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          mkdir install\include install\lib
+          copy include\flux install\include\ -Recurse
+          copy build\Release\FluxScript.dll install\lib\
+          copy build\Release\FluxScript.lib install\lib\
+
+          # Find LLVM DLLs from the LLVM installation
+          $llvmDir = (Get-Command llvm-config).Source | Split-Path | Split-Path
+          $llvmDlls = Get-ChildItem -Path "$llvmDir\bin" -Filter "LLVM*.dll"
+          Copy-Item $llvmDlls.FullName install\lib\
+
+          # Bundle transitive DLLs needed by FluxScript and LLVM
+          $deps = @()
+          $deps += (Get-ChildItem build\Release\FluxScript.dll).DirectoryName
+          $deps += $llvmDir + "\bin"
+          $processed = @{}
+          $queue = New-Object System.Collections.Queue
+          $queue.Enqueue("install\lib\FluxScript.dll")
+          foreach ($dll in $llvmDlls) { $queue.Enqueue($dll.FullName) }
+
+          while ($queue.Count -gt 0) {
+            $dll = $queue.Dequeue()
+            if ($processed[$dll]) { continue }
+            $processed[$dll] = $true
+            $depInfo = & "$llvmDir\bin\llvm-objdump" -p $dll 2>$null
+            if (-not $depInfo) { continue }
+            $matches = [regex]::Matches($depInfo, 'DLL Name:\s*(\S+\.dll)')
+            foreach ($m in $matches) {
+              $depName = $m.Groups[1].Value
+              if ($processed[$depName]) { continue }
+              $depPath = Get-ChildItem -Path "install\lib" -Filter $depName -ErrorAction SilentlyContinue
+              if (-not $depPath) { $depPath = Get-ChildItem -Path $llvmDir\bin -Filter $depName -ErrorAction SilentlyContinue }
+              if (-not $depPath) { $depPath = Get-ChildItem -Path C:\Windows\System32 -Filter $depName -ErrorAction SilentlyContinue }
+              if ($depPath) {
+                Copy-Item $depPath.FullName install\lib\ -ErrorAction SilentlyContinue
+                $queue.Enqueue($depPath.FullName)
+              }
+            }
+          }
+
+          # Bundle curl DLL (needed at build time, might not be in LLVM deps)
+          $curlDll = Get-ChildItem -Path "$llvmDir\..\..\bin" -Filter "libcurl*.dll" -ErrorAction SilentlyContinue
+          if ($curlDll) { Copy-Item $curlDll.FullName install\lib\ }
+
+          Compress-Archive -Path install\* -DestinationPath fluxscript-windows-x86_64.zip
+
+      - name: Upload release asset (Linux)
+        if: runner.os == 'Linux' && startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
           files: fluxscript-linux-x86_64.tar.gz
+
+      - name: Upload release asset (Windows)
+        if: runner.os == 'Windows' && startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: fluxscript-windows-x86_64.zip

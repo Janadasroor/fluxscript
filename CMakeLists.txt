@@ -56,8 +56,16 @@ else()
     message(STATUS "Found Eigen ${EIGEN3_VERSION}")
 endif()
 
-# Use monolithic LLVM shared library for portability
-find_library(LLVM_LIB LLVM-21 PATHS ${LLVM_LIBRARY_DIR} /usr/lib/llvm-21/lib NO_DEFAULT_PATH)
+# Use monolithic LLVM shared library on Linux, component libs on other platforms
+if(UNIX)
+    find_library(LLVM_LIB LLVM-21 PATHS ${LLVM_LIBRARY_DIR} /usr/lib/llvm-21/lib NO_DEFAULT_PATH)
+endif()
+if(NOT LLVM_LIB)
+    llvm_map_components_to_libnames(LLVM_LIB core support codegen mcjit orcjit x86codegen
+        analysis bitreader bitwriter linker irreader native asmparser executionengine
+    )
+    message(STATUS "Using LLVM component libraries")
+endif()
 
 # =============================================================================
 # Include Directories
