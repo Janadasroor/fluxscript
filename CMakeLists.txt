@@ -185,6 +185,7 @@ endif()
 
 add_library(FluxScript SHARED ${FLUXSCRIPT_SOURCES})
 if(MSVC)
+    set_property(TARGET FluxScript PROPERTY WINDOWS_EXPORT_ALL_SYMBOLS ON)
     set_target_properties(FluxScript PROPERTIES
         ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}"
         RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}"
