@@ -200,6 +200,19 @@ set_source_files_properties(
 target_link_libraries(FluxScript PUBLIC ${LLVM_LIB} ${FLUX_MLIR_LIBS})
 if(MSVC)
     target_link_libraries(FluxScript PUBLIC ws2_32)
+    # LLVM Windows archive was built with VS 2019 DIA SDK but
+    # the runner may have a different VS version. Locate diaguids.lib.
+    find_library(DIA_GUIDS_LIB diaguids.lib PATHS
+        "C:/Program Files/Microsoft Visual Studio/2022/Enterprise/DIA SDK/lib/amd64"
+        "C:/Program Files/Microsoft Visual Studio/2022/Professional/DIA SDK/lib/amd64"
+        "C:/Program Files/Microsoft Visual Studio/2022/Community/DIA SDK/lib/amd64"
+        "C:/Program Files (x86)/Microsoft Visual Studio/2019/Professional/DIA SDK/lib/amd64"
+    )
+    if(DIA_GUIDS_LIB)
+        get_filename_component(DIA_LIB_DIR "${DIA_GUIDS_LIB}" DIRECTORY)
+        set_property(TARGET FluxScript APPEND PROPERTY LINK_DIRECTORIES "${DIA_LIB_DIR}")
+        message(STATUS "Found DIA SDK: ${DIA_GUIDS_LIB}")
+    endif()
 endif()
 if(CURL_FOUND)
     target_link_libraries(FluxScript PUBLIC CURL::libcurl)
