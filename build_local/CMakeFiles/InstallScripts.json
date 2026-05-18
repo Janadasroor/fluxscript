@@ -1,0 +1,7 @@
+{
+	"InstallScripts" : 
+	[
+		"/home/jnd/qt_projects/fluxscript/build_local/cmake_install.cmake"
+	],
+	"Parallel" : false
+}

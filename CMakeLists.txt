@@ -56,11 +56,8 @@ else()
     message(STATUS "Found Eigen ${EIGEN3_VERSION}")
 endif()
 
-# Map LLVM components
-llvm_map_components_to_libnames(llvm_libs
-    Core ExecutionEngine MCJIT OrcJIT Support native
-    BitWriter BitReader Linker IRReader X86
-)
+# Use monolithic LLVM shared library for portability
+find_library(LLVM_LIB LLVM-21 PATHS ${LLVM_LIBRARY_DIR} /usr/lib/llvm-21/lib NO_DEFAULT_PATH)
 
 # =============================================================================
 # Include Directories
@@ -171,7 +168,7 @@ else()
     list(APPEND FLUXSCRIPT_SOURCES src/mlir/flux_mlir_stub.cpp)
 endif()
 
-add_library(FluxScript STATIC ${FLUXSCRIPT_SOURCES})
+add_library(FluxScript SHARED ${FLUXSCRIPT_SOURCES})
 
 # Work around -O2 optimizer issues in verification and JIT code
 set_source_files_properties(
@@ -185,7 +182,7 @@ set_source_files_properties(
     PROPERTIES COMPILE_FLAGS "-O1"
 )
 
-target_link_libraries(FluxScript PUBLIC CURL::libcurl ${llvm_libs} ${FLUX_MLIR_LIBS})
+target_link_libraries(FluxScript PUBLIC CURL::libcurl ${LLVM_LIB} ${FLUX_MLIR_LIBS})
 if(NGSPICE_FOUND)
     target_link_libraries(FluxScript PUBLIC ${NGSPICE_LIBRARY})
     target_compile_definitions(FluxScript PUBLIC FLUX_HAS_NGSPICE)
