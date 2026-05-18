@@ -35,11 +35,11 @@ jobs:
         run: |
           choco install curl
           # Download the pre-built LLVM+Clang archive which includes cmake configs
-          curl -L -o llvm.tar.xz https://github.com/llvm/llvm-project/releases/download/llvmorg-20.1.8/clang+llvm-20.1.8-x86_64-pc-windows-msvc.tar.xz
+          curl -L -o llvm.tar.xz https://github.com/llvm/llvm-project/releases/download/llvmorg-21.1.0/clang+llvm-21.1.0-x86_64-pc-windows-msvc.tar.xz
           # Extract with 7z (tar.xz -> tar -> directory)
           & "C:\Program Files\7-Zip\7z.exe" x llvm.tar.xz -y | Out-Null
           & "C:\Program Files\7-Zip\7z.exe" x llvm.tar -y | Out-Null
-          $dirName = "clang+llvm-20.1.8-x86_64-pc-windows-msvc"
+          $dirName = "clang+llvm-21.1.0-x86_64-pc-windows-msvc"
           # Find LLVMConfig.cmake in the extracted tree
           $cfg = Get-ChildItem -Path $dirName -Recurse -Filter "LLVMConfig.cmake" -ErrorAction SilentlyContinue `
                  | Select-Object -First 1

@@ -162,11 +162,11 @@ std::unique_ptr<ExprAST> Parser::ParseSubstituteExpr() {
 }
 
 std::unique_ptr<ExprAST> Parser::ParseEvaluateExpr() {
-    // ... existing impl ...
+    return nullptr;
 }
 
 std::unique_ptr<ExprAST> Parser::ParseJacobianExpr() {
-    // ... existing impl ...
+    return nullptr;
 }
 
 std::unique_ptr<ExprAST> Parser::ParsePDEExpr() {

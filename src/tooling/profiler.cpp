@@ -12,6 +12,7 @@
  limitations under the License. */
 
 #include "flux/tooling/profiler.h"
+#include <sstream>
 #include <algorithm>
 #include <iomanip>
 #include <fstream>
