@@ -34,9 +34,21 @@ jobs:
         if: runner.os == 'Windows'
         run: |
           choco install llvm curl
-          # LLVM cmake files are at C:\Program Files\LLVM\lib\cmake\llvm\
-          # curl cmake files are at C:\Program Files\curl\lib\cmake\curl\ or similar
-          echo "LLVM_DIR=C:/Program Files/LLVM/lib/cmake/llvm" | Out-File -FilePath $env:GITHUB_ENV -Append
+          # Locate LLVM cmake files wherever Chocolatey placed them
+          $cfg = Get-ChildItem -Path "C:\Program Files\LLVM" -Recurse -Filter "LLVMConfig.cmake" -ErrorAction SilentlyContinue `
+                 | Select-Object -First 1
+          if (-not $cfg) {
+              $cfg = Get-ChildItem -Path "C:\ProgramData\chocolatey\lib\llvm" -Recurse -Filter "LLVMConfig.cmake" -ErrorAction SilentlyContinue `
+                     | Select-Object -First 1
+          }
+          if ($cfg) {
+              echo "LLVM_DIR=$($cfg.DirectoryName)" | Out-File -FilePath $env:GITHUB_ENV -Append
+              echo "Found LLVM cmake: $($cfg.FullName)"
+          } else {
+              echo "LLVMConfig.cmake not found!"
+              Get-ChildItem "C:\Program Files\LLVM" -Recurse -Filter "*.cmake" -ErrorAction SilentlyContinue | Select-Object -First 20
+              exit 1
+          }
 
       - name: Build (Linux)
         if: runner.os == 'Linux'
@@ -52,7 +64,7 @@ jobs:
         if: runner.os == 'Windows'
         run: |
           cmake -B build -DCMAKE_BUILD_TYPE=Release `
-            -DLLVM_DIR="C:/Program Files/LLVM/lib/cmake/llvm"
+            -DLLVM_DIR="$env:LLVM_DIR"
           cmake --build build -j --config Release
 
       - name: Package (Linux)
