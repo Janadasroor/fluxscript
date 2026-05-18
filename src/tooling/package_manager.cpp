@@ -20,7 +20,9 @@
 #include <filesystem>
 #include <algorithm>
 #include <iomanip>
+#ifdef FLUX_HAS_CURL
 #include <curl/curl.h>
+#endif
 
 namespace fs = std::filesystem;
 
@@ -53,7 +55,9 @@ void PackageManager::initialize(const std::string& registryUrl) {
     fs::create_directories(m_packagesDir);
     
     // Initialize curl
+#ifdef FLUX_HAS_CURL
     curl_global_init(CURL_GLOBAL_DEFAULT);
+#endif
     
     // Load installed packages
     fs::path installedPath = fs::path(m_packagesDir) / "installed.json";
