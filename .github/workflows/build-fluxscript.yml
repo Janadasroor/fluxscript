@@ -52,6 +52,14 @@ jobs:
               Get-ChildItem $dirName -Recurse -Filter "*.cmake" -ErrorAction SilentlyContinue | Select-Object -First 30
               exit 1
           }
+          # LLVM was built with VS 2019; bridge DIA SDK path to installed VS 2022
+          $dia2019 = "C:\Program Files (x86)\Microsoft Visual Studio\2019\Professional\DIA SDK\lib\amd64"
+          $dia2022 = "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\DIA SDK\lib\amd64"
+          if (-not (Test-Path "$dia2019\diaguids.lib") -and (Test-Path "$dia2022\diaguids.lib")) {
+              New-Item -ItemType Directory -Force -Path $dia2019 | Out-Null
+              Copy-Item "$dia2022\*" $dia2019 -Force | Out-Null
+              echo "Bridged DIA SDK from VS 2022 to VS 2019 path"
+          }
 
       - name: Build (Linux)
         if: runner.os == 'Linux'
