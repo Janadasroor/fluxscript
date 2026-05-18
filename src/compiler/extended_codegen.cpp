@@ -208,7 +208,9 @@ TypedValue YieldExprAST::codegen(CodegenContext& context) {
     
     // 3. Save next state index in the state struct
     // Generator state struct: { i32 state_index }
-    llvm::Type* StateTy = llvm::StructType::get(context.TheContext, { llvm::Type::getInt32Ty(context.TheContext) });
+    llvm::Type* Int32T = llvm::Type::getInt32Ty(context.TheContext);
+    llvm::SmallVector<llvm::Type*, 1> ElementTys = { Int32T };
+    llvm::Type* StateTy = llvm::StructType::get(context.TheContext, ElementTys);
     llvm::Value* IndexPtr = context.Builder.CreateStructGEP(StateTy, context.GeneratorStateAlloca, 0);
     context.Builder.CreateStore(llvm::ConstantInt::get(llvm::Type::getInt32Ty(context.TheContext), nextState), IndexPtr);
     
@@ -375,7 +377,8 @@ TypedValue ForeachExprAST::codegen(CodegenContext& context) {
     if (isGenerator) {
         // 1. Allocate generator state struct { i32 state_index }
         llvm::Type* Int32Ty = llvm::Type::getInt32Ty(Ctx);
-        llvm::StructType* StateTy = llvm::StructType::get(Ctx, { Int32Ty });
+        llvm::SmallVector<llvm::Type*, 1> ElementTys = { Int32Ty };
+        llvm::StructType* StateTy = llvm::StructType::get(Ctx, ElementTys);
         llvm::Value* StatePtr = context.Builder.CreateAlloca(StateTy, nullptr, "gen_state");
         
         // Initialize state to 0

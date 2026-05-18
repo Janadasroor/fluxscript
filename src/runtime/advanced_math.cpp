@@ -5,6 +5,7 @@
 #include <Eigen/LU>
 #include <Eigen/Cholesky>
 #include <Eigen/Eigenvalues>
+#include <limits>
 #include <cmath>
 #include <cstring>
 #include <vector>
@@ -165,7 +166,7 @@ double* flux_ode_euler(double t0, double y0, double h, int n) {
 double flux_root_bisection(double a, double b, double tol, int max_iter) {
     auto f = [](double x) { return x * x - 2.0; };
     double fa = f(a), fb = f(b);
-    if (fa * fb >= 0) return 0.0 / 0.0;
+    if (fa * fb >= 0) return std::numeric_limits<double>::quiet_NaN();
     for (int i = 0; i < max_iter; i++) {
         double c = (a + b) / 2.0;
         double fc = f(c);
@@ -184,7 +185,7 @@ double flux_root_newton(double x0, double tol, int max_iter) {
         double fx = f(x);
         if (std::abs(fx) < tol) return x;
         double dfx = df(x);
-        if (std::abs(dfx) < 1e-15) return 0.0 / 0.0;
+        if (std::abs(dfx) < 1e-15) return std::numeric_limits<double>::quiet_NaN();
         x -= fx / dfx;
     }
     return x;

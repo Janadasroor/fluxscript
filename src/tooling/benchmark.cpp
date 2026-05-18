@@ -181,8 +181,12 @@ BenchmarkSuiteResult BenchmarkRunner::runAll(int iterations, int warmupIteration
     }
 #endif
     
-    suite.compilerInfo = "GCC " + std::to_string(__GNUC__) + "." + 
+#ifdef _MSC_VER
+    suite.compilerInfo = "MSVC " + std::to_string(_MSC_VER);
+#else
+    suite.compilerInfo = "GCC " + std::to_string(__GNUC__) + "." +
                          std::to_string(__GNUC_MINOR__);
+#endif
     
     if (m_verbose) {
         std::cout << "\n=== FluxScript Benchmark Suite ===\n";
