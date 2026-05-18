@@ -600,7 +600,7 @@ double flux_matrix_cond(void* m) {
     if (!M) return 0.0;
     Eigen::JacobiSVD<Eigen::MatrixXd> svd(*M);
     auto& s = svd.singularValues();
-    if (s.size() < 2 || s(s.size()-1) < 1e-15) return 1.0 / 0.0;
+    if (s.size() < 2 || s(s.size()-1) < 1e-15) return std::numeric_limits<double>::infinity();
     return s(0) / s(s.size()-1);
 }
 
