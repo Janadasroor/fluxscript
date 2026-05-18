@@ -34,18 +34,22 @@ jobs:
         if: runner.os == 'Windows'
         run: |
           choco install curl
-          # Pre-installed LLVM 20.1.8 from Chocolatey is missing LLVMConfig.cmake,
-          # so download the official LLVM binary which includes cmake config files.
-          # Use 7z (pre-installed on GH runner) to extract the NSIS installer.
-          curl -L -o LLVM.exe https://github.com/llvm/llvm-project/releases/download/llvmorg-20.1.8/LLVM-20.1.8-win64.exe
-          & "C:\Program Files\7-Zip\7z.exe" x LLVM.exe -oLLVM -y | Out-Null
-          $cfg = Get-ChildItem -Path "LLVM" -Recurse -Filter "LLVMConfig.cmake" | Select-Object -First 1
+          # Download the pre-built LLVM+Clang archive which includes cmake configs
+          curl -L -o llvm.tar.xz https://github.com/llvm/llvm-project/releases/download/llvmorg-20.1.8/clang+llvm-20.1.8-x86_64-pc-windows-msvc.tar.xz
+          # Extract with 7z (tar.xz -> tar -> directory)
+          & "C:\Program Files\7-Zip\7z.exe" x llvm.tar.xz -y | Out-Null
+          & "C:\Program Files\7-Zip\7z.exe" x llvm.tar -y | Out-Null
+          $dirName = "clang+llvm-20.1.8-x86_64-pc-windows-msvc"
+          # Find LLVMConfig.cmake in the extracted tree
+          $cfg = Get-ChildItem -Path $dirName -Recurse -Filter "LLVMConfig.cmake" -ErrorAction SilentlyContinue `
+                 | Select-Object -First 1
           if ($cfg) {
               echo "LLVM_DIR=$($cfg.DirectoryName)" | Out-File -FilePath $env:GITHUB_ENV -Append
               echo "Found LLVM cmake: $($cfg.FullName)"
+              echo "LLVM_ROOT=$(Resolve-Path $dirName)" | Out-File -FilePath $env:GITHUB_ENV -Append
           } else {
-              echo "LLVMConfig.cmake not found after extraction!"
-              Get-ChildItem LLVM -Recurse -Filter "*.cmake" | Select-Object -First 20
+              echo "LLVMConfig.cmake not found in $dirName!"
+              Get-ChildItem $dirName -Recurse -Filter "*.cmake" -ErrorAction SilentlyContinue | Select-Object -First 30
               exit 1
           }
 
@@ -99,14 +103,10 @@ jobs:
           copy build\Release\FluxScript.dll install\lib\
           copy build\Release\FluxScript.lib install\lib\
 
-          # Find LLVM DLLs from the LLVM installation
-          $llvmDir = "C:\Program Files\LLVM"
-          $llvmDlls = Get-ChildItem -Path "$llvmDir\bin" -Filter "LLVM*.dll"
+          # Find LLVM DLLs from the extracted archive
+          $llvmRoot = $env:LLVM_ROOT
+          $llvmDlls = Get-ChildItem -Path "$llvmRoot\bin" -Filter "LLVM*.dll"
           Copy-Item $llvmDlls.FullName install\lib\
-
-          # Bundle CURL DLL from build dependencies
-          $curlDll = Get-ChildItem -Path "vcpkg_installed" -Filter "libcurl*.dll" -Recurse -ErrorAction SilentlyContinue
-          if ($curlDll) { Copy-Item $curlDll.FullName install\lib\ }
 
           Compress-Archive -Path install\* -DestinationPath fluxscript-windows-x86_64.zip
 
