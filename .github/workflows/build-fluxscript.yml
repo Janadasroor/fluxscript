@@ -106,7 +106,7 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          mkdir install\include install\lib
+          New-Item -ItemType Directory -Force -Path install\include, install\lib | Out-Null
           copy include\flux install\include\ -Recurse
           copy build\Release\FluxScript.dll install\lib\
           copy build\Release\FluxScript.lib install\lib\
