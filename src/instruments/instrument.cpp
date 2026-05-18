@@ -32,7 +32,7 @@
     #include <sys/socket.h>
     #include <arpa/inet.h>
     #include <unistd.h>
-    #define CLOSE_SOCKET(s) CLOSE_SOCKETs)
+    #define CLOSE_SOCKET(s) close(s)
     #define GET_ERRNO() errno
 #endif
 
