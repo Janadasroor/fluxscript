@@ -33,20 +33,19 @@ jobs:
       - name: Install LLVM + curl (Windows)
         if: runner.os == 'Windows'
         run: |
-          choco install llvm curl
-          # Locate LLVM cmake files wherever Chocolatey placed them
-          $cfg = Get-ChildItem -Path "C:\Program Files\LLVM" -Recurse -Filter "LLVMConfig.cmake" -ErrorAction SilentlyContinue `
-                 | Select-Object -First 1
-          if (-not $cfg) {
-              $cfg = Get-ChildItem -Path "C:\ProgramData\chocolatey\lib\llvm" -Recurse -Filter "LLVMConfig.cmake" -ErrorAction SilentlyContinue `
-                     | Select-Object -First 1
-          }
+          choco install curl
+          # Pre-installed LLVM 20.1.8 from Chocolatey is missing LLVMConfig.cmake,
+          # so download the official LLVM binary which includes cmake config files.
+          # Use 7z (pre-installed on GH runner) to extract the NSIS installer.
+          curl -L -o LLVM.exe https://github.com/llvm/llvm-project/releases/download/llvmorg-20.1.8/LLVM-20.1.8-win64.exe
+          & "C:\Program Files\7-Zip\7z.exe" x LLVM.exe -oLLVM -y | Out-Null
+          $cfg = Get-ChildItem -Path "LLVM" -Recurse -Filter "LLVMConfig.cmake" | Select-Object -First 1
           if ($cfg) {
               echo "LLVM_DIR=$($cfg.DirectoryName)" | Out-File -FilePath $env:GITHUB_ENV -Append
               echo "Found LLVM cmake: $($cfg.FullName)"
           } else {
-              echo "LLVMConfig.cmake not found!"
-              Get-ChildItem "C:\Program Files\LLVM" -Recurse -Filter "*.cmake" -ErrorAction SilentlyContinue | Select-Object -First 20
+              echo "LLVMConfig.cmake not found after extraction!"
+              Get-ChildItem LLVM -Recurse -Filter "*.cmake" | Select-Object -First 20
               exit 1
           }
 
