@@ -76,6 +76,7 @@ jobs:
         run: |
           cmake -B build -DCMAKE_BUILD_TYPE=Release `
             -DLLVM_DIR="$env:LLVM_DIR"
+          cmake --build build --target FluxScript --config Release
           cmake --build build -j --config Release
 
       - name: Package (Linux)
