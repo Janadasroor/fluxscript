@@ -85,7 +85,9 @@ void PackageManager::initialize(const std::string& registryUrl) {
 }
 
 void PackageManager::finalize() {
+#ifdef FLUX_HAS_CURL
     curl_global_cleanup();
+#endif
     m_initialized = false;
 }
 
@@ -201,7 +203,7 @@ InstallStatus PackageManager::installInternal(const std::string& name,
     }
     
     // Download package
-    std::string packagePath = fs::path(m_packagesDir) / name;
+    std::string packagePath = (fs::path(m_packagesDir) / name).string();
     std::cout << "  Downloading " << name << "..." << std::endl;
     
     if (!downloadPackage(name, version, packagePath)) {
@@ -357,7 +359,7 @@ std::map<std::string, std::string> PackageManager::listRepositories() {
 }
 
 std::string PackageManager::getPackagePath(const std::string& name) {
-    return fs::path(m_packagesDir) / name;
+    return (fs::path(m_packagesDir) / name).string();
 }
 
 bool PackageManager::import(const std::string& name) {
