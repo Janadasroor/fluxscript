@@ -65,14 +65,14 @@ bool Instrument::connect(const std::string& address, int port) {
     
     if (inet_pton(AF_INET, m_address.c_str(), &serverAddr.sin_addr) <= 0) {
         std::cerr << "[Instrument] Invalid address: " << m_address << "\n";
-        CLOSE_SOCKETm_socketFd);
+        CLOSE_SOCKET(m_socketFd);
         m_socketFd = -1;
         return false;
     }
 
     if (::connect(m_socketFd, (struct sockaddr*)&serverAddr, sizeof(serverAddr)) < 0) {
         std::cerr << "[Instrument] Connection failed to " << m_address << ":" << m_port << "\n";
-        CLOSE_SOCKETm_socketFd);
+        CLOSE_SOCKET(m_socketFd);
         m_socketFd = -1;
         return false;
     }
@@ -83,7 +83,7 @@ bool Instrument::connect(const std::string& address, int port) {
 
 void Instrument::disconnect() {
     if (m_socketFd >= 0) {
-        CLOSE_SOCKETm_socketFd);
+        CLOSE_SOCKET(m_socketFd);
         m_socketFd = -1;
     }
 }
