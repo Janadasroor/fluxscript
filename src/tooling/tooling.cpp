@@ -113,7 +113,7 @@ std::unique_ptr<llvm::TargetMachine> createTargetMachine(const OptimizationLevel
     }
 
     return std::unique_ptr<llvm::TargetMachine>(
-        target->createTargetMachine(triple, llvm::sys::getHostCPUName().str(), "", options,
+        target->createTargetMachine(llvm::Triple(triple), llvm::sys::getHostCPUName().str(), "", options,
                                     std::nullopt, std::nullopt, codegenLevel));
 }
 

@@ -30,7 +30,11 @@ option(FLUX_VIO_MATRIXC_LIB_DIR "Path to VioMATRIXC libngspice directory" "")
 find_package(LLVM REQUIRED CONFIG)
 message(STATUS "Found LLVM ${LLVM_PACKAGE_VERSION}")
 include_directories(${LLVM_INCLUDE_DIRS})
-add_definitions(${LLVM_DEFINITIONS})
+if(MINGW)
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${LLVM_DEFINITIONS}")
+else()
+    add_definitions(${LLVM_DEFINITIONS})
+endif()
 
 # Find CURL for package manager (optional on Windows)
 find_package(CURL QUIET)
@@ -183,13 +187,17 @@ else()
     list(APPEND FLUXSCRIPT_SOURCES src/mlir/flux_mlir_stub.cpp)
 endif()
 
-add_library(FluxScript SHARED ${FLUXSCRIPT_SOURCES})
 if(MSVC)
+    add_library(FluxScript SHARED ${FLUXSCRIPT_SOURCES})
     set_property(TARGET FluxScript PROPERTY WINDOWS_EXPORT_ALL_SYMBOLS ON)
     set_target_properties(FluxScript PROPERTIES
         ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}"
         RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}"
     )
+elseif(MINGW)
+    add_library(FluxScript STATIC ${FLUXSCRIPT_SOURCES})
+else()
+    add_library(FluxScript SHARED ${FLUXSCRIPT_SOURCES})
 endif()
 
 # Work around -O2 optimizer issues in verification and JIT code

@@ -19,6 +19,7 @@
 #include <vector>
 #include <variant>
 #include <optional>
+#include <cstdint>
 
 namespace Flux {
 namespace TOML {

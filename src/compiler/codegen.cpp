@@ -1167,25 +1167,25 @@ TypedValue CallExprAST::codegen(CodegenContext& context) {
             }
         } else if (Arg.Type.Kind == TypeKind::Double) {
             if (Name == "abs") {
-                llvm::Function* FabsF = llvm::Intrinsic::getDeclaration(
+                llvm::Function* FabsF = llvm::Intrinsic::getOrInsertDeclaration(
                     context.TheModule, llvm::Intrinsic::fabs,
                     {llvm::Type::getDoubleTy(context.TheContext)});
                 return TypedValue(context.Builder.CreateCall(FabsF, {Arg.Val}, "abstmp"), TypeKind::Double);
             }
             if (Name == "floor") {
-                llvm::Function* FloorF = llvm::Intrinsic::getDeclaration(
+                llvm::Function* FloorF = llvm::Intrinsic::getOrInsertDeclaration(
                     context.TheModule, llvm::Intrinsic::floor,
                     {llvm::Type::getDoubleTy(context.TheContext)});
                 return TypedValue(context.Builder.CreateCall(FloorF, {Arg.Val}, "floortmp"), TypeKind::Double);
             }
             if (Name == "ceil") {
-                llvm::Function* CeilF = llvm::Intrinsic::getDeclaration(
+                llvm::Function* CeilF = llvm::Intrinsic::getOrInsertDeclaration(
                     context.TheModule, llvm::Intrinsic::ceil,
                     {llvm::Type::getDoubleTy(context.TheContext)});
                 return TypedValue(context.Builder.CreateCall(CeilF, {Arg.Val}, "ceiltmp"), TypeKind::Double);
             }
             if (Name == "round") {
-                llvm::Function* RoundF = llvm::Intrinsic::getDeclaration(
+                llvm::Function* RoundF = llvm::Intrinsic::getOrInsertDeclaration(
                     context.TheModule, llvm::Intrinsic::round,
                     {llvm::Type::getDoubleTy(context.TheContext)});
                 return TypedValue(context.Builder.CreateCall(RoundF, {Arg.Val}, "roundtmp"), TypeKind::Double);

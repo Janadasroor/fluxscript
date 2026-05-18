@@ -22,7 +22,9 @@
     #include <winsock2.h>
     #include <ws2tcpip.h>
     #include <windows.h>
+    #ifndef __MINGW32__
     typedef int ssize_t;
+    #endif
     #define CLOSE_SOCKET(s) closesocket(s)
     #define GET_ERRNO() WSAGetLastError()
     // WSAStartup/WSACleanup handled via static init guard
