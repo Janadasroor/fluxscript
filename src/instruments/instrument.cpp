@@ -15,11 +15,26 @@
 #include "flux/instruments/instrument.h"
 #include <iostream>
 #include <cstring>
-#include <sys/socket.h>
-#include <arpa/inet.h>
-#include <unistd.h>
 #include <sstream>
 #include <vector>
+
+#ifdef _WIN32
+    #include <winsock2.h>
+    #include <ws2tcpip.h>
+    #include <windows.h>
+    typedef int ssize_t;
+    #define CLOSE_SOCKET(s) closesocket(s)
+    #define GET_ERRNO() WSAGetLastError()
+    // WSAStartup/WSACleanup handled via static init guard
+    struct WsaInit { WsaInit() { WSADATA d; WSAStartup(MAKEWORD(2,2), &d); } ~WsaInit() { WSACleanup(); } };
+    static WsaInit g_wsa;
+#else
+    #include <sys/socket.h>
+    #include <arpa/inet.h>
+    #include <unistd.h>
+    #define CLOSE_SOCKET(s) CLOSE_SOCKETs)
+    #define GET_ERRNO() errno
+#endif
 
 namespace Flux {
 namespace Instruments {
@@ -50,14 +65,14 @@ bool Instrument::connect(const std::string& address, int port) {
     
     if (inet_pton(AF_INET, m_address.c_str(), &serverAddr.sin_addr) <= 0) {
         std::cerr << "[Instrument] Invalid address: " << m_address << "\n";
-        close(m_socketFd);
+        CLOSE_SOCKETm_socketFd);
         m_socketFd = -1;
         return false;
     }
 
     if (::connect(m_socketFd, (struct sockaddr*)&serverAddr, sizeof(serverAddr)) < 0) {
         std::cerr << "[Instrument] Connection failed to " << m_address << ":" << m_port << "\n";
-        close(m_socketFd);
+        CLOSE_SOCKETm_socketFd);
         m_socketFd = -1;
         return false;
     }
@@ -68,7 +83,7 @@ bool Instrument::connect(const std::string& address, int port) {
 
 void Instrument::disconnect() {
     if (m_socketFd >= 0) {
-        close(m_socketFd);
+        CLOSE_SOCKETm_socketFd);
         m_socketFd = -1;
     }
 }

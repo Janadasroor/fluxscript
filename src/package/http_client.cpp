@@ -13,7 +13,6 @@
 
 // HTTP Client Implementation
 #include "flux/package/http_client.h"
-#include <curl/curl.h>
 #include <fstream>
 #include <sstream>
 #include <algorithm>
@@ -21,6 +20,9 @@
 
 namespace Flux {
 namespace HTTP {
+
+#ifdef FLUX_HAS_CURL
+#include <curl/curl.h>
 
 // Callback for curl
 static size_t WriteCallback(void* contents, size_t size, size_t nmemb, std::string* userp) {
@@ -32,6 +34,7 @@ static size_t WriteCallback(void* contents, size_t size, size_t nmemb, std::stri
 static size_t WriteFileCallback(void* contents, size_t size, size_t nmemb, std::FILE* file) {
     return std::fwrite(contents, size, nmemb, file);
 }
+#endif
 
 Client::Client() : m_timeout(30), m_userAgent("FluxScript-PackageManager/1.0") {}
 
@@ -62,7 +65,7 @@ Response Client::request(const std::string& method, const std::string& url,
                           const std::string& body,
                           const std::map<std::string, std::string>& headers) {
     Response response;
-    
+#ifdef FLUX_HAS_CURL
     CURL* curl = curl_easy_init();
     if (!curl) {
         m_lastError = "Failed to initialize CURL";
@@ -120,12 +123,18 @@ Response Client::request(const std::string& method, const std::string& url,
     // Cleanup
     curl_slist_free_all(headerList);
     curl_easy_cleanup(curl);
-    
+#else
+    (void)method;
+    (void)body;
+    (void)headers;
+    m_lastError = "HTTP client not available (built without CURL)";
+#endif
     return response;
 }
 
 bool Client::downloadFile(const std::string& url, const std::string& destPath,
                            std::function<void(double progress)> callback) {
+#ifdef FLUX_HAS_CURL
     CURL* curl = curl_easy_init();
     if (!curl) {
         m_lastError = "Failed to initialize CURL";
@@ -172,6 +181,13 @@ bool Client::downloadFile(const std::string& url, const std::string& destPath,
     
     curl_easy_cleanup(curl);
     return true;
+#else
+    (void)url;
+    (void)destPath;
+    (void)callback;
+    m_lastError = "HTTP client not available (built without CURL)";
+    return false;
+#endif
 }
 
 std::string Client::buildUrl(const std::string& path) const {

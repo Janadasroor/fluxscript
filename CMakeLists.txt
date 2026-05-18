@@ -198,6 +198,9 @@ set_source_files_properties(
 )
 
 target_link_libraries(FluxScript PUBLIC ${LLVM_LIB} ${FLUX_MLIR_LIBS})
+if(MSVC)
+    target_link_libraries(FluxScript PUBLIC ws2_32)
+endif()
 if(CURL_FOUND)
     target_link_libraries(FluxScript PUBLIC CURL::libcurl)
     target_compile_definitions(FluxScript PUBLIC FLUX_HAS_CURL)
