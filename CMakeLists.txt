@@ -184,6 +184,12 @@ else()
 endif()
 
 add_library(FluxScript SHARED ${FLUXSCRIPT_SOURCES})
+if(MSVC)
+    set_target_properties(FluxScript PROPERTIES
+        ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}"
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}"
+    )
+endif()
 
 # Work around -O2 optimizer issues in verification and JIT code
 set_source_files_properties(
