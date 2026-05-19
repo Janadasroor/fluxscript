@@ -1563,7 +1563,14 @@ TypedValue LetExprAST::codegen(CodegenContext& context) {
     llvm::Type* VarTy = ActualType.getLLVMType(context.TheContext);
     llvm::Value* InitV = InitTV.Val;
     if (InitV->getType() != VarTy) {
-        if (VarTy->isIntegerTy() && InitV->getType()->isFloatingPointTy()) InitV = context.Builder.CreateFPToSI(InitV, VarTy, "cast");
+        if (VarTy->isIntegerTy(1) && InitV->getType()->isFloatingPointTy()) {
+            // double → bool: compare against 0.0
+            InitV = context.Builder.CreateFCmpONE(InitV, llvm::ConstantFP::get(context.TheContext, llvm::APFloat(0.0)), "dbltobool");
+        } else if (VarTy->isIntegerTy() && InitV->getType()->isIntegerTy(1)) {
+            // bool → int: zero-extend i1 to i32
+            InitV = context.Builder.CreateZExt(InitV, VarTy, "bool_to_int");
+        } else if (VarTy->isIntegerTy() && InitV->getType()->isFloatingPointTy()) InitV = context.Builder.CreateFPToSI(InitV, VarTy, "cast");
+        else if (VarTy->isFloatingPointTy() && InitV->getType()->isIntegerTy(1)) InitV = context.Builder.CreateUIToFP(InitV, VarTy, "bool_cast");
         else if (VarTy->isFloatingPointTy() && InitV->getType()->isIntegerTy()) InitV = context.Builder.CreateSIToFP(InitV, VarTy, "cast");
         else if (VarTy->isFloatingPointTy() && InitV->getType()->isVectorTy()) {
             // Declared as double but init is complex vector  use vector type

@@ -166,6 +166,56 @@ void test_bool_logic() {
     TPASS;
 }
 
+// ----------------------------------------------------------------
+// Test 6: int variable with type annotation
+// ----------------------------------------------------------------
+void test_int_variable() {
+    TEST("let x: int = 5 returns correct value");
+    std::string source = R"(
+        def main() {
+            let x: int = 5
+            x
+        }
+    )";
+
+    void* fn = nullptr;
+    auto* jit = compile_script(source, &fn, "main");
+    TC(jit != nullptr && fn != nullptr, "compile failed");
+
+    using Fn = double(*)();
+    auto f = reinterpret_cast<Fn>(fn);
+    double r = f();
+    TC(r == 5.0, "int 5 should return 5.0, got " + std::to_string(r));
+
+    delete jit;
+    TPASS;
+}
+
+// ----------------------------------------------------------------
+// Test 7: bool variable with type annotation
+// ----------------------------------------------------------------
+void test_bool_variable() {
+    TEST("let x: bool = true returns 1.0");
+    std::string source = R"(
+        def main() {
+            let x: bool = true
+            if x then 42.0 else 0.0
+        }
+    )";
+
+    void* fn = nullptr;
+    auto* jit = compile_script(source, &fn, "main");
+    TC(jit != nullptr && fn != nullptr, "compile failed");
+
+    using Fn = double(*)();
+    auto f = reinterpret_cast<Fn>(fn);
+    double r = f();
+    TC(r == 42.0, "bool true should give 42.0, got " + std::to_string(r));
+
+    delete jit;
+    TPASS;
+}
+
 int main() {
     std::cout << "=== Type System Tests ===\n";
 
@@ -174,6 +224,8 @@ int main() {
     test_comparison_result();
     test_if_bool_condition();
     test_bool_logic();
+    test_int_variable();
+    test_bool_variable();
 
     std::cout << "\nResults: " << g_passed << " passed, " << g_failed << " failed\n";
     return g_failed > 0 ? 1 : 0;
