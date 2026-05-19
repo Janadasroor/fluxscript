@@ -21,3 +21,5 @@ tests/integration/results/test_*.raw
 todo/
 TODO.md
 progress.md
+/*.csv
+/*.json
