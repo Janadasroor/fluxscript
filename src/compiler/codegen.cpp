@@ -204,6 +204,64 @@ TypedValue StringExprAST::codegen(CodegenContext& context) {
     return TypedValue(DoubleVal, TypeKind::String);
 }
 
+TypedValue InterpolatedStringExprAST::codegen(CodegenContext& context) {
+    llvm::Type* DoubleTy = llvm::Type::getDoubleTy(context.TheContext);
+
+    // Helper to get/create extern function declarations
+    auto getOrCreateFn = [&](const std::string& name, llvm::Type* retTy, auto params) -> llvm::Function* {
+        llvm::Function* F = context.TheModule->getFunction(name);
+        if (!F) {
+            std::vector<llvm::Type*> paramVec(params.begin(), params.end());
+            F = llvm::Function::Create(
+                llvm::FunctionType::get(retTy, paramVec, false),
+                llvm::Function::ExternalLinkage, name, context.TheModule);
+        }
+        return F;
+    };
+
+    llvm::Function* ConcatF = getOrCreateFn("flux_string_concat", DoubleTy,
+        std::vector<llvm::Type*>{DoubleTy, DoubleTy});
+    llvm::Function* ToStrF = getOrCreateFn("flux_double_to_string", DoubleTy,
+        std::vector<llvm::Type*>{DoubleTy});
+
+    llvm::Value* Result = nullptr;
+
+    for (const auto& part : Parts) {
+        llvm::Value* PartVal = nullptr;
+        if (!part.isExpr) {
+            // Static text — use permanent string
+            uint64_t addr = reinterpret_cast<uint64_t>(getPermanentString(part.text));
+            llvm::Value* AddrVal = llvm::ConstantInt::get(llvm::Type::getInt64Ty(context.TheContext), addr);
+            PartVal = context.Builder.CreateBitCast(AddrVal, DoubleTy, "strpart");
+        } else {
+            // Expression — evaluate and convert to string
+            TypedValue ExprTV = part.expr->codegen(context);
+            if (!ExprTV.Val) return TypedValue();
+            if (ExprTV.Type.Kind == TypeKind::String) {
+                PartVal = ExprTV.Val;
+            } else {
+                // Convert to double first (handles int, bool, etc.)
+                llvm::Value* DoubleVal = ExprTV.Val;
+                if (ExprTV.Type.Kind == TypeKind::Int || ExprTV.Type.Kind == TypeKind::Bool) {
+                    if (DoubleVal->getType()->isIntegerTy(1))
+                        DoubleVal = context.Builder.CreateUIToFP(DoubleVal, DoubleTy, "bool_to_dbl");
+                    else if (DoubleVal->getType()->isIntegerTy())
+                        DoubleVal = context.Builder.CreateSIToFP(DoubleVal, DoubleTy, "int_to_dbl");
+                }
+                PartVal = context.Builder.CreateCall(ToStrF, {DoubleVal}, "valtostr");
+            }
+        }
+
+        if (!Result) {
+            Result = PartVal;
+        } else {
+            Result = context.Builder.CreateCall(ConcatF, {Result, PartVal}, "strcat");
+        }
+    }
+
+    return TypedValue(Result ? Result : llvm::ConstantFP::get(DoubleTy, 0.0), TypeKind::String);
+}
+
 TypedValue BoolExprAST::codegen(CodegenContext& context) {
     llvm::Value* V = Val
         ? llvm::ConstantInt::getTrue(context.TheContext)
@@ -614,12 +672,16 @@ TypedValue BinaryExprAST::codegen(CodegenContext& context) {
                    K == TypeKind::Int || K == TypeKind::Bool;
         };
         if (L.Type.Kind == TypeKind::String || R.Type.Kind == TypeKind::String) {
-            if (Op == '+' || Op == '-' || Op == '*' || Op == '/' ||
+            if (Op == '+' && L.Type.Kind == TypeKind::String && R.Type.Kind == TypeKind::String) {
+                // String concatenation — handled below
+            } else if ((Op == static_cast<int>(TokenType::tok_equal) ||
+                        Op == static_cast<int>(TokenType::tok_not_equal)) &&
+                       L.Type.Kind == TypeKind::String && R.Type.Kind == TypeKind::String) {
+                // String comparison — handled below
+            } else if (Op == '-' || Op == '*' || Op == '/' ||
                 Op == '<' || Op == '>' ||
                 Op == static_cast<int>(TokenType::tok_less_equal) ||
-                Op == static_cast<int>(TokenType::tok_greater_equal) ||
-                Op == static_cast<int>(TokenType::tok_equal) ||
-                Op == static_cast<int>(TokenType::tok_not_equal)) {
+                Op == static_cast<int>(TokenType::tok_greater_equal)) {
                 std::cerr << "Type error: cannot use string in arithmetic or comparison ('"
                           << (char)Op << "')" << std::endl;
                 return TypedValue();
@@ -848,6 +910,52 @@ TypedValue BinaryExprAST::codegen(CodegenContext& context) {
         default:
             std::cerr << "Binary operator not supported for complex numbers" << std::endl;
             return TypedValue();
+        }
+    }
+
+    // String operations
+    if (L.Type.Kind == TypeKind::String && R.Type.Kind == TypeKind::String) {
+        llvm::Type* DoubleTy = llvm::Type::getDoubleTy(context.TheContext);
+        llvm::Value* StrL = L.Val;
+        llvm::Value* StrR = R.Val;
+
+        if (Op == '+') {
+            // String concatenation via flux_string_concat
+            llvm::Function* ConcatF = context.TheModule->getFunction("flux_string_concat");
+            if (!ConcatF) {
+                llvm::Type* Params[] = { DoubleTy, DoubleTy };
+                ConcatF = llvm::Function::Create(
+                    llvm::FunctionType::get(DoubleTy, Params, false),
+                    llvm::Function::ExternalLinkage, "flux_string_concat", context.TheModule);
+            }
+            return TypedValue(context.Builder.CreateCall(ConcatF, {StrL, StrR}, "strcat"), TypeKind::String);
+        }
+        if (Op == static_cast<int>(TokenType::tok_equal)) {
+            // String comparison via flux_strcmp == 0
+            llvm::Function* CmpF = context.TheModule->getFunction("flux_strcmp");
+            if (!CmpF) {
+                llvm::Type* Params[] = { DoubleTy, DoubleTy };
+                CmpF = llvm::Function::Create(
+                    llvm::FunctionType::get(DoubleTy, Params, false),
+                    llvm::Function::ExternalLinkage, "flux_strcmp", context.TheModule);
+            }
+            llvm::Value* CmpRes = context.Builder.CreateCall(CmpF, {StrL, StrR}, "strcmp");
+            llvm::Value* Zero = llvm::ConstantFP::get(DoubleTy, 0.0);
+            llvm::Value* IsEq = context.Builder.CreateFCmpOEQ(CmpRes, Zero, "streq");
+            return TypedValue(context.Builder.CreateUIToFP(IsEq, DoubleTy, "booltmp"), TypeKind::Bool);
+        }
+        if (Op == static_cast<int>(TokenType::tok_not_equal)) {
+            llvm::Function* CmpF = context.TheModule->getFunction("flux_strcmp");
+            if (!CmpF) {
+                llvm::Type* Params[] = { DoubleTy, DoubleTy };
+                CmpF = llvm::Function::Create(
+                    llvm::FunctionType::get(DoubleTy, Params, false),
+                    llvm::Function::ExternalLinkage, "flux_strcmp", context.TheModule);
+            }
+            llvm::Value* CmpRes = context.Builder.CreateCall(CmpF, {StrL, StrR}, "strcmp");
+            llvm::Value* Zero = llvm::ConstantFP::get(DoubleTy, 0.0);
+            llvm::Value* IsNe = context.Builder.CreateFCmpONE(CmpRes, Zero, "strne");
+            return TypedValue(context.Builder.CreateUIToFP(IsNe, DoubleTy, "booltmp"), TypeKind::Bool);
         }
     }
 

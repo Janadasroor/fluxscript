@@ -82,6 +82,7 @@ double jit_register_ic(double name_ptr, double value) {
 
 // File I/O and string utilities for FluxScript
 #include <cstdio>
+#include <regex>
 static thread_local std::string g_fileio_buffer;
 static thread_local std::vector<std::string> g_fileio_pool;
 
@@ -581,6 +582,11 @@ extern "C" void* flux_matrix_sub_sm(double s, void* m_ptr) {
     return g_matrix_tracker.register_matrix(std::make_unique<Eigen::MatrixXd>(s - M->array()));
 }
 
+extern "C" double flux_string_concat(double a_dbl, double b_dbl);
+extern "C" double flux_double_to_string(double val);
+extern "C" double flux_regex_match(double str_dbl, double pat_dbl);
+extern "C" double flux_regex_replace(double str_dbl, double pat_dbl, double repl_dbl);
+
 void registerRuntimeFunctions(FluxJIT& jit) {
     jit.registerFunction("flux_create_matrix", (void*)&flux_create_matrix);
     jit.registerFunction("flux_matrix_mul", (void*)&flux_matrix_mul);
@@ -743,6 +749,10 @@ void registerRuntimeFunctions(FluxJIT& jit) {
     jit.registerFunction("flux_string_slice", (void*)&flux_string_slice);
     jit.registerFunction("flux_string_find",  (void*)&flux_string_find);
     jit.registerFunction("flux_parse_number", (void*)&flux_parse_number);
+    jit.registerFunction("flux_string_concat", (void*)&flux_string_concat);
+    jit.registerFunction("flux_double_to_string", (void*)&flux_double_to_string);
+    jit.registerFunction("flux_regex_match", (void*)&flux_regex_match);
+    jit.registerFunction("flux_regex_replace", (void*)&flux_regex_replace);
 
     // FFT
     jit.registerFunction("fft",             (void*)&flux_fft);
@@ -778,9 +788,40 @@ extern "C" double flux_print_string(double str_dbl) {
     if(str) { printf("%s", str); fflush(stdout); } return 0.0;
 }
 extern "C" double flux_print_double(double x) { printf("%g", x); fflush(stdout); return x; }
-extern "C" const char* flux_string_concat_double(const char* s, double d) {
-    std::string res = std::string(s?s:"") + std::to_string(d);
-    return strdup(res.c_str());
+
+extern "C" double flux_string_concat(double a_dbl, double b_dbl) {
+    const char* a = reinterpret_cast<const char*>(static_cast<uintptr_t>(jit_bitcast<uint64_t>(a_dbl)));
+    const char* b = reinterpret_cast<const char*>(static_cast<uintptr_t>(jit_bitcast<uint64_t>(b_dbl)));
+    auto& pool = g_fileio_pool;
+    pool.emplace_back((a ? std::string(a) : "") + (b ? std::string(b) : ""));
+    return jit_bitcast<double>(reinterpret_cast<uintptr_t>(pool.back().c_str()));
+}
+
+extern "C" double flux_double_to_string(double val) {
+    auto& pool = g_fileio_pool;
+    pool.push_back(std::to_string(val));
+    return jit_bitcast<double>(reinterpret_cast<uintptr_t>(pool.back().c_str()));
+}
+
+extern "C" double flux_regex_match(double str_dbl, double pat_dbl) {
+    const char* str = reinterpret_cast<const char*>(static_cast<uintptr_t>(jit_bitcast<uint64_t>(str_dbl)));
+    const char* pat = reinterpret_cast<const char*>(static_cast<uintptr_t>(jit_bitcast<uint64_t>(pat_dbl)));
+    if (!str || !pat) return 0.0;
+    try {
+        return std::regex_search(str, std::regex(pat)) ? 1.0 : 0.0;
+    } catch (...) { return 0.0; }
+}
+
+extern "C" double flux_regex_replace(double str_dbl, double pat_dbl, double repl_dbl) {
+    const char* str = reinterpret_cast<const char*>(static_cast<uintptr_t>(jit_bitcast<uint64_t>(str_dbl)));
+    const char* pat = reinterpret_cast<const char*>(static_cast<uintptr_t>(jit_bitcast<uint64_t>(pat_dbl)));
+    const char* repl = reinterpret_cast<const char*>(static_cast<uintptr_t>(jit_bitcast<uint64_t>(repl_dbl)));
+    if (!str || !pat || !repl) return 0.0;
+    try {
+        auto& pool = g_fileio_pool;
+        pool.push_back(std::regex_replace(std::string(str), std::regex(pat), std::string(repl)));
+        return jit_bitcast<double>(reinterpret_cast<uintptr_t>(pool.back().c_str()));
+    } catch (...) { return 0.0; }
 }
 
 static std::vector<std::pair<double, double>> g_goals;

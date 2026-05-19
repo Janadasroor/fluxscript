@@ -167,8 +167,64 @@ std::unique_ptr<ExprAST> Parser::ParseImaginaryExpr() {
 std::unique_ptr<ExprAST> Parser::ParseStringExpr() {
     int line = m_lexer.getCurrentLine();
     int col = m_lexer.getCurrentColumn();
-    auto Result = std::make_unique<StringExprAST>(m_lexer.StringVal);
+    std::string raw = m_lexer.StringVal;
     getNextToken();
+
+    // Check for string interpolation ${...}
+    std::vector<InterpolatedPart> parts;
+    size_t pos = 0;
+    while (pos < raw.size()) {
+        size_t dollar = raw.find("${", pos);
+        if (dollar == std::string::npos) {
+            parts.push_back({false, raw.substr(pos), nullptr});
+            break;
+        }
+        // Static text before ${}
+        if (dollar > pos)
+            parts.push_back({false, raw.substr(pos, dollar - pos), nullptr});
+
+        // Find matching } (handle nested braces)
+        size_t exprStart = dollar + 2;
+        int depth = 1;
+        size_t end = exprStart;
+        bool inStr = false;
+        for (; end < raw.size() && depth > 0; ++end) {
+            if (inStr) {
+                if (raw[end] == '"' && (end == 0 || raw[end-1] != '\\')) inStr = false;
+            } else {
+                if (raw[end] == '"') inStr = true;
+                else if (raw[end] == '{') ++depth;
+                else if (raw[end] == '}') --depth;
+            }
+        }
+        if (depth != 0) {
+            // Unterminated ${} — treat as literal text
+            parts.push_back({false, raw.substr(dollar), nullptr});
+            break;
+        }
+        std::string exprText = raw.substr(exprStart, end - exprStart - 1);
+
+        // Parse expression with sub-lexer
+        {
+            Lexer subLexer(exprText);
+            std::swap(m_lexer, subLexer);
+            getNextToken();
+            auto expr = ParseExpression();
+            if (expr)
+                parts.push_back({true, "", std::move(expr)});
+            std::swap(m_lexer, subLexer);
+        }
+        pos = end;
+    }
+
+    if (parts.empty() || (parts.size() == 1 && !parts[0].isExpr)) {
+        auto Result = std::make_unique<StringExprAST>(
+            parts.empty() ? "" : parts[0].text);
+        Result->setLocation(line, col);
+        return Result;
+    }
+
+    auto Result = std::make_unique<InterpolatedStringExprAST>(std::move(parts));
     Result->setLocation(line, col);
     return Result;
 }

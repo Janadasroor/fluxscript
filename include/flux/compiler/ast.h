@@ -334,6 +334,19 @@ public:
     const std::string& getValue() const { return Val; }
 };
 
+struct InterpolatedPart {
+    bool isExpr;
+    std::string text;
+    std::unique_ptr<ExprAST> expr;
+};
+
+class InterpolatedStringExprAST : public ExprAST {
+    std::vector<InterpolatedPart> Parts;
+public:
+    InterpolatedStringExprAST(std::vector<InterpolatedPart> parts) : Parts(std::move(parts)) {}
+    TypedValue codegen(CodegenContext& context) override;
+};
+
 class BoolExprAST : public ExprAST {
     bool Val;
 public:
