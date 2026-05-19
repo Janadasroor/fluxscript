@@ -23,6 +23,7 @@
 
 #include "flux/compiler/ast.h"
 #include "flux/jit/flux_jit.h"
+#include "flux/compiler/module_loader.h"
 
 namespace Flux {
 
@@ -82,6 +83,7 @@ private:
     std::string resolveImportPath(const std::string& moduleName) const;
 
     CompilerOptions m_options;
+    mutable ModuleLoader m_moduleLoader;
 };
 
 } // namespace Flux

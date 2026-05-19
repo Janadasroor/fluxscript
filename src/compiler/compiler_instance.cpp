@@ -246,40 +246,12 @@ void CompilerInstance::injectStandardLibrary(CodegenContext& context,
 }
 
 std::string CompilerInstance::resolveImportPath(const std::string& moduleName) const {
-    namespace path = llvm::sys::path;
-    namespace fs = llvm::sys::fs;
+    // Use ModuleLoader's search paths (CWD, modules/, stdlib/, ~/.flux, /usr/share, FLUX_MODULE_PATH)
+    auto path = m_moduleLoader.findModule(moduleName);
+    if (!path.empty()) return path.string();
 
-    llvm::SmallString<256> resolved;
-
-    // Try 1: Same directory as input file
-    if (!m_options.inputName.empty() && m_options.inputName != "-") {
-        resolved = m_options.inputName;
-        path::remove_filename(resolved);
-        path::append(resolved, moduleName + ".flux");
-        if (fs::exists(resolved)) return std::string(resolved.str());
-    }
-
-    // Try 2: Current working directory
-    resolved.clear();
-    path::append(resolved, moduleName + ".flux");
-    if (fs::exists(resolved)) return std::string(resolved.str());
-
-    // Try 3: FLUX_MODULE_PATH environment variable
-    if (const char* modPath = std::getenv("FLUX_MODULE_PATH")) {
-        resolved.clear();
-        path::append(resolved, modPath, moduleName + ".flux");
-        if (fs::exists(resolved)) return std::string(resolved.str());
-    }
-
-    // Fallback: original behavior (will produce error message)
-    if (!m_options.inputName.empty() && m_options.inputName != "-") {
-        resolved = m_options.inputName;
-        path::remove_filename(resolved);
-        path::append(resolved, moduleName + ".flux");
-    } else {
-        resolved = moduleName + ".flux";
-    }
-    return std::string(resolved.str());
+    // Fallback: try basic .flux in CWD (for error message)
+    return moduleName + ".flux";
 }
 
 bool CompilerInstance::importModule(const std::string& moduleName,
@@ -529,6 +501,15 @@ std::unique_ptr<CompileArtifacts> CompilerInstance::compileToIR(const std::strin
                                                                 std::string* error) {
     auto artifacts = std::make_unique<CompileArtifacts>();
     artifacts->codegenContext = createCodegenContext();
+
+    // Add the input file's directory to ModuleLoader search paths so that
+    // import resolution checks the same directory as the source file.
+    if (!m_options.inputName.empty() && m_options.inputName != "-" && m_options.inputName != "<stdin>") {
+        std::filesystem::path inputDir = std::filesystem::path(m_options.inputName).parent_path();
+        if (!inputDir.empty()) {
+            m_moduleLoader.addSearchPath(inputDir);
+        }
+    }
 
     if (m_options.injectStdlib)
         injectStandardLibrary(*artifacts->codegenContext, artifacts->functionReturnTypes);

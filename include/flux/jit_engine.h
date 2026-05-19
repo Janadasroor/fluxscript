@@ -25,7 +25,6 @@
 #include "flux/compiler/ast.h"
 #include "flux/compiler/compiler_instance.h"
 #include "flux/jit/flux_jit.h"
-#include "flux/modules/module_loader.h"
 
 
 #ifdef emit
@@ -64,7 +63,6 @@ public:
     void clearJITCache();
 
     // Module system integration
-    ModuleLoader& getModuleLoader() { return ModuleLoader::instance(); }
     bool importModule(const std::string& moduleName, std::string* error = nullptr);
     bool loadPlugin(const std::string& pluginPath, std::string* error = nullptr);
     

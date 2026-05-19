@@ -63,6 +63,18 @@ ModuleLoader::ModuleLoader() {
     m_searchPaths.push_back("/usr/local/share/flux/stdlib");
     m_searchPaths.push_back("/usr/share/flux/stdlib");
 
+    // FLUX_MODULE_PATH environment variable
+    const char* modPath = std::getenv("FLUX_MODULE_PATH");
+    if (modPath) {
+        std::istringstream iss(modPath);
+        std::string path;
+        while (std::getline(iss, path, ':')) {
+            if (!path.empty()) {
+                m_searchPaths.push_back(std::filesystem::path(path));
+            }
+        }
+    }
+
     // Set default cache directory
     const char* cacheDir = std::getenv("XDG_CACHE_HOME");
     if (cacheDir) {
@@ -272,8 +284,9 @@ bool ModuleLoader::compileModule(const std::filesystem::path& sourcePath,
     // Compile using CompilerInstance
     CompilerOptions opts;
     opts.inputName = sourcePath.string();
-    ModuleInfo info;
-    opts.moduleName = parseModuleFile(sourcePath, info, nullptr);
+    ModuleInfo modInfo;
+    parseModuleFile(sourcePath, modInfo, nullptr);
+    opts.moduleName = modInfo.name.empty() ? sourcePath.stem().string() : modInfo.name;
     CompilerInstance compiler(opts);
 
     std::string compileError;
