@@ -167,6 +167,16 @@ std::unique_ptr<ExprAST> Parser::ParseStringExpr() {
     return Result;
 }
 
+std::unique_ptr<ExprAST> Parser::ParseBoolExpr() {
+    int line = m_lexer.getCurrentLine();
+    int col = m_lexer.getCurrentColumn();
+    bool val = (CurTok == static_cast<int>(TokenType::tok_true));
+    getNextToken();
+    auto Result = std::make_unique<BoolExprAST>(val);
+    Result->setLocation(line, col);
+    return Result;
+}
+
 std::unique_ptr<ExprAST> Parser::ParseImport() {
     getNextToken(); // eat import
 
@@ -676,6 +686,8 @@ std::unique_ptr<ExprAST> Parser::ParsePrimary() {
     switch (CurTok) {
     case static_cast<int>(TokenType::tok_identifier): Res = ParseIdentifierExpr(); break;
     case static_cast<int>(TokenType::tok_number): Res = ParseNumberExpr(); break;
+    case static_cast<int>(TokenType::tok_true):
+    case static_cast<int>(TokenType::tok_false): Res = ParseBoolExpr(); break;
     case static_cast<int>(TokenType::tok_fixed): Res = ParseFixedExpr(); break;
     case static_cast<int>(TokenType::tok_imaginary): Res = ParseImaginaryExpr(); break;
     case static_cast<int>(TokenType::tok_string): Res = ParseStringExpr(); break;

@@ -82,6 +82,11 @@ enum class TokenType {
     tok_type_string = -38,
     tok_type_vector = -39,
     tok_type_matrix = -40,
+    tok_type_bool = -105,
+
+    // Boolean literals
+    tok_true = -106,
+    tok_false = -107,
 
     // Type annotation
     tok_arrow = -41,         // ->

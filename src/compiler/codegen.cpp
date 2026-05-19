@@ -66,6 +66,7 @@ static FluxType typeFromLLVM(llvm::Type* Ty) {
     if (Ty->isDoubleTy()) return FluxType(TypeKind::Double);
     if (Ty->isFloatTy()) return FluxType(TypeKind::Float);
     if (Ty->isIntegerTy(32)) return FluxType(TypeKind::Int);
+    if (Ty->isIntegerTy(1)) return FluxType(TypeKind::Bool);
     if (Ty->isVoidTy()) return FluxType(TypeKind::Void);
     // Complex is <2 x double>
     if (Ty->isVectorTy()) {
@@ -187,6 +188,13 @@ TypedValue StringExprAST::codegen(CodegenContext& context) {
     llvm::Value* AddrVal = llvm::ConstantInt::get(llvm::Type::getInt64Ty(context.TheContext), addr);
     llvm::Value* DoubleVal = context.Builder.CreateBitCast(AddrVal, llvm::Type::getDoubleTy(context.TheContext), "strptr_double");
     return TypedValue(DoubleVal, TypeKind::String);
+}
+
+TypedValue BoolExprAST::codegen(CodegenContext& context) {
+    llvm::Value* V = Val
+        ? llvm::ConstantInt::getTrue(context.TheContext)
+        : llvm::ConstantInt::getFalse(context.TheContext);
+    return TypedValue(V, TypeKind::Bool);
 }
 TypedValue ImportExprAST::codegen(CodegenContext& context) {
     // Import is handled at the JITEngine/ModuleLoader level
@@ -1955,7 +1963,12 @@ llvm::Function* FunctionAST::codegen(CodegenContext& context) {
             if (RetTy->isDoubleTy() && RetVal->getType()->isVectorTy()) {
                 RetVal = context.Builder.CreateExtractElement(RetVal, (uint64_t)0, "ret_real");
             } else if (RetTy->isIntegerTy() && RetVal->getType()->isFloatingPointTy()) RetVal = context.Builder.CreateFPToSI(RetVal, RetTy, "cast_final");
-            else if (RetTy->isFloatingPointTy() && RetVal->getType()->isIntegerTy()) RetVal = context.Builder.CreateSIToFP(RetVal, RetTy, "cast_final");
+            else if (RetTy->isFloatingPointTy() && RetVal->getType()->isIntegerTy()) {
+                if (RetVal->getType()->isIntegerTy(1))
+                    RetVal = context.Builder.CreateUIToFP(RetVal, RetTy, "bool_cast_final");
+                else
+                    RetVal = context.Builder.CreateSIToFP(RetVal, RetTy, "cast_final");
+            }
             else if (RetTy->isFloatingPointTy() && RetVal->getType()->isPointerTy()) {
                 llvm::Type* Int64Ty = llvm::Type::getInt64Ty(context.TheContext);
                 RetVal = context.Builder.CreatePtrToInt(RetVal, Int64Ty, "ptr_to_int");

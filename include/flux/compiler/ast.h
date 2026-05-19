@@ -87,6 +87,7 @@ enum class TypeKind {
     Double,   // Default type (double precision float)
     Float,    // Single precision float
     Int,      // Integer
+    Bool,     // Boolean
     Void,     // Void (for return types)
     Complex,  // Complex number (double complex)
     String,   // String (i8*)
@@ -112,6 +113,8 @@ public:
     
     llvm::Type* getLLVMType(llvm::LLVMContext& Context) const {
         switch (Kind) {
+            case TypeKind::Bool:
+                return llvm::Type::getInt1Ty(Context);
             case TypeKind::Float:
                 return llvm::Type::getFloatTy(Context);
             case TypeKind::Int:
@@ -150,6 +153,7 @@ public:
         if (T->isDoubleTy()) return FluxType(TypeKind::Double);
         if (T->isFloatTy()) return FluxType(TypeKind::Float);
         if (T->isIntegerTy(32)) return FluxType(TypeKind::Int);
+        if (T->isIntegerTy(1)) return FluxType(TypeKind::Bool);
         if (T->isVoidTy()) return FluxType(TypeKind::Void);
         // Complex is now <2 x double> (vector, not struct)
         if (T->isVectorTy()) {
@@ -176,6 +180,8 @@ public:
                 return FluxType(TypeKind::Float);
             case static_cast<int>(TokenType::tok_type_int):
                 return FluxType(TypeKind::Int);
+            case static_cast<int>(TokenType::tok_type_bool):
+                return FluxType(TypeKind::Bool);
             case static_cast<int>(TokenType::tok_type_void):
                 return FluxType(TypeKind::Void);
             case static_cast<int>(TokenType::tok_type_complex):
@@ -318,6 +324,14 @@ public:
     StringExprAST(const std::string& Val) : Val(Val) {}
     TypedValue codegen(CodegenContext& context) override;
     const std::string& getValue() const { return Val; }
+};
+
+class BoolExprAST : public ExprAST {
+    bool Val;
+public:
+    BoolExprAST(bool Val) : Val(Val) {}
+    TypedValue codegen(CodegenContext& context) override;
+    bool getValue() const { return Val; }
 };
 
 class ImportExprAST : public ExprAST {

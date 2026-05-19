@@ -58,6 +58,7 @@ private:
     std::unique_ptr<ExprAST> ParseFixedExpr();
     std::unique_ptr<ExprAST> ParseImaginaryExpr();
     std::unique_ptr<ExprAST> ParseStringExpr();
+    std::unique_ptr<ExprAST> ParseBoolExpr();
     std::unique_ptr<ExprAST> ParseParenExpr();
     std::unique_ptr<ExprAST> ParseIdentifierExpr();
     std::unique_ptr<ExprAST> ParseIfExpr();

@@ -88,6 +88,9 @@ std::string Lexer::tokenSpelling(int token) {
         case TokenType::tok_type_string: return "string";
         case TokenType::tok_type_vector: return "vector";
         case TokenType::tok_type_matrix: return "matrix";
+        case TokenType::tok_type_bool: return "bool";
+        case TokenType::tok_true: return "true";
+        case TokenType::tok_false: return "false";
         case TokenType::tok_tran: return "tran";
         case TokenType::tok_dc: return "dc";
         case TokenType::tok_ac: return "ac";
@@ -213,9 +216,12 @@ int Lexer::gettok() {
         if (IdentifierStr == "explain") return static_cast<int>(TokenType::tok_explain);
         if (IdentifierStr == "corner") return static_cast<int>(TokenType::tok_corner);
         if (IdentifierStr == "substitute") return static_cast<int>(TokenType::tok_substitute);
+        if (IdentifierStr == "false") return static_cast<int>(TokenType::tok_false);
+        if (IdentifierStr == "true") return static_cast<int>(TokenType::tok_true);
         if (IdentifierStr == "float") return static_cast<int>(TokenType::tok_type_float);
         if (IdentifierStr == "double") return static_cast<int>(TokenType::tok_type_double);
         if (IdentifierStr == "int") return static_cast<int>(TokenType::tok_type_int);
+        if (IdentifierStr == "bool") return static_cast<int>(TokenType::tok_type_bool);
         if (IdentifierStr == "void") return static_cast<int>(TokenType::tok_type_void);
         if (IdentifierStr == "complex") return static_cast<int>(TokenType::tok_type_complex);
         if (IdentifierStr == "string") return static_cast<int>(TokenType::tok_type_string);
