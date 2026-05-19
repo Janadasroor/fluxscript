@@ -89,6 +89,14 @@ public:
     FluxValue callFunction(const std::string& name, const std::vector<double>& args, std::string* error = nullptr);
     void* getFunctionPointer(const std::string& name);
 
+    // --- Tiered JIT ---
+    void* promoteFunction(const std::string& name, OptimizationLevel targetLevel = OptimizationLevel::O3);
+    void setTieredJITThreshold(int n);
+    int getTieredJITThreshold() const;
+    int getFunctionCallCount(const std::string& name) const;
+    void resetCallCounts();
+    bool isFunctionPromoted(const std::string& name) const;
+
 private:
     JITEngine();
     ~JITEngine();

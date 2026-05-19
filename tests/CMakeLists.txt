@@ -201,6 +201,12 @@ add_test_entry(flux-test-runtime-symbolic "Runtime: Symbolic Engine")
 add_test_executable(flux-test-advanced-math unit/test_advanced_math.cpp)
 add_test_entry(flux-test-advanced-math "Advanced Math")
 
+#
+#  Tiered JIT
+#
+add_test_executable(flux-test-tiered-jit unit/test_tiered_jit.cpp)
+add_test_entry(flux-test-tiered-jit "Tiered JIT")
+
 set_tests_properties(
     flux-test-phase5
     flux-test-phase7-1
@@ -232,6 +238,7 @@ set_tests_properties(
     flux-test-runtime-parallel
     flux-test-runtime-symbolic
     flux-test-advanced-math
+    flux-test-tiered-jit
     PROPERTIES
         WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
         TIMEOUT 120

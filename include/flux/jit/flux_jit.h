@@ -31,9 +31,15 @@
 #include <llvm/Passes/PassPlugin.h>
 #endif
 #include <llvm/IR/DataLayout.h>
+#include <llvm/IR/LLVMContext.h>
+#include <llvm/Bitcode/BitcodeWriter.h>
+#include <llvm/Bitcode/BitcodeReader.h>
+#include <llvm/Transforms/Utils/Cloning.h>
+#include <llvm/ExecutionEngine/Orc/ExecutionUtils.h>
 #include <memory>
 #include <string>
 #include <mutex>
+#include <atomic>
 #include <unordered_map>
 #include <vector>
 
@@ -72,6 +78,14 @@ public:
     void setOptimizationLevel(OptimizationLevel level);
     OptimizationLevel getOptimizationLevel() const { return m_optLevel; }
 
+    // --- Tiered JIT API ---
+    void* promoteFunction(const std::string& Name, OptimizationLevel targetLevel);
+    void setAutoPromoteThreshold(int n) { m_autoPromoteThreshold = n; }
+    int getAutoPromoteThreshold() const { return m_autoPromoteThreshold; }
+    int getCallCount(const std::string& Name) const;
+    void resetCallCounts();
+    bool isPromoted(const std::string& Name) const;
+
     void setSIMDOptions(const SIMDOptions& options);
     SIMDOptions getSIMDOptions() const;
 
@@ -84,13 +98,14 @@ public:
 private:
     void registerNativeFunctions();
     void registerComplexHelpers();
-    void optimizeModule(llvm::Module* M);
+    void optimizeModule(llvm::Module* M, OptimizationLevel level);
     void prepareModule(llvm::Module& M);
 
     std::unique_ptr<llvm::orc::LLJIT> m_lljit;
     std::unique_ptr<llvm::PassBuilder> m_passBuilder;
     llvm::orc::JITDylib* m_runtimeDylib = nullptr;
     llvm::DataLayout m_dataLayout;
+    llvm::TargetMachine* m_targetMachine = nullptr;
     std::string m_targetTriple;
     OptimizationLevel m_optLevel;
     SIMDOptions m_simdOptions;
@@ -98,7 +113,24 @@ private:
 
     // Eagerly compiled function pointer cache (avoids ORC lazy materialization issues)
     std::unordered_map<std::string, void*> m_functionPtrs;
-    std::mutex m_fnMapMutex;
+    mutable std::mutex m_fnMapMutex;
+
+    // --- Tiered JIT data ---
+    static constexpr int DEFAULT_HOT_THRESHOLD = 10;
+    int m_autoPromoteThreshold = DEFAULT_HOT_THRESHOLD;
+
+    // Saved original function IR (bitcode) for recompilation
+    struct SavedModule {
+        std::string bitcode;
+        std::vector<std::string> functionNames;
+    };
+    std::vector<SavedModule> m_savedModules;
+
+    // Per-function call counters
+    std::unordered_map<std::string, std::atomic<int>> m_callCounts;
+
+    // Promoted function cache (O3 compiled pointers)
+    std::unordered_map<std::string, void*> m_promotedPtrs;
 };
 
 } // namespace Flux

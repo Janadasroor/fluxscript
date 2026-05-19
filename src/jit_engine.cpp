@@ -214,4 +214,34 @@ void JITEngine::setOptimizationLevelForModules(OptimizationLevel level) {
     // Simplified for now
 }
 
+// --- Tiered JIT ---
+
+void* JITEngine::promoteFunction(const std::string& name, OptimizationLevel targetLevel) {
+    if (!m_jit) return nullptr;
+    return m_jit->promoteFunction(name, targetLevel);
+}
+
+void JITEngine::setTieredJITThreshold(int n) {
+    if (m_jit) m_jit->setAutoPromoteThreshold(n);
+}
+
+int JITEngine::getTieredJITThreshold() const {
+    if (m_jit) return m_jit->getAutoPromoteThreshold();
+    return 0;
+}
+
+int JITEngine::getFunctionCallCount(const std::string& name) const {
+    if (m_jit) return m_jit->getCallCount(name);
+    return 0;
+}
+
+void JITEngine::resetCallCounts() {
+    if (m_jit) m_jit->resetCallCounts();
+}
+
+bool JITEngine::isFunctionPromoted(const std::string& name) const {
+    if (m_jit) return m_jit->isPromoted(name);
+    return false;
+}
+
 } // namespace Flux
