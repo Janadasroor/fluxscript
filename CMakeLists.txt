@@ -66,6 +66,7 @@ if(NOT Eigen3_FOUND)
 else()
     message(STATUS "Found Eigen ${EIGEN3_VERSION}")
 endif()
+add_definitions(-DEIGEN_MPL2_ONLY)
 
 # Use monolithic LLVM shared library on Linux, component libs on other platforms
 if(UNIX)
