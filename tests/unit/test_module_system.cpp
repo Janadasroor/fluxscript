@@ -135,6 +135,13 @@ static std::string setup_module_dir(const std::string& modules_root) {
     return d;
 }
 
+// Symlink a file into the temp module directory.
+static bool link_module(const std::string& src, const std::string& dst) {
+    if (!fs::exists(src)) return false;
+    fs::create_symlink(src, dst);
+    return true;
+}
+
 // Compile source (which may import modules) and return true on success.
 // Does NOT print FAIL on error — use for negative testing.
 static bool compile_with_modules_result(const std::string& source,
@@ -573,6 +580,38 @@ def main() lerp(0.0, 10.0, 0.5) + sign(-5.0) + factorial(5.0) + rad2deg(3.141592
     PASS();
 }
 
+void test_stdlib_trig_import_jit() {
+    TEST("Import stdlib/trig.flux + JIT execution");
+    std::string modules_root = TESTS_SOURCE_DIR "/tests/modules";
+    std::string mod_dir = setup_module_dir(modules_root);
+    TC(!mod_dir.empty(), "failed to create temp module dir");
+
+    if (!link_module(TESTS_SOURCE_DIR "/stdlib/trig.flux", mod_dir + "/trig.flux")) {
+        fs::remove_all(mod_dir);
+        FAIL("stdlib/trig.flux not found");
+        return;
+    }
+
+    std::string code = R"(
+import trig
+def main() hypot(3.0, 4.0) + sec(0.0) + log2(8.0) + cbrt(27.0)
+)";
+
+    auto jit = compile_with_modules(code, mod_dir);
+    if (!jit) { fs::remove_all(mod_dir); return; }
+
+    double result = call_double(jit, "main", 0);
+    // hypot(3,4)=5 + sec(0)=1 + log2(8)=3 + cbrt(27)=3 = 12.0
+    TC(std::abs(result - 12.0) < 0.01,
+       "expected 12.0, got " + std::to_string(result));
+
+    delete jit;
+    fs::remove_all(mod_dir);
+    PASS();
+}
+
+
+
 int main() {
     std::string modules_root = TESTS_SOURCE_DIR "/tests/modules";
     std::string mod_dir = setup_module_dir(modules_root);
@@ -618,6 +657,8 @@ int main() {
     std::cout << "\n--- Standard Library ---\n";
     test_stdlib_math_import_jit();
     test_stdlib_math_functions_jit();
+    test_stdlib_trig_import_jit();
+
 
     fs::remove_all(mod_dir);
 
