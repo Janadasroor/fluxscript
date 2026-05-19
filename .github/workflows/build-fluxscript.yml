@@ -8,7 +8,7 @@ jobs:
   build:
     strategy:
       matrix:
-        os: [ubuntu-24.04, windows-2022]
+        os: [ubuntu-24.04, macos-14, windows-2022]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -61,6 +61,11 @@ jobs:
               echo "Bridged DIA SDK from VS 2022 to VS 2019 path"
           }
 
+      - name: Install deps (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          brew install llvm eigen
+
       - name: Build (Linux)
         if: runner.os == 'Linux'
         run: |
@@ -77,6 +82,38 @@ jobs:
           cmake -B build -DCMAKE_BUILD_TYPE=Release `
             -DLLVM_DIR="$env:LLVM_DIR"
           cmake --build build --config Release
+
+      - name: Build (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          cmake -B build \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_PREFIX_PATH="$(brew --prefix llvm);$(brew --prefix eigen)"
+          cmake --build build -j$(sysctl -n hw.logicalcpu)
+
+      - name: Package (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          mkdir -p install/include install/lib
+          cp -r include/flux install/include/
+          cp build/libFluxScript.dylib install/lib/
+
+          # Bundle LLVM and all transitive dylib deps
+          for lib in $(otool -L install/lib/libFluxScript.dylib | grep -E "^\s+/opt/homebrew|^\s+/usr/local" | awk '{print $1}'); do
+            basename=$(basename "$lib")
+            [ ! -f "install/lib/$basename" ] && cp -L "$lib" install/lib/
+          done
+
+          # Fix install names so the dylib finds bundled deps
+          for lib in install/lib/*.dylib*; do
+            install_name_tool -id "@rpath/$(basename "$lib")" "$lib" 2>/dev/null || true
+            for dep in $(otool -L "$lib" | grep -E "^\s+/opt/homebrew|^\s+/usr/local" | awk '{print $1}'); do
+              depname=$(basename "$dep")
+              install_name_tool -change "$dep" "@rpath/$depname" "$lib" 2>/dev/null || true
+            done
+          done
+
+          tar czf fluxscript-macos-arm64.tar.gz -C install .
 
       - name: Package (Linux)
         if: runner.os == 'Linux'
@@ -129,3 +166,9 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: fluxscript-windows-x86_64.zip
+
+      - name: Upload release asset (macOS)
+        if: runner.os == 'macOS' && startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: fluxscript-macos-arm64.tar.gz
