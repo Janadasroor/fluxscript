@@ -336,6 +336,56 @@ def main() wrapper::double_square(3.0)
     PASS();
 }
 
+void test_import_inside_function_body() {
+    TEST("Import inside function body");
+    std::string modules_root = TESTS_SOURCE_DIR "/tests/modules";
+    std::string mod_dir = setup_module_dir(modules_root);
+    TC(!mod_dir.empty(), "failed to create temp module dir");
+
+    std::string code = R"(
+def main() {
+    import math_utils
+    math_utils::square(5.0)
+}
+)";
+
+    auto jit = compile_with_modules(code, mod_dir);
+    if (!jit) { fs::remove_all(mod_dir); return; }
+
+    double result = call_double(jit, "main", 0);
+    TC(std::abs(result - 25.0) < 0.001,
+       "expected 25.0, got " + std::to_string(result));
+
+    delete jit;
+    fs::remove_all(mod_dir);
+    PASS();
+}
+
+void test_import_inside_function_body_with_alias() {
+    TEST("Import with alias inside function body");
+    std::string modules_root = TESTS_SOURCE_DIR "/tests/modules";
+    std::string mod_dir = setup_module_dir(modules_root);
+    TC(!mod_dir.empty(), "failed to create temp module dir");
+
+    std::string code = R"(
+def main() {
+    import math_utils as m
+    m::cube(4.0)
+}
+)";
+
+    auto jit = compile_with_modules(code, mod_dir);
+    if (!jit) { fs::remove_all(mod_dir); return; }
+
+    double result = call_double(jit, "main", 0);
+    TC(std::abs(result - 64.0) < 0.001,
+       "expected 64.0, got " + std::to_string(result));
+
+    delete jit;
+    fs::remove_all(mod_dir);
+    PASS();
+}
+
 int main() {
     std::string modules_root = TESTS_SOURCE_DIR "/tests/modules";
     std::string mod_dir = setup_module_dir(modules_root);
@@ -366,6 +416,8 @@ int main() {
     test_imported_function_called_directly();
     test_import_shadows_runtime();
     test_import_chain();
+    test_import_inside_function_body();
+    test_import_inside_function_body_with_alias();
 
     fs::remove_all(mod_dir);
 

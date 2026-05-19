@@ -18,6 +18,7 @@
 #include <memory>
 #include <vector>
 #include <map>
+#include <functional>
 #include <memory>
 #include <llvm/IR/Value.h>
 #include <llvm/IR/Module.h>
@@ -233,6 +234,11 @@ public:
     llvm::Value* GeneratorStateAlloca = nullptr;     // Struct containing state index and locals
     std::vector<llvm::BasicBlock*> YieldTargets;     // Blocks to resume from
     llvm::BasicBlock* GeneratorDispatcherBB = nullptr; // Entry dispatcher
+
+    // Module import callback — called by ImportExprAST::codegen for function-body imports.
+    // Parameters: moduleName, alias, symbols list
+    // Returns true on success, stores error string on failure.
+    std::function<bool(const std::string&, const std::string&, const std::vector<std::string>&)> importModuleFn;
 
     CodegenContext()
         : OwnedContext(std::make_unique<llvm::LLVMContext>()),

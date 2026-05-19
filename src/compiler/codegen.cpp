@@ -269,17 +269,14 @@ TypedValue BoolExprAST::codegen(CodegenContext& context) {
     return TypedValue(V, TypeKind::Bool);
 }
 TypedValue ImportExprAST::codegen(CodegenContext& context) {
-    // Import is handled at the JITEngine/ModuleLoader level
-    // This codegen just marks the import as processed
-    // The actual module loading happens before codegen
-    
-    // If we have an alias, register it in the context
-    // This allows namespace::function syntax to be resolved
-    if (!Alias.empty()) {
-        // Store alias mapping for later resolution
-        // This would be used by VariableExprAST to resolve namespaced symbols
+    if (context.importModuleFn) {
+        if (!context.importModuleFn(ModuleName, Alias, Symbols)) {
+            std::cerr << "Import failed: " << ModuleName << "\n";
+            return TypedValue();
+        }
+    } else {
+        std::cerr << "Warning: import '" << ModuleName << "' inside function body but no import callback configured\n";
     }
-    
     return TypedValue(llvm::ConstantFP::get(context.TheContext, llvm::APFloat(1.0)), TypeKind::Double);
 }
 

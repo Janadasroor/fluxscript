@@ -454,6 +454,24 @@ bool CompilerInstance::compileParser(Parser& parser,
 
     // --- Pass 2: Codegen all function bodies ---
     // All LLVM declarations now exist, so call sites will find the correct types.
+    // Set up the import callback so ImportExprAST inside function bodies works.
+    // Save any existing callback so recursive calls (via importModule) can restore it.
+    auto savedImportFn = std::move(context.importModuleFn);
+    context.importModuleFn = [&](const std::string& moduleName,
+                                 const std::string& alias,
+                                 const std::vector<std::string>& /*symbols*/) -> bool {
+        auto* SavedInsertBlock = context.Builder.GetInsertBlock();
+        if (!importModule(moduleName, context, returnTypes, &error, importedModules)) {
+            if (SavedInsertBlock) context.Builder.SetInsertPoint(SavedInsertBlock);
+            return false;
+        }
+        if (SavedInsertBlock) context.Builder.SetInsertPoint(SavedInsertBlock);
+        const std::string& nsAlias = alias.empty() ? moduleName : alias;
+        context.NamedValues[nsAlias + ".*"] = llvm::ConstantPointerNull::get(
+            llvm::PointerType::get(context.TheContext, 0));
+        return true;
+    };
+
     if (hasUpdateFunc) {
         returnTypes["update"] = FluxType(TypeKind::Double);
         if (!updateFunc->codegen(context)) {
@@ -465,10 +483,12 @@ bool CompilerInstance::compileParser(Parser& parser,
     for (auto& func : functions) {
         if (!func->codegen(context)) {
             error = "Code generation failed for function: " + func->getProto()->getName();
+            context.importModuleFn = std::move(savedImportFn);
             return false;
         }
     }
 
+    context.importModuleFn = std::move(savedImportFn);
     return !parser.hasError();
 }
 
