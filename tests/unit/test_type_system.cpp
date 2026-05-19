@@ -216,6 +216,161 @@ void test_bool_variable() {
     TPASS;
 }
 
+// ----------------------------------------------------------------
+// Test 8: int variable promoted to double in arithmetic
+// ----------------------------------------------------------------
+void test_int_in_math() {
+    TEST("int variable promotes to double in arithmetic");
+    std::string source = R"(
+        def main() {
+            let x: int = 5
+            x + 3.0
+        }
+    )";
+
+    void* fn = nullptr;
+    auto* jit = compile_script(source, &fn, "main");
+    TC(jit != nullptr && fn != nullptr, "compile failed");
+
+    using Fn = double(*)();
+    auto f = reinterpret_cast<Fn>(fn);
+    double r = f();
+    TC(r == 8.0, "5 + 3 should be 8.0, got " + std::to_string(r));
+
+    delete jit;
+    TPASS;
+}
+
+// ----------------------------------------------------------------
+// Test 9: bool variable promotes to double in arithmetic
+// ----------------------------------------------------------------
+void test_bool_in_math() {
+    TEST("bool variable promotes to double in arithmetic");
+    std::string source = R"(
+        def main() {
+            let b: bool = true
+            b + 2.0
+        }
+    )";
+
+    void* fn = nullptr;
+    auto* jit = compile_script(source, &fn, "main");
+    TC(jit != nullptr && fn != nullptr, "compile failed");
+
+    using Fn = double(*)();
+    auto f = reinterpret_cast<Fn>(fn);
+    double r = f();
+    TC(r == 3.0, "true + 2 should be 3.0, got " + std::to_string(r));
+
+    delete jit;
+    TPASS;
+}
+
+// ----------------------------------------------------------------
+// Test 10: !(comparison) produces correct bool
+// ----------------------------------------------------------------
+void test_not_comparison() {
+    TEST("not of comparison works");
+    std::string source = R"(
+        def main() {
+            if !(5.0 > 3.0) then 100.0 else 200.0
+        }
+    )";
+
+    void* fn = nullptr;
+    auto* jit = compile_script(source, &fn, "main");
+    TC(jit != nullptr && fn != nullptr, "compile failed");
+
+    using Fn = double(*)();
+    auto f = reinterpret_cast<Fn>(fn);
+    double r = f();
+    TC(r == 200.0, "!(5>3) should be false → 200.0, got " + std::to_string(r));
+
+    delete jit;
+    TPASS;
+}
+
+// ----------------------------------------------------------------
+// Test 11: while loop with comparison condition
+// ----------------------------------------------------------------
+void test_while_bool() {
+    TEST("while with comparison condition");
+    std::string source = R"(
+        def main() {
+            var i = 0.0
+            while i < 5.0 do {
+                i = i + 1.0
+            }
+            i
+        }
+    )";
+
+    void* fn = nullptr;
+    auto* jit = compile_script(source, &fn, "main");
+    TC(jit != nullptr && fn != nullptr, "compile failed");
+
+    using Fn = double(*)();
+    auto f = reinterpret_cast<Fn>(fn);
+    double r = f();
+    TC(r == 5.0, "loop should count to 5.0, got " + std::to_string(r));
+
+    delete jit;
+    TPASS;
+}
+
+// ----------------------------------------------------------------
+// Test 12: chained boolean logic
+// ----------------------------------------------------------------
+void test_chained_logic() {
+    TEST("chained && with ||");
+    std::string source = R"(
+        def main() {
+            var a = 5.0 > 3.0
+            var b = 2.0 < 4.0
+            var c = 1.0 > 10.0
+            if a && b || c then 1.0 else 0.0
+        }
+    )";
+
+    void* fn = nullptr;
+    auto* jit = compile_script(source, &fn, "main");
+    TC(jit != nullptr && fn != nullptr, "compile failed");
+
+    using Fn = double(*)();
+    auto f = reinterpret_cast<Fn>(fn);
+    double r = f();
+    TC(r == 1.0, "true && true || false should be true → 1.0, got " + std::to_string(r));
+
+    delete jit;
+    TPASS;
+}
+
+// ----------------------------------------------------------------
+// Test 13: bool to int conversion
+// ----------------------------------------------------------------
+void test_bool_to_int() {
+    TEST("bool converts to int via ZExt");
+    std::string source = R"(
+        def main() {
+            let x: int = true
+            let y: int = false
+            x + y
+        }
+    )";
+
+    void* fn = nullptr;
+    auto* jit = compile_script(source, &fn, "main");
+    TC(jit != nullptr && fn != nullptr, "compile failed");
+
+    using Fn = double(*)();
+    auto f = reinterpret_cast<Fn>(fn);
+    double r = f();
+    TC(r == 1.0, "int(true) + int(false) should be 1.0, got " + std::to_string(r));
+
+    delete jit;
+    TPASS;
+}
+
 int main() {
     std::cout << "=== Type System Tests ===\n";
 
@@ -226,6 +381,12 @@ int main() {
     test_bool_logic();
     test_int_variable();
     test_bool_variable();
+    test_int_in_math();
+    test_bool_in_math();
+    test_not_comparison();
+    test_while_bool();
+    test_chained_logic();
+    test_bool_to_int();
 
     std::cout << "\nResults: " << g_passed << " passed, " << g_failed << " failed\n";
     return g_failed > 0 ? 1 : 0;
