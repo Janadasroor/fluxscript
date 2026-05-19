@@ -286,18 +286,12 @@ void FluxJIT::addModule(std::unique_ptr<llvm::Module> M,
         return;
     }
 
-    // Eagerly compile all user functions and cache their pointers
-    for (const auto& name : userFns) {
-        auto sym = m_lljit->lookup(name);
-        if (sym) {
-            std::lock_guard<std::mutex> lock(m_fnMapMutex);
-            m_functionPtrs[name] = reinterpret_cast<void*>(sym->getValue());
-            // Initialize call counter
+    // Initialize call counters for profiling. Actual compilation is lazy —
+    // ORC compiles each function on first call via getPointerToFunction.
+    {
+        std::lock_guard<std::mutex> lock(m_fnMapMutex);
+        for (const auto& name : userFns)
             m_callCounts[name] = 0;
-        } else {
-            llvm::errs() << "[FluxJIT] Failed to compile: " << name << "\n";
-            logError(sym.takeError(), "  reason:");
-        }
     }
 }
 
