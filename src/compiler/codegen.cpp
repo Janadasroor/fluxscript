@@ -1408,6 +1408,12 @@ TypedValue CallExprAST::codegen(CodegenContext& context) {
         CalleeF = context.TheModule->getFunction(unqualified);
     }
     if (!CalleeF) {
+        // Check if this function was excluded by a selective import
+        if (context.ExcludedSymbols.count(Name)) {
+            std::cerr << "Error: '" << Name << "' was not imported. "
+                      << "Use a non-selective import or add it to the import list.\n";
+            return TypedValue();
+        }
         llvm::Value* VarVal = context.NamedValues[Callee];
         if (!VarVal && sepPos != std::string::npos) {
              std::string unqualified = Callee.substr(sepPos + 2);

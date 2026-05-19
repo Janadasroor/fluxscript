@@ -258,7 +258,8 @@ bool CompilerInstance::importModule(const std::string& moduleName,
                                     CodegenContext& context,
                                     std::map<std::string, FluxType>& returnTypes,
                                     std::string* error,
-                                    std::map<std::string, bool>& importedModules) const {
+                                    std::map<std::string, bool>& importedModules,
+                                    const std::vector<std::string>& symbols) const {
     if (importedModules.find(moduleName) != importedModules.end())
         return true;
     importedModules[moduleName] = true;
@@ -273,7 +274,7 @@ bool CompilerInstance::importModule(const std::string& moduleName,
 
     Parser importedParser(std::string(bufferOrErr.get()->getBuffer()));
     std::string importError;
-    bool result = compileParser(importedParser, context, returnTypes, importError, importedModules);
+    bool result = compileParser(importedParser, context, returnTypes, importError, importedModules, symbols);
     if (!result && error) {
         *error = importError;
     }
@@ -359,11 +360,11 @@ bool CompilerInstance::compileParser(Parser& parser,
                                      CodegenContext& context,
                                      std::map<std::string, FluxType>& returnTypes,
                                      std::string& error,
-                                     std::map<std::string, bool>& importedModules) const {
-    // --- Pass 1: Parse all definitions and declare all prototypes ---
-    // This ensures all LLVM function declarations exist with correct types
-    // before any call sites are generated, avoiding auto-declaration with
-    // wrong types (e.g., double instead of matrix struct).
+                                     std::map<std::string, bool>& importedModules,
+                                     const std::vector<std::string>& symbols) const {
+    // --- Pass 1: Parse all definitions (defer prototype declaration) ---
+    // Prototype declaration is deferred until after selective-import
+    // filtering so that only selected functions get LLVM declarations.
     std::vector<std::unique_ptr<FunctionAST>> functions;
     std::unique_ptr<ExprAST> updateFunc;
     bool hasUpdateFunc = false;
@@ -377,9 +378,6 @@ bool CompilerInstance::compileParser(Parser& parser,
         if (parser.CurTok == static_cast<int>(TokenType::tok_def)) {
             auto func = parser.ParseDefinition();
             if (func) {
-                const std::string& name = func->getProto()->getName();
-                returnTypes[name] = func->getProto()->getReturnType();
-                func->getProto()->codegen(context);
                 functions.push_back(std::move(func));
             }
         } else if (parser.CurTok == static_cast<int>(TokenType::tok_update)) {
@@ -400,7 +398,8 @@ bool CompilerInstance::compileParser(Parser& parser,
                 return false;
             }
             const std::string& moduleName = importExpr->getModuleName();
-            if (!importModule(moduleName, context, returnTypes, &error, importedModules)) {
+            const std::vector<std::string>& importSymbols = importExpr->getSymbols();
+            if (!importModule(moduleName, context, returnTypes, &error, importedModules, importSymbols)) {
                 return false;
             }
             const std::string& alias = importExpr->getAlias().empty() ? moduleName : importExpr->getAlias();
@@ -452,6 +451,27 @@ bool CompilerInstance::compileParser(Parser& parser,
         }
     }
 
+    // --- Selective import filtering ---
+    if (!symbols.empty()) {
+        std::vector<std::unique_ptr<FunctionAST>> filtered;
+        for (auto& func : functions) {
+            const std::string& name = func->getProto()->getName();
+            if (std::find(symbols.begin(), symbols.end(), name) != symbols.end()) {
+                filtered.push_back(std::move(func));
+            } else {
+                context.ExcludedSymbols.insert(name);
+            }
+        }
+        functions = std::move(filtered);
+    }
+
+    // --- Pass 1 (continued): Declare prototypes for remaining functions ---
+    for (auto& func : functions) {
+        const std::string& name = func->getProto()->getName();
+        returnTypes[name] = func->getProto()->getReturnType();
+        func->getProto()->codegen(context);
+    }
+
     // --- Pass 2: Codegen all function bodies ---
     // All LLVM declarations now exist, so call sites will find the correct types.
     // Set up the import callback so ImportExprAST inside function bodies works.
@@ -459,9 +479,9 @@ bool CompilerInstance::compileParser(Parser& parser,
     auto savedImportFn = std::move(context.importModuleFn);
     context.importModuleFn = [&](const std::string& moduleName,
                                  const std::string& alias,
-                                 const std::vector<std::string>& /*symbols*/) -> bool {
+                                 const std::vector<std::string>& fnBodySymbols) -> bool {
         auto* SavedInsertBlock = context.Builder.GetInsertBlock();
-        if (!importModule(moduleName, context, returnTypes, &error, importedModules)) {
+        if (!importModule(moduleName, context, returnTypes, &error, importedModules, fnBodySymbols)) {
             if (SavedInsertBlock) context.Builder.SetInsertPoint(SavedInsertBlock);
             return false;
         }
@@ -476,6 +496,7 @@ bool CompilerInstance::compileParser(Parser& parser,
         returnTypes["update"] = FluxType(TypeKind::Double);
         if (!updateFunc->codegen(context)) {
             error = "Code generation failed for update function";
+            context.importModuleFn = std::move(savedImportFn);
             return false;
         }
     }

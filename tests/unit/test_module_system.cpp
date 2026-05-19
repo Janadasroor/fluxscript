@@ -135,6 +135,22 @@ static std::string setup_module_dir(const std::string& modules_root) {
     return d;
 }
 
+// Compile source (which may import modules) and return true on success.
+// Does NOT print FAIL on error — use for negative testing.
+static bool compile_with_modules_result(const std::string& source,
+                                        const std::string& module_dir,
+                                        std::string& error_out) {
+    CompilerOptions opts;
+    opts.injectStdlib = true;
+    opts.optimizationLevel = OptimizationLevel::O0;
+    opts.inputName = (fs::path(module_dir) / "test.flux").string();
+    opts.moduleName = "test_mod";
+
+    CompilerInstance compiler(opts);
+    auto artifacts = compiler.compileToIR(source, &error_out);
+    return artifacts != nullptr;
+}
+
 // Compile source (which may import modules) and return the FluxJIT.
 // Module files are resolved by setting inputName to a file in module_dir,
 // so resolveImportPath looks in the same directory.
@@ -386,6 +402,111 @@ def main() {
     PASS();
 }
 
+void test_selective_import_jit() {
+    TEST("Selective import {square} + JIT execution");
+    std::string modules_root = TESTS_SOURCE_DIR "/tests/modules";
+    std::string mod_dir = setup_module_dir(modules_root);
+    TC(!mod_dir.empty(), "failed to create temp module dir");
+
+    std::string code = R"(
+import math_utils {square}
+def main() square(5.0)
+)";
+
+    auto jit = compile_with_modules(code, mod_dir);
+    if (!jit) { fs::remove_all(mod_dir); return; }
+
+    double result = call_double(jit, "main", 0);
+    TC(std::abs(result - 25.0) < 0.001,
+       "expected 25.0, got " + std::to_string(result));
+
+    delete jit;
+    fs::remove_all(mod_dir);
+    PASS();
+}
+
+void test_selective_import_excluded_fails() {
+    TEST("Selective import: excluded function call fails");
+    std::string modules_root = TESTS_SOURCE_DIR "/tests/modules";
+    std::string mod_dir = setup_module_dir(modules_root);
+    TC(!mod_dir.empty(), "failed to create temp module dir");
+
+    std::string code = R"(
+import math_utils {square}
+def main() cube(5.0)
+)";
+
+    std::string error;
+    bool ok = compile_with_modules_result(code, mod_dir, error);
+    TC(!ok, "expected compilation to fail for excluded function 'cube'");
+
+    fs::remove_all(mod_dir);
+    PASS();
+}
+
+void test_selective_import_namespaced_excluded_fails() {
+    TEST("Selective import: namespaced excluded function call fails");
+    std::string modules_root = TESTS_SOURCE_DIR "/tests/modules";
+    std::string mod_dir = setup_module_dir(modules_root);
+    TC(!mod_dir.empty(), "failed to create temp module dir");
+
+    std::string code = R"(
+import math_utils {square}
+def main() math_utils::cube(5.0)
+)";
+
+    std::string error;
+    bool ok = compile_with_modules_result(code, mod_dir, error);
+    TC(!ok, "expected compilation to fail for namespaced excluded function 'cube'");
+
+    fs::remove_all(mod_dir);
+    PASS();
+}
+
+void test_selective_import_non_excluded_works() {
+    TEST("Selective import: non-module function still auto-declares");
+    std::string modules_root = TESTS_SOURCE_DIR "/tests/modules";
+    std::string mod_dir = setup_module_dir(modules_root);
+    TC(!mod_dir.empty(), "failed to create temp module dir");
+
+    // cos is not in any module, so it should auto-declare normally
+    std::string code = R"(
+import math_utils {square}
+def main() cos(1.0)
+)";
+
+    std::string error;
+    bool ok = compile_with_modules_result(code, mod_dir, error);
+    TC(ok, "expected non-module function call to compile: " + error);
+
+    fs::remove_all(mod_dir);
+    PASS();
+}
+
+void test_selective_import_multiple_symbols_jit() {
+    TEST("Selective import {square, half} + JIT execution");
+    std::string modules_root = TESTS_SOURCE_DIR "/tests/modules";
+    std::string mod_dir = setup_module_dir(modules_root);
+    TC(!mod_dir.empty(), "failed to create temp module dir");
+
+    std::string code = R"(
+import math_utils {square, half}
+def main() square(4.0) + half(10.0)
+)";
+
+    auto jit = compile_with_modules(code, mod_dir);
+    if (!jit) { fs::remove_all(mod_dir); return; }
+
+    double result = call_double(jit, "main", 0);
+    // square(4.0)=16.0 + half(10.0)=5.0 = 21.0
+    TC(std::abs(result - 21.0) < 0.001,
+       "expected 21.0, got " + std::to_string(result));
+
+    delete jit;
+    fs::remove_all(mod_dir);
+    PASS();
+}
+
 int main() {
     std::string modules_root = TESTS_SOURCE_DIR "/tests/modules";
     std::string mod_dir = setup_module_dir(modules_root);
@@ -418,6 +539,14 @@ int main() {
     test_import_chain();
     test_import_inside_function_body();
     test_import_inside_function_body_with_alias();
+
+    // Selective import enforcement tests
+    std::cout << "\n--- Selective Import Enforcement ---\n";
+    test_selective_import_jit();
+    test_selective_import_excluded_fails();
+    test_selective_import_namespaced_excluded_fails();
+    test_selective_import_non_excluded_works();
+    test_selective_import_multiple_symbols_jit();
 
     fs::remove_all(mod_dir);
 

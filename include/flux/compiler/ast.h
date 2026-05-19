@@ -19,6 +19,7 @@
 #include <vector>
 #include <map>
 #include <functional>
+#include <set>
 #include <memory>
 #include <llvm/IR/Value.h>
 #include <llvm/IR/Module.h>
@@ -239,6 +240,11 @@ public:
     // Parameters: moduleName, alias, symbols list
     // Returns true on success, stores error string on failure.
     std::function<bool(const std::string&, const std::string&, const std::vector<std::string>&)> importModuleFn;
+
+    // Names of functions that exist in selectively-imported modules but
+    // were not selected. Used to produce clear error messages when the
+    // user tries to call a non-imported function.
+    std::set<std::string> ExcludedSymbols;
 
     CodegenContext()
         : OwnedContext(std::make_unique<llvm::LLVMContext>()),

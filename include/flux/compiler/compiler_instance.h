@@ -75,11 +75,13 @@ private:
     bool compileParser(Parser& parser, CodegenContext& context,
                        std::map<std::string, FluxType>& returnTypes,
                        std::string& error,
-                       std::map<std::string, bool>& importedModules) const;
+                       std::map<std::string, bool>& importedModules,
+                       const std::vector<std::string>& symbols = {}) const;
     bool importModule(const std::string& moduleName, CodegenContext& context,
                       std::map<std::string, FluxType>& returnTypes,
                       std::string* error,
-                      std::map<std::string, bool>& importedModules) const;
+                      std::map<std::string, bool>& importedModules,
+                      const std::vector<std::string>& symbols = {}) const;
     std::string resolveImportPath(const std::string& moduleName) const;
 
     CompilerOptions m_options;
