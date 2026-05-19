@@ -599,7 +599,40 @@ TypedValue BinaryExprAST::codegen(CodegenContext& context) {
         return TypedValue(context.Builder.CreateCall(SymFn, {L.Val, R.Val}, "symtmp"), TypeKind::Symbolic);
     }
 
-    // Dimensional Analysis
+    // 1. Type checking for binary operations
+    {
+        auto isNumeric = [](TypeKind K) {
+            return K == TypeKind::Double || K == TypeKind::Float ||
+                   K == TypeKind::Int || K == TypeKind::Bool;
+        };
+        if (L.Type.Kind == TypeKind::String || R.Type.Kind == TypeKind::String) {
+            if (Op == '+' || Op == '-' || Op == '*' || Op == '/' ||
+                Op == '<' || Op == '>' ||
+                Op == static_cast<int>(TokenType::tok_less_equal) ||
+                Op == static_cast<int>(TokenType::tok_greater_equal) ||
+                Op == static_cast<int>(TokenType::tok_equal) ||
+                Op == static_cast<int>(TokenType::tok_not_equal)) {
+                std::cerr << "Type error: cannot use string in arithmetic or comparison ('"
+                          << (char)Op << "')" << std::endl;
+                return TypedValue();
+            }
+        }
+        if (L.Type.Kind == TypeKind::Fixed || R.Type.Kind == TypeKind::Fixed) {
+            // Fixed-point arithmetic is handled below
+        } else if (L.Type.Kind == TypeKind::Complex || R.Type.Kind == TypeKind::Complex) {
+            // Complex arithmetic is handled below
+        } else if (L.Type.Kind == TypeKind::Matrix || R.Type.Kind == TypeKind::Matrix ||
+                   L.Type.Kind == TypeKind::ComplexMatrix || R.Type.Kind == TypeKind::ComplexMatrix) {
+            // Matrix ops handled below
+        } else if (!isNumeric(L.Type.Kind) || !isNumeric(R.Type.Kind)) {
+            std::cerr << "Type error: invalid operand types for operator '"
+                      << (char)Op << "' (" << static_cast<int>(L.Type.Kind)
+                      << " and " << static_cast<int>(R.Type.Kind) << ")" << std::endl;
+            return TypedValue();
+        }
+    }
+
+    // 2. Dimensional Analysis
     UnitDimensions ResDims;
     if (Op == '+' || Op == '-') {
         if (L.Type.Dimensions != R.Type.Dimensions) {
