@@ -794,6 +794,57 @@ def main() {
     PASS();
 }
 
+void test_stdlib_stats_jit() {
+    TEST("Auto-imported stats module (variance/std/norm/min/max)");
+    auto old_cwd = fs::current_path();
+    fs::current_path(TESTS_SOURCE_DIR);
+
+    std::string code = R"(
+def main() {
+    var a = linspace(0.0, 1.0, 5)
+    std(a) + min_element(a) + max_element(a)
+}
+)";
+
+    CompilerOptions opts;
+    opts.injectStdlib = true;
+    opts.optimizationLevel = OptimizationLevel::O0;
+    opts.inputName = "auto_import_stats_test.flux";
+    opts.moduleName = "auto_import_stats_test";
+
+    CompilerInstance compiler(opts);
+    std::string error;
+    auto artifacts = compiler.compileToIR(code, &error);
+    if (!artifacts) {
+        fs::current_path(old_cwd);
+        FAIL("Compile error (stats test): " + error);
+        return;
+    }
+
+    auto jit = std::make_unique<FluxJIT>(OptimizationLevel::O0);
+    jit->addModule(
+        std::move(artifacts->codegenContext->OwnedModule),
+        std::move(artifacts->codegenContext->OwnedContext)
+    );
+    registerRuntimeFunctions(*jit);
+
+    void* fn = jit->getPointerToFunction("main");
+    if (!fn) {
+        fs::current_path(old_cwd);
+        FAIL("getPointerToFunction failed for main");
+        return;
+    }
+
+    using Fn = double(*)(double);
+    double result = reinterpret_cast<Fn>(fn)(0.0);
+    // std(linspace(0,1,5)) ≈ 0.3536 + min=0 + max=1 = 1.3536
+    TC(std::abs(result - 1.3536) < 0.01,
+       "expected ~1.3536, got " + std::to_string(result));
+
+    fs::current_path(old_cwd);
+    PASS();
+}
+
 int main() {
     std::string modules_root = TESTS_SOURCE_DIR "/tests/modules";
     std::string mod_dir = setup_module_dir(modules_root);
@@ -842,6 +893,7 @@ int main() {
     test_stdlib_trig_import_jit();
     test_stdlib_array_auto_import_jit();
     test_stdlib_array_utilities_jit();
+    test_stdlib_stats_jit();
 
     if (fs::exists(TESTS_SOURCE_DIR "/stdlib/math.flux")) {
         test_auto_import_jit();
