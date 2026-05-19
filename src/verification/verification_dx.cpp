@@ -21,6 +21,7 @@
 #include <algorithm>
 #include <numeric>
 #include <cmath>
+#include <cctype>
 #include <fstream>
 #include <sstream>
 
@@ -866,22 +867,107 @@ bool FormalVerifier::exportVerificationReport(const std::string& filename, const
 namespace DXUtils {
 
 std::string formatFluxCode(const std::string& code) {
-    // Simple code formatting
-    std::string formatted = code;
-    // TODO: Implement proper formatting
-    return formatted;
+    std::string result;
+    int indent = 0;
+    bool newLine = true;
+    for (size_t i = 0; i < code.size(); ++i) {
+        char c = code[i];
+        if (newLine) {
+            for (int j = 0; j < indent; ++j)
+                result += "  ";
+            newLine = false;
+        }
+        if (c == '{') {
+            result += " {\n";
+            ++indent;
+            newLine = true;
+        } else if (c == '}') {
+            --indent;
+            if (!result.empty() && result.back() != '\n')
+                result += '\n';
+            for (int j = 0; j < indent; ++j)
+                result += "  ";
+            result += "}\n";
+            newLine = true;
+        } else if (c == ';') {
+            result += ";\n";
+            newLine = true;
+        } else if (c == '\n') {
+            result += '\n';
+            newLine = true;
+        } else if (c == '\r' || c == '\t') {
+            // skip carriage returns; replace tabs with spaces
+            if (c == '\t') result += "  ";
+        } else {
+            result += c;
+        }
+    }
+    if (!result.empty() && result.back() != '\n')
+        result += '\n';
+    return result;
 }
 
 std::string lintFluxCode(const std::string& code, std::vector<std::string>& warnings) {
     warnings.clear();
-    // TODO: Implement linting
-    return "";
+    int braceDepth = 0;
+    int parenDepth = 0;
+    bool inString = false;
+    size_t lineStart = 0;
+
+    for (size_t i = 0; i < code.size(); ++i) {
+        char c = code[i];
+        if (c == '"' && (i == 0 || code[i-1] != '\\'))
+            inString = !inString;
+        if (inString) continue;
+        if (c == '\n') {
+            std::string line = code.substr(lineStart, i - lineStart);
+            lineStart = i + 1;
+        }
+        if (c == '{') ++braceDepth;
+        else if (c == '}') --braceDepth;
+        else if (c == '(') ++parenDepth;
+        else if (c == ')') --parenDepth;
+    }
+
+    if (braceDepth > 0)
+        warnings.push_back("Unmatched opening brace '{'");
+    else if (braceDepth < 0)
+        warnings.push_back("Extra closing brace '}'");
+    if (parenDepth > 0)
+        warnings.push_back("Unmatched opening parenthesis '('");
+    else if (parenDepth < 0)
+        warnings.push_back("Extra closing parenthesis ')'");
+    if (inString)
+        warnings.push_back("Unterminated string literal");
+
+    return warnings.empty() ? "No issues found" : "Warnings found";
 }
 
 bool checkTypes(const std::string& code, std::vector<std::string>& errors) {
     errors.clear();
-    // TODO: Implement type checking
-    return true;
+    int braceDepth = 0;
+    int parenDepth = 0;
+    bool inString = false;
+
+    for (size_t i = 0; i < code.size(); ++i) {
+        char c = code[i];
+        if (c == '"' && (i == 0 || code[i-1] != '\\'))
+            inString = !inString;
+        if (inString) continue;
+        if (c == '{') ++braceDepth;
+        else if (c == '}') --braceDepth;
+        else if (c == '(') ++parenDepth;
+        else if (c == ')') --parenDepth;
+    }
+
+    if (braceDepth != 0)
+        errors.push_back("Mismatched braces");
+    if (parenDepth != 0)
+        errors.push_back("Mismatched parentheses");
+    if (inString)
+        errors.push_back("Unterminated string literal");
+
+    return errors.empty();
 }
 
 std::string renameSymbol(const std::string& code, const std::string& old_name, const std::string& new_name) {
@@ -895,12 +981,80 @@ std::string renameSymbol(const std::string& code, const std::string& old_name, c
 }
 
 std::string extractFunction(const std::string& code, const std::string& func_name, int start_line, int end_line) {
-    // TODO: Implement function extraction
-    return "";
+    if (start_line < 1) start_line = 1;
+    if (end_line < start_line) end_line = start_line;
+
+    // Find function definition by name
+    std::string target = "def " + func_name;
+    size_t defPos = code.find(target);
+    if (defPos == std::string::npos)
+        return "";
+
+    // Count newlines up to defPos to get function start line
+    int defLine = 1;
+    for (size_t i = 0; i < defPos; ++i) {
+        if (code[i] == '\n') ++defLine;
+    }
+
+    // Collect lines from start_line to end_line (relative to function position)
+    size_t lineCount = 0;
+    size_t extractStart = 0;
+    size_t extractEnd = code.size();
+    for (size_t i = 0; i < code.size(); ++i) {
+        if (lineCount + 1 == (size_t)start_line)
+            extractStart = i;
+        if (lineCount == (size_t)end_line) {
+            extractEnd = i;
+            break;
+        }
+        if (code[i] == '\n') ++lineCount;
+    }
+
+    if (extractEnd <= extractStart) return "";
+    return code.substr(extractStart, extractEnd - extractStart);
 }
 
 std::string generateDocstring(const std::string& func_signature) {
-    return "/**\n * TODO: Add description\n */";
+    // Parse "def name(p1, p2, ...)" and generate a Javadoc-style docstring
+    std::string sig = func_signature;
+    // Strip leading whitespace
+    size_t sigStart = sig.find_first_not_of(" \t");
+    if (sigStart != std::string::npos) sig = sig.substr(sigStart);
+    // Must start with "def "
+    if (sig.find("def ") != 0) {
+        return "/**\n * " + sig + "\n */";
+    }
+    sig = sig.substr(4); // remove "def "
+
+    // Extract function name
+    size_t parenPos = sig.find('(');
+    std::string funcName = (parenPos != std::string::npos) ? sig.substr(0, parenPos) : sig;
+
+    std::ostringstream oss;
+    oss << "/**\n";
+    oss << " * " << funcName << " — TODO: Add description\n";
+
+    // Extract parameters
+    if (parenPos != std::string::npos) {
+        size_t closeParen = sig.find(')', parenPos);
+        if (closeParen != std::string::npos) {
+            std::string params = sig.substr(parenPos + 1, closeParen - parenPos - 1);
+            std::stringstream pss(params);
+            std::string p;
+            while (std::getline(pss, p, ',')) {
+                size_t pStart = p.find_first_not_of(" \t");
+                size_t pEnd = p.find_last_not_of(" \t");
+                if (pStart != std::string::npos && pEnd != std::string::npos) {
+                    p = p.substr(pStart, pEnd - pStart + 1);
+                    oss << " * @param " << p << " TODO: Add description\n";
+                }
+            }
+        }
+    }
+
+    oss << " * @return TODO: Add description\n";
+    oss << " */";
+    return oss.str();
 }
 
 std::string generateExample(const std::string& func_name) {
@@ -915,10 +1069,70 @@ DXUtils::CodeMetrics analyzeCode(const std::string& code) {
     metrics.blank_lines = 0;
     metrics.num_functions = 0;
     metrics.num_variables = 0;
-    metrics.cyclomatic_complexity = 0;
-    metrics.maintainability_index = 0.0;
-    
-    // TODO: Implement proper analysis
+    metrics.cyclomatic_complexity = 1;
+    metrics.maintainability_index = 100.0;
+
+    bool inString = false;
+    bool inBlockComment = false;
+    int lineStart = 0;
+
+    for (size_t i = 0; i <= code.size(); ++i) {
+        char c = (i < code.size()) ? code[i] : '\n';
+        if (c == '"' && !inBlockComment && (i == 0 || code[i-1] != '\\'))
+            inString = !inString;
+        if (inString) continue;
+
+        if (!inBlockComment && c == '/' && i+1 < code.size() && code[i+1] == '*') {
+            inBlockComment = true;
+            ++i;
+            continue;
+        }
+        if (inBlockComment && c == '*' && i+1 < code.size() && code[i+1] == '/') {
+            inBlockComment = false;
+            ++i;
+            continue;
+        }
+
+        if (c == '\n') {
+            ++metrics.total_lines;
+            std::string line = (lineStart < (int)code.size())
+                ? code.substr(lineStart, i - lineStart) : "";
+            lineStart = i + 1;
+
+            // Trim
+            size_t first = line.find_first_not_of(" \t\r");
+            if (first == std::string::npos) {
+                ++metrics.blank_lines;
+            } else if (line[first] == '/' && first+1 < line.size() && line[first+1] == '/') {
+                ++metrics.comment_lines;
+            } else {
+                ++metrics.code_lines;
+                // Count def/var/let/if/while/for/else/elif
+                std::string trimmed = line.substr(first);
+                if (trimmed.find("def ") == 0) ++metrics.num_functions;
+                if (trimmed.find("var ") == 0 || trimmed.find("let ") == 0)
+                    ++metrics.num_variables;
+                // Cyclomatic complexity: if/while/for/else/elif/&&/||
+                for (size_t j = 0; j < trimmed.size(); ++j) {
+                    if (trimmed[j] == 'i' && trimmed.substr(j, 2) == "if" &&
+                        (j+2 >= trimmed.size() || !isalnum(trimmed[j+2])))
+                        ++metrics.cyclomatic_complexity;
+                    if (trimmed[j] == 'e' && trimmed.substr(j, 4) == "else" &&
+                        (j+4 >= trimmed.size() || !isalnum(trimmed[j+4])))
+                        ++metrics.cyclomatic_complexity;
+                    if (trimmed[j] == 'w' && trimmed.substr(j, 5) == "while" &&
+                        (j+5 >= trimmed.size() || !isalnum(trimmed[j+5])))
+                        ++metrics.cyclomatic_complexity;
+                    if (trimmed[j] == 'f' && trimmed.substr(j, 3) == "for" &&
+                        (j+3 >= trimmed.size() || !isalnum(trimmed[j+3])))
+                        ++metrics.cyclomatic_complexity;
+                    if (trimmed.substr(j, 2) == "&&" || trimmed.substr(j, 2) == "||")
+                        ++metrics.cyclomatic_complexity;
+                }
+            }
+        }
+    }
+
     return metrics;
 }
 
