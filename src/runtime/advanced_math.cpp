@@ -306,8 +306,7 @@ double flux_erfc(double x) { return std::erfc(x); }
 double flux_gamma(double x) { return std::tgamma(x); }
 double flux_lgamma(double x) { return std::lgamma(x); }
 
-#ifdef __has_include
-#if __has_include(<cmath>)
+#if defined(__cpp_lib_math_special_functions) && __cpp_lib_math_special_functions >= 201603L
 double flux_bessel_j0(double x) { return std::cyl_bessel_j(0.0, x); }
 double flux_bessel_j1(double x) { return std::cyl_bessel_j(1.0, x); }
 double flux_bessel_y0(double x) { return std::cyl_neumann(0.0, x); }
@@ -318,13 +317,6 @@ double flux_bessel_j1(double x) { (void)x; return 0.0; }
 double flux_bessel_y0(double x) { (void)x; return 0.0; }
 double flux_bessel_y1(double x) { (void)x; return 0.0; }
 #endif
-#else
-double flux_bessel_j0(double x) { return std::cyl_bessel_j(0.0, x); }
-double flux_bessel_j1(double x) { return std::cyl_bessel_j(1.0, x); }
-double flux_bessel_y0(double x) { return std::cyl_neumann(0.0, x); }
-double flux_bessel_y1(double x) { return std::cyl_neumann(1.0, x); }
-#endif
-
 // ============================================================================
 // Signal Processing
 // ============================================================================
