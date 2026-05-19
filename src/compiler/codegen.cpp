@@ -135,6 +135,14 @@ TypedValue NumberExprAST::codegen(CodegenContext& context) {
     return TypedValue(llvm::ConstantFP::get(context.TheContext, llvm::APFloat(finalVal)), FluxType(TypeKind::Double, dims));
 }
 
+TypedValue IntExprAST::codegen(CodegenContext& context) {
+    emitLocation(this, context);
+    return TypedValue(
+        llvm::ConstantInt::getSigned(llvm::Type::getInt32Ty(context.TheContext), Val),
+        FluxType(TypeKind::Int)
+    );
+}
+
 TypedValue FixedExprAST::codegen(CodegenContext& context) {
     emitLocation(this, context);
     llvm::Type* IntTy = llvm::Type::getIntNTy(context.TheContext, Bits);
@@ -900,7 +908,7 @@ TypedValue BinaryExprAST::codegen(CodegenContext& context) {
         if (Res) return TypedValue(Res, L.Type);
     }
 
-    bool isIntOp = LV->getType()->isIntegerTy() && RV->getType()->isIntegerTy();
+    bool isIntOp = LV->getType() == RV->getType() && LV->getType()->isIntegerTy();
 
     switch (Op) {
     case '+':

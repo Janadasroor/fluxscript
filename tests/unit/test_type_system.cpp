@@ -371,6 +371,128 @@ void test_bool_to_int() {
     TPASS;
 }
 
+// ----------------------------------------------------------------
+// Test 14: integer literal (bare digits → i32)
+// ----------------------------------------------------------------
+void test_int_literal() {
+    TEST("integer literal returns correct i32 value");
+    std::string source = R"(
+        def main() {
+            42
+        }
+    )";
+
+    void* fn = nullptr;
+    auto* jit = compile_script(source, &fn, "main");
+    TC(jit != nullptr && fn != nullptr, "compile failed");
+
+    using Fn = double(*)();
+    auto f = reinterpret_cast<Fn>(fn);
+    double r = f();
+    // Declared return type is double, so 42 is SIToFP-promoted to 42.0
+    TC(r == 42.0, "42 should be 42.0, got " + std::to_string(r));
+
+    delete jit;
+    TPASS;
+}
+
+// ----------------------------------------------------------------
+// Test 15: integer literal in arithmetic with doubles
+// ----------------------------------------------------------------
+void test_int_literal_math() {
+    TEST("int literal promotes to double in mixed arithmetic");
+    std::string source = R"(
+        def main() {
+            5 + 3.0
+        }
+    )";
+
+    void* fn = nullptr;
+    auto* jit = compile_script(source, &fn, "main");
+    TC(jit != nullptr && fn != nullptr, "compile failed");
+
+    using Fn = double(*)();
+    auto f = reinterpret_cast<Fn>(fn);
+    double r = f();
+    TC(std::abs(r - 8.0) < 0.001, "5 + 3.0 should be 8.0, got " + std::to_string(r));
+
+    delete jit;
+    TPASS;
+}
+
+// ----------------------------------------------------------------
+// Test 16: integer literal with int variable
+// ----------------------------------------------------------------
+void test_int_literal_var() {
+    TEST("int literal assigned to int variable");
+    std::string source = R"(
+        def main() {
+            let x: int = 10
+            x + 5
+        }
+    )";
+
+    void* fn = nullptr;
+    auto* jit = compile_script(source, &fn, "main");
+    TC(jit != nullptr && fn != nullptr, "compile failed");
+
+    using Fn = double(*)();
+    auto f = reinterpret_cast<Fn>(fn);
+    double r = f();
+    TC(std::abs(r - 15.0) < 0.001, "10 + 5 should be 15.0, got " + std::to_string(r));
+
+    delete jit;
+    TPASS;
+}
+
+// ----------------------------------------------------------------
+// Test 17: float literal still works (has decimal point)
+// ----------------------------------------------------------------
+void test_float_literal() {
+    TEST("float literal (with decimal point) still works");
+    std::string source = R"(
+        def main() {
+            3.14
+        }
+    )";
+
+    void* fn = nullptr;
+    auto* jit = compile_script(source, &fn, "main");
+    TC(jit != nullptr && fn != nullptr, "compile failed");
+
+    using Fn = double(*)();
+    auto f = reinterpret_cast<Fn>(fn);
+    double r = f();
+    TC(std::abs(r - 3.14) < 0.001, "3.14 should be 3.14, got " + std::to_string(r));
+
+    delete jit;
+    TPASS;
+}
+
+// ----------------------------------------------------------------
+// Test 18: negative integer literal
+// ----------------------------------------------------------------
+void test_neg_int_literal() {
+    TEST("negative integer literal works");
+    std::string source = R"(
+        def main() {
+            -7 + 3.0
+        }
+    )";
+
+    void* fn = nullptr;
+    auto* jit = compile_script(source, &fn, "main");
+    TC(jit != nullptr && fn != nullptr, "compile failed");
+
+    using Fn = double(*)();
+    auto f = reinterpret_cast<Fn>(fn);
+    double r = f();
+    TC(std::abs(r - (-4.0)) < 0.001, "-7 + 3.0 should be -4.0, got " + std::to_string(r));
+
+    delete jit;
+    TPASS;
+}
+
 int main() {
     std::cout << "=== Type System Tests ===\n";
 
@@ -387,6 +509,11 @@ int main() {
     test_while_bool();
     test_chained_logic();
     test_bool_to_int();
+    test_int_literal();
+    test_int_literal_math();
+    test_int_literal_var();
+    test_float_literal();
+    test_neg_int_literal();
 
     std::cout << "\nResults: " << g_passed << " passed, " << g_failed << " failed\n";
     return g_failed > 0 ? 1 : 0;

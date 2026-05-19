@@ -33,6 +33,9 @@
 #include <iostream>
 #include <cstdio>
 #include <sstream>
+#include <sys/mman.h>
+#include <unistd.h>
+#include <cstdint>
 
 // Complex number helper functions (C linkage for easy JIT binding)
 extern "C" {
@@ -292,12 +295,67 @@ void FluxJIT::addObjectFile(std::unique_ptr<llvm::MemoryBuffer> ObjectBuffer) {
     }
 }
 
+bool FluxJIT::redirectFunction(const std::string& Name, void* oldAddr, void* newAddr) {
+    if (!oldAddr || !newAddr) return false;
+
+    // Relative JMP rel32: E9 <4-byte-little-endian-offset>
+    // Offset = destination - (source + instruction_length)
+    // instruction_length = 5 (1 byte opcode + 4 bytes offset)
+    intptr_t src = reinterpret_cast<intptr_t>(oldAddr);
+    intptr_t dst = reinterpret_cast<intptr_t>(newAddr);
+    int64_t delta = dst - (src + 5);
+
+    // Check we can reach with a 32-bit signed offset
+    if (delta < INT32_MIN || delta > INT32_MAX) {
+        llvm::errs() << "[FluxJIT] " << Name << " too far (" << delta
+                     << " bytes) for rel32 JMP\n";
+        return false;
+    }
+    int32_t offset = static_cast<int32_t>(delta);
+
+    // Make the page containing the function writable
+    long pageSize = sysconf(_SC_PAGESIZE);
+    if (pageSize <= 0) pageSize = 4096;
+    void* pageStart = reinterpret_cast<void*>(
+        reinterpret_cast<intptr_t>(oldAddr) & ~(pageSize - 1));
+    if (mprotect(pageStart, pageSize, PROT_READ | PROT_WRITE | PROT_EXEC) != 0) {
+        llvm::errs() << "[FluxJIT] mprotect failed for " << Name << "\n";
+        return false;
+    }
+
+    // Write JMP rel32 at oldAddr
+    auto* code = reinterpret_cast<uint8_t*>(oldAddr);
+    code[0] = 0xE9;
+    code[1] = static_cast<uint8_t>(offset & 0xFF);
+    code[2] = static_cast<uint8_t>((offset >> 8) & 0xFF);
+    code[3] = static_cast<uint8_t>((offset >> 16) & 0xFF);
+    code[4] = static_cast<uint8_t>((offset >> 24) & 0xFF);
+
+    // Restore protection (the JMP redirect is now live)
+    mprotect(pageStart, pageSize, PROT_READ | PROT_EXEC);
+
+    // Flush instruction cache to ensure the JMP is visible
+    __builtin___clear_cache(oldAddr, reinterpret_cast<void*>(
+        reinterpret_cast<intptr_t>(oldAddr) + 5));
+
+    return true;
+}
+
 void* FluxJIT::promoteFunction(const std::string& Name, OptimizationLevel targetLevel) {
     {
         std::lock_guard<std::mutex> lock(m_fnMapMutex);
         auto it = m_promotedPtrs.find(Name);
         if (it != m_promotedPtrs.end())
             return it->second;
+    }
+
+    // Grab the original compiled address before we overwrite m_functionPtrs
+    void* originalAddr = nullptr;
+    {
+        std::lock_guard<std::mutex> lock(m_fnMapMutex);
+        auto it = m_functionPtrs.find(Name);
+        if (it != m_functionPtrs.end())
+            originalAddr = it->second;
     }
 
     // Find the saved bitcode for this function
@@ -337,6 +395,18 @@ void* FluxJIT::promoteFunction(const std::string& Name, OptimizationLevel target
         return nullptr;
     }
 
+    // Remove all other definitions from the module to avoid duplicate symbol errors
+    // (the saved bitcode includes every function from the original module)
+    {
+        std::vector<llvm::Function*> toRemove;
+        for (auto& F : *fnModule) {
+            if (&F != func && !F.isDeclaration())
+                toRemove.push_back(&F);
+        }
+        for (auto* F : toRemove)
+            F->eraseFromParent();
+    }
+
     fnModule->setCodeModel(llvm::CodeModel::Large);
     fnModule->setPICLevel(llvm::PICLevel::BigPIC);
 
@@ -370,6 +440,14 @@ void* FluxJIT::promoteFunction(const std::string& Name, OptimizationLevel target
         std::lock_guard<std::mutex> lock(m_fnMapMutex);
         m_promotedPtrs[Name] = ptr;
         m_functionPtrs[Name] = ptr;
+    }
+
+    // Hot-patch original O0 code with a relative JMP to the promoted O3 code.
+    // This redirects ALL existing callers (JIT-to-JIT calls that embedded the O0 address).
+    if (originalAddr && originalAddr != ptr) {
+        if (!redirectFunction(Name, originalAddr, ptr))
+            llvm::errs() << "[FluxJIT] Warning: could not redirect existing callers of "
+                         << Name << "\n";
     }
 
     return ptr;

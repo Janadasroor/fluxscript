@@ -131,6 +131,9 @@ std::string Lexer::tokenSpelling(int token) {
         case TokenType::tok_wavefile: return "WAVEFILE";
         case TokenType::tok_chan: return "CHAN";
 
+        // Integer literal
+        case TokenType::tok_integer: return "integer";
+
         default: return "token(" + std::to_string(token) + ")";
     }
 }
@@ -493,62 +496,76 @@ int Lexer::gettok() {
             return static_cast<int>(TokenType::tok_imaginary);
         }
 
-        // Check for SPICE-style unit suffixes
-        double multiplier = 1.0;
-        bool hasSuffix = false;
-        
-        if (m_lastChar == 'k' || m_lastChar == 'K') {
-            multiplier = 1e3; hasSuffix = true;
-        } else if (m_lastChar == 'm' || m_lastChar == 'M') {
-            // Peek to see if it's 'meg'
-            char peek = m_input[m_pos]; // next char
-            if (peek == 'e' || peek == 'E') {
-                char peek2 = m_input[m_pos + 1];
-                if (peek2 == 'g' || peek2 == 'G') {
-                    multiplier = 1e6; hasSuffix = true;
-                    advance(); advance(); // consume 'e' and 'g'
+        // If the number contains a decimal point, parse as float
+        bool hasDot = NumStr.find('.') != std::string::npos;
+
+        // Alphabetic suffix (SPICE multiplier or unit identifier)
+        if (isalpha(m_lastChar)) {
+            hasDot = true; // any number with a suffix is a float
+            // Check for SPICE-style unit suffixes
+            double multiplier = 1.0;
+            bool hasSuffix = false;
+            
+            if (m_lastChar == 'k' || m_lastChar == 'K') {
+                multiplier = 1e3; hasSuffix = true;
+            } else if (m_lastChar == 'm' || m_lastChar == 'M') {
+                char peek = m_input[m_pos];
+                if (peek == 'e' || peek == 'E') {
+                    char peek2 = m_input[m_pos + 1];
+                    if (peek2 == 'g' || peek2 == 'G') {
+                        multiplier = 1e6; hasSuffix = true;
+                        advance(); advance();
+                    } else {
+                        multiplier = 1e-3; hasSuffix = true;
+                    }
                 } else {
                     multiplier = 1e-3; hasSuffix = true;
                 }
+            } else if (m_lastChar == 'u' || m_lastChar == 'U') {
+                multiplier = 1e-6; hasSuffix = true;
+            } else if (m_lastChar == 'n' || m_lastChar == 'N') {
+                multiplier = 1e-9; hasSuffix = true;
+            } else if (m_lastChar == 'p' || m_lastChar == 'P') {
+                multiplier = 1e-12; hasSuffix = true;
+            } else if (m_lastChar == 'f' || m_lastChar == 'F') {
+                multiplier = 1e-15; hasSuffix = true;
+            } else if (m_lastChar == 'a' || m_lastChar == 'A') {
+                multiplier = 1e-18; hasSuffix = true;
+            } else if (m_lastChar == 'g' || m_lastChar == 'G') {
+                multiplier = 1e9; hasSuffix = true;
+            } else if (m_lastChar == 't' || m_lastChar == 'T') {
+                multiplier = 1e12; hasSuffix = true;
+            }
+
+            StringVal = "";
+            if (hasSuffix) {
+                char suffix = m_lastChar;
+                StringVal += suffix;
+                advance();
+                while (m_lastChar != EOF && (isalpha(m_lastChar) || (unsigned char)m_lastChar > 127)) {
+                    StringVal += m_lastChar;
+                    advance();
+                }
             } else {
-                multiplier = 1e-3; hasSuffix = true;
+                while (m_lastChar != EOF && (isalpha(m_lastChar) || (unsigned char)m_lastChar > 127)) {
+                    StringVal += m_lastChar;
+                    advance();
+                }
             }
-        } else if (m_lastChar == 'u' || m_lastChar == 'U') {
-            multiplier = 1e-6; hasSuffix = true;
-        } else if (m_lastChar == 'n' || m_lastChar == 'N') {
-            multiplier = 1e-9; hasSuffix = true;
-        } else if (m_lastChar == 'p' || m_lastChar == 'P') {
-            multiplier = 1e-12; hasSuffix = true;
-        } else if (m_lastChar == 'f' || m_lastChar == 'F') {
-            multiplier = 1e-15; hasSuffix = true;
-        } else if (m_lastChar == 'a' || m_lastChar == 'A') {
-            multiplier = 1e-18; hasSuffix = true;
-        } else if (m_lastChar == 'g' || m_lastChar == 'G') {
-            multiplier = 1e9; hasSuffix = true;
-        } else if (m_lastChar == 't' || m_lastChar == 'T') {
-            multiplier = 1e12; hasSuffix = true;
+
+            NumVal = strtod(NumStr.c_str(), nullptr);
+            return static_cast<int>(TokenType::tok_number);
         }
 
-        StringVal = "";
-        if (hasSuffix) {
-            char suffix = m_lastChar;
-            StringVal += suffix; // Add the multiplier prefix to the unit string
-            advance(); // consume the suffix
-            // Capture rest of unit name (e.g. "V", "A", "Ohm")
-            while (isalpha(m_lastChar) || (unsigned char)m_lastChar > 127) {
-                StringVal += m_lastChar;
-                advance();
-            }
-        } else {
-            // Check if a unit follows even without a SPICE prefix (e.g., 5V)
-            while (isalpha(m_lastChar) || (unsigned char)m_lastChar > 127) {
-                StringVal += m_lastChar;
-                advance();
-            }
+        if (hasDot) {
+            // Has decimal point → parse as float
+            NumVal = strtod(NumStr.c_str(), nullptr);
+            return static_cast<int>(TokenType::tok_number);
         }
 
-        NumVal = strtod(NumStr.c_str(), nullptr);
-        return static_cast<int>(TokenType::tok_number);
+        // Bare integer literal (no '.', 'e', 'j', or suffix)
+        IntVal = strtoll(NumStr.c_str(), nullptr, 10);
+        return static_cast<int>(TokenType::tok_integer);
     }
     
     // Handle numbers starting with decimal point (.5) or element-wise operators (.*)

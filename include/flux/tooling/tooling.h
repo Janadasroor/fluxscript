@@ -19,6 +19,7 @@
 #include <string>
 #include <vector>
 
+#include <llvm/IR/Module.h>
 #include <llvm/Support/MemoryBuffer.h>
 
 #include "flux/compiler/compiler_instance.h"
@@ -90,6 +91,12 @@ ProfileResult profileScript(JITEngine& engine,
                             const std::string& entryPoint,
                             int iterations,
                             std::string* error = nullptr);
+
+// Persistent JIT cache: bitcode save/load
+bool saveBitcodeToFile(llvm::Module& M, const std::string& path, std::string* error = nullptr);
+std::unique_ptr<llvm::Module> loadBitcodeFromFile(const std::string& path,
+                                                   llvm::LLVMContext& Ctx,
+                                                   std::string* error = nullptr);
 
 } // namespace Tooling
 } // namespace Flux

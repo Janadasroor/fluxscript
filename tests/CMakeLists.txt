@@ -210,6 +210,9 @@ add_test_entry(flux-test-tiered-jit "Tiered JIT")
 add_test_executable(flux-test-type-system unit/test_type_system.cpp)
 add_test_entry(flux-test-type-system "Type System")
 
+add_test_executable(flux-test-persistent-cache unit/test_persistent_cache.cpp)
+add_test_entry(flux-test-persistent-cache "Persistent JIT Cache")
+
 set_tests_properties(
     flux-test-phase5
     flux-test-phase7-1
@@ -243,6 +246,7 @@ set_tests_properties(
     flux-test-advanced-math
     flux-test-tiered-jit
     flux-test-type-system
+    flux-test-persistent-cache
     PROPERTIES
         WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
         TIMEOUT 120

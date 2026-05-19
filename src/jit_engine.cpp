@@ -13,6 +13,7 @@
 
 #include "flux/jit/flux_jit.h"
 #include <llvm/Support/Error.h>
+#include <llvm/Bitcode/BitcodeReader.h>
 
 #ifdef emit
 #undef emit
@@ -86,24 +87,44 @@ bool JITEngine::isInitialized() const {
 
 bool JITEngine::compileScript(const std::string& code, std::string* error) {
     if (!m_initialized) initialize();
-    CompilerInstance compiler(m_compilerOptions);
     m_overloadedFunctions.clear();
     m_lastCompileUsedCache = false;
 
     const std::string cacheKey = Tooling::computeCacheKey(code, m_compilerOptions);
     const std::filesystem::path cacheDir(m_cacheDirectory);
-    const std::filesystem::path objectPath = cacheDir / (cacheKey + ".o");
+    const std::filesystem::path bcPath = cacheDir / (cacheKey + ".bc");
     const std::filesystem::path metaPath = cacheDir / (cacheKey + ".meta");
 
-    if (m_cacheEnabled && std::filesystem::exists(metaPath)) {
-        Tooling::loadReturnTypes(metaPath.string(), m_functionReturnTypes, nullptr);
+    // --- Cache hit: load bitcode from disk, skip parse+codegen ---
+    if (m_cacheEnabled && std::filesystem::exists(bcPath)) {
+        auto Ctx = std::make_unique<llvm::LLVMContext>();
+        auto M = Tooling::loadBitcodeFromFile(bcPath.string(), *Ctx, error);
+        if (M) {
+            Tooling::loadReturnTypes(metaPath.string(), m_functionReturnTypes, error);
+            m_jit->addModule(std::move(M), std::move(Ctx));
+            m_lastCompileUsedCache = true;
+            return true;
+        }
+        // If load failed (e.g. corrupted file), fall through and recompile
+        if (error) error->clear();
+        std::filesystem::remove(bcPath);
+        std::filesystem::remove(metaPath);
     }
 
+    // --- Cache miss: compile from source ---
+    CompilerInstance compiler(m_compilerOptions);
     auto artifacts = compiler.compileToIR(code, error);
     if (!artifacts) return false;
     m_functionReturnTypes = artifacts->functionReturnTypes;
 
     m_codegenCtx = std::move(artifacts->codegenContext);
+
+    // --- Cache: save bitcode + return types ---
+    if (m_cacheEnabled) {
+        Tooling::saveBitcodeToFile(*m_codegenCtx->TheModule, bcPath.string(), nullptr);
+        Tooling::saveReturnTypes(metaPath.string(), m_functionReturnTypes, nullptr);
+    }
+
     m_jit->addModule(std::move(m_codegenCtx->OwnedModule), std::move(m_codegenCtx->OwnedContext));
     m_codegenCtx.reset();
     return true;
@@ -212,6 +233,15 @@ bool JITEngine::getDefine(const std::string& name) const {
 
 void JITEngine::setOptimizationLevelForModules(OptimizationLevel level) {
     // Simplified for now
+}
+
+void JITEngine::clearJITCache() {
+    if (!m_cacheDirectory.empty()) {
+        std::error_code ec;
+        for (auto& entry : std::filesystem::directory_iterator(m_cacheDirectory, ec)) {
+            std::filesystem::remove(entry.path(), ec);
+        }
+    }
 }
 
 // --- Tiered JIT ---

@@ -87,6 +87,12 @@ bool Parser::IsSynchronizationToken(int token) {
 std::unique_ptr<ExprAST> Parser::ParseNumberExpr() {
     int line = m_lexer.getCurrentLine();
     int col = m_lexer.getCurrentColumn();
+    if (CurTok == static_cast<int>(TokenType::tok_integer)) {
+        auto Result = std::make_unique<IntExprAST>(m_lexer.IntVal);
+        getNextToken();
+        Result->setLocation(line, col);
+        return Result;
+    }
     auto Result = std::make_unique<NumberExprAST>(m_lexer.NumVal, m_lexer.StringVal);
     getNextToken();
     Result->setLocation(line, col);
@@ -685,7 +691,8 @@ std::unique_ptr<ExprAST> Parser::ParsePrimary() {
     std::unique_ptr<ExprAST> Res;
     switch (CurTok) {
     case static_cast<int>(TokenType::tok_identifier): Res = ParseIdentifierExpr(); break;
-    case static_cast<int>(TokenType::tok_number): Res = ParseNumberExpr(); break;
+    case static_cast<int>(TokenType::tok_number):
+    case static_cast<int>(TokenType::tok_integer): Res = ParseNumberExpr(); break;
     case static_cast<int>(TokenType::tok_true):
     case static_cast<int>(TokenType::tok_false): Res = ParseBoolExpr(); break;
     case static_cast<int>(TokenType::tok_fixed): Res = ParseFixedExpr(); break;

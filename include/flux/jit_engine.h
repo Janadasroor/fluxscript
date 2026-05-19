@@ -61,6 +61,7 @@ public:
     void setJITCacheDirectory(std::string directory) { m_cacheDirectory = std::move(directory); }
     const std::string& getJITCacheDirectory() const { return m_cacheDirectory; }
     bool lastCompileUsedCache() const { return m_lastCompileUsedCache; }
+    void clearJITCache();
 
     // Module system integration
     ModuleLoader& getModuleLoader() { return ModuleLoader::instance(); }

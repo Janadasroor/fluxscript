@@ -23,14 +23,19 @@
 #include <optional>
 #include <regex>
 #include <sstream>
+#include <array>
 
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/IR/LegacyPassManager.h>
 #include <llvm/MC/TargetRegistry.h>
 #include <llvm/Support/FileSystem.h>
+#include <llvm/Support/SHA256.h>
 #include <llvm/Support/TargetSelect.h>
 #include <llvm/TargetParser/Host.h>
 #include <llvm/Target/TargetMachine.h>
+#include <llvm/Bitcode/BitcodeReader.h>
+#include <llvm/Bitcode/BitcodeWriter.h>
+#include <llvm/Support/MemoryBuffer.h>
 
 #include "flux/jit_engine.h"
 
@@ -156,9 +161,12 @@ std::string computeCacheKey(const std::string& code, const CompilerOptions& opti
     const std::string payload = code + "|" + options.inputName + "|" + options.moduleName + "|" +
                                 std::to_string(static_cast<int>(options.optimizationLevel)) + "|" +
                                 (options.debugInfo ? "dbg" : "nodbg");
-    const auto hashValue = std::hash<std::string>{}(payload);
+    llvm::SHA256 hasher;
+    hasher.update(payload);
+    auto hash = hasher.final();
     std::ostringstream os;
-    os << std::hex << hashValue;
+    for (uint8_t byte : hash)
+        os << std::hex << std::setw(2) << std::setfill('0') << static_cast<int>(byte);
     return os.str();
 }
 
@@ -427,6 +435,44 @@ ProfileResult profileScript(JITEngine& engine,
     result.compileMs = std::chrono::duration<double, std::milli>(compileEnd - compileStart).count();
     result.runMs = std::chrono::duration<double, std::milli>(runEnd - runStart).count();
     return result;
+}
+
+// ---- Persistent JIT Cache: bitcode save/load ----
+
+bool saveBitcodeToFile(llvm::Module& M, const std::string& path, std::string* error) {
+    if (!ensureParentDirectory(path, error))
+        return false;
+
+    std::error_code ec;
+    llvm::raw_fd_ostream OS(path, ec, llvm::sys::fs::OF_None);
+    if (ec) {
+        if (error) *error = ec.message();
+        return false;
+    }
+    llvm::WriteBitcodeToFile(M, OS);
+    OS.flush();
+    return true;
+}
+
+std::unique_ptr<llvm::Module> loadBitcodeFromFile(const std::string& path,
+                                                    llvm::LLVMContext& Ctx,
+                                                    std::string* error) {
+    auto buf = llvm::MemoryBuffer::getFile(path);
+    if (!buf) {
+        if (error) *error = "Could not open bitcode file: " + path;
+        return nullptr;
+    }
+    auto mod = llvm::parseBitcodeFile((*buf)->getMemBufferRef(), Ctx);
+    if (!mod) {
+        if (error) {
+            llvm::raw_string_ostream os(*error);
+            llvm::handleAllErrors(mod.takeError(), [&](const llvm::ErrorInfoBase& EI) {
+                os << EI.message();
+            });
+        }
+        return nullptr;
+    }
+    return std::move(*mod);
 }
 
 } // namespace Flux::Tooling

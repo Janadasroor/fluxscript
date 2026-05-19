@@ -285,6 +285,14 @@ public:
     const std::string& getUnit() const { return Unit; }
 };
 
+class IntExprAST : public ExprAST {
+    int64_t Val;
+public:
+    IntExprAST(int64_t Val) : Val(Val) {}
+    TypedValue codegen(CodegenContext& context) override;
+    int64_t getValue() const { return Val; }
+};
+
 class FixedExprAST : public ExprAST {
     double Val;
     int Bits;

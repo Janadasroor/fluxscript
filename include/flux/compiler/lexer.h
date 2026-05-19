@@ -371,6 +371,9 @@ enum class TokenType {
     // VioMATRIXC Integration: WAVEFILE Source
     tok_wavefile = -275,            // WAVEFILE voltage/current source
     tok_chan = -276,                // CHAN parameter for WAVEFILE
+
+    // Integer literal (bare digits, no decimal / exponent / unit)
+    tok_integer = -300,
 };
 
 class Lexer {
@@ -385,6 +388,7 @@ public:
     // Context for the current token
     std::string IdentifierStr; // Filled if tok_identifier
     double NumVal;             // Filled if tok_number
+    int64_t IntVal;            // Filled if tok_integer
     std::string StringVal;     // Filled if tok_string
 
     int CurTok;

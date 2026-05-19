@@ -12,6 +12,7 @@
 #include <string>
 #include <vector>
 #include <cstdlib>
+#include <cstdint>
 
 static int g_passed = 0, g_failed = 0;
 #define TEST(x) std::cout << "  " << x << "... "
@@ -316,6 +317,109 @@ void test_benchmark_speedup() {
     TPASS;
 }
 
+// ----------------------------------------------------------------
+// Test 8: redirect via JMP at original address (structural verification)
+// ----------------------------------------------------------------
+void test_redirect_jmp_bytes() {
+    TEST("original address contains JMP rel32 to promoted address");
+
+    std::string source = R"(
+        def main() {
+            var s = 0.0
+            var i = 0.0
+            while i < 100.0 do {
+                s = s + i * 0.5
+                i = i + 1.0
+            }
+            s
+        }
+    )";
+
+    void* fn = nullptr;
+    auto* jit = compile_script(source, &fn, "main");
+    TC(jit != nullptr && fn != nullptr, "compile failed");
+    TC(fn != nullptr, "original address is null");
+
+    using Fn = double(*)();
+
+    // Verify O0 is correct before promotion
+    auto o0 = reinterpret_cast<Fn>(fn);
+    double r0 = o0();
+    TC(std::abs(r0 - 2475.0) < 1.0, "O0 result wrong before promotion: " + std::to_string(r0));
+
+    auto* promoted = jit->promoteFunction("main", OptimizationLevel::O3);
+    TC(promoted != nullptr, "promoteFunction returned null");
+    TC(promoted != fn, "promoted address should differ from original");
+
+    // Structural check: first 5 bytes of original address contain JMP rel32
+    auto* code = reinterpret_cast<const uint8_t*>(fn);
+    TC(code[0] == 0xE9, "first byte should be JMP rel32 (0xE9)");
+    int32_t encodedOffset =
+        static_cast<int32_t>(code[1]) |
+        (static_cast<int32_t>(code[2]) << 8) |
+        (static_cast<int32_t>(code[3]) << 16) |
+        (static_cast<int32_t>(code[4]) << 24);
+    auto* expectedDest = reinterpret_cast<void*>(
+        reinterpret_cast<intptr_t>(fn) + 5 + encodedOffset);
+    TC(expectedDest == promoted, "JMP target should match promoted address");
+
+    // Verify promoted result directly
+    auto o3 = reinterpret_cast<Fn>(promoted);
+    double r3 = o3();
+    TC(std::abs(r3 - 2475.0) < 1.0, "promoted result wrong: " + std::to_string(r3));
+
+    // Verify redirected result (calling original address → JMP → O3 code)
+    double r_redir = o0();
+    TC(std::abs(r_redir - 2475.0) < 1.0, "redirected result wrong: " + std::to_string(r_redir));
+
+    delete jit;
+    TPASS;
+}
+
+// ----------------------------------------------------------------
+// Test 9: JIT-to-JIT calls work after callee promotion (redirect via JMP)
+// ----------------------------------------------------------------
+void test_jit_to_jit_redirect() {
+    TEST("JIT-to-JIT call still works after callee promotion");
+
+    // Function 'compute' does heavy work; 'main' calls 'compute'.
+    // After compute is promoted, main still has the old O0 address embedded
+    // in its CALL instruction. The JMP redirect ensures it reaches the O3 code.
+    std::string source = R"(
+        def compute(n) {
+            var s = 0.0
+            var i = 0.0
+            while i < n do {
+                s = s + i * i
+                i = i + 1.0
+            }
+            s
+        }
+        def main() {
+            compute(100.0)
+        }
+    )";
+
+    void* mainFn = nullptr;
+    auto* jit = compile_script(source, &mainFn, "main");
+    TC(jit != nullptr && mainFn != nullptr, "compile failed");
+
+    // Promote compute (main still has its old O0 address)
+    jit->promoteFunction("compute", OptimizationLevel::O3);
+    TC(jit->isPromoted("compute"), "compute should be promoted");
+
+    // Call main — it internally calls compute at the original O0 address,
+    // which now has a JMP redirect to the promoted O3 code.
+    using Fn = double(*)();
+    auto main = reinterpret_cast<Fn>(mainFn);
+    double r = main();
+    // Sum of 0^2 + 1^2 + ... + 99^2 = 328350
+    TC(std::abs(r - 328350.0) < 1.0, "wrong result via JIT-to-JIT redirect: " + std::to_string(r));
+
+    delete jit;
+    TPASS;
+}
+
 int main() {
     std::cout << "=== Tiered JIT Tests ===\n";
 
@@ -326,6 +430,8 @@ int main() {
     test_reset_counts();
     test_auto_promote();
     test_benchmark_speedup();
+    test_redirect_jmp_bytes();
+    test_jit_to_jit_redirect();
 
     std::cout << "\nResults: " << g_passed << " passed, " << g_failed << " failed\n";
     return g_failed > 0 ? 1 : 0;

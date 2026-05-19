@@ -100,6 +100,7 @@ private:
     void registerComplexHelpers();
     void optimizeModule(llvm::Module* M, OptimizationLevel level);
     void prepareModule(llvm::Module& M);
+    bool redirectFunction(const std::string& Name, void* oldAddr, void* newAddr);
 
     std::unique_ptr<llvm::orc::LLJIT> m_lljit;
     std::unique_ptr<llvm::PassBuilder> m_passBuilder;
