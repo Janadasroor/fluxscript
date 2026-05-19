@@ -388,40 +388,40 @@ bool CompilerInstance::compileParser(Parser& parser,
                                      std::map<std::string, FluxType>& returnTypes,
                                      std::string& error,
                                      std::map<std::string, bool>& importedModules) const {
-    while (parser.CurTok != static_cast<int>(TokenType::tok_eof)) {
-        std::unique_ptr<FunctionAST> functionAst;
+    // --- Pass 1: Parse all definitions and declare all prototypes ---
+    // This ensures all LLVM function declarations exist with correct types
+    // before any call sites are generated, avoiding auto-declaration with
+    // wrong types (e.g., double instead of matrix struct).
+    std::vector<std::unique_ptr<FunctionAST>> functions;
+    std::unique_ptr<ExprAST> updateFunc;
+    bool hasUpdateFunc = false;
 
-        // Handle stray closing brace (end of block without matching open)
+    while (parser.CurTok != static_cast<int>(TokenType::tok_eof)) {
         if (parser.CurTok == static_cast<int>(TokenType::tok_rbrace)) {
             parser.getNextToken();
             continue;
         }
 
         if (parser.CurTok == static_cast<int>(TokenType::tok_def)) {
-            functionAst = parser.ParseDefinition();
+            auto func = parser.ParseDefinition();
+            if (func) {
+                const std::string& name = func->getProto()->getName();
+                returnTypes[name] = func->getProto()->getReturnType();
+                func->getProto()->codegen(context);
+                functions.push_back(std::move(func));
+            }
         } else if (parser.CurTok == static_cast<int>(TokenType::tok_update)) {
-            // Handle update function at top level - wrap it in FunctionAST so it's treated as a named function
-            auto updateAst = parser.ParseUpdateFunc();
-            if (!updateAst) {
-                error = "Failed to parse update function";
-                return false;
+            auto func = parser.ParseUpdateFunc();
+            if (func) {
+                hasUpdateFunc = true;
+                updateFunc = std::move(func);
             }
-            // We can't easily wrap UpdateFuncAST in FunctionAST because it doesn't use a PrototypeAST
-            // So we just codegen it here and continue. 
-            // Note: This matches the 'extern' and 'import' pattern.
-            returnTypes["update"] = FluxType(TypeKind::Double);
-            if (!updateAst->codegen(context)) {
-                error = "Code generation failed for update function";
-                return false;
-            }
-            continue;
         } else if (parser.CurTok == static_cast<int>(TokenType::tok_import)) {
             auto importAst = parser.ParseImport();
             if (!importAst) {
                 error = "Failed to parse import statement";
                 return false;
             }
-            // Extract import details from the AST
             auto* importExpr = dynamic_cast<ImportExprAST*>(importAst.get());
             if (!importExpr) {
                 error = "Failed to extract import information";
@@ -431,24 +431,21 @@ bool CompilerInstance::compileParser(Parser& parser,
             if (!importModule(moduleName, context, returnTypes, &error, importedModules)) {
                 return false;
             }
-            // Register namespace alias marker so module.func lookups work
             const std::string& alias = importExpr->getAlias().empty() ? moduleName : importExpr->getAlias();
             context.NamedValues[alias + ".*"] = llvm::ConstantPointerNull::get(
                 llvm::PointerType::get(context.TheContext, 0));
-            continue;
         } else if (parser.CurTok == static_cast<int>(TokenType::tok_extern)) {
             auto proto = parser.ParseExtern();
             if (proto) {
                 returnTypes[proto->getName()] = proto->getReturnType();
                 proto->codegen(context);
             }
-            continue;
         } else if (parser.CurTok == static_cast<int>(TokenType::tok_semicolon)) {
             parser.getNextToken();
-            continue;
+        } else if (parser.CurTok == static_cast<int>(TokenType::tok_eof)) {
+            break;
         } else {
             // Collect consecutive expressions into a single anonymous function
-            // This ensures top-level variables declared with 'let' are in the same scope
             std::vector<std::unique_ptr<ExprAST>> Exprs;
             while (parser.CurTok != static_cast<int>(TokenType::tok_eof) &&
                    parser.CurTok != static_cast<int>(TokenType::tok_def) &&
@@ -456,20 +453,19 @@ bool CompilerInstance::compileParser(Parser& parser,
                    parser.CurTok != static_cast<int>(TokenType::tok_import) &&
                    parser.CurTok != static_cast<int>(TokenType::tok_update) &&
                    parser.CurTok != static_cast<int>(TokenType::tok_rbrace)) {
-                
+
                 if (parser.CurTok == static_cast<int>(TokenType::tok_semicolon)) {
                     parser.getNextToken();
                     continue;
                 }
-                
+
                 if (auto E = parser.ParseExpression()) {
                     Exprs.push_back(std::move(E));
                 } else {
-                    // Parser reported error — skip to next sync point and continue
                     parser.SkipToSynchronizationPoint();
                 }
             }
-            
+
             if (!Exprs.empty()) {
                 auto Block = std::make_unique<BlockExprAST>(std::move(Exprs));
                 static unsigned anonCounter = 0;
@@ -479,20 +475,24 @@ bool CompilerInstance::compileParser(Parser& parser,
                 }
                 anonName += "_" + std::to_string(anonCounter++);
                 auto Proto = std::make_unique<PrototypeAST>(anonName, std::vector<std::pair<std::string, FluxType>>(), FluxType(TypeKind::Double));
-                functionAst = std::make_unique<FunctionAST>(std::move(Proto), std::move(Block));
+                functions.push_back(std::make_unique<FunctionAST>(std::move(Proto), std::move(Block)));
             }
         }
+    }
 
-        if (!functionAst) {
-            if (parser.CurTok != static_cast<int>(TokenType::tok_eof))
-                parser.SkipToSynchronizationPoint();
-            continue;
+    // --- Pass 2: Codegen all function bodies ---
+    // All LLVM declarations now exist, so call sites will find the correct types.
+    if (hasUpdateFunc) {
+        returnTypes["update"] = FluxType(TypeKind::Double);
+        if (!updateFunc->codegen(context)) {
+            error = "Code generation failed for update function";
+            return false;
         }
+    }
 
-        const std::string functionName = functionAst->getProto()->getName();
-        returnTypes[functionName] = functionAst->getProto()->getReturnType();
-        if (!functionAst->codegen(context)) {
-            error = "Code generation failed for function: " + functionName;
+    for (auto& func : functions) {
+        if (!func->codegen(context)) {
+            error = "Code generation failed for function: " + func->getProto()->getName();
             return false;
         }
     }

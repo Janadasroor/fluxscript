@@ -2041,6 +2041,30 @@ llvm::Function* FunctionAST::codegen(CodegenContext& context) {
     if (isGenerator) Proto->setGenerator(true);
 
     llvm::Function* TheFunction = context.TheModule->getFunction(Proto->getName());
+    if (TheFunction) {
+        llvm::Type* ExpectedRetTy = Proto->getReturnType().getLLVMType(context.TheContext);
+        bool typeMismatch = (TheFunction->getReturnType() != ExpectedRetTy);
+        if (!typeMismatch) {
+            auto protoArgs = Proto->getArgs();
+            if (TheFunction->arg_size() == protoArgs.size()) {
+                auto funcArgIt = TheFunction->arg_begin();
+                for (size_t i = 0; i < protoArgs.size(); ++i, ++funcArgIt) {
+                    llvm::Type* ExpectedArgTy = protoArgs[i].second.getLLVMType(context.TheContext);
+                    if (funcArgIt->getType() != ExpectedArgTy) {
+                        typeMismatch = true;
+                        break;
+                    }
+                }
+            } else {
+                typeMismatch = true;
+            }
+        }
+        if (typeMismatch) {
+            // Function was auto-declared with wrong types — erase and recreate
+            TheFunction->eraseFromParent();
+            TheFunction = nullptr;
+        }
+    }
     if (!TheFunction) TheFunction = Proto->codegen(context);
     if (!TheFunction) return nullptr;
 

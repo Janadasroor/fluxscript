@@ -324,6 +324,7 @@ target_link_libraries(flux-monte-carlo PRIVATE FluxScript)
 function(add_test_executable target_name source_file)
     add_executable(${target_name} ${CMAKE_CURRENT_SOURCE_DIR}/${source_file})
     target_link_libraries(${target_name} PRIVATE FluxScript)
+    target_compile_definitions(${target_name} PRIVATE TESTS_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
 endfunction()
 
 # Helper function to register test with CTest
