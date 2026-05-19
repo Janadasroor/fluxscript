@@ -552,11 +552,20 @@ std::unique_ptr<CompileArtifacts> CompilerInstance::compileToIR(const std::strin
         }
     }
 
-    if (m_options.injectStdlib)
+    std::map<std::string, bool> importedModules;
+    if (m_options.injectStdlib) {
         injectStandardLibrary(*artifacts->codegenContext, artifacts->functionReturnTypes);
+        // Auto-import standard library modules so they're available without
+        // explicit import. If a module is not found, it's silently skipped.
+        std::vector<std::string> stdlibModules = {"math", "trig"};
+        for (const auto& mod : stdlibModules) {
+            std::string importError;
+            importModule(mod, *artifacts->codegenContext, artifacts->functionReturnTypes,
+                         &importError, importedModules);
+        }
+    }
 
     Parser parser(code); // Constructor primes the lexer with getNextToken()
-    std::map<std::string, bool> importedModules;
     std::string compileError;
     if (!compileParser(parser, *artifacts->codegenContext, artifacts->functionReturnTypes, compileError, importedModules)) {
         if (error) *error = compileError;

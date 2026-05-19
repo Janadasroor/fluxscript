@@ -610,7 +610,60 @@ def main() hypot(3.0, 4.0) + sec(0.0) + log2(8.0) + cbrt(27.0)
     PASS();
 }
 
+void test_auto_import_jit() {
+    TEST("Auto-imported stdlib without explicit import");
+    // Temporarily chdir to the project root so the ModuleLoader finds
+    // CWD/stdlib/math.flux during auto-import.
+    auto old_cwd = fs::current_path();
+    fs::current_path(TESTS_SOURCE_DIR);
+    if (!fs::exists("stdlib/math.flux")) {
+        fs::current_path(old_cwd);
+        FAIL("stdlib/math.flux not found from project root");
+        return;
+    }
 
+    std::string code = R"(
+def main() max(3.0, 7.0) + min(10.0, 4.0) + clamp(15.0, 0.0, 5.0)
+)";
+
+    CompilerOptions opts;
+    opts.injectStdlib = true;
+    opts.optimizationLevel = OptimizationLevel::O0;
+    opts.inputName = "auto_import_test.flux";
+    opts.moduleName = "auto_import_test";
+
+    CompilerInstance compiler(opts);
+    std::string error;
+    auto artifacts = compiler.compileToIR(code, &error);
+    if (!artifacts) {
+        fs::current_path(old_cwd);
+        FAIL("Compile error (auto-import test): " + error);
+        return;
+    }
+
+    auto jit = std::make_unique<FluxJIT>(OptimizationLevel::O0);
+    jit->addModule(
+        std::move(artifacts->codegenContext->OwnedModule),
+        std::move(artifacts->codegenContext->OwnedContext)
+    );
+    registerRuntimeFunctions(*jit);
+
+    void* fn = jit->getPointerToFunction("main");
+    if (!fn) {
+        fs::current_path(old_cwd);
+        FAIL("getPointerToFunction failed for main");
+        return;
+    }
+
+    using Fn = double(*)(double);
+    double result = reinterpret_cast<Fn>(fn)(0.0);
+    // max(3,7)=7 + min(10,4)=4 + clamp(15,0,5)=5 = 16.0
+    TC(std::abs(result - 16.0) < 0.001,
+       "expected 16.0, got " + std::to_string(result));
+
+    fs::current_path(old_cwd);
+    PASS();
+}
 
 int main() {
     std::string modules_root = TESTS_SOURCE_DIR "/tests/modules";
@@ -659,6 +712,9 @@ int main() {
     test_stdlib_math_functions_jit();
     test_stdlib_trig_import_jit();
 
+    if (fs::exists(TESTS_SOURCE_DIR "/stdlib/math.flux")) {
+        test_auto_import_jit();
+    }
 
     fs::remove_all(mod_dir);
 
