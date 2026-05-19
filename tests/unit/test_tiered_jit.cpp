@@ -261,6 +261,61 @@ void test_auto_promote() {
     TPASS;
 }
 
+// ----------------------------------------------------------------
+// Test 7: benchmark O0 vs O3 speedup
+// ----------------------------------------------------------------
+void test_benchmark_speedup() {
+    TEST("O0 vs O3 speedup");
+
+    std::string source = R"(
+        def main() {
+            var s = 0.0
+            var i = 0.0
+            while i < 50000000.0 do {
+                s = s + i * 0.5
+                i = i + 1.0
+            }
+            s
+        }
+    )";
+
+    void* fn = nullptr;
+    auto* jit = compile_script(source, &fn, "main");
+    TC(jit != nullptr && fn != nullptr, "compile failed");
+
+    using Fn = double(*)();
+    auto o0 = reinterpret_cast<Fn>(fn);
+
+    // Warmup + baseline O0 timing
+    volatile double sink;
+    int iters = 5;
+    auto t0 = std::chrono::steady_clock::now();
+    for (int i = 0; i < iters; i++)
+        sink = o0();
+    auto t1 = std::chrono::steady_clock::now();
+    auto o0_us = std::chrono::duration_cast<std::chrono::microseconds>(t1 - t0).count() / iters;
+
+    // Promote to O3
+    auto* promoted = jit->promoteFunction("main", OptimizationLevel::O3);
+    TC(promoted != nullptr, "promoteFunction returned null");
+    TC(promoted != fn, "promoted pointer should differ from original");
+    auto o3 = reinterpret_cast<Fn>(promoted);
+
+    // O3 timing
+    auto t2 = std::chrono::steady_clock::now();
+    for (int i = 0; i < iters; i++)
+        sink = o3();
+    auto t3 = std::chrono::steady_clock::now();
+    auto o3_us = std::chrono::duration_cast<std::chrono::microseconds>(t3 - t2).count() / iters;
+
+    double speedup = double(o0_us) / double(o3_us);
+    std::cout << "O0=" << o0_us << "us O3=" << o3_us << "us speedup=" << speedup << "x\n";
+    TC(speedup > 1.0, "O3 should be faster than O0 (got " + std::to_string(speedup) + "x)");
+
+    delete jit;
+    TPASS;
+}
+
 int main() {
     std::cout << "=== Tiered JIT Tests ===\n";
 
@@ -270,6 +325,7 @@ int main() {
     test_threshold();
     test_reset_counts();
     test_auto_promote();
+    test_benchmark_speedup();
 
     std::cout << "\nResults: " << g_passed << " passed, " << g_failed << " failed\n";
     return g_failed > 0 ? 1 : 0;
