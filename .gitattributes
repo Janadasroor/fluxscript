@@ -1,8 +1,10 @@
 # Mark all .flux files as FluxScript for GitHub Linguist detection
 *.flux linguist-language=FluxScript linguist-detectable=true
 
+
 # Test fixtures are FluxScript source, not generated
 tests/flux/*.flux linguist-language=FluxScript linguist-detectable=true
+
 
 # Pre-compiled artifacts should not appear in language stats
 *.o linguist-generated=true
