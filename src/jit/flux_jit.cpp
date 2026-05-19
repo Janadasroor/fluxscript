@@ -229,22 +229,36 @@ void FluxJIT::addModule(std::unique_ptr<llvm::Module> M,
 
     prepareModule(*M);
 
-    // ---- Tiered JIT: Save original function IR as bitcode for recompilation ----
-    {
+    // ---- Tiered JIT: Save per-function IR as bitcode for recompilation ----
+    // Clone and strip per-function so each saved bitcode is a single function.
+    // We keep other functions as declarations (deleteBody) so cross-references
+    // remain valid and the >2000 instruction optimizer guard only sees one body.
+    for (auto& F : *M) {
+        if (F.isDeclaration() || !F.hasExternalLinkage() || F.getName().empty())
+            continue;
+        std::string name = F.getName().str();
+        if (name.find("anon_expr") != std::string::npos)
+            continue;
+
+        auto PerFnMod = llvm::CloneModule(*M);
+        if (!PerFnMod) continue;
+
+        llvm::Function* Target = PerFnMod->getFunction(F.getName());
+        if (!Target) continue;
+
+        for (auto& CF : *PerFnMod) {
+            if (&CF != Target && !CF.isDeclaration())
+                CF.deleteBody();
+        }
+
         SavedModule saved;
-        for (auto& F : *M) {
-            if (!F.isDeclaration() && F.hasExternalLinkage() && !F.getName().empty()) {
-                saved.functionNames.push_back(F.getName().str());
-            }
-        }
-        if (!saved.functionNames.empty()) {
-            std::string bitcode;
-            llvm::raw_string_ostream OS(bitcode);
-            llvm::WriteBitcodeToFile(*M, OS);
-            OS.flush();
-            saved.bitcode = std::move(bitcode);
-            m_savedModules.push_back(std::move(saved));
-        }
+        saved.functionNames.push_back(std::move(name));
+        std::string bitcode;
+        llvm::raw_string_ostream OS(bitcode);
+        llvm::WriteBitcodeToFile(*PerFnMod, OS);
+        OS.flush();
+        saved.bitcode = std::move(bitcode);
+        m_savedModules.push_back(std::move(saved));
     }
 
     if (llvm::verifyModule(*M, &llvm::errs())) {

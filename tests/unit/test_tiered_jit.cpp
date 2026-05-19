@@ -405,7 +405,8 @@ void test_jit_to_jit_redirect() {
     TC(jit != nullptr && mainFn != nullptr, "compile failed");
 
     // Promote compute (main still has its old O0 address)
-    jit->promoteFunction("compute", OptimizationLevel::O3);
+    auto* promotedCompute = jit->promoteFunction("compute", OptimizationLevel::O3);
+    TC(promotedCompute != nullptr, "promoteFunction returned null");
     TC(jit->isPromoted("compute"), "compute should be promoted");
 
     // Call main — it internally calls compute at the original O0 address,
