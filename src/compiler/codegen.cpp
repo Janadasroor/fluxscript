@@ -287,21 +287,13 @@ TypedValue BlockExprAST::codegen(CodegenContext& context) {
     auto OldNamedValues = context.NamedValues;
     auto OldNamedTypes = context.NamedTypes;
 
-    std::cerr << "[DEBUG] BlockExprAST: generating " << Statements.size() << " statements" << std::endl;
-    for (size_t di = 0; di < Statements.size(); ++di) {
-        auto* vare = dynamic_cast<LetExprAST*>(Statements[di].get());
-        if (vare) std::cerr << "  stmt " << di << ": LET " << vare->getVarName() << std::endl;
-    }
-
     for (size_t i = 0; i < Statements.size(); ++i) {
         if (context.Builder.GetInsertBlock()->getTerminator()) {
-            std::cerr << "[DEBUG] BlockExprAST: block already terminated at stmt " << i << std::endl;
             break;
         }
 
         LastVal = Statements[i]->codegen(context);
         if (!LastVal.Val && LastVal.Type.Kind != TypeKind::Void) {
-            std::cerr << "[DEBUG] BlockExprAST: stmt " << i << " failed" << std::endl;
             // Restore scope on failure
             context.NamedValues = OldNamedValues;
             context.NamedTypes = OldNamedTypes;
@@ -2897,9 +2889,10 @@ TypedValue IfStmtAST::codegen(CodegenContext& context) {
 
     // Generate then block
     context.Builder.SetInsertPoint(ThenBB);
+    TypedValue ThenTV(nullptr, TypeKind::Void);
     for (auto& Stmt : ThenBody) {
         if (context.Builder.GetInsertBlock()->getTerminator()) break;
-        Stmt->codegen(context);
+        ThenTV = Stmt->codegen(context);
     }
     bool thenTerminated = context.Builder.GetInsertBlock()->getTerminator() != nullptr;
     if (!thenTerminated) {
@@ -2909,9 +2902,10 @@ TypedValue IfStmtAST::codegen(CodegenContext& context) {
 
     // Generate else block
     context.Builder.SetInsertPoint(ElseBB);
+    TypedValue ElseTV(nullptr, TypeKind::Void);
     for (auto& Stmt : ElseBody) {
         if (context.Builder.GetInsertBlock()->getTerminator()) break;
-        Stmt->codegen(context);
+        ElseTV = Stmt->codegen(context);
     }
     bool elseTerminated = context.Builder.GetInsertBlock()->getTerminator() != nullptr;
     if (!elseTerminated) {
@@ -2922,14 +2916,36 @@ TypedValue IfStmtAST::codegen(CodegenContext& context) {
     // Determine if we need to continue after the if
     if (thenTerminated && elseTerminated) {
         delete MergeBB;
-        return TypedValue(llvm::ConstantFP::get(Ctx, llvm::APFloat(0.0)), TypeKind::Double);
+        return ThenTV.Val ? ThenTV : TypedValue(llvm::ConstantFP::get(Ctx, llvm::APFloat(0.0)), TypeKind::Double);
     }
 
     // Continue at merge
     TheFunction->insert(TheFunction->end(), MergeBB);
     context.Builder.SetInsertPoint(MergeBB);
 
-    return TypedValue(llvm::ConstantFP::get(Ctx, llvm::APFloat(0.0)), TypeKind::Double);
+    // PHI node to merge values from reachable paths
+    if (ThenTV.Type.Kind == TypeKind::Void && ElseTV.Type.Kind == TypeKind::Void) {
+        return ThenTV;
+    }
+
+    TypedValue ResultTV = ThenTV.Val ? ThenTV : ElseTV;
+    llvm::Type* PhiTy = ResultTV.Val ? ResultTV.Val->getType() : llvm::Type::getDoubleTy(Ctx);
+    llvm::PHINode* PN = context.Builder.CreatePHI(PhiTy, 2, "ifphi");
+
+    if (!thenTerminated) {
+        llvm::Value* TV = ThenTV.Val;
+        if (!TV) TV = llvm::Constant::getNullValue(PhiTy);
+        else if (TV->getType() != PhiTy) TV = context.Builder.CreateSIToFP(TV, PhiTy, "cast_then");
+        PN->addIncoming(TV, ThenBB);
+    }
+    if (!elseTerminated) {
+        llvm::Value* EV = ElseTV.Val;
+        if (!EV) EV = llvm::Constant::getNullValue(PhiTy);
+        else if (EV->getType() != PhiTy) EV = context.Builder.CreateSIToFP(EV, PhiTy, "cast_else");
+        PN->addIncoming(EV, ElseBB);
+    }
+
+    return TypedValue(PN, ResultTV.Type);
 }
 
 TypedValue ForStmtAST::codegen(CodegenContext& context) {

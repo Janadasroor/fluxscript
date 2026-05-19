@@ -692,12 +692,12 @@ def main() matrix_rows(make_mat())
 }
 
 void test_stdlib_array_auto_import_jit() {
-    TEST("Auto-imported array functions without explicit import");
+    TEST("Auto-imported array functions (pure-Flux linspace/logspace/arange)");
     auto old_cwd = fs::current_path();
     fs::current_path(TESTS_SOURCE_DIR);
 
     std::string code = R"(
-def main() matrix_sum(linspace(0.0, 1.0, 5)) + matrix_rows(logspace(0.0, 2.0, 5)) + matrix_sum(arange(0.0, 5.0, 2.0))
+def main() sum(linspace(0.0, 1.0, 5)) + matrix_rows(logspace(0.0, 2.0, 5)) + sum(arange(0.0, 5.0, 2.0))
 )";
 
     CompilerOptions opts;
@@ -734,6 +734,61 @@ def main() matrix_sum(linspace(0.0, 1.0, 5)) + matrix_rows(logspace(0.0, 2.0, 5)
     // linspace(0,1,5) sum = 2.5 + logspace(0,2,5) rows = 5 + arange(0,5,2) sum = 6 = 13.5
     TC(std::abs(result - 13.5) < 0.01,
        "expected 13.5, got " + std::to_string(result));
+
+    fs::current_path(old_cwd);
+    PASS();
+}
+
+void test_stdlib_array_utilities_jit() {
+    TEST("Auto-imported array utilities (mean/flatten/reshape/eye/ones/zeros)");
+    auto old_cwd = fs::current_path();
+    fs::current_path(TESTS_SOURCE_DIR);
+
+    std::string code = R"(
+def main() {
+    var a = linspace(0.0, 1.0, 5)
+    var m = mean(a)
+    var f = flatten(eye(3.0))
+    var r = reshape(arange(0.0, 6.0, 1.0), 2.0, 3.0)
+    var check = matrix_get(r, 1, 2)
+    m + matrix_rows(f) + check
+}
+)";
+
+    CompilerOptions opts;
+    opts.injectStdlib = true;
+    opts.optimizationLevel = OptimizationLevel::O0;
+    opts.inputName = "auto_import_array_util_test.flux";
+    opts.moduleName = "auto_import_array_util_test";
+
+    CompilerInstance compiler(opts);
+    std::string error;
+    auto artifacts = compiler.compileToIR(code, &error);
+    if (!artifacts) {
+        fs::current_path(old_cwd);
+        FAIL("Compile error (array utilities test): " + error);
+        return;
+    }
+
+    auto jit = std::make_unique<FluxJIT>(OptimizationLevel::O0);
+    jit->addModule(
+        std::move(artifacts->codegenContext->OwnedModule),
+        std::move(artifacts->codegenContext->OwnedContext)
+    );
+    registerRuntimeFunctions(*jit);
+
+    void* fn = jit->getPointerToFunction("main");
+    if (!fn) {
+        fs::current_path(old_cwd);
+        FAIL("getPointerToFunction failed for main");
+        return;
+    }
+
+    using Fn = double(*)(double);
+    double result = reinterpret_cast<Fn>(fn)(0.0);
+    // mean(linspace(0,1,5)) = 0.5 + flatten(eye(3)) rows = 9 + r(1,2) = 5.0 = 14.5
+    TC(std::abs(result - 14.5) < 0.01,
+       "expected 14.5, got " + std::to_string(result));
 
     fs::current_path(old_cwd);
     PASS();
@@ -786,6 +841,7 @@ int main() {
     test_stdlib_math_functions_jit();
     test_stdlib_trig_import_jit();
     test_stdlib_array_auto_import_jit();
+    test_stdlib_array_utilities_jit();
 
     if (fs::exists(TESTS_SOURCE_DIR "/stdlib/math.flux")) {
         test_auto_import_jit();

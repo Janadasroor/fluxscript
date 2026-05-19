@@ -1148,8 +1148,10 @@ public:
     llvm::Function* codegen(CodegenContext& context);
     const std::string& getName() const { return Name; }
     const std::vector<std::pair<std::string, FluxType>>& getArgs() const { return Args; }
+    std::vector<std::pair<std::string, FluxType>>& getArgs() { return Args; }
     const FluxType& getReturnType() const { return ReturnType; }
     void setReturnType(const FluxType& RT) { ReturnType = RT; }
+    void setArgType(size_t idx, const FluxType& T) { if (idx < Args.size()) Args[idx].second = T; }
     
     void setLocation(int L) { Line = L; }
     int getLine() const { return Line; }
