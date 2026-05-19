@@ -365,6 +365,42 @@ extern "C" void* flux_matrix_eye(int n) {
     return g_matrix_tracker.register_matrix(std::unique_ptr<Eigen::MatrixXd>(M));
 }
 
+extern "C" void* flux_linspace(double start, double stop, int n) {
+    if (n < 1) return nullptr;
+    auto* M = new Eigen::MatrixXd(n, 1);
+    if (n == 1) {
+        (*M)(0, 0) = stop;
+    } else {
+        double step = (stop - start) / (n - 1);
+        for (int i = 0; i < n; i++)
+            (*M)(i, 0) = start + i * step;
+    }
+    return g_matrix_tracker.register_matrix(std::unique_ptr<Eigen::MatrixXd>(M));
+}
+
+extern "C" void* flux_logspace(double start, double stop, int n) {
+    if (n < 1) return nullptr;
+    auto* M = new Eigen::MatrixXd(n, 1);
+    if (n == 1) {
+        (*M)(0, 0) = std::pow(10.0, stop);
+    } else {
+        double step = (stop - start) / (n - 1);
+        for (int i = 0; i < n; i++)
+            (*M)(i, 0) = std::pow(10.0, start + i * step);
+    }
+    return g_matrix_tracker.register_matrix(std::unique_ptr<Eigen::MatrixXd>(M));
+}
+
+extern "C" void* flux_arange(double start, double stop, double step) {
+    if (std::abs(step) < 1e-15) return nullptr;
+    int n = static_cast<int>(std::ceil((stop - start) / step));
+    if (n < 1) return nullptr;
+    auto* M = new Eigen::MatrixXd(n, 1);
+    for (int i = 0; i < n; i++)
+        (*M)(i, 0) = start + i * step;
+    return g_matrix_tracker.register_matrix(std::unique_ptr<Eigen::MatrixXd>(M));
+}
+
 extern "C" void* flux_matrix_copy(void* m_ptr) {
     auto* M = g_matrix_tracker.get_matrix(m_ptr);
     if (!M) return nullptr;
@@ -613,6 +649,11 @@ void registerRuntimeFunctions(FluxJIT& jit) {
     jit.registerFunction("flux_complex_matrix_mul", (void*)&flux_complex_matrix_mul);
     jit.registerFunction("print_complex_matrix", (void*)&flux_print_complex_matrix);
     jit.registerFunction("flux_promote_matrix_to_complex", (void*)&flux_promote_matrix_to_complex);
+
+    // Array creation
+    jit.registerFunction("linspace", (void*)&flux_linspace);
+    jit.registerFunction("logspace", (void*)&flux_logspace);
+    jit.registerFunction("arange", (void*)&flux_arange);
 
     // Clean user-facing matrix API
     jit.registerFunction("matrix_create", (void*)&flux_matrix_zeros);

@@ -1149,6 +1149,7 @@ public:
     const std::string& getName() const { return Name; }
     const std::vector<std::pair<std::string, FluxType>>& getArgs() const { return Args; }
     const FluxType& getReturnType() const { return ReturnType; }
+    void setReturnType(const FluxType& RT) { ReturnType = RT; }
     
     void setLocation(int L) { Line = L; }
     int getLine() const { return Line; }

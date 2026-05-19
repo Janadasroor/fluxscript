@@ -665,6 +665,80 @@ def main() max(3.0, 7.0) + min(10.0, 4.0) + clamp(15.0, 0.0, 5.0)
     PASS();
 }
 
+void test_user_function_returns_matrix() {
+    TEST("User function returns matrix");
+    std::string modules_root = TESTS_SOURCE_DIR "/tests/modules";
+    std::string mod_dir = setup_module_dir(modules_root);
+    TC(!mod_dir.empty(), "failed to create temp module dir");
+
+    // make_mat() calls matrix_eye(4), inference should set return type to Matrix.
+    // Then main() calls make_mat() and uses matrix_rows to get dimension.
+    std::string code = R"(
+def make_mat() matrix_eye(4)
+def main() matrix_rows(make_mat())
+)";
+
+    auto jit = compile_with_modules(code, mod_dir);
+    if (!jit) { fs::remove_all(mod_dir); return; }
+
+    double result = call_double(jit, "main", 0);
+    // make_mat() returns 4x4 identity; matrix_rows(make_mat()) = 4
+    TC(std::abs(result - 4.0) < 0.001,
+       "expected 4.0, got " + std::to_string(result));
+
+    delete jit;
+    fs::remove_all(mod_dir);
+    PASS();
+}
+
+void test_stdlib_array_auto_import_jit() {
+    TEST("Auto-imported array functions without explicit import");
+    auto old_cwd = fs::current_path();
+    fs::current_path(TESTS_SOURCE_DIR);
+
+    std::string code = R"(
+def main() matrix_sum(linspace(0.0, 1.0, 5)) + matrix_rows(logspace(0.0, 2.0, 5)) + matrix_sum(arange(0.0, 5.0, 2.0))
+)";
+
+    CompilerOptions opts;
+    opts.injectStdlib = true;
+    opts.optimizationLevel = OptimizationLevel::O0;
+    opts.inputName = "auto_import_array_test.flux";
+    opts.moduleName = "auto_import_array_test";
+
+    CompilerInstance compiler(opts);
+    std::string error;
+    auto artifacts = compiler.compileToIR(code, &error);
+    if (!artifacts) {
+        fs::current_path(old_cwd);
+        FAIL("Compile error (auto-import array test): " + error);
+        return;
+    }
+
+    auto jit = std::make_unique<FluxJIT>(OptimizationLevel::O0);
+    jit->addModule(
+        std::move(artifacts->codegenContext->OwnedModule),
+        std::move(artifacts->codegenContext->OwnedContext)
+    );
+    registerRuntimeFunctions(*jit);
+
+    void* fn = jit->getPointerToFunction("main");
+    if (!fn) {
+        fs::current_path(old_cwd);
+        FAIL("getPointerToFunction failed for main");
+        return;
+    }
+
+    using Fn = double(*)(double);
+    double result = reinterpret_cast<Fn>(fn)(0.0);
+    // linspace(0,1,5) sum = 2.5 + logspace(0,2,5) rows = 5 + arange(0,5,2) sum = 6 = 13.5
+    TC(std::abs(result - 13.5) < 0.01,
+       "expected 13.5, got " + std::to_string(result));
+
+    fs::current_path(old_cwd);
+    PASS();
+}
+
 int main() {
     std::string modules_root = TESTS_SOURCE_DIR "/tests/modules";
     std::string mod_dir = setup_module_dir(modules_root);
@@ -711,10 +785,15 @@ int main() {
     test_stdlib_math_import_jit();
     test_stdlib_math_functions_jit();
     test_stdlib_trig_import_jit();
+    test_stdlib_array_auto_import_jit();
 
     if (fs::exists(TESTS_SOURCE_DIR "/stdlib/math.flux")) {
         test_auto_import_jit();
     }
+
+    // Matrix return from user functions
+    std::cout << "\n--- Matrix Return from User Functions ---\n";
+    test_user_function_returns_matrix();
 
     fs::remove_all(mod_dir);
 

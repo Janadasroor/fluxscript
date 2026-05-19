@@ -141,6 +141,11 @@ void CompilerInstance::injectStandardLibrary(CodegenContext& context,
     regExtern("flux_string_find",   DblTy(), {DblTy(), DblTy()});
     regExtern("flux_parse_number",  DblTy(), {DblTy()});
 
+    // Array creation
+    regExtern("linspace",          MatTy(), {DblTy(), DblTy(), IntTy()});
+    regExtern("logspace",          MatTy(), {DblTy(), DblTy(), IntTy()});
+    regExtern("arange",            MatTy(), {DblTy(), DblTy(), DblTy()});
+
     // FFT
     regExtern("fft",               MatTy(), {MatTy(), DblTy()});
     regExtern("fft_thd",           DblTy(), {MatTy(), DblTy()});
@@ -356,6 +361,56 @@ std::unique_ptr<ParsedAST> CompilerInstance::parse(const std::string& code, std:
     return ast;
 }
 
+// ---------------------------------------------------------------------------
+// Return-type inference for user-defined function bodies.
+// Walks the body AST to determine the return type (Matrix, Double, etc.)
+// based on called extern functions, last expression in blocks, etc.
+// ---------------------------------------------------------------------------
+static FluxType inferReturnType(const ExprAST* expr,
+                                const std::map<std::string, std::pair<FluxType, std::vector<FluxType>>>& externTypes) {
+    if (!expr) return TypeKind::Double;
+
+    // CallExprAST: look up the callee in known extern function types
+    if (auto* call = dynamic_cast<const CallExprAST*>(expr)) {
+        std::string name = call->getCallee();
+        auto sepPos = name.rfind("::");
+        if (sepPos != std::string::npos)
+            name = name.substr(sepPos + 2);
+        auto it = externTypes.find(name);
+        if (it != externTypes.end())
+            return it->second.first;  // Return type from extern registry
+        return TypeKind::Double;      // Unknown function → assume double
+    }
+
+    // BlockExprAST: use the type of the last statement
+    if (auto* block = dynamic_cast<const BlockExprAST*>(expr)) {
+        const auto& stmts = block->getStatements();
+        if (stmts.empty()) return TypeKind::Double;
+        return inferReturnType(stmts.back().get(), externTypes);
+    }
+
+    // IfExprAST: use the 'then' branch type (both should match)
+    if (auto* ife = dynamic_cast<const IfExprAST*>(expr)) {
+        return inferReturnType(ife->getThen(), externTypes);
+    }
+
+    // UnaryExprAST: same type as operand
+    if (auto* unary = dynamic_cast<const UnaryExprAST*>(expr)) {
+        return inferReturnType(unary->getOperand(), externTypes);
+    }
+
+    // BinaryExprAST: check for known matrix-returning ops
+    if (auto* bin = dynamic_cast<const BinaryExprAST*>(expr)) {
+        if (bin->getOp() == 'm') {  // matrix multiplication
+            return FluxType(TypeKind::Matrix);
+        }
+        return TypeKind::Double;
+    }
+
+    // Anything else (variable reference, number, string, etc.) → Double
+    return TypeKind::Double;
+}
+
 bool CompilerInstance::compileParser(Parser& parser,
                                      CodegenContext& context,
                                      std::map<std::string, FluxType>& returnTypes,
@@ -463,6 +518,22 @@ bool CompilerInstance::compileParser(Parser& parser,
             }
         }
         functions = std::move(filtered);
+    }
+
+    // --- Return-type inference ---
+    // Walk each function body to determine the actual return type
+    // (Matrix, Double, etc.) before declaring the LLVM prototype.
+    for (auto& func : functions) {
+        FluxType inferred = inferReturnType(func->getBody(), context.ExternFuncTypes);
+        // Only override return type for aggregate/struct types (Matrix, etc.)
+        // that the default Double return type cannot represent.
+        // Scalar types (Int, Float, Bool) use Double as the canonical return
+        // type; FunctionAST::codegen handles scalar conversion via SIToFP etc.
+        if (inferred.Kind == TypeKind::Matrix ||
+            inferred.Kind == TypeKind::ComplexMatrix ||
+            inferred.Kind == TypeKind::Vector) {
+            func->getProto()->setReturnType(inferred);
+        }
     }
 
     // --- Pass 1 (continued): Declare prototypes for remaining functions ---
