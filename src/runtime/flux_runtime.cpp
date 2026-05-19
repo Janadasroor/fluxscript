@@ -272,6 +272,12 @@ extern "C" void* flux_register_new_matrix(int rows, int cols) {
     return g_matrix_tracker.register_matrix(std::move(mat));
 }
 
+extern "C" void* flux_register_new_complex_matrix(int rows, int cols) {
+    auto mat = std::make_unique<Eigen::MatrixXcd>(rows, cols);
+    mat->setZero();
+    return g_matrix_tracker.register_complex_matrix(std::move(mat));
+}
+
 // Copy data into a tracked matrix
 extern "C" void flux_matrix_set_data(void* data_ptr, double* data, int rows, int cols) {
     auto* M = g_matrix_tracker.get_matrix(data_ptr);
@@ -597,6 +603,7 @@ void registerRuntimeFunctions(FluxJIT& jit) {
     jit.registerFunction("flux_matrix_solve", (void*)&flux_matrix_solve);
     jit.registerFunction("print_matrix", (void*)&flux_print_matrix);
     jit.registerFunction("flux_create_complex_matrix", (void*)&flux_create_complex_matrix);
+    jit.registerFunction("flux_register_new_complex_matrix", (void*)&flux_register_new_complex_matrix);
     jit.registerFunction("flux_complex_matrix_mul", (void*)&flux_complex_matrix_mul);
     jit.registerFunction("print_complex_matrix", (void*)&flux_print_complex_matrix);
     jit.registerFunction("flux_promote_matrix_to_complex", (void*)&flux_promote_matrix_to_complex);

@@ -1689,7 +1689,6 @@ TypedValue MatrixExprAST::codegen(CodegenContext& context) {
     llvm::Type* Int32Ty = llvm::Type::getInt32Ty(context.TheContext);
     llvm::Type* VoidPtrTy = llvm::PointerType::get(context.TheContext, 0);
 
-    // Determine if the matrix should be complex
     bool isComplex = false;
     for (int r = 0; r < NumRows; ++r) {
         for (int c = 0; c < NumCols; ++c) {
@@ -1701,17 +1700,24 @@ TypedValue MatrixExprAST::codegen(CodegenContext& context) {
         if (isComplex) break;
     }
 
-    llvm::Value* DataPtr = nullptr;
-    int elemSize = isComplex ? 16 : 8;
     llvm::Type* ElemTy = isComplex ? ComplexTy : DoubleTy;
 
-    // Allocate memory for matrix elements
-    llvm::Function* MallocF = context.TheModule->getFunction("malloc");
-    if (!MallocF) MallocF = llvm::Function::Create(llvm::FunctionType::get(VoidPtrTy, { Int32Ty }, false), llvm::Function::ExternalLinkage, "malloc", context.TheModule);
-    llvm::Value* DataSize = llvm::ConstantInt::get(Int32Ty, NumRows * NumCols * elemSize);
-    DataPtr = context.Builder.CreateCall(MallocF, {DataSize}, "mat_data");
+    // Allocate Eigen matrix directly — no malloc, no memcpy
+    std::string newFnName = isComplex ? "flux_register_new_complex_matrix" : "flux_register_new_matrix";
+    llvm::Function* NewMatF = context.TheModule->getFunction(newFnName);
+    if (!NewMatF) {
+        llvm::Type* Params[] = { Int32Ty, Int32Ty };
+        NewMatF = llvm::Function::Create(
+            llvm::FunctionType::get(VoidPtrTy, Params, false),
+            llvm::Function::ExternalLinkage, newFnName, context.TheModule);
+    }
+
+    llvm::Value* RowsVal = llvm::ConstantInt::get(Int32Ty, NumRows);
+    llvm::Value* ColsVal = llvm::ConstantInt::get(Int32Ty, NumCols);
+    llvm::Value* DataPtr = context.Builder.CreateCall(NewMatF, {RowsVal, ColsVal}, "mat_data");
     DataPtr = context.Builder.CreateBitCast(DataPtr, llvm::PointerType::get(ElemTy, 0));
-    
+
+    // Write elements directly into Eigen's internal data buffer
     for (int r = 0; r < NumRows; ++r) {
         for (int c = 0; c < NumCols; ++c) {
             TypedValue ElemTV = Rows[r][c]->codegen(context);
@@ -1725,24 +1731,13 @@ TypedValue MatrixExprAST::codegen(CodegenContext& context) {
         }
     }
 
-    std::string createFn = isComplex ? "flux_create_complex_matrix" : "flux_create_matrix";
-    llvm::Function* CreateMatF = context.TheModule->getFunction(createFn);
-    if (!CreateMatF) {
-        llvm::Type* Params[] = { llvm::PointerType::get(ElemTy, 0), Int32Ty, Int32Ty };
-        CreateMatF = llvm::Function::Create(llvm::FunctionType::get(VoidPtrTy, Params, false), llvm::Function::ExternalLinkage, createFn, context.TheModule);
-    }
-    
-    llvm::Value* RowsVal = llvm::ConstantInt::get(Int32Ty, NumRows);
-    llvm::Value* ColsVal = llvm::ConstantInt::get(Int32Ty, NumCols);
-    llvm::Value* MatPtr = context.Builder.CreateCall(CreateMatF, {DataPtr, RowsVal, ColsVal}, "mat_ptr_reg");
-    
     FluxType resType = isComplex ? FluxType(TypeKind::ComplexMatrix) : FluxType(TypeKind::Matrix);
     llvm::StructType* MatStructTy = llvm::cast<llvm::StructType>(resType.getLLVMType(context.TheContext));
     llvm::Value* MatVal = llvm::UndefValue::get(MatStructTy);
-    MatVal = context.Builder.CreateInsertValue(MatVal, MatPtr, 0);
+    MatVal = context.Builder.CreateInsertValue(MatVal, DataPtr, 0);
     MatVal = context.Builder.CreateInsertValue(MatVal, RowsVal, 1);
     MatVal = context.Builder.CreateInsertValue(MatVal, ColsVal, 2);
-    
+
     return TypedValue(MatVal, resType);
 }
 
