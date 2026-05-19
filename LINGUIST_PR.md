@@ -1,5 +1,11 @@
 # Submitting FluxScript to GitHub Linguist
 
+> **⚠️ PR blocked until usage threshold is met**
+> Linguist requires **≥2000 files** (or ≥200 for once-per-repo extensions) indexed on GitHub for a new extension.
+> FluxScript currently has ~a dozen `.flux` files across 1 repo. Revisit once there's wider adoption.
+>
+> **Current stopgap:** `.gitattributes` maps `.flux` → `linguist-language=Julia` (similar syntax, `function`/`end` blocks).
+
 To make `.flux` files recognized as FluxScript on all GitHub repos, submit a PR to [github-linguist/linguist](https://github.com/github-linguist/linguist).
 
 ## Languages.yml Entry

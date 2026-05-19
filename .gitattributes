@@ -1,9 +1,10 @@
-# Mark all .flux files as FluxScript for GitHub Linguist detection
-*.flux linguist-language=FluxScript linguist-detectable=true
-
+# Mark all .flux files as (temporary) Julia for GitHub detection
+# FluxScript is not yet registered in github-linguist/linguist's languages.yml
+# Switch to linguist-language=FluxScript once accepted upstream
+*.flux linguist-language=Julia linguist-detectable=true
 
 # Test fixtures are FluxScript source, not generated
-tests/flux/*.flux linguist-language=FluxScript linguist-detectable=true
+tests/flux/*.flux linguist-language=Julia linguist-detectable=true
 
 
 # Pre-compiled artifacts should not appear in language stats
