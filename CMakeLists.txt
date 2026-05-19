@@ -357,3 +357,6 @@ install(TARGETS FluxScript flux flux-pkg flux-spice flux-run flux-doctor flux-sw
 )
 
 install(DIRECTORY include/flux DESTINATION include)
+
+install(DIRECTORY stdlib/ DESTINATION share/flux/stdlib
+    FILES_MATCHING PATTERN "*.flux")

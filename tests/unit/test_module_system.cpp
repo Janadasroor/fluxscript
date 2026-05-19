@@ -507,6 +507,72 @@ def main() square(4.0) + half(10.0)
     PASS();
 }
 
+void test_stdlib_math_import_jit() {
+    TEST("Import stdlib/math.flux + JIT execution");
+    std::string modules_root = TESTS_SOURCE_DIR "/tests/modules";
+    std::string mod_dir = setup_module_dir(modules_root);
+    TC(!mod_dir.empty(), "failed to create temp module dir");
+
+    // Symlink stdlib/math.flux into the temp dir so the ModuleLoader finds it
+    std::string math_src = TESTS_SOURCE_DIR "/stdlib/math.flux";
+    if (fs::exists(math_src)) {
+        fs::create_symlink(math_src, mod_dir + "/math.flux");
+    } else {
+        fs::remove_all(mod_dir);
+        FAIL("stdlib/math.flux not found at " + math_src);
+        return;
+    }
+
+    std::string code = R"(
+import math
+def main() max(3.0, 7.0) + min(10.0, 4.0) + clamp(15.0, 0.0, 5.0)
+)";
+
+    auto jit = compile_with_modules(code, mod_dir);
+    if (!jit) { fs::remove_all(mod_dir); return; }
+
+    double result = call_double(jit, "main", 0);
+    // max(3,7)=7 + min(10,4)=4 + clamp(15,0,5)=5 = 16.0
+    TC(std::abs(result - 16.0) < 0.001,
+       "expected 16.0, got " + std::to_string(result));
+
+    delete jit;
+    fs::remove_all(mod_dir);
+    PASS();
+}
+
+void test_stdlib_math_functions_jit() {
+    TEST("stdlib/math.flux: lerp, rad2deg, sign, factorial");
+    std::string modules_root = TESTS_SOURCE_DIR "/tests/modules";
+    std::string mod_dir = setup_module_dir(modules_root);
+    TC(!mod_dir.empty(), "failed to create temp module dir");
+
+    std::string math_src = TESTS_SOURCE_DIR "/stdlib/math.flux";
+    if (!fs::exists(math_src)) {
+        fs::remove_all(mod_dir);
+        FAIL("stdlib/math.flux not found");
+        return;
+    }
+    fs::create_symlink(math_src, mod_dir + "/math.flux");
+
+    std::string code = R"(
+import math
+def main() lerp(0.0, 10.0, 0.5) + sign(-5.0) + factorial(5.0) + rad2deg(3.1415926535)
+)";
+
+    auto jit = compile_with_modules(code, mod_dir);
+    if (!jit) { fs::remove_all(mod_dir); return; }
+
+    double result = call_double(jit, "main", 0);
+    // lerp(0,10,0.5)=5 + sign(-5)=-1 + factorial(5)=120 + rad2deg(pi~3.14159)≈180 = 304.0
+    TC(std::abs(result - 304.0) < 1.0,
+       "expected ~304.0, got " + std::to_string(result));
+
+    delete jit;
+    fs::remove_all(mod_dir);
+    PASS();
+}
+
 int main() {
     std::string modules_root = TESTS_SOURCE_DIR "/tests/modules";
     std::string mod_dir = setup_module_dir(modules_root);
@@ -547,6 +613,11 @@ int main() {
     test_selective_import_namespaced_excluded_fails();
     test_selective_import_non_excluded_works();
     test_selective_import_multiple_symbols_jit();
+
+    // Standard library tests
+    std::cout << "\n--- Standard Library ---\n";
+    test_stdlib_math_import_jit();
+    test_stdlib_math_functions_jit();
 
     fs::remove_all(mod_dir);
 

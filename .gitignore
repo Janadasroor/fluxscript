@@ -1,5 +1,6 @@
 *.flux
 !tests/flux/*.flux
+!stdlib/*.flux
 BUILD_STATUS.json
 /build/
 /build_local/
