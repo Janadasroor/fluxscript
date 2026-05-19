@@ -5,7 +5,8 @@
 tests/flux/*.flux linguist-language=FluxScript linguist-detectable=true
 
 
-# Pre-compiled artifacts should not appear in language stats
+# Vendor/third-party libraries should not appear in language stats
+third_party/ linguist-vendored=true
 *.o linguist-generated=true
 *.so linguist-generated=true
 build/ linguist-vendored=true
