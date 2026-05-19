@@ -221,29 +221,25 @@ std::vector<Diagnostic> LspServer::analyzeDocument(const std::string& uri) {
     auto* doc = getDocument(uri);
     if (!doc) return diags;
 
-    // Lex and parse to find errors
-    Flux::Lexer lexer(doc->text);
-    lexer.getNextToken(); // Prime the lexer
-
-    // Collect lexer errors by scanning all tokens
-    while (lexer.CurTok != static_cast<int>(Flux::TokenType::tok_eof)) {
-        lexer.getNextToken();
-    }
-
-    for (auto& err : lexer.getErrors()) {
-        Diagnostic d;
-        d.severity = Diagnostic::Error;
-        d.message = err.message;
-        d.source = "fluxscript-compiler";
-        d.range.start = {err.line - 1, err.column - 1};
-        d.range.end = {err.line - 1, err.column};
-        diags.push_back(d);
-    }
-
-    // Also parse to get parser-level errors
+    // Parse the full script (handles def, extern, and top-level expressions)
     {
         Flux::Parser parser(doc->text);
-        auto expr = parser.ParseExpression();
+
+        // Parse all top-level constructs in a loop
+        while (parser.CurTok != static_cast<int>(Flux::TokenType::tok_eof)) {
+            bool parsed = true;
+            if (parser.CurTok == static_cast<int>(Flux::TokenType::tok_def)) {
+                parsed = parser.ParseDefinition() != nullptr;
+            } else if (parser.CurTok == static_cast<int>(Flux::TokenType::tok_extern)) {
+                parsed = parser.ParseExtern() != nullptr;
+            } else {
+                parsed = parser.ParseTopLevelExpr() != nullptr;
+            }
+            if (!parsed) {
+                parser.getNextToken();
+                if (parser.CurTok == static_cast<int>(Flux::TokenType::tok_eof)) break;
+            }
+        }
 
         for (auto& err : parser.getErrors()) {
             Diagnostic d;
@@ -685,22 +681,16 @@ std::vector<CompletionItem> LspServer::getKeywordCompletions() {
         {"let", CompletionItem::Keyword, "typed variable", "Declare a typed variable", "let ${1:name} : ${2:type} = ${3:value}", 2},
         {"var", CompletionItem::Keyword, "type-inferred variable", "Declare a variable with inferred type", "var ${1:name} = ${2:value}", 2},
         {"if", CompletionItem::Keyword, "conditional", "Conditional expression", "if ${1:cond} then ${2:then} else ${3:else}", 2},
-        {"then", CompletionItem::Keyword, "then branch", nullptr, "then", 1},
-        {"else", CompletionItem::Keyword, "else branch", nullptr, "else", 1},
-        {"for", CompletionItem::Keyword, "for loop", "For loop", "for ${1:i} in ${2:start}, ${3:end} do ${4:body}", 2},
-        {"while", CompletionItem::Keyword, "while loop", "While loop", "while ${1:cond} do ${2:body}", 2},
-        {"in", CompletionItem::Keyword, "binding", nullptr, "in", 1},
-        {"do", CompletionItem::Keyword, "loop body", nullptr, "do", 1},
-        {"return", CompletionItem::Keyword, "return statement", nullptr, "return", 1},
-        {"fn", CompletionItem::Keyword, "lambda", "Anonymous function", "fn(${1:args}) ${2:body}", 2},
-        {"import", CompletionItem::Keyword, "module import", "Import a module", "import \"${1:module}\"", 2},
-        {"switch", CompletionItem::Keyword, "switch statement", "Multi-way branch", "switch ${1:expr} { case ${2:val}: ${3:body} }", 2},
-        {"case", CompletionItem::Keyword, "case label", nullptr, "case", 1},
-        {"break", CompletionItem::Keyword, "break loop", nullptr, "break", 1},
-        {"continue", CompletionItem::Keyword, "continue loop", nullptr, "continue", 1},
-        {"try", CompletionItem::Keyword, "try block", "Exception handling", "try { ${1:body} } catch (e) { ${2:handler} }", 2},
-        {"catch", CompletionItem::Keyword, "catch block", nullptr, "catch", 1},
-        {"throw", CompletionItem::Keyword, "throw exception", nullptr, "throw", 1},
+        {"then", CompletionItem::Keyword, "then branch", "", "then", 1},
+        {"else", CompletionItem::Keyword, "else branch", "", "else", 1},
+        {"in", CompletionItem::Keyword, "binding", "", "in", 1},
+        {"do", CompletionItem::Keyword, "loop body", "", "do", 1},
+        {"return", CompletionItem::Keyword, "return statement", "", "return", 1},
+        {"case", CompletionItem::Keyword, "case label", "", "case", 1},
+        {"break", CompletionItem::Keyword, "break loop", "", "break", 1},
+        {"continue", CompletionItem::Keyword, "continue loop", "", "continue", 1},
+        {"catch", CompletionItem::Keyword, "catch block", "", "catch", 1},
+        {"throw", CompletionItem::Keyword, "throw exception", "", "throw", 1},
         {"match", CompletionItem::Keyword, "pattern match", "Pattern matching", "match ${1:expr} { ${2:pattern} => ${3:result} }", 2},
         {"parallel", CompletionItem::Keyword, "parallel loop", "Parallel for loop", "parallel for ${1:i} in ${2:start}, ${3:end} do ${4:body}", 2},
     };

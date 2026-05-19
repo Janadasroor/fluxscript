@@ -213,6 +213,12 @@ add_test_entry(flux-test-type-system "Type System")
 add_test_executable(flux-test-persistent-cache unit/test_persistent_cache.cpp)
 add_test_entry(flux-test-persistent-cache "Persistent JIT Cache")
 
+#
+#  LSP Server
+#
+add_test_executable(flux-test-lsp unit/test_lsp_server.cpp)
+add_test_entry(flux-test-lsp "LSP Server")
+
 set_tests_properties(
     flux-test-phase5
     flux-test-phase7-1
@@ -247,6 +253,7 @@ set_tests_properties(
     flux-test-tiered-jit
     flux-test-type-system
     flux-test-persistent-cache
+    flux-test-lsp
     PROPERTIES
         WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
         TIMEOUT 120
