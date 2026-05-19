@@ -116,6 +116,7 @@ void test_promote_function() {
 
     auto* promoted = jit->promoteFunction("main", OptimizationLevel::O3);
     TC(promoted != nullptr, "promoteFunction returned null");
+    TC(promoted != fn, "promoted pointer should differ from original (rename avoided first-definition-wins)");
 
     TC(jit->isPromoted("main"), "isPromoted should return true");
     TC(promoted == jit->getPointerToFunction("main"),

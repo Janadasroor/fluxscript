@@ -342,6 +342,11 @@ void* FluxJIT::promoteFunction(const std::string& Name, OptimizationLevel target
 
     optimizeModule(fnModule, targetLevel);
 
+    // Rename the function to avoid ORC's first-definition-wins.
+    // The promoted code is cached under the original name in m_functionPtrs.
+    std::string promotedName = Name + ".__promoted";
+    func->setName(promotedName);
+
     auto TSM = llvm::orc::ThreadSafeModule(std::move(*mod), std::move(ctx));
 
     if (auto Err = m_lljit->addIRModule(m_lljit->getMainJITDylib(), std::move(TSM))) {
@@ -353,9 +358,10 @@ void* FluxJIT::promoteFunction(const std::string& Name, OptimizationLevel target
         });
     }
 
-    auto sym = m_lljit->lookup(Name);
+    // Lookup by promoted name directly (bypasses first-definition-wins on the original)
+    auto sym = m_lljit->lookup(promotedName);
     if (!sym) {
-        logError(sym.takeError(), "Failed to lookup function");
+        logError(sym.takeError(), "Failed to lookup promoted function");
         return nullptr;
     }
 
