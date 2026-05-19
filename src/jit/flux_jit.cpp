@@ -399,10 +399,23 @@ void* FluxJIT::getPointerToFunction(const std::string& Name) {
         m_functionPtrs[Name] = ptr;
     }
 
-    // Count this lookup for profiling
+    // Count this lookup for profiling and auto-promote if threshold exceeded
     auto it = m_callCounts.find(Name);
     if (it != m_callCounts.end()) {
-        ++it->second;
+        int count = ++it->second;
+        if (m_autoPromoteThreshold > 0 && count >= m_autoPromoteThreshold) {
+            bool alreadyPromoted = false;
+            {
+                std::lock_guard<std::mutex> lock(m_fnMapMutex);
+                alreadyPromoted = m_promotedPtrs.find(Name) != m_promotedPtrs.end();
+            }
+            if (!alreadyPromoted) {
+                auto* promoted = promoteFunction(Name, OptimizationLevel::O3);
+                if (promoted) {
+                    ptr = promoted;
+                }
+            }
+        }
     }
 
     return ptr;

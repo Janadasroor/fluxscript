@@ -218,6 +218,48 @@ void test_reset_counts() {
     TPASS;
 }
 
+// ----------------------------------------------------------------
+// Test 6: auto-promotion via getPointerToFunction when threshold hit
+// ----------------------------------------------------------------
+void test_auto_promote() {
+    TEST("auto-promotion via getPointerToFunction");
+
+    std::string source = R"(
+        def main() {
+            var s = 0.0
+            var i = 0.0
+            while i < 100.0 do {
+                s = s + i * i
+                i = i + 1.0
+            }
+            s
+        }
+    )";
+
+    void* fn = nullptr;
+    auto* jit = compile_script(source, &fn, "main");
+    TC(jit != nullptr && fn != nullptr, "compile failed");
+    // compile_script calls getPointerToFunction once => count = 1
+    TC(!jit->isPromoted("main"), "should not be promoted after first call");
+
+    // Need 2 more calls to reach threshold of 5 (from compile_script)
+    for (int i = 0; i < 4; i++)
+        jit->getPointerToFunction("main");
+    // count = 5 => auto-promote should have fired
+    TC(jit->isPromoted("main"), "should be auto-promoted after threshold");
+
+    auto* promoted = jit->getPointerToFunction("main");
+    TC(promoted != nullptr, "promoted pointer shouldn't be null");
+
+    using Fn = double(*)();
+    auto f = reinterpret_cast<Fn>(promoted);
+    double r = f();
+    TC(std::abs(r - 328350.0) < 1.0, "wrong result: " + std::to_string(r));
+
+    delete jit;
+    TPASS;
+}
+
 int main() {
     std::cout << "=== Tiered JIT Tests ===\n";
 
@@ -226,6 +268,7 @@ int main() {
     test_promote_idempotent();
     test_threshold();
     test_reset_counts();
+    test_auto_promote();
 
     std::cout << "\nResults: " << g_passed << " passed, " << g_failed << " failed\n";
     return g_failed > 0 ? 1 : 0;
