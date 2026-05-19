@@ -116,12 +116,64 @@ void test_comparison_result() {
     TPASS;
 }
 
+// ----------------------------------------------------------------
+// Test 4: if with comparison condition
+// ----------------------------------------------------------------
+void test_if_bool_condition() {
+    TEST("if with comparison condition");
+    std::string source = R"(
+        def main() {
+            if 5.0 > 3.0 then 42.0 else 0.0
+        }
+    )";
+
+    void* fn = nullptr;
+    auto* jit = compile_script(source, &fn, "main");
+    TC(jit != nullptr && fn != nullptr, "compile failed");
+
+    using Fn = double(*)();
+    auto f = reinterpret_cast<Fn>(fn);
+    double r = f();
+    TC(r == 42.0, "5 > 3 should return 42.0, got " + std::to_string(r));
+
+    delete jit;
+    TPASS;
+}
+
+// ----------------------------------------------------------------
+// Test 5: bool AND/OR
+// ----------------------------------------------------------------
+void test_bool_logic() {
+    TEST("bool && and ||");
+    std::string source = R"(
+        def main() {
+            var a = 5.0 > 3.0
+            var b = 2.0 > 1.0
+            if a && b then 100.0 else 0.0
+        }
+    )";
+
+    void* fn = nullptr;
+    auto* jit = compile_script(source, &fn, "main");
+    TC(jit != nullptr && fn != nullptr, "compile failed");
+
+    using Fn = double(*)();
+    auto f = reinterpret_cast<Fn>(fn);
+    double r = f();
+    TC(r == 100.0, "true && true should give 100.0, got " + std::to_string(r));
+
+    delete jit;
+    TPASS;
+}
+
 int main() {
     std::cout << "=== Type System Tests ===\n";
 
     test_bool_true();
     test_bool_false();
     test_comparison_result();
+    test_if_bool_condition();
+    test_bool_logic();
 
     std::cout << "\nResults: " << g_passed << " passed, " << g_failed << " failed\n";
     return g_failed > 0 ? 1 : 0;

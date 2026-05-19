@@ -84,6 +84,12 @@ static FluxType typeFromLLVM(llvm::Type* Ty) {
     return FluxType(TypeKind::Double);
 }
 
+// Convert any value to i1 branch condition: i1 directly, otherwise FCmpONE against 0.0
+static llvm::Value* boolCondition(llvm::Value* V, llvm::IRBuilder<>& Builder, llvm::LLVMContext& Ctx) {
+    if (V->getType()->isIntegerTy(1)) return V;
+    return Builder.CreateFCmpONE(V, llvm::ConstantFP::get(Ctx, llvm::APFloat(0.0)), "boolcond");
+}
+
 // Helper to promote double to complex <2 x double>
 static TypedValue promoteToComplex(TypedValue V, CodegenContext& context) {
     if (isComplexType(V)) return V;
@@ -808,7 +814,22 @@ TypedValue BinaryExprAST::codegen(CodegenContext& context) {
     llvm::Value* RV = R.Val;
 
     auto createBoolResult = [&](llvm::Value* cmp) -> TypedValue {
-        return TypedValue(context.Builder.CreateUIToFP(cmp, llvm::Type::getDoubleTy(context.TheContext), "booltmp"), FluxType(TypeKind::Double, {}));
+        return TypedValue(cmp, TypeKind::Bool);
+    };
+
+    // Promote integer to double for mixed float/int comparisons.
+    // Uses UIToFP for i1 (bool) to avoid sign-extension issues, SIToFP for wider ints.
+    auto promoteIntToFP = [&](llvm::Value*& V) {
+        if (V->getType()->isIntegerTy(1))
+            V = context.Builder.CreateUIToFP(V, llvm::Type::getDoubleTy(context.TheContext), "bool_to_fp");
+        else if (V->getType()->isIntegerTy())
+            V = context.Builder.CreateSIToFP(V, llvm::Type::getDoubleTy(context.TheContext), "promote");
+    };
+
+    // Reduce any value to i1 branch condition: i1 directly, otherwise FCmpONE against 0.0
+    auto boolCondition = [&](llvm::Value* V) -> llvm::Value* {
+        if (V->getType()->isIntegerTy(1)) return V;
+        return context.Builder.CreateFCmpONE(V, llvm::ConstantFP::get(context.TheContext, llvm::APFloat(0.0)), "boolcond");
     };
 
     // Handle Fixed-Point Arithmetic
@@ -848,19 +869,23 @@ TypedValue BinaryExprAST::codegen(CodegenContext& context) {
 
     bool isIntOp = LV->getType()->isIntegerTy() && RV->getType()->isIntegerTy();
 
-        switch (Op) {
-        case '+':
-            if (isIntOp) return TypedValue(context.Builder.CreateAdd(LV, RV, "addtmp"), FluxType(TypeKind::Int, ResDims));
-            return TypedValue(context.Builder.CreateFAdd(LV, RV, "addtmp"), FluxType(TypeKind::Double, ResDims));
-        case '-':
-            if (isIntOp) return TypedValue(context.Builder.CreateSub(LV, RV, "subtmp"), FluxType(TypeKind::Int, ResDims));
-            return TypedValue(context.Builder.CreateFSub(LV, RV, "subtmp"), FluxType(TypeKind::Double, ResDims));
-        case '*':
-            if (isIntOp) return TypedValue(context.Builder.CreateMul(LV, RV, "multmp"), FluxType(TypeKind::Int, ResDims));
-            return TypedValue(context.Builder.CreateFMul(LV, RV, "multmp"), FluxType(TypeKind::Double, ResDims));
-        case '/':
-            if (isIntOp) return TypedValue(context.Builder.CreateSDiv(LV, RV, "divtmp"), FluxType(TypeKind::Int, ResDims));
-            return TypedValue(context.Builder.CreateFDiv(LV, RV, "divtmp"), FluxType(TypeKind::Double, ResDims));
+    switch (Op) {
+    case '+':
+        if (isIntOp) return TypedValue(context.Builder.CreateAdd(LV, RV, "addtmp"), FluxType(TypeKind::Int, ResDims));
+        promoteIntToFP(LV); promoteIntToFP(RV);
+        return TypedValue(context.Builder.CreateFAdd(LV, RV, "addtmp"), FluxType(TypeKind::Double, ResDims));
+    case '-':
+        if (isIntOp) return TypedValue(context.Builder.CreateSub(LV, RV, "subtmp"), FluxType(TypeKind::Int, ResDims));
+        promoteIntToFP(LV); promoteIntToFP(RV);
+        return TypedValue(context.Builder.CreateFSub(LV, RV, "subtmp"), FluxType(TypeKind::Double, ResDims));
+    case '*':
+        if (isIntOp) return TypedValue(context.Builder.CreateMul(LV, RV, "multmp"), FluxType(TypeKind::Int, ResDims));
+        promoteIntToFP(LV); promoteIntToFP(RV);
+        return TypedValue(context.Builder.CreateFMul(LV, RV, "multmp"), FluxType(TypeKind::Double, ResDims));
+    case '/':
+        if (isIntOp) return TypedValue(context.Builder.CreateSDiv(LV, RV, "divtmp"), FluxType(TypeKind::Int, ResDims));
+        promoteIntToFP(LV); promoteIntToFP(RV);
+        return TypedValue(context.Builder.CreateFDiv(LV, RV, "divtmp"), FluxType(TypeKind::Double, ResDims));
     case static_cast<int>(TokenType::tok_bitwise_and): {
         llvm::Value* LInt = context.Builder.CreateFPToSI(LV, llvm::Type::getInt64Ty(context.TheContext), "andlhsint");
         llvm::Value* RInt = context.Builder.CreateFPToSI(RV, llvm::Type::getInt64Ty(context.TheContext), "andrhsint");
@@ -892,52 +917,41 @@ TypedValue BinaryExprAST::codegen(CodegenContext& context) {
             llvm::FunctionType* PowFTy = llvm::FunctionType::get(llvm::Type::getDoubleTy(context.TheContext), {llvm::Type::getDoubleTy(context.TheContext), llvm::Type::getDoubleTy(context.TheContext)}, false);
             PowF = llvm::Function::Create(PowFTy, llvm::Function::ExternalLinkage, "llvm.pow.f64", context.TheModule);
         }
+        promoteIntToFP(LV); promoteIntToFP(RV);
         return TypedValue(context.Builder.CreateCall(PowF, {LV, RV}, "powtmp"), FluxType(TypeKind::Double, L.Type.Dimensions));
     }
     case '<':
-        if (LV->getType()->isIntegerTy() && RV->getType()->isIntegerTy())
-            return createBoolResult(context.Builder.CreateICmpSLT(LV, RV, "cmptmp"));
-        if (LV->getType()->isIntegerTy()) LV = context.Builder.CreateSIToFP(LV, llvm::Type::getDoubleTy(context.TheContext), "promote");
-        if (RV->getType()->isIntegerTy()) RV = context.Builder.CreateSIToFP(RV, llvm::Type::getDoubleTy(context.TheContext), "promote");
+        if (isIntOp) return createBoolResult(context.Builder.CreateICmpSLT(LV, RV, "cmptmp"));
+        promoteIntToFP(LV); promoteIntToFP(RV);
         return createBoolResult(context.Builder.CreateFCmpOLT(LV, RV, "cmptmp"));
     case '>':
-        if (LV->getType()->isIntegerTy() && RV->getType()->isIntegerTy())
-            return createBoolResult(context.Builder.CreateICmpSGT(LV, RV, "cmptmp"));
-        if (LV->getType()->isIntegerTy()) LV = context.Builder.CreateSIToFP(LV, llvm::Type::getDoubleTy(context.TheContext), "promote");
-        if (RV->getType()->isIntegerTy()) RV = context.Builder.CreateSIToFP(RV, llvm::Type::getDoubleTy(context.TheContext), "promote");
+        if (isIntOp) return createBoolResult(context.Builder.CreateICmpSGT(LV, RV, "cmptmp"));
+        promoteIntToFP(LV); promoteIntToFP(RV);
         return createBoolResult(context.Builder.CreateFCmpOGT(LV, RV, "cmptmp"));
     case static_cast<int>(TokenType::tok_less_equal):
-        if (LV->getType()->isIntegerTy() && RV->getType()->isIntegerTy())
-            return createBoolResult(context.Builder.CreateICmpSLE(LV, RV, "cmptmp"));
-        if (LV->getType()->isIntegerTy()) LV = context.Builder.CreateSIToFP(LV, llvm::Type::getDoubleTy(context.TheContext), "promote");
-        if (RV->getType()->isIntegerTy()) RV = context.Builder.CreateSIToFP(RV, llvm::Type::getDoubleTy(context.TheContext), "promote");
+        if (isIntOp) return createBoolResult(context.Builder.CreateICmpSLE(LV, RV, "cmptmp"));
+        promoteIntToFP(LV); promoteIntToFP(RV);
         return createBoolResult(context.Builder.CreateFCmpOLE(LV, RV, "cmptmp"));
     case static_cast<int>(TokenType::tok_greater_equal):
-        if (LV->getType()->isIntegerTy() && RV->getType()->isIntegerTy())
-            return createBoolResult(context.Builder.CreateICmpSGE(LV, RV, "cmptmp"));
-        if (LV->getType()->isIntegerTy()) LV = context.Builder.CreateSIToFP(LV, llvm::Type::getDoubleTy(context.TheContext), "promote");
-        if (RV->getType()->isIntegerTy()) RV = context.Builder.CreateSIToFP(RV, llvm::Type::getDoubleTy(context.TheContext), "promote");
+        if (isIntOp) return createBoolResult(context.Builder.CreateICmpSGE(LV, RV, "cmptmp"));
+        promoteIntToFP(LV); promoteIntToFP(RV);
         return createBoolResult(context.Builder.CreateFCmpOGE(LV, RV, "cmptmp"));
     case static_cast<int>(TokenType::tok_equal):
-        if (LV->getType()->isIntegerTy() && RV->getType()->isIntegerTy())
-            return createBoolResult(context.Builder.CreateICmpEQ(LV, RV, "cmptmp"));
-        if (LV->getType()->isIntegerTy()) LV = context.Builder.CreateSIToFP(LV, llvm::Type::getDoubleTy(context.TheContext), "promote");
-        if (RV->getType()->isIntegerTy()) RV = context.Builder.CreateSIToFP(RV, llvm::Type::getDoubleTy(context.TheContext), "promote");
+        if (isIntOp) return createBoolResult(context.Builder.CreateICmpEQ(LV, RV, "cmptmp"));
+        promoteIntToFP(LV); promoteIntToFP(RV);
         return createBoolResult(context.Builder.CreateFCmpOEQ(LV, RV, "cmptmp"));
     case static_cast<int>(TokenType::tok_not_equal):
-        if (LV->getType()->isIntegerTy() && RV->getType()->isIntegerTy())
-            return createBoolResult(context.Builder.CreateICmpNE(LV, RV, "cmptmp"));
-        if (LV->getType()->isIntegerTy()) LV = context.Builder.CreateSIToFP(LV, llvm::Type::getDoubleTy(context.TheContext), "promote");
-        if (RV->getType()->isIntegerTy()) RV = context.Builder.CreateSIToFP(RV, llvm::Type::getDoubleTy(context.TheContext), "promote");
+        if (isIntOp) return createBoolResult(context.Builder.CreateICmpNE(LV, RV, "cmptmp"));
+        promoteIntToFP(LV); promoteIntToFP(RV);
         return createBoolResult(context.Builder.CreateFCmpUNE(LV, RV, "cmptmp"));
     case static_cast<int>(TokenType::tok_logical_and): {
-        llvm::Value* LCmp = context.Builder.CreateFCmpONE(LV, llvm::ConstantFP::get(context.TheContext, llvm::APFloat(0.0)), "andlhs");
-        llvm::Value* RCmp = context.Builder.CreateFCmpONE(RV, llvm::ConstantFP::get(context.TheContext, llvm::APFloat(0.0)), "andrhs");
+        llvm::Value* LCmp = boolCondition(LV);
+        llvm::Value* RCmp = boolCondition(RV);
         return createBoolResult(context.Builder.CreateAnd(LCmp, RCmp, "andtmp"));
     }
     case static_cast<int>(TokenType::tok_logical_or): {
-        llvm::Value* LCmp = context.Builder.CreateFCmpONE(LV, llvm::ConstantFP::get(context.TheContext, llvm::APFloat(0.0)), "orlhs");
-        llvm::Value* RCmp = context.Builder.CreateFCmpONE(RV, llvm::ConstantFP::get(context.TheContext, llvm::APFloat(0.0)), "orrhs");
+        llvm::Value* LCmp = boolCondition(LV);
+        llvm::Value* RCmp = boolCondition(RV);
         return createBoolResult(context.Builder.CreateOr(LCmp, RCmp, "ortmp"));
     }
     case static_cast<int>(TokenType::tok_ew_mul): {
@@ -998,8 +1012,8 @@ TypedValue UnaryExprAST::codegen(CodegenContext& context) {
     }
     case '!':
     case static_cast<int>(TokenType::tok_logical_not): {
-        llvm::Value* IsNonZero = context.Builder.CreateFCmpONE(V, llvm::ConstantFP::get(context.TheContext, llvm::APFloat(0.0)), "isnonzero");
-        return TypedValue(context.Builder.CreateUIToFP(context.Builder.CreateNot(IsNonZero, "lognot"), llvm::Type::getDoubleTy(context.TheContext), "booltmp"), FluxType(TypeKind::Double, {}));
+        llvm::Value* Cond = boolCondition(V, context.Builder, context.TheContext);
+        return TypedValue(context.Builder.CreateNot(Cond, "lognot"), TypeKind::Bool);
     }
     default: return TypedValue();
     }
@@ -1401,7 +1415,7 @@ TypedValue IfExprAST::codegen(CodegenContext& context) {
     TypedValue CondTV = Cond->codegen(context);
     if (!CondTV.Val) return TypedValue();
     
-    llvm::Value* CondV = context.Builder.CreateFCmpONE(CondTV.Val, llvm::ConstantFP::get(context.TheContext, llvm::APFloat(0.0)), "ifcond");
+    llvm::Value* CondV = boolCondition(CondTV.Val, context.Builder, context.TheContext);
     llvm::Function* TheFunction = context.Builder.GetInsertBlock()->getParent();
     
     llvm::BasicBlock* ThenBB = llvm::BasicBlock::Create(context.TheContext, "then", TheFunction);
@@ -1524,7 +1538,7 @@ TypedValue WhileExprAST::codegen(CodegenContext& context) {
     context.Builder.SetInsertPoint(CondBB);
     TypedValue CondTV = Cond->codegen(context);
     if (!CondTV.Val) return TypedValue();
-    llvm::Value* CondV = context.Builder.CreateFCmpONE(CondTV.Val, llvm::ConstantFP::get(context.TheContext, llvm::APFloat(0.0)), "whilecond");
+    llvm::Value* CondV = boolCondition(CondTV.Val, context.Builder, context.TheContext);
     context.Builder.CreateCondBr(CondV, BodyBB, AfterBB);
     TheFunction->insert(TheFunction->end(), BodyBB);
     context.Builder.SetInsertPoint(BodyBB);
