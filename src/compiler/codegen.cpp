@@ -1258,7 +1258,45 @@ TypedValue CallExprAST::codegen(CodegenContext& context) {
 
     // 2. Handle non-argument built-ins (pi, e, etc. would go here if not externs)
 
-    // 3. Regular function lookup
+    // 3. LLVM intrinsics for math functions (LTO: inline to single CPU instructions)
+    if (Args.size() == 1) {
+        TypedValue Arg0 = Args[0]->codegen(context);
+        if (Arg0.Val && Arg0.Type.Kind == TypeKind::Double) {
+            llvm::Type* DoubleTy = llvm::Type::getDoubleTy(context.TheContext);
+            if (Name == "sin") {
+                llvm::Function* F = llvm::Intrinsic::getOrInsertDeclaration(
+                    context.TheModule, llvm::Intrinsic::sin, {DoubleTy});
+                return TypedValue(context.Builder.CreateCall(F, {Arg0.Val}, "sintmp"), TypeKind::Double);
+            }
+            if (Name == "cos") {
+                llvm::Function* F = llvm::Intrinsic::getOrInsertDeclaration(
+                    context.TheModule, llvm::Intrinsic::cos, {DoubleTy});
+                return TypedValue(context.Builder.CreateCall(F, {Arg0.Val}, "costmp"), TypeKind::Double);
+            }
+            if (Name == "sqrt") {
+                llvm::Function* F = llvm::Intrinsic::getOrInsertDeclaration(
+                    context.TheModule, llvm::Intrinsic::sqrt, {DoubleTy});
+                return TypedValue(context.Builder.CreateCall(F, {Arg0.Val}, "sqrttmp"), TypeKind::Double);
+            }
+            if (Name == "exp") {
+                llvm::Function* F = llvm::Intrinsic::getOrInsertDeclaration(
+                    context.TheModule, llvm::Intrinsic::exp, {DoubleTy});
+                return TypedValue(context.Builder.CreateCall(F, {Arg0.Val}, "exptmp"), TypeKind::Double);
+            }
+            if (Name == "log" || Name == "ln") {
+                llvm::Function* F = llvm::Intrinsic::getOrInsertDeclaration(
+                    context.TheModule, llvm::Intrinsic::log, {DoubleTy});
+                return TypedValue(context.Builder.CreateCall(F, {Arg0.Val}, "logtmp"), TypeKind::Double);
+            }
+            if (Name == "log10") {
+                llvm::Function* F = llvm::Intrinsic::getOrInsertDeclaration(
+                    context.TheModule, llvm::Intrinsic::log10, {DoubleTy});
+                return TypedValue(context.Builder.CreateCall(F, {Arg0.Val}, "log10tmp"), TypeKind::Double);
+            }
+        }
+    }
+
+    // 4. Regular function lookup
     llvm::Function* CalleeF = context.TheModule->getFunction(Callee);
     if (!CalleeF && sepPos != std::string::npos) {
         std::string unqualified = Callee.substr(sepPos + 2);
