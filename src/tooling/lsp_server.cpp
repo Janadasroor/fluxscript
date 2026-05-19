@@ -124,6 +124,12 @@ std::string LspServer::processRequest(const std::string& jsonRequest) {
         return makeResponse(id, handleTextDocumentHover(params));
     } else if (method == "textDocument/definition") {
         return makeResponse(id, handleTextDocumentDefinition(params));
+    } else if (method == "textDocument/references") {
+        return makeResponse(id, handleTextDocumentReferences(params));
+    } else if (method == "textDocument/codeAction") {
+        return makeResponse(id, handleTextDocumentCodeAction(params));
+    } else if (method == "textDocument/formatting") {
+        return makeResponse(id, handleTextDocumentFormatting(params));
     } else if (method == "textDocument/signatureHelp") {
         return makeResponse(id, handleTextDocumentSignatureHelp(params));
     } else if (method == "textDocument/documentSymbol") {
@@ -217,19 +223,37 @@ std::vector<Diagnostic> LspServer::analyzeDocument(const std::string& uri) {
 
     // Lex and parse to find errors
     Flux::Lexer lexer(doc->text);
-    Flux::Parser parser(doc->text);
+    lexer.getNextToken(); // Prime the lexer
 
-    // Try parsing the document
-    auto expr = parser.ParseExpression();
+    // Collect lexer errors by scanning all tokens
+    while (lexer.CurTok != static_cast<int>(Flux::TokenType::tok_eof)) {
+        lexer.getNextToken();
+    }
 
-    if (parser.hasError()) {
+    for (auto& err : lexer.getErrors()) {
         Diagnostic d;
         d.severity = Diagnostic::Error;
-        d.message = "Parse error";
+        d.message = err.message;
         d.source = "fluxscript-compiler";
-        d.range.start = {0, 0};
-        d.range.end = {0, 1};
+        d.range.start = {err.line - 1, err.column - 1};
+        d.range.end = {err.line - 1, err.column};
         diags.push_back(d);
+    }
+
+    // Also parse to get parser-level errors
+    {
+        Flux::Parser parser(doc->text);
+        auto expr = parser.ParseExpression();
+
+        for (auto& err : parser.getErrors()) {
+            Diagnostic d;
+            d.severity = Diagnostic::Error;
+            d.message = err.message;
+            d.source = "fluxscript-compiler";
+            d.range.start = {err.line - 1, err.column - 1};
+            d.range.end = {err.line - 1, err.column};
+            diags.push_back(d);
+        }
     }
 
     // Build symbol table for completions
@@ -244,28 +268,22 @@ std::vector<SymbolEntry> LspServer::buildSymbolTable(const std::string& uri) {
     if (!doc) return symbols;
 
     Flux::Lexer lexer(doc->text);
-    int token;
-    int line = 0, col = 0;
 
-    while ((token = lexer.getNextToken()) != static_cast<int>(Flux::TokenType::tok_eof)) {
-        Position pos = {lexer.getCurrentLine() - 1, lexer.getCurrentColumn() - 1};
+    while (lexer.getNextToken() != static_cast<int>(Flux::TokenType::tok_eof)) {
+        int token = lexer.CurTok;
 
+        // Skip keywords that aren't symbol names
         if (token == static_cast<int>(Flux::TokenType::tok_identifier)) {
             SymbolEntry entry;
             entry.name = lexer.IdentifierStr;
             entry.uri = uri;
-            entry.range.start = pos;
-            entry.range.end = {pos.line, pos.character + static_cast<int>(entry.name.size())};
+            entry.range.start = {lexer.getCurrentLine() - 1, lexer.getCurrentColumn() - 1};
+            entry.range.end = {entry.range.start.line,
+                               entry.range.start.character + static_cast<int>(entry.name.size())};
 
             // Peek ahead to determine kind
-            std::string nextIdent;
-            int nextToken = lexer.CurTok;
-            if (nextToken == '(') {
+            if (lexer.peekToken() == '(') {
                 entry.kind = SymbolEntry::Function;
-            } else if (entry.name == "def" || entry.name == "fn") {
-                entry.kind = SymbolEntry::Function;
-            } else if (entry.name == "let" || entry.name == "var") {
-                entry.kind = SymbolEntry::Variable;
             } else {
                 entry.kind = SymbolEntry::Variable;
             }
@@ -284,13 +302,19 @@ std::vector<SymbolEntry> LspServer::buildSymbolTable(const std::string& uri) {
 std::string LspServer::handleInitialize(const std::string& params) {
     return R"({
         "capabilities": {
-            "textDocumentSync": 1,
+            "textDocumentSync": {
+                "openClose": true,
+                "change": 2
+            },
             "completionProvider": {
                 "resolveProvider": false,
                 "triggerCharacters": [".", "(", ","]
             },
             "hoverProvider": true,
             "definitionProvider": true,
+            "referencesProvider": true,
+            "codeActionProvider": true,
+            "documentFormattingProvider": true,
             "signatureHelpProvider": {
                 "triggerCharacters": ["(", ","]
             },
@@ -321,9 +345,80 @@ std::string LspServer::handleTextDocumentDidChange(const std::string& params) {
     std::string uri = jsonGet(params, "textDocument.uri");
     int version = jsonGetInt(params, "textDocument.version");
 
-    // Get full text from contentChanges[0].text
+    auto it = m_documents.find(uri);
+    if (it == m_documents.end()) return "";
+
+    // Check for incremental changes (mode 2) vs full text (mode 1)
     size_t arrStart = params.find("\"contentChanges\"");
-    if (arrStart != std::string::npos) {
+    if (arrStart == std::string::npos) return "";
+
+    // Try to find a "range" key — if present, it's incremental
+    size_t rangePos = params.find("\"range\"", arrStart);
+    if (rangePos != std::string::npos && rangePos < params.find("\"text\"", arrStart)) {
+        // Incremental change: extract the range and replacement text
+        size_t textStart = params.find("\"text\"", arrStart);
+
+        // Extract text
+        std::string replacement;
+        size_t colonPos = params.find(':', textStart);
+        size_t quoteStart = params.find('"', colonPos);
+        if (quoteStart != std::string::npos) {
+            size_t quoteEnd = quoteStart + 1;
+            while (quoteEnd < params.size()) {
+                if (params[quoteEnd] == '"' && params[quoteEnd-1] != '\\') break;
+                replacement += params[quoteEnd];
+                quoteEnd++;
+            }
+        }
+
+        // Extract range start line/character
+        size_t startLinePos = params.find("\"line\"", rangePos);
+        int startLine = 0, startChar = 0, endLine = 0, endChar = 0;
+        if (startLinePos != std::string::npos) {
+            size_t colon = params.find(':', startLinePos);
+            size_t numStart = colon + 1;
+            while (numStart < params.size() && params[numStart] == ' ') numStart++;
+            startLine = std::stoi(params.substr(numStart));
+        }
+
+        size_t startCharPos = params.find("\"character\"", rangePos);
+        if (startCharPos != std::string::npos) {
+            size_t colon = params.find(':', startCharPos);
+            size_t numStart = colon + 1;
+            while (numStart < params.size() && params[numStart] == ' ') numStart++;
+            startChar = std::stoi(params.substr(numStart));
+        }
+
+        // Find end range
+        size_t endRangePos = params.find("\"end\"", rangePos + 10);
+        if (endRangePos != std::string::npos) {
+            size_t endLinePos = params.find("\"line\"", endRangePos);
+            if (endLinePos != std::string::npos) {
+                size_t colon = params.find(':', endLinePos);
+                size_t numStart = colon + 1;
+                while (numStart < params.size() && params[numStart] == ' ') numStart++;
+                endLine = std::stoi(params.substr(numStart));
+            }
+            size_t endCharPos = params.find("\"character\"", endRangePos);
+            if (endCharPos != std::string::npos) {
+                size_t colon = params.find(':', endCharPos);
+                size_t numStart = colon + 1;
+                while (numStart < params.size() && params[numStart] == ' ') numStart++;
+                endChar = std::stoi(params.substr(numStart));
+            }
+        }
+
+        // Apply incremental change
+        size_t startOffset = it->second.positionToOffset({startLine, startChar});
+        size_t endOffset = it->second.positionToOffset({endLine, endChar});
+        it->second.text.replace(startOffset, endOffset - startOffset, replacement);
+        it->second.version = version;
+
+        // Re-analyze and publish diagnostics
+        auto diags = analyzeDocument(uri);
+        publishDiagnostics(uri, diags);
+    } else {
+        // Full text replacement (mode 1 fallback)
         size_t textStart = params.find("\"text\"", arrStart);
         if (textStart != std::string::npos) {
             size_t colonPos = params.find(':', textStart);
@@ -400,16 +495,94 @@ std::string LspServer::handleTextDocumentDefinition(const std::string& params) {
     int line = jsonGetInt(params, "position.line");
     int col = jsonGetInt(params, "position.character");
 
-    auto* loc = getDefinition(uri, {line, col});
-    if (!loc) return "null";
+    auto loc = getDefinition(uri, {line, col});
+    if (loc.uri.empty()) return "null";
 
     std::ostringstream oss;
-    oss << R"({"uri":")" << jsonEscape(loc->uri) << "\",";
-    oss << R"("range":{"start":{"line":)" << loc->range.start.line << ",";
-    oss << R"("character":)" << loc->range.start.character << "},";
-    oss << R"("end":{"line":)" << loc->range.end.line << ",";
-    oss << R"("character":)" << loc->range.end.character << "}}";
-    delete loc;
+    oss << R"({"uri":")" << jsonEscape(loc.uri) << "\",";
+    oss << R"("range":{"start":{"line":)" << loc.range.start.line << ",";
+    oss << R"("character":)" << loc.range.start.character << "},";
+    oss << R"("end":{"line":)" << loc.range.end.line << ",";
+    oss << R"("character":)" << loc.range.end.character << "}}";
+    return oss.str();
+}
+
+std::string LspServer::handleTextDocumentReferences(const std::string& params) {
+    std::string uri = jsonGet(params, "textDocument.uri");
+    int line = jsonGetInt(params, "position.line");
+    int col = jsonGetInt(params, "position.character");
+
+    auto refs = getReferences(uri, {line, col});
+
+    std::ostringstream oss;
+    oss << "[";
+    for (size_t i = 0; i < refs.size(); ++i) {
+        if (i > 0) oss << ",";
+        oss << R"({"uri":")" << jsonEscape(refs[i].uri) << "\",";
+        oss << R"("range":{"start":{"line":)" << refs[i].range.start.line << ",";
+        oss << R"("character":)" << refs[i].range.start.character << "},";
+        oss << R"("end":{"line":)" << refs[i].range.end.line << ",";
+        oss << R"("character":)" << refs[i].range.end.character << "}}";
+    }
+    oss << "]";
+    return oss.str();
+}
+
+std::string LspServer::handleTextDocumentCodeAction(const std::string& params) {
+    std::string uri = jsonGet(params, "textDocument.uri");
+
+    // Get diagnostics at this position
+    auto diags = analyzeDocument(uri);
+
+    int line = jsonGetInt(params, "range.start.line");
+    int col = jsonGetInt(params, "range.start.character");
+    Position pos{line, col};
+
+    auto actions = getCodeActions(uri, pos, diags);
+
+    std::ostringstream oss;
+    oss << "[";
+    for (size_t i = 0; i < actions.size(); ++i) {
+        if (i > 0) oss << ",";
+        oss << "{";
+        oss << R"("title":")" << jsonEscape(actions[i].title) << "\",";
+        oss << R"("kind":")" << jsonEscape(actions[i].kind) << "\"";
+        if (!actions[i].edit.empty()) {
+            oss << R"(,"edit":)" << actions[i].edit;
+        }
+        oss << "}";
+    }
+    oss << "]";
+    return oss.str();
+}
+
+std::string LspServer::handleTextDocumentFormatting(const std::string& params) {
+    std::string uri = jsonGet(params, "textDocument.uri");
+
+    // Determine tab size from options
+    std::string tabSizeStr = jsonGet(params, "options.tabSize");
+    std::string tabStr = "    ";  // default 4 spaces
+    if (!tabSizeStr.empty()) {
+        try {
+            int tabSize = std::stoi(tabSizeStr);
+            tabStr = std::string(static_cast<size_t>(tabSize), ' ');
+        } catch (...) {}
+    }
+
+    auto edits = computeTextEdits(uri, tabStr);
+
+    std::ostringstream oss;
+    oss << "[";
+    for (size_t i = 0; i < edits.size(); ++i) {
+        if (i > 0) oss << ",";
+        oss << "{";
+        oss << R"("range":{"start":{"line":)" << edits[i].first.line << ",";
+        oss << R"("character":)" << edits[i].first.character << "},";
+        oss << R"("end":{"line":)" << edits[i].first.line << ",";
+        oss << R"("character":0}},)"
+           << R"("newText":")" << jsonEscape(edits[i].second) << "\"}";
+    }
+    oss << "]";
     return oss.str();
 }
 
@@ -684,24 +857,24 @@ HoverContent LspServer::getHover(const std::string& uri, Position pos) {
 // Go-to-Definition
 // ============================================================================
 
-Location* LspServer::getDefinition(const std::string& uri, Position pos) {
+Location LspServer::getDefinition(const std::string& uri, Position pos) {
+    Location loc;
     auto* doc = getDocument(uri);
-    if (!doc) return nullptr;
+    if (!doc) return loc;
 
     std::string word = doc->getWordAtPosition(pos);
-    if (word.empty()) return nullptr;
+    if (word.empty()) return loc;
 
     auto symbols = m_symbolTables.count(uri) ? m_symbolTables[uri] : buildSymbolTable(uri);
     for (auto& sym : symbols) {
         if (sym.name == word) {
-            auto* loc = new Location();
-            loc->uri = sym.uri;
-            loc->range = sym.range;
+            loc.uri = sym.uri;
+            loc.range = sym.range;
             return loc;
         }
     }
 
-    return nullptr;
+    return loc;
 }
 
 // ============================================================================
@@ -914,6 +1087,137 @@ void LspServer::publishDiagnostics(const std::string& uri, const std::vector<Dia
     std::string notification = makeNotification("textDocument/publishDiagnostics", oss.str());
     std::cout << "Content-Length: " << notification.size() << "\r\n\r\n" << notification;
     std::cout.flush();
+}
+
+// ============================================================================
+// References Provider
+// ============================================================================
+
+std::vector<Location> LspServer::getReferences(const std::string& uri, Position pos) {
+    std::vector<Location> refs;
+    auto* doc = getDocument(uri);
+    if (!doc) return refs;
+
+    std::string word = doc->getWordAtPosition(pos);
+    if (word.empty()) return refs;
+
+    auto symbols = m_symbolTables.count(uri) ? m_symbolTables[uri] : buildSymbolTable(uri);
+
+    for (auto& sym : symbols) {
+        if (sym.name == word) {
+            Location loc;
+            loc.uri = sym.uri;
+            loc.range = sym.range;
+            refs.push_back(loc);
+        }
+    }
+
+    return refs;
+}
+
+// ============================================================================
+// Code Actions Provider
+// ============================================================================
+
+std::vector<LspServer::CodeAction> LspServer::getCodeActions(const std::string& uri, Position pos, const std::vector<Diagnostic>& diags) {
+    std::vector<CodeAction> actions;
+    auto* doc = getDocument(uri);
+    if (!doc) return actions;
+
+    for (auto& d : diags) {
+        // Only suggest actions for diagnostics at or near the requested position
+        if (d.range.start.line != pos.line) continue;
+
+        // Action: add missing semicolon
+        if (d.message.find("expected ';'") != std::string::npos ||
+            d.message.find("expected ;") != std::string::npos) {
+            CodeAction action;
+            action.title = "Add missing ';'";
+            action.kind = "quickfix";
+            std::string line = doc->getLine(static_cast<size_t>(d.range.start.line));
+            std::string newLine = line + ";";
+            std::ostringstream oss;
+            oss << R"({"changes":{")" << jsonEscape(uri) << R"(":[{)";
+            oss << R"("range":{"start":{"line":)" << d.range.start.line << R"(,"character":0},)";
+            oss << R"("end":{"line":)" << d.range.start.line << R"(,"character":)" << line.size() << R"(}},)";
+            oss << R"("newText":")" << jsonEscape(newLine) << R"("}]}})";
+            action.edit = oss.str();
+            actions.push_back(action);
+        }
+
+        // Action: add missing closing paren
+        if (d.message.find("expected ')'") != std::string::npos) {
+            CodeAction action;
+            action.title = "Add missing ')'";
+            action.kind = "quickfix";
+            std::string line = doc->getLine(static_cast<size_t>(d.range.start.line));
+            std::ostringstream oss;
+            oss << R"({"changes":{")" << jsonEscape(uri) << R"(":[{)";
+            oss << R"("range":{"start":{"line":)" << d.range.start.line << R"(,"character":)" << line.size() << R"(},)";
+            oss << R"("end":{"line":)" << d.range.start.line << R"(,"character":)" << line.size() << R"(}},)";
+            oss << R"("newText":")" << ")" << R"("}]}})";
+            action.edit = oss.str();
+            actions.push_back(action);
+        }
+    }
+
+    return actions;
+}
+
+// ============================================================================
+// Document Formatting
+// ============================================================================
+
+std::vector<std::pair<Position, std::string>> LspServer::computeTextEdits(const std::string& uri, const std::string& tabStr) {
+    std::vector<std::pair<Position, std::string>> edits;
+    auto* doc = getDocument(uri);
+    if (!doc) return edits;
+
+    size_t lineStart = 0;
+    int lineNum = 0;
+    int baseIndent = 0;
+
+    for (size_t i = 0; i <= doc->text.size(); ++i) {
+        if (i == doc->text.size() || doc->text[i] == '\n') {
+            std::string originalLine = doc->text.substr(lineStart, i - lineStart);
+
+            // Trim whitespace
+            size_t firstNonSpace = originalLine.find_first_not_of(" \t");
+            std::string trimmed = (firstNonSpace == std::string::npos) ? "" : originalLine.substr(firstNonSpace);
+
+            // Count brackets in trimmed content to adjust indent for NEXT line
+            int openBrackets = 0;
+            int closeBrackets = 0;
+            for (char c : trimmed) {
+                if (c == '{' || c == '(' || c == '[') openBrackets++;
+                if (c == '}' || c == ')' || c == ']') closeBrackets++;
+            }
+
+            // The indent level for this line is baseIndent
+            int effectiveIndent = baseIndent - closeBrackets;
+            if (effectiveIndent < 0) effectiveIndent = 0;
+
+            // Build properly indented line
+            std::string newLine;
+            if (!trimmed.empty()) {
+                for (int j = 0; j < effectiveIndent; j++) newLine += tabStr;
+                newLine += trimmed;
+            }
+
+            if (newLine != originalLine) {
+                edits.push_back({{lineNum, 0}, newLine});
+            }
+
+            // Update baseIndent for next line
+            baseIndent = effectiveIndent + openBrackets;
+            if (baseIndent < 0) baseIndent = 0;
+
+            lineStart = i + 1;
+            lineNum++;
+        }
+    }
+
+    return edits;
 }
 
 } // namespace Tooling

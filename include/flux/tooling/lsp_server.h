@@ -157,6 +157,9 @@ public:
     std::string handleTextDocumentCompletion(const std::string& params);
     std::string handleTextDocumentHover(const std::string& params);
     std::string handleTextDocumentDefinition(const std::string& params);
+    std::string handleTextDocumentReferences(const std::string& params);
+    std::string handleTextDocumentCodeAction(const std::string& params);
+    std::string handleTextDocumentFormatting(const std::string& params);
     std::string handleTextDocumentSignatureHelp(const std::string& params);
     std::string handleTextDocumentDocumentSymbol(const std::string& params);
     std::string handleWorkspaceSymbol(const std::string& params);
@@ -172,7 +175,21 @@ public:
     HoverContent getHover(const std::string& uri, Position pos);
 
     // Definition provider
-    Location* getDefinition(const std::string& uri, Position pos);
+    Location getDefinition(const std::string& uri, Position pos);
+
+    // References provider
+    std::vector<Location> getReferences(const std::string& uri, Position pos);
+
+    // Code actions
+    struct CodeAction {
+        std::string title;
+        std::string kind;  // "quickfix", "refactor", etc.
+        std::string edit;  // WorkspaceEdit JSON
+    };
+    std::vector<CodeAction> getCodeActions(const std::string& uri, Position pos, const std::vector<Diagnostic>& diags);
+
+    // Document formatting
+    std::vector<std::pair<Position, std::string>> computeTextEdits(const std::string& uri, const std::string& tabSize);
 
     // Signature help
     struct SignatureHelpResult {

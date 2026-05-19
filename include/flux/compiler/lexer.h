@@ -376,6 +376,12 @@ enum class TokenType {
     tok_integer = -300,
 };
 
+struct LexerDiagnostic {
+    int line = 0;
+    int column = 0;
+    std::string message;
+};
+
 class Lexer {
 public:
     explicit Lexer(const std::string& input);
@@ -400,13 +406,17 @@ public:
     size_t getCurrentTokenLength() const { return m_currentTokenLength; }
     std::string getCurrentTokenText() const;
     std::string getCurrentLineText() const;
-    void reportError(const std::string& message) const;
+    void reportError(const std::string& message);
+    void clearErrors();
+    const std::vector<LexerDiagnostic>& getErrors() const;
+    bool hasErrors() const;
 
 private:
     int gettok();
     int advance();
     llvm::SMLoc getCurrentTokenLoc() const;
 
+    std::vector<LexerDiagnostic> m_errors;
     std::string m_input;
     size_t m_pos;
     size_t m_tokenStart;

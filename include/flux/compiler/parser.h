@@ -53,6 +53,9 @@ public:
     bool hasError() const { return m_hasError; }
     void clearError() { m_hasError = false; }
 
+    // Access parser errors (for LSP diagnostics)
+    const std::vector<LexerDiagnostic>& getErrors() const { return m_lexer.getErrors(); }
+
 private:
     std::unique_ptr<ExprAST> ParseNumberExpr();
     std::unique_ptr<ExprAST> ParseFixedExpr();

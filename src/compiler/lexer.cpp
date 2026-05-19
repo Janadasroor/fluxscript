@@ -155,11 +155,23 @@ llvm::SMLoc Lexer::getCurrentTokenLoc() const {
     return llvm::SMLoc::getFromPointer(buffer->getBufferStart() + safeOffset);
 }
 
-void Lexer::reportError(const std::string& message) const {
-    if (!m_sourceMgr || m_sourceMgr->getNumBuffers() == 0)
-        return;
+void Lexer::reportError(const std::string& message) {
+    m_errors.push_back({m_currentTokenLine, m_currentTokenColumn, message});
+    if (m_sourceMgr && m_sourceMgr->getNumBuffers() > 0) {
+        m_sourceMgr->PrintMessage(getCurrentTokenLoc(), llvm::SourceMgr::DK_Error, message);
+    }
+}
 
-    m_sourceMgr->PrintMessage(getCurrentTokenLoc(), llvm::SourceMgr::DK_Error, message);
+void Lexer::clearErrors() {
+    m_errors.clear();
+}
+
+const std::vector<LexerDiagnostic>& Lexer::getErrors() const {
+    return m_errors;
+}
+
+bool Lexer::hasErrors() const {
+    return !m_errors.empty();
 }
 
 int Lexer::gettok() {
@@ -854,6 +866,7 @@ int Lexer::peekToken() {
     int savedLine = m_line;
     int savedColumn = m_column;
     size_t savedTokenStart = m_tokenStart;
+    size_t savedErrorCount = m_errors.size();
 
     // Advance and get next token
     int nextTok = gettok();
@@ -864,6 +877,7 @@ int Lexer::peekToken() {
     m_line = savedLine;
     m_column = savedColumn;
     m_tokenStart = savedTokenStart;
+    m_errors.resize(savedErrorCount);
 
     return nextTok;
 }
