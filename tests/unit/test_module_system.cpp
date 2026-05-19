@@ -845,6 +845,57 @@ def main() {
     PASS();
 }
 
+void test_stdlib_string_jit() {
+    TEST("Auto-imported string module (len/slice/find/cmp/regex)");
+    auto old_cwd = fs::current_path();
+    fs::current_path(TESTS_SOURCE_DIR);
+
+    std::string code = R"(
+def main() {
+    var s = "hello world"
+    len(s) + at(s, 1.0) + cmp("hello", "hello")
+}
+)";
+
+    CompilerOptions opts;
+    opts.injectStdlib = true;
+    opts.optimizationLevel = OptimizationLevel::O0;
+    opts.inputName = "auto_import_string_test.flux";
+    opts.moduleName = "auto_import_string_test";
+
+    CompilerInstance compiler(opts);
+    std::string error;
+    auto artifacts = compiler.compileToIR(code, &error);
+    if (!artifacts) {
+        fs::current_path(old_cwd);
+        FAIL("Compile error (string test): " + error);
+        return;
+    }
+
+    auto jit = std::make_unique<FluxJIT>(OptimizationLevel::O0);
+    jit->addModule(
+        std::move(artifacts->codegenContext->OwnedModule),
+        std::move(artifacts->codegenContext->OwnedContext)
+    );
+    registerRuntimeFunctions(*jit);
+
+    void* fn = jit->getPointerToFunction("main");
+    if (!fn) {
+        fs::current_path(old_cwd);
+        FAIL("getPointerToFunction failed for main");
+        return;
+    }
+
+    using Fn = double(*)(double);
+    double result = reinterpret_cast<Fn>(fn)(0.0);
+    // len("hello world") = 11 + at(s,1) = 101 'e' + cmp("hello","hello") = 0 = 112
+    TC(std::abs(result - 112.0) < 0.01,
+       "expected 112, got " + std::to_string(result));
+
+    fs::current_path(old_cwd);
+    PASS();
+}
+
 int main() {
     std::string modules_root = TESTS_SOURCE_DIR "/tests/modules";
     std::string mod_dir = setup_module_dir(modules_root);
@@ -894,6 +945,7 @@ int main() {
     test_stdlib_array_auto_import_jit();
     test_stdlib_array_utilities_jit();
     test_stdlib_stats_jit();
+    test_stdlib_string_jit();
 
     if (fs::exists(TESTS_SOURCE_DIR "/stdlib/math.flux")) {
         test_auto_import_jit();

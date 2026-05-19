@@ -140,6 +140,11 @@ void CompilerInstance::injectStandardLibrary(CodegenContext& context,
     regExtern("flux_string_slice",  DblTy(), {DblTy(), DblTy(), DblTy()});
     regExtern("flux_string_find",   DblTy(), {DblTy(), DblTy()});
     regExtern("flux_parse_number",  DblTy(), {DblTy()});
+    regExtern("flux_string_concat", DblTy(), {DblTy(), DblTy()});
+    regExtern("flux_double_to_string", DblTy(), {DblTy()});
+    regExtern("flux_regex_match",   DblTy(), {DblTy(), DblTy()});
+    regExtern("flux_regex_replace", DblTy(), {DblTy(), DblTy(), DblTy()});
+    regExtern("flux_print_string",  DblTy(), {DblTy()});
 
     // FFT
     regExtern("fft",               MatTy(), {MatTy(), DblTy()});
@@ -819,7 +824,7 @@ std::unique_ptr<CompileArtifacts> CompilerInstance::compileToIR(const std::strin
         injectStandardLibrary(*artifacts->codegenContext, artifacts->functionReturnTypes);
         // Auto-import standard library modules so they're available without
         // explicit import. If a module is not found, it's silently skipped.
-        std::vector<std::string> stdlibModules = {"math", "trig", "array", "stats"};
+        std::vector<std::string> stdlibModules = {"math", "trig", "array", "stats", "string"};
         for (const auto& mod : stdlibModules) {
             std::string importError;
             importModule(mod, *artifacts->codegenContext, artifacts->functionReturnTypes,
