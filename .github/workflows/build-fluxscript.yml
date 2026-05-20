@@ -25,6 +25,9 @@ jobs:
           - os: ubuntu-22.04
             arch: aarch64
             artifact: android-aarch64
+          - os: ubuntu-22.04
+            arch: x86_64
+            artifact: android-x86_64
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -63,7 +66,7 @@ jobs:
           echo "LLVM_PREFIX=$(brew --prefix llvm@21)" >> "$GITHUB_ENV"
 
       - name: Build & Package (Linux)
-        if: runner.os == 'Linux' && matrix.artifact != 'android-aarch64'
+        if: runner.os == 'Linux' && !startsWith(matrix.artifact, 'android')
         run: |
           docker run --rm -v $PWD:/src -w /src \
             ubuntu:20.04 \
@@ -113,14 +116,14 @@ jobs:
           cmake --build build -j$(sysctl -n hw.logicalcpu)
 
       - name: Install deps (Android)
-        if: matrix.artifact == 'android-aarch64'
+        if: startsWith(matrix.artifact, 'android')
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq \
             build-essential cmake ninja-build curl unzip
 
       - name: Setup Android NDK
-        if: matrix.artifact == 'android-aarch64'
+        if: startsWith(matrix.artifact, 'android')
         run: |
           curl -fsSL -o ndk.zip \
             https://dl.google.com/android/repository/android-ndk-r27c-linux.zip
@@ -128,18 +131,23 @@ jobs:
           echo "ANDROID_NDK_HOME=$(pwd)/android-ndk-r27c" >> "$GITHUB_ENV"
 
       - name: Download pre-built LLVM for Android
-        if: matrix.artifact == 'android-aarch64'
+        if: startsWith(matrix.artifact, 'android')
         run: |
           set -xe
           curl -fsSL -o llvm-android.tar.xz \
-            https://github.com/Janadasroor/llvm-releases/releases/download/llvm-21.1.0-v5/llvm-android-aarch64.tar.xz
+            https://github.com/Janadasroor/llvm-releases/releases/download/llvm-21.1.0-v5/llvm-android-${{ matrix.arch }}.tar.xz
           mkdir -p llvm-android
           tar xf llvm-android.tar.xz -C llvm-android
 
       - name: Build FluxScript for Android
-        if: matrix.artifact == 'android-aarch64'
+        if: startsWith(matrix.artifact, 'android')
         run: |
           set -xe
+
+          case ${{ matrix.arch }} in
+            aarch64) abi=arm64-v8a ;;
+            x86_64)  abi=x86_64 ;;
+          esac
 
           # Fetch Eigen (header-only, no build needed)
           curl -fsSL -A "Mozilla/5.0" -o eigen-3.4.0.tar.bz2 \
@@ -149,7 +157,7 @@ jobs:
 
           cmake -B build \
             -DCMAKE_TOOLCHAIN_FILE="$ANDROID_NDK_HOME/build/cmake/android.toolchain.cmake" \
-            -DANDROID_ABI=arm64-v8a \
+            -DANDROID_ABI="$abi" \
             -DANDROID_PLATFORM=android-24 \
             -DCMAKE_BUILD_TYPE=Release \
             -DLLVM_DIR="$(pwd)/llvm-android/lib/cmake/llvm" \
@@ -179,13 +187,13 @@ jobs:
           tar czf fluxscript-${{ matrix.artifact }}.tar.gz -C install .
 
       - name: Package (Android)
-        if: matrix.artifact == 'android-aarch64'
+        if: startsWith(matrix.artifact, 'android')
         run: |
           set -xe
           mkdir -p install/include install/lib
           cp -r include/flux install/include/
           cp build/libFluxScript.so install/lib/
-          tar czf fluxscript-android-aarch64.tar.gz -C install .
+          tar czf fluxscript-${{ matrix.artifact }}.tar.gz -C install .
 
       - name: Package (Windows)
         if: runner.os == 'Windows'
