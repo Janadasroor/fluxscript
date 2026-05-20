@@ -112,6 +112,12 @@ jobs:
             -DCMAKE_PREFIX_PATH="$(brew --prefix eigen)"
           cmake --build build -j$(sysctl -n hw.logicalcpu)
 
+      - name: Install deps (Android)
+        if: matrix.artifact == 'android-aarch64'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq cmake curl unzip
+
       - name: Setup Android NDK
         if: matrix.artifact == 'android-aarch64'
         run: |
