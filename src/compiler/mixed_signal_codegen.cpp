@@ -13,6 +13,7 @@
 
 // Codegen for Section 7.2: Mixed-Signal & Modeling Extensions
 #include "flux/compiler/ast.h"
+#include "flux/runtime/units.h"
 #include <llvm/IR/Function.h>
 #include <llvm/IR/Type.h>
 #include <llvm/IR/DerivedTypes.h>
@@ -537,108 +538,123 @@ TypedValue CsvImportExprAST::codegen(CodegenContext& context) {
 // ============================================================================
 
 TypedValue UnitExprAST::codegen(CodegenContext& context) {
-    llvm::Type* DoubleTy = llvm::Type::getDoubleTy(context.TheContext);
-    llvm::Type* Int64Ty = llvm::Type::getInt64Ty(context.TheContext);
-    llvm::Type* VoidPtrTy = llvm::PointerType::get(context.TheContext, 0);
-
-    // Create quantified value
-    // void* flux_unit_create(double value, double unit_str_ptr)
-    llvm::Function* createFunc = context.TheModule->getFunction("flux_unit_create");
-    if (!createFunc) {
-        llvm::FunctionType* FT = llvm::FunctionType::get(VoidPtrTy, llvm::ArrayRef<llvm::Type*>{DoubleTy, DoubleTy}, false);
-        createFunc = llvm::Function::Create(FT, llvm::Function::ExternalLinkage, "flux_unit_create", context.TheModule);
-    }
-
     auto ValResult = Value->codegen(context);
-    llvm::Value* ValLLVM = ValResult.Val;
+    if (!ValResult.Val) return TypedValue();
+
+    UnitDimensions dims;
+    llvm::Value* V = ValResult.Val;
     if (ValResult.Type.Kind == TypeKind::Int) {
-        ValLLVM = context.Builder.CreateSIToFP(ValLLVM, DoubleTy, "inttodouble");
+        llvm::Type* DoubleTy = llvm::Type::getDoubleTy(context.TheContext);
+        V = context.Builder.CreateSIToFP(V, DoubleTy, "inttodouble");
     }
 
-    llvm::Value* UnitStrPtr = context.Builder.CreateGlobalStringPtr(this->UnitStr, "unit_str");
-    llvm::Value* UnitStrAsInt = context.Builder.CreatePtrToInt(UnitStrPtr, Int64Ty);
-    llvm::Value* UnitStrAsDouble = context.Builder.CreateBitCast(UnitStrAsInt, DoubleTy, "unit_str_double");
+    if (!this->UnitStr.empty()) {
+        try {
+            auto scaledUnit = Units::UnitRegistry::instance().parseUnitString(this->UnitStr);
+            dims.mass = scaledUnit.dimensions.mass;
+            dims.length = scaledUnit.dimensions.length;
+            dims.time = scaledUnit.dimensions.time;
+            dims.current = scaledUnit.dimensions.current;
+            dims.temperature = scaledUnit.dimensions.temperature;
+            dims.amount = scaledUnit.dimensions.amount;
+            dims.luminous = scaledUnit.dimensions.luminous;
 
-    llvm::Value* QuantObj = context.Builder.CreateCall(createFunc, {ValLLVM, UnitStrAsDouble});
+            if (scaledUnit.scale != 1.0) {
+                llvm::Value* Scale = llvm::ConstantFP::get(context.TheContext, llvm::APFloat(scaledUnit.scale));
+                V = context.Builder.CreateFMul(V, Scale, "unit_scaled");
+            }
+        } catch (const std::exception& e) {
+            llvm::errs() << "[Flux] unit(): unknown unit \"" << this->UnitStr << "\" (" << e.what() << ")\n";
+        }
+    }
 
-    // Return handle as double
-    llvm::Value* PtrAsInt = context.Builder.CreatePtrToInt(QuantObj, Int64Ty, "unit_handle");
-    return TypedValue(context.Builder.CreateBitCast(PtrAsInt, DoubleTy, "unit_double"), TypeKind::Double);
+    return TypedValue(V, FluxType(TypeKind::Double, dims));
 }
 
 TypedValue DimensionExprAST::codegen(CodegenContext& context) {
-    llvm::Type* VoidPtrTy = llvm::PointerType::get(context.TheContext, 0);
+    auto ExprResult = Expression->codegen(context);
+    if (!ExprResult.Val) return TypedValue();
 
-    // Get dimension string for a quantified value
-    // const char* flux_dimension(void* quant)
-    llvm::Function* dimFunc = context.TheModule->getFunction("flux_dimension");
-    if (!dimFunc) {
-        llvm::FunctionType* FT = llvm::FunctionType::get(llvm::PointerType::get(context.TheContext, 0), llvm::ArrayRef<llvm::Type*>{VoidPtrTy}, false);
-        dimFunc = llvm::Function::Create(FT, llvm::Function::ExternalLinkage, "flux_dimension", context.TheModule);
+    const auto& dims = ExprResult.Type.Dimensions;
+    std::string dimStr = dims.toString();
+    if (dimStr.empty()) {
+        dimStr = "dimensionless";
     }
 
-    // Expression should be a quantified value handle
-    auto ExprResult = Expression->codegen(context);
-    llvm::Type* Int64Ty = llvm::Type::getInt64Ty(context.TheContext);
-    llvm::Value* ExprAsInt = context.Builder.CreateBitCast(ExprResult.Val, Int64Ty, "handle_to_int");
-    llvm::Value* ExprAsPtr = context.Builder.CreateIntToPtr(ExprAsInt, VoidPtrTy, "quant_ptr");
-
-    return TypedValue(context.Builder.CreateCall(dimFunc, {ExprAsPtr}, "dimension_str"), TypeKind::String);
+    llvm::Value* StrVal = context.Builder.CreateGlobalStringPtr(dimStr, "dimension");
+    return TypedValue(StrVal, TypeKind::String);
 }
 
 TypedValue ConvertExprAST::codegen(CodegenContext& context) {
-    llvm::Type* DoubleTy = llvm::Type::getDoubleTy(context.TheContext);
-    llvm::Type* Int64Ty = llvm::Type::getInt64Ty(context.TheContext);
-    llvm::Type* VoidPtrTy = llvm::PointerType::get(context.TheContext, 0);
-
-    // Convert between units
-    // double flux_convert(double value, double from, double to)
-    llvm::Function* convFunc = context.TheModule->getFunction("flux_convert");
-    if (!convFunc) {
-        llvm::FunctionType* FT = llvm::FunctionType::get(DoubleTy,
-            llvm::ArrayRef<llvm::Type*>{DoubleTy, DoubleTy, DoubleTy}, false);
-        convFunc = llvm::Function::Create(FT, llvm::Function::ExternalLinkage, "flux_convert", context.TheModule);
-    }
-
     auto ValResult = Value->codegen(context);
-    llvm::Value* ValLLVM = ValResult.Val;
+    if (!ValResult.Val) return TypedValue();
+
+    llvm::Type* DoubleTy = llvm::Type::getDoubleTy(context.TheContext);
+    llvm::Value* V = ValResult.Val;
     if (ValResult.Type.Kind == TypeKind::Int) {
-        ValLLVM = context.Builder.CreateSIToFP(ValLLVM, DoubleTy, "inttodouble");
+        V = context.Builder.CreateSIToFP(V, DoubleTy, "inttodouble");
     }
 
-    llvm::Value* FromStrPtr = context.Builder.CreateGlobalStringPtr(FromUnit, "from_str");
-    llvm::Value* FromAsInt = context.Builder.CreatePtrToInt(FromStrPtr, Int64Ty);
-    llvm::Value* FromAsDouble = context.Builder.CreateBitCast(FromAsInt, DoubleTy, "from_double");
+    UnitDimensions dims;
+    if (!FromUnit.empty() && !ToUnit.empty()) {
+        try {
+            auto fromUnit = Units::UnitRegistry::instance().parseUnitString(FromUnit);
+            auto toUnit = Units::UnitRegistry::instance().parseUnitString(ToUnit);
 
-    llvm::Value* ToStrPtr = context.Builder.CreateGlobalStringPtr(ToUnit, "to_str");
-    llvm::Value* ToAsInt = context.Builder.CreatePtrToInt(ToStrPtr, Int64Ty);
-    llvm::Value* ToAsDouble = context.Builder.CreateBitCast(ToAsInt, DoubleTy, "to_double");
+            if (fromUnit.dimensions != toUnit.dimensions) {
+                llvm::errs() << "[Flux] convert(): incompatible units \""
+                             << FromUnit << "\" and \"" << ToUnit << "\"\n";
+                return TypedValue();
+            }
 
-    return TypedValue(context.Builder.CreateCall(convFunc, {ValLLVM, FromAsDouble, ToAsDouble}, "converted_value"), TypeKind::Double);
+            double convFactor = fromUnit.scale / toUnit.scale;
+            dims.mass = toUnit.dimensions.mass;
+            dims.length = toUnit.dimensions.length;
+            dims.time = toUnit.dimensions.time;
+            dims.current = toUnit.dimensions.current;
+            dims.temperature = toUnit.dimensions.temperature;
+            dims.amount = toUnit.dimensions.amount;
+            dims.luminous = toUnit.dimensions.luminous;
+
+            if (convFactor != 1.0) {
+                llvm::Value* CF = llvm::ConstantFP::get(context.TheContext, llvm::APFloat(convFactor));
+                V = context.Builder.CreateFMul(V, CF, "converted");
+            }
+        } catch (const std::exception& e) {
+            llvm::errs() << "[Flux] convert(): error (" << e.what() << ")\n";
+            return TypedValue();
+        }
+    }
+
+    return TypedValue(V, FluxType(TypeKind::Double, dims));
 }
 
 TypedValue HasUnitExprAST::codegen(CodegenContext& context) {
-    llvm::Type* DoubleTy = llvm::Type::getDoubleTy(context.TheContext);
-    llvm::Type* Int64Ty = llvm::Type::getInt64Ty(context.TheContext);
-    llvm::Type* VoidPtrTy = llvm::PointerType::get(context.TheContext, 0);
+    auto ValResult = Value->codegen(context);
+    if (!ValResult.Val) return TypedValue();
 
-    // Check if quantified value has specified unit
-    // double flux_has_unit(void* quant, double unit_str_ptr)
-    llvm::Function* hasUnitFunc = context.TheModule->getFunction("flux_has_unit");
-    if (!hasUnitFunc) {
-        llvm::FunctionType* FT = llvm::FunctionType::get(DoubleTy, llvm::ArrayRef<llvm::Type*>{VoidPtrTy, DoubleTy}, false);
-        hasUnitFunc = llvm::Function::Create(FT, llvm::Function::ExternalLinkage, "flux_has_unit", context.TheModule);
+    const auto& valDims = ValResult.Type.Dimensions;
+    bool match = false;
+
+    if (!this->UnitStr.empty()) {
+        try {
+            auto scaledUnit = Units::UnitRegistry::instance().parseUnitString(this->UnitStr);
+            match =
+                valDims.mass == scaledUnit.dimensions.mass &&
+                valDims.length == scaledUnit.dimensions.length &&
+                valDims.time == scaledUnit.dimensions.time &&
+                valDims.current == scaledUnit.dimensions.current &&
+                valDims.temperature == scaledUnit.dimensions.temperature &&
+                valDims.amount == scaledUnit.dimensions.amount &&
+                valDims.luminous == scaledUnit.dimensions.luminous;
+        } catch (const std::exception& e) {
+            llvm::errs() << "[Flux] has_unit(): unknown unit \"" << this->UnitStr << "\" (" << e.what() << ")\n";
+        }
     }
 
-    auto ValResult = Value->codegen(context);
-    llvm::Value* ValAsInt = context.Builder.CreateBitCast(ValResult.Val, Int64Ty, "handle_to_int");
-    llvm::Value* ValAsPtr = context.Builder.CreateIntToPtr(ValAsInt, VoidPtrTy, "quant_ptr");
-
-    llvm::Value* UnitStrPtr = context.Builder.CreateGlobalStringPtr(this->UnitStr, "unit_str");
-    llvm::Value* UnitStrAsInt = context.Builder.CreatePtrToInt(UnitStrPtr, Int64Ty);
-    llvm::Value* UnitStrAsDouble = context.Builder.CreateBitCast(UnitStrAsInt, DoubleTy, "unit_str_double");
-
-    return TypedValue(context.Builder.CreateCall(hasUnitFunc, {ValAsPtr, UnitStrAsDouble}, "has_unit_result"), TypeKind::Double);
+    return TypedValue(
+        llvm::ConstantFP::get(context.TheContext, llvm::APFloat(match ? 1.0 : 0.0)),
+        TypeKind::Double);
 }
 
 } // namespace Flux
