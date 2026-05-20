@@ -156,7 +156,7 @@ jobs:
             -DLLVM_INCLUDE_EXAMPLES=OFF \
             -DLLVM_INCLUDE_BENCHMARKS=OFF \
             -DLLVM_ENABLE_PROJECTS=""
-          cmake --build llvm-native --target LLVMTablegen -j$(nproc)
+          cmake --build llvm-native --target llvm-tblgen -j$(nproc)
 
           # Cross-build LLVM shared library for Android arm64
           NDK="$ANDROID_NDK_HOME"
