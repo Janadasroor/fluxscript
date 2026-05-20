@@ -213,7 +213,14 @@ set_source_files_properties(
     PROPERTIES COMPILE_FLAGS "-O1"
 )
 
-target_link_libraries(FluxScript PUBLIC ${LLVM_LIB} ${FLUX_MLIR_LIBS})
+if(ANDROID)
+    # Whole-archive forces all LLVM static symbols into shared lib
+    target_link_libraries(FluxScript PUBLIC
+        -Wl,--whole-archive ${LLVM_LIB} -Wl,--no-whole-archive
+        ${FLUX_MLIR_LIBS})
+else()
+    target_link_libraries(FluxScript PUBLIC ${LLVM_LIB} ${FLUX_MLIR_LIBS})
+endif()
 if(MSVC)
     target_link_libraries(FluxScript PUBLIC ws2_32)
     # LLVM Windows archive was built with VS 2019 DIA SDK but
