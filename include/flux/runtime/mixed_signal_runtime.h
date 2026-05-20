@@ -117,20 +117,4 @@ extern "C" double flux_table_lookup(void* table, double key);
 // CSV import
 extern "C" void* flux_csv_import(double filename, double options_json);
 
-// ============================================================================
-// Units and dimensional analysis
-// ============================================================================
-
-// Quantified value (value + unit)
-struct QuantifiedValueObject {
-    double Value;
-    char UnitStr[64];
-    // Dimensions would be derived from unit lookup in production
-};
-
-extern "C" void* flux_unit_create(double value, double unit_str_ptr);
-extern "C" const char* flux_dimension(void* quant);
-extern "C" double flux_convert(double value, double from, double to);
-extern "C" double flux_has_unit(void* quant, double unit_str_ptr);
-
 #endif // FLUX_MIXED_SIGNAL_RUNTIME_H
