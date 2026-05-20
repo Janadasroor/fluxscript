@@ -132,7 +132,7 @@ jobs:
         run: |
           set -xe
           curl -fsSL -o llvm-android.tar.xz \
-            https://github.com/Janadasroor/llvm-releases/releases/download/llvm-21.1.0-v3/llvm-android-aarch64.tar.xz
+            https://github.com/Janadasroor/llvm-releases/releases/download/llvm-21.1.0-v2/llvm-android-aarch64.tar.xz
           mkdir -p llvm-android
           tar xf llvm-android.tar.xz -C llvm-android
 
