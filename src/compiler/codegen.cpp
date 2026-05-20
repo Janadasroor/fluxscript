@@ -696,6 +696,7 @@ TypedValue BinaryExprAST::codegen(CodegenContext& context) {
             std::cerr << "Unit mismatch error: " << L.Type.Dimensions.toString() 
                       << " and " << R.Type.Dimensions.toString() 
                       << " in operation '" << (char)Op << "'" << std::endl;
+            return TypedValue();
         }
         ResDims = L.Type.Dimensions;
     } else if (Op == '*') {
