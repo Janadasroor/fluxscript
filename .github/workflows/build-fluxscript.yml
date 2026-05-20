@@ -76,7 +76,7 @@ jobs:
                 basename=\$(basename \"\$lib\")
                 case \"\$basename\" in
                   libc.so.*|libm.so.*|libstdc++.so.*|libgcc_s.so.*|ld-linux-*|libpthread*|librt*|libdl*) ;;
-                  *) [ ! -f \"install/lib/\$basename\" ] && cp -L \"\$lib\" install/lib/ ;;
+                  *) if [ ! -f \"install/lib/\$basename\" ]; then cp -L \"\$lib\" install/lib/; fi ;;
                 esac
               done &&
               patchelf --set-rpath '\$ORIGIN' install/lib/libFluxScript.so &&
