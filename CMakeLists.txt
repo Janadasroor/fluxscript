@@ -68,8 +68,8 @@ else()
 endif()
 add_definitions(-DEIGEN_MPL2_ONLY)
 
-# Use monolithic LLVM shared library on Linux, component libs on other platforms
-if(UNIX)
+# Use monolithic LLVM shared library on desktop Linux, component libs elsewhere
+if(UNIX AND NOT ANDROID)
     find_library(LLVM_LIB LLVM-21 PATHS ${LLVM_LIBRARY_DIR} /usr/lib/llvm-21/lib NO_DEFAULT_PATH)
 endif()
 if(NOT LLVM_LIB)

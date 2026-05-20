@@ -187,14 +187,10 @@ jobs:
             -DLLVM_INCLUDE_EXAMPLES=OFF \
             -DLLVM_INCLUDE_BENCHMARKS=OFF \
             -DLLVM_ENABLE_PROJECTS="" \
-            -DLLVM_BUILD_LLVM_DYLIB=ON \
-            -DLLVM_LINK_LLVM_DYLIB=ON \
             -DLLVM_ENABLE_TERMINFO=OFF \
             -DLLVM_ENABLE_ZLIB=OFF \
-            -DLLVM_ENABLE_ZSTD=OFF \
-            -DLLVM_ENABLE_VISIBILITY_INLINES_HIDDEN=OFF \
-            -DLLVM_ENABLE_VISIBILITY_HIDDEN=OFF
-          cmake --build llvm-android --target LLVM -j$(nproc)
+            -DLLVM_ENABLE_ZSTD=OFF
+          cmake --build llvm-android -j$(nproc)
 
       - name: Save LLVM Android to cache
         if: matrix.artifact == 'android-aarch64' && steps.cache-llvm-android.outputs.cache-hit != 'true' && steps.dl-llvm-android.outputs.downloaded != 'true'
@@ -227,7 +223,6 @@ jobs:
             -DANDROID_PLATFORM=android-24 \
             -DCMAKE_BUILD_TYPE=Release \
             -DLLVM_DIR="$(pwd)/llvm-android/lib/cmake/llvm" \
-            -DLLVM_LIBRARY_DIR="$(pwd)/llvm-android/lib" \
             -DFLUX_VIO_MATRIXC_LIB_DIR=""
           cmake --build build -j$(nproc)
 
@@ -260,7 +255,6 @@ jobs:
           mkdir -p install/include install/lib
           cp -r include/flux install/include/
           cp build/libFluxScript.so install/lib/
-          cp llvm-android/lib/libLLVM-21.so install/lib/
           tar czf fluxscript-android-aarch64.tar.gz -C install .
 
       - name: Package (Windows)
