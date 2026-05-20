@@ -196,6 +196,7 @@ jobs:
             -DANDROID_PLATFORM=android-24 \
             -DCMAKE_BUILD_TYPE=Release \
             -DLLVM_DIR="$(pwd)/llvm-android/lib/cmake/llvm" \
+            -DLLVM_LIBRARY_DIR="$(pwd)/llvm-android/lib" \
             -DFLUX_VIO_MATRIXC_LIB_DIR=""
           cmake --build build -j$(nproc)
 
