@@ -73,7 +73,7 @@ if(UNIX)
     find_library(LLVM_LIB LLVM-21 PATHS ${LLVM_LIBRARY_DIR} /usr/lib/llvm-21/lib NO_DEFAULT_PATH)
 endif()
 if(NOT LLVM_LIB)
-    llvm_map_components_to_libnames(LLVM_LIB core support codegen mcjit orcjit x86codegen
+    llvm_map_components_to_libnames(LLVM_LIB core support codegen mcjit orcjit aarch64codegen
         analysis bitreader bitwriter linker irreader native asmparser executionengine
     )
     message(STATUS "Using LLVM component libraries")
