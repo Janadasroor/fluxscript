@@ -631,6 +631,16 @@ std::unique_ptr<ExprAST> Parser::ParseLetExpr() {
     if (CurTok == static_cast<int>(TokenType::tok_colon)) {
         getNextToken(); // eat :
         Type = FluxType::fromToken(CurTok);
+        // Check if the token is a unit type name (e.g., Voltage, Current, Ohm)
+        if (Type.Kind == TypeKind::Double && CurTok == static_cast<int>(TokenType::tok_identifier)) {
+            FluxType unitType = FluxType::fromUnitName(m_lexer.IdentifierStr);
+            if (unitType.Dimensions.mass != 0 || unitType.Dimensions.length != 0 ||
+                unitType.Dimensions.time != 0 || unitType.Dimensions.current != 0 ||
+                unitType.Dimensions.temperature != 0 || unitType.Dimensions.amount != 0 ||
+                unitType.Dimensions.luminous != 0) {
+                Type = unitType;
+            }
+        }
         getNextToken(); // eat type keyword
     }
     if (CurTok != '=') {
@@ -1022,6 +1032,16 @@ std::unique_ptr<PrototypeAST> Parser::ParsePrototype() {
         if (CurTok == static_cast<int>(TokenType::tok_colon)) {
             getNextToken(); // eat :
             Type = FluxType::fromToken(CurTok);
+            // Check for unit type names (e.g., Voltage, Current)
+            if (Type.Kind == TypeKind::Double && CurTok == static_cast<int>(TokenType::tok_identifier)) {
+                FluxType unitType = FluxType::fromUnitName(m_lexer.IdentifierStr);
+                if (unitType.Dimensions.mass != 0 || unitType.Dimensions.length != 0 ||
+                    unitType.Dimensions.time != 0 || unitType.Dimensions.current != 0 ||
+                    unitType.Dimensions.temperature != 0 || unitType.Dimensions.amount != 0 ||
+                    unitType.Dimensions.luminous != 0) {
+                    Type = unitType;
+                }
+            }
             getNextToken(); // eat type keyword
         }
         Args.push_back({Name, Type});
@@ -1032,7 +1052,21 @@ std::unique_ptr<PrototypeAST> Parser::ParsePrototype() {
     if (CurTok != ')') return nullptr;
     getNextToken();
     FluxType RetType(TypeKind::Double);
-    if (CurTok == static_cast<int>(TokenType::tok_arrow)) { getNextToken(); RetType = FluxType::fromToken(CurTok); getNextToken(); }
+    if (CurTok == static_cast<int>(TokenType::tok_arrow)) {
+        getNextToken();
+        RetType = FluxType::fromToken(CurTok);
+        // Check for unit type names in return type annotation
+        if (RetType.Kind == TypeKind::Double && CurTok == static_cast<int>(TokenType::tok_identifier)) {
+            FluxType unitType = FluxType::fromUnitName(m_lexer.IdentifierStr);
+            if (unitType.Dimensions.mass != 0 || unitType.Dimensions.length != 0 ||
+                unitType.Dimensions.time != 0 || unitType.Dimensions.current != 0 ||
+                unitType.Dimensions.temperature != 0 || unitType.Dimensions.amount != 0 ||
+                unitType.Dimensions.luminous != 0) {
+                RetType = unitType;
+            }
+        }
+        getNextToken();
+    }
     return std::make_unique<PrototypeAST>(FnName, std::move(Args), RetType);
 }
 

@@ -199,6 +199,51 @@ public:
                 return FluxType(TypeKind::Double);
         }
     }
+
+    // Create a FluxType from a unit type name (e.g., "Voltage", "Current").
+    // Returns Double with the appropriate UnitDimensions if the name is
+    // recognised, or an empty type (Double, dimensionless) otherwise.
+    static FluxType fromUnitName(const std::string& name) {
+        // Map common engineering unit type names to dimensions.
+        // The numeric type is always Double; only the dimensions differ.
+        // SI base dimensions order: {mass, length, time, current, temperature, amount, luminous}
+        if (name == "Voltage" || name == "Volt" || name == "V")
+            return FluxType(TypeKind::Double, UnitDimensions{1, 2, -3, -1, 0, 0, 0});   // V = kg*m^2*s^-3*A^-1
+        if (name == "Current" || name == "Ampere" || name == "A")
+            return FluxType(TypeKind::Double, UnitDimensions{0, 0, 0, 1, 0, 0, 0});     // A
+        if (name == "Resistance" || name == "Ohm")
+            return FluxType(TypeKind::Double, UnitDimensions{1, 2, -3, -2, 0, 0, 0});  // Ohm = kg*m^2*s^-3*A^-2
+        if (name == "Capacitance" || name == "Farad" || name == "F")
+            return FluxType(TypeKind::Double, UnitDimensions{-1, -2, 4, 2, 0, 0, 0});  // F = kg^-1*m^-2*s^4*A^2
+        if (name == "Inductance" || name == "Henry" || name == "H")
+            return FluxType(TypeKind::Double, UnitDimensions{1, 2, -2, -2, 0, 0, 0});  // H = kg*m^2*s^-2*A^-2
+        if (name == "Power" || name == "Watt" || name == "W")
+            return FluxType(TypeKind::Double, UnitDimensions{1, 2, -3, 0, 0, 0, 0});   // W = kg*m^2*s^-3
+        if (name == "Energy" || name == "Joule" || name == "J")
+            return FluxType(TypeKind::Double, UnitDimensions{1, 2, -2, 0, 0, 0, 0});   // J = kg*m^2*s^-2
+        if (name == "Frequency" || name == "Hertz" || name == "Hz")
+            return FluxType(TypeKind::Double, UnitDimensions{0, 0, -1, 0, 0, 0, 0});   // Hz = s^-1
+        if (name == "Force" || name == "Newton" || name == "N")
+            return FluxType(TypeKind::Double, UnitDimensions{1, 1, -2, 0, 0, 0, 0});   // N = kg*m*s^-2
+        if (name == "Pressure" || name == "Pascal" || name == "Pa")
+            return FluxType(TypeKind::Double, UnitDimensions{1, -1, -2, 0, 0, 0, 0});  // Pa = kg*m^-1*s^-2
+        if (name == "Charge" || name == "Coulomb" || name == "C")
+            return FluxType(TypeKind::Double, UnitDimensions{0, 0, 1, 1, 0, 0, 0});    // C = s*A
+        if (name == "Conductance" || name == "Siemens" || name == "S")
+            return FluxType(TypeKind::Double, UnitDimensions{-1, -2, 3, 2, 0, 0, 0});  // S = kg^-1*m^-2*s^3*A^2
+        if (name == "Time" || name == "Second" || name == "s")
+            return FluxType(TypeKind::Double, UnitDimensions{0, 0, 1, 0, 0, 0, 0});    // s
+        if (name == "Length" || name == "Meter" || name == "m")
+            return FluxType(TypeKind::Double, UnitDimensions{0, 1, 0, 0, 0, 0, 0});    // m
+        if (name == "Mass" || name == "Kilogram" || name == "kg")
+            return FluxType(TypeKind::Double, UnitDimensions{1, 0, 0, 0, 0, 0, 0});    // kg
+        if (name == "Temperature" || name == "Kelvin" || name == "K")
+            return FluxType(TypeKind::Double, UnitDimensions{0, 0, 0, 0, 1, 0, 0});    // K
+        if (name == "Admittance")
+            return FluxType(TypeKind::Double, UnitDimensions{-1, -2, 3, 2, 0, 0, 0});  // S
+
+        return FluxType(TypeKind::Double);  // dimensionless fallback
+    }
 };
 
 class CodegenContext {

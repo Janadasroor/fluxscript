@@ -1762,6 +1762,24 @@ TypedValue LetExprAST::codegen(CodegenContext& context) {
     if (!InitTV.Val) return TypedValue();
 
     FluxType ActualType = (Type.Kind == TypeKind::Auto) ? InitTV.Type : Type;
+
+    // Compile-time dimensional analysis: check that the initializer's
+    // unit dimensions match the declared type's dimensions.
+    if (Type.Kind != TypeKind::Auto) {
+        if (Type.Dimensions.mass   != InitTV.Type.Dimensions.mass   ||
+            Type.Dimensions.length != InitTV.Type.Dimensions.length ||
+            Type.Dimensions.time   != InitTV.Type.Dimensions.time   ||
+            Type.Dimensions.current != InitTV.Type.Dimensions.current ||
+            Type.Dimensions.temperature != InitTV.Type.Dimensions.temperature ||
+            Type.Dimensions.amount != InitTV.Type.Dimensions.amount ||
+            Type.Dimensions.luminous != InitTV.Type.Dimensions.luminous) {
+            llvm::errs() << "[Flux] Unit mismatch: declared type has dimensions "
+                         << Type.Dimensions.toString()
+                         << " but initializer has dimensions "
+                         << InitTV.Type.Dimensions.toString() << "\n";
+            return TypedValue();
+        }
+    }
     llvm::Type* VarTy = ActualType.getLLVMType(context.TheContext);
     llvm::Value* InitV = InitTV.Val;
     if (InitV->getType() != VarTy) {
@@ -2227,7 +2245,27 @@ llvm::Function* FunctionAST::codegen(CodegenContext& context) {
     if (TypedValue RetTV = Body->codegen(context)) {
         llvm::Value* RetVal = RetTV.Val;
         llvm::Type* RetTy = Proto->getReturnType().getLLVMType(context.TheContext);
-        
+
+        // Compile-time dimensional analysis: check return value dimensions
+        // match the declared return type.
+        {
+            const auto& retDims = Proto->getReturnType().Dimensions;
+            const auto& bodyDims = RetTV.Type.Dimensions;
+            if (retDims.mass   != bodyDims.mass   ||
+                retDims.length != bodyDims.length ||
+                retDims.time   != bodyDims.time   ||
+                retDims.current != bodyDims.current ||
+                retDims.temperature != bodyDims.temperature ||
+                retDims.amount != bodyDims.amount ||
+                retDims.luminous != bodyDims.luminous) {
+                std::string err = "Unit mismatch in return value: function returns ";
+                err += retDims.toString() + " but body produces ";
+                err += bodyDims.toString();
+                llvm::errs() << "[Flux] " << err << "\n";
+                // Continue codegen but warn — the IR is still valid
+            }
+        }
+
         if (isGenerator) {
             // End of generator: set state to -1
             std::vector<llvm::Type*> StateTypes = { llvm::Type::getInt32Ty(context.TheContext) };
