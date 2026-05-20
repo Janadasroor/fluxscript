@@ -33,8 +33,12 @@
 #include <iostream>
 #include <cstdio>
 #include <sstream>
+#ifdef _WIN32
+#include <windows.h>
+#else
 #include <sys/mman.h>
 #include <unistd.h>
+#endif
 #include <cstdint>
 
 // Complex number helper functions (C linkage for easy JIT binding)
@@ -319,7 +323,18 @@ bool FluxJIT::redirectFunction(const std::string& Name, void* oldAddr, void* new
     }
     int32_t offset = static_cast<int32_t>(delta);
 
-    // Make the page containing the function writable
+#ifdef _WIN32
+    SYSTEM_INFO sysInfo;
+    GetSystemInfo(&sysInfo);
+    long pageSize = static_cast<long>(sysInfo.dwPageSize);
+    void* pageStart = reinterpret_cast<void*>(
+        reinterpret_cast<intptr_t>(oldAddr) & ~(pageSize - 1));
+    DWORD oldProtect;
+    if (!VirtualProtect(pageStart, pageSize, PAGE_EXECUTE_READWRITE, &oldProtect)) {
+        llvm::errs() << "[FluxJIT] VirtualProtect failed for " << Name << "\n";
+        return false;
+    }
+#else
     long pageSize = sysconf(_SC_PAGESIZE);
     if (pageSize <= 0) pageSize = 4096;
     void* pageStart = reinterpret_cast<void*>(
@@ -328,6 +343,7 @@ bool FluxJIT::redirectFunction(const std::string& Name, void* oldAddr, void* new
         llvm::errs() << "[FluxJIT] mprotect failed for " << Name << "\n";
         return false;
     }
+#endif
 
     // Write JMP rel32 at oldAddr
     auto* code = reinterpret_cast<uint8_t*>(oldAddr);
@@ -337,12 +353,17 @@ bool FluxJIT::redirectFunction(const std::string& Name, void* oldAddr, void* new
     code[3] = static_cast<uint8_t>((offset >> 16) & 0xFF);
     code[4] = static_cast<uint8_t>((offset >> 24) & 0xFF);
 
+#ifdef _WIN32
+    // Restore original protection
+    VirtualProtect(pageStart, pageSize, oldProtect, &oldProtect);
+    FlushInstructionCache(GetCurrentProcess(), oldAddr, 5);
+#else
     // Restore protection (the JMP redirect is now live)
     mprotect(pageStart, pageSize, PROT_READ | PROT_EXEC);
-
     // Flush instruction cache to ensure the JMP is visible
     __builtin___clear_cache(reinterpret_cast<char*>(oldAddr),
         reinterpret_cast<char*>(reinterpret_cast<intptr_t>(oldAddr) + 5));
+#endif
 
     return true;
 }
