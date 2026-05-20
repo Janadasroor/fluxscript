@@ -9,7 +9,22 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-22.04, macos-14, windows-2022]
+        include:
+          - os: ubuntu-22.04
+            arch: x86_64
+            artifact: linux-x86_64
+          - os: ubuntu-24.04-arm
+            arch: aarch64
+            artifact: linux-aarch64
+          - os: macos-14
+            arch: arm64
+            artifact: macos-arm64
+          - os: macos-13
+            arch: x86_64
+            artifact: macos-x86_64
+          - os: windows-2022
+            arch: x86_64
+            artifact: windows-x86_64
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -18,13 +33,10 @@ jobs:
         if: runner.os == 'Windows'
         run: |
           choco install curl
-          # Download the pre-built LLVM+Clang archive which includes cmake configs
           curl -L -o llvm.tar.xz https://github.com/llvm/llvm-project/releases/download/llvmorg-21.1.0/clang+llvm-21.1.0-x86_64-pc-windows-msvc.tar.xz
-          # Extract with 7z (tar.xz -> tar -> directory)
           & "C:\Program Files\7-Zip\7z.exe" x llvm.tar.xz -y | Out-Null
           & "C:\Program Files\7-Zip\7z.exe" x llvm.tar -y | Out-Null
           $dirName = "clang+llvm-21.1.0-x86_64-pc-windows-msvc"
-          # Find LLVMConfig.cmake in the extracted tree
           $cfg = Get-ChildItem -Path $dirName -Recurse -Filter "LLVMConfig.cmake" -ErrorAction SilentlyContinue `
                  | Select-Object -First 1
           if ($cfg) {
@@ -36,7 +48,6 @@ jobs:
               Get-ChildItem $dirName -Recurse -Filter "*.cmake" -ErrorAction SilentlyContinue | Select-Object -First 30
               exit 1
           }
-          # LLVM was built with VS 2019; bridge DIA SDK path to installed VS 2022
           $dia2019 = "C:\Program Files (x86)\Microsoft Visual Studio\2019\Professional\DIA SDK\lib\amd64"
           $dia2022 = "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\DIA SDK\lib\amd64"
           if (-not (Test-Path "$dia2019\diaguids.lib") -and (Test-Path "$dia2022\diaguids.lib")) {
@@ -80,7 +91,7 @@ jobs:
                 esac
               done &&
               patchelf --set-rpath '\$ORIGIN' install/lib/libFluxScript.so &&
-              tar czf fluxscript-linux-x86_64.tar.gz -C install .
+              tar czf fluxscript-\${{ matrix.artifact }}.tar.gz -C install .
             "
 
       - name: Build (Windows)
@@ -108,13 +119,11 @@ jobs:
           cp -r include/flux install/include/
           cp build/libFluxScript.dylib install/lib/
 
-          # Bundle all Homebrew-origin dylib deps (LLVM, eigen, etc.)
           for lib in $(otool -L install/lib/libFluxScript.dylib | grep -E "^\s+/opt/homebrew|^\s+/usr/local" | awk '{print $1}'); do
             basename=$(basename "$lib")
             [ ! -f "install/lib/$basename" ] && cp -L "$lib" install/lib/
           done
 
-          # Fix install names so the dylib finds bundled deps
           for lib in install/lib/*.dylib*; do
             install_name_tool -id "@rpath/$(basename "$lib")" "$lib" 2>/dev/null || true
             for dep in $(otool -L "$lib" | grep -E "^\s+/opt/homebrew|^\s+/usr/local" | awk '{print $1}'); do
@@ -123,7 +132,7 @@ jobs:
             done
           done
 
-          tar czf fluxscript-macos-arm64.tar.gz -C install .
+          tar czf fluxscript-${{ matrix.artifact }}.tar.gz -C install .
 
       - name: Package (Windows)
         if: runner.os == 'Windows'
@@ -134,27 +143,14 @@ jobs:
           copy build\Release\FluxScript.dll install\lib\
           copy build\Release\FluxScript.lib install\lib\
 
-          # Find LLVM DLLs from the extracted archive
           $llvmRoot = $env:LLVM_ROOT
           $llvmDlls = Get-ChildItem -Path "$llvmRoot\bin" -Filter "LLVM*.dll"
           Copy-Item $llvmDlls.FullName install\lib\
 
-          Compress-Archive -Path install\* -DestinationPath fluxscript-windows-x86_64.zip
+          Compress-Archive -Path install\* -DestinationPath fluxscript-${{ matrix.artifact }}.zip
 
-      - name: Upload release asset (Linux)
-        if: runner.os == 'Linux' && startsWith(github.ref, 'refs/tags/v')
+      - name: Upload release asset
+        if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          files: fluxscript-linux-x86_64.tar.gz
-
-      - name: Upload release asset (Windows)
-        if: runner.os == 'Windows' && startsWith(github.ref, 'refs/tags/v')
-        uses: softprops/action-gh-release@v2
-        with:
-          files: fluxscript-windows-x86_64.zip
-
-      - name: Upload release asset (macOS)
-        if: runner.os == 'macOS' && startsWith(github.ref, 'refs/tags/v')
-        uses: softprops/action-gh-release@v2
-        with:
-          files: fluxscript-macos-arm64.tar.gz
+          files: fluxscript-${{ matrix.artifact }}.*
