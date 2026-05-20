@@ -131,10 +131,10 @@ jobs:
         if: matrix.artifact == 'android-aarch64'
         run: |
           set -xe
-          curl -fsSL -o llvm-android.tar.gz \
-            https://github.com/Janadasroor/llvm-releases/releases/download/llvm-21.1.0/llvm-android-aarch64.tar.gz
+          curl -fsSL -o llvm-android.tar.xz \
+            https://github.com/Janadasroor/llvm-releases/releases/download/llvm-21.1.0-v2/llvm-android-aarch64.tar.xz
           mkdir -p llvm-android
-          tar xf llvm-android.tar.gz -C llvm-android
+          tar xf llvm-android.tar.xz -C llvm-android
 
       - name: Build FluxScript for Android
         if: matrix.artifact == 'android-aarch64'
