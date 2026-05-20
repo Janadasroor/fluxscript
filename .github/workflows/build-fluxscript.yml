@@ -191,7 +191,9 @@ jobs:
             -DLLVM_LINK_LLVM_DYLIB=ON \
             -DLLVM_ENABLE_TERMINFO=OFF \
             -DLLVM_ENABLE_ZLIB=OFF \
-            -DLLVM_ENABLE_ZSTD=OFF
+            -DLLVM_ENABLE_ZSTD=OFF \
+            -DLLVM_ENABLE_VISIBILITY_INLINES_HIDDEN=OFF \
+            -DLLVM_ENABLE_VISIBILITY_HIDDEN=OFF
           cmake --build llvm-android --target LLVM -j$(nproc)
 
       - name: Save LLVM Android to cache
