@@ -57,38 +57,6 @@ std::unique_ptr<ExprAST> Parser::ParseSymDecl() {
     return std::make_unique<BlockExprAST>(std::move(decls));
 }
 
-std::unique_ptr<ExprAST> Parser::ParseSolveExpr() {
-    getNextToken(); // eat solve
-    if (CurTok != '(') { ReportError("expected '(' after solve"); return nullptr; }
-    getNextToken(); // eat (
-    
-    auto expr = ParseExpression();
-    if (!expr) return nullptr;
-    
-    if (CurTok != ',') { ReportError("expected ',' after expression in solve"); return nullptr; }
-    getNextToken(); // eat ,
-    
-    if (CurTok == static_cast<int>(TokenType::tok_identifier)) {
-        // Symbolic solve: solve(expr, var)
-        std::string varName = m_lexer.IdentifierStr;
-        getNextToken();
-        if (CurTok != ')') { ReportError("expected ')' after solve"); return nullptr; }
-        getNextToken();
-        return std::make_unique<SolveExprAST>(std::move(expr), varName);
-    } else {
-        // Matrix solve: solve(A, B) -> actually just a function call to flux_matrix_solve
-        auto rhs = ParseExpression();
-        if (!rhs) return nullptr;
-        if (CurTok != ')') { ReportError("expected ')' after solve"); return nullptr; }
-        getNextToken();
-        
-        std::vector<std::unique_ptr<ExprAST>> args;
-        args.push_back(std::move(expr));
-        args.push_back(std::move(rhs));
-        return std::make_unique<CallExprAST>("solve", std::move(args));
-    }
-}
-
 std::unique_ptr<ExprAST> Parser::ParseSimplifyExpr() {
     getNextToken(); // eat simplify
     if (CurTok != '(') { ReportError("expected '(' after simplify"); return nullptr; }

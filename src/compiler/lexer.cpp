@@ -200,14 +200,10 @@ int Lexer::gettok() {
         if (IdentifierStr == "surrogate") return static_cast<int>(TokenType::tok_surrogate);
         if (IdentifierStr == "train") return static_cast<int>(TokenType::tok_train);
         if (IdentifierStr == "predict") return static_cast<int>(TokenType::tok_predict);
-        if (IdentifierStr == "nn") return static_cast<int>(TokenType::tok_nn);
-        if (IdentifierStr == "nn") return static_cast<int>(TokenType::tok_nn);
         if (IdentifierStr == "goal") return static_cast<int>(TokenType::tok_goal);
         if (IdentifierStr == "thermal") return static_cast<int>(TokenType::tok_thermal);
         if (IdentifierStr == "virtual_probe") return static_cast<int>(TokenType::tok_virtual_probe);
         if (IdentifierStr == "hot_swap") return static_cast<int>(TokenType::tok_hot_swap);
-        if (IdentifierStr == "train") return static_cast<int>(TokenType::tok_train);
-        if (IdentifierStr == "predict") return static_cast<int>(TokenType::tok_predict);
         if (IdentifierStr == "then") return static_cast<int>(TokenType::tok_then);
         if (IdentifierStr == "else") return static_cast<int>(TokenType::tok_else);
         if (IdentifierStr == "for") return static_cast<int>(TokenType::tok_for);
@@ -281,7 +277,6 @@ int Lexer::gettok() {
         if (IdentifierStr == "net") return static_cast<int>(TokenType::tok_net);
         if (IdentifierStr == "pin") return static_cast<int>(TokenType::tok_pin);
         if (IdentifierStr == "sym") return static_cast<int>(TokenType::tok_sym);
-        if (IdentifierStr == "solve") return static_cast<int>(TokenType::tok_solve);
         if (IdentifierStr == "simplify") return static_cast<int>(TokenType::tok_simplify);
         if (IdentifierStr == "differentiate") return static_cast<int>(TokenType::tok_differentiate);
         if (IdentifierStr == "integrate") return static_cast<int>(TokenType::tok_integrate);

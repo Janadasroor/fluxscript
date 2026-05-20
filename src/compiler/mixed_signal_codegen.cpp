@@ -17,16 +17,9 @@
 #include <llvm/IR/Type.h>
 #include <llvm/IR/DerivedTypes.h>
 #include <iostream>
-#include <set>
 #include <string>
-#include <cstdint>
 
 namespace Flux {
-
-static const char* getPermanentString(const std::string& s) {
-    static std::set<std::string> pool;
-    return pool.insert(s).first->c_str();
-}
 
 // ============================================================================
 // Event-driven constructs
@@ -114,8 +107,8 @@ TypedValue FSMExprAST::codegen(CodegenContext& context) {
 
     llvm::Value* InitStateVal = llvm::ConstantInt::get(Int32Ty, InitialState, true);
     
-    uint64_t addr = reinterpret_cast<uint64_t>(getPermanentString(OutputFn));
-    llvm::Value* OutputFnAsInt = llvm::ConstantInt::get(Int64Ty, addr);
+    llvm::Value* OutputFnStrPtr = context.Builder.CreateGlobalStringPtr(OutputFn, "output_fn_str");
+    llvm::Value* OutputFnAsInt = context.Builder.CreatePtrToInt(OutputFnStrPtr, Int64Ty);
     llvm::Value* OutputFnAsDouble = context.Builder.CreateBitCast(OutputFnAsInt, DoubleTy);
 
     llvm::Value* FsmObj = context.Builder.CreateCall(createFunc, {InitStateVal, OutputFnAsDouble});
@@ -273,8 +266,8 @@ TypedValue NoiseExprAST::codegen(CodegenContext& context) {
         }
     }
 
-    uint64_t addr = reinterpret_cast<uint64_t>(getPermanentString(NoiseType));
-    llvm::Value* TypeAsInt = llvm::ConstantInt::get(Int64Ty, addr);
+    llvm::Value* NoiseTypeStrPtr = context.Builder.CreateGlobalStringPtr(NoiseType, "noise_type_str");
+    llvm::Value* TypeAsInt = context.Builder.CreatePtrToInt(NoiseTypeStrPtr, Int64Ty);
     llvm::Value* TypeAsDouble = context.Builder.CreateBitCast(TypeAsInt, DoubleTy, "type_double");
 
     return TypedValue(context.Builder.CreateCall(noiseFunc, {TypeAsDouble, AmpLLVM, FreqLLVM}, "noise_value"), TypeKind::Double);
@@ -369,8 +362,8 @@ TypedValue PiecewiseExprAST::codegen(CodegenContext& context) {
         createFunc = llvm::Function::Create(FT, llvm::Function::ExternalLinkage, "flux_piecewise_create", context.TheModule);
     }
 
-    uint64_t addr = reinterpret_cast<uint64_t>(getPermanentString(Interpolation));
-    llvm::Value* InterpAsInt = llvm::ConstantInt::get(Int64Ty, addr);
+    llvm::Value* InterpStrPtr = context.Builder.CreateGlobalStringPtr(Interpolation, "interp_str");
+    llvm::Value* InterpAsInt = context.Builder.CreatePtrToInt(InterpStrPtr, Int64Ty);
     llvm::Value* InterpAsDouble = context.Builder.CreateBitCast(InterpAsInt, DoubleTy, "interp_double");
 
     llvm::Value* PwObj = context.Builder.CreateCall(createFunc, {InterpAsDouble});
@@ -511,8 +504,8 @@ TypedValue CsvImportExprAST::codegen(CodegenContext& context) {
         importFunc = llvm::Function::Create(FT, llvm::Function::ExternalLinkage, "flux_csv_import", context.TheModule);
     }
 
-    uint64_t f_addr = reinterpret_cast<uint64_t>(getPermanentString(Filename));
-    llvm::Value* FilenameAsInt = llvm::ConstantInt::get(Int64Ty, f_addr);
+    llvm::Value* FilenameStrPtr = context.Builder.CreateGlobalStringPtr(Filename, "filename_str");
+    llvm::Value* FilenameAsInt = context.Builder.CreatePtrToInt(FilenameStrPtr, Int64Ty);
     llvm::Value* FilenameAsDouble = context.Builder.CreateBitCast(FilenameAsInt, DoubleTy, "filename_double");
 
     // Serialize options to JSON string
@@ -528,8 +521,8 @@ TypedValue CsvImportExprAST::codegen(CodegenContext& context) {
         optsJson += "}";
     }
 
-    uint64_t o_addr = reinterpret_cast<uint64_t>(getPermanentString(optsJson));
-    llvm::Value* OptsAsInt = llvm::ConstantInt::get(Int64Ty, o_addr);
+    llvm::Value* OptsStrPtr = context.Builder.CreateGlobalStringPtr(optsJson, "opts_str");
+    llvm::Value* OptsAsInt = context.Builder.CreatePtrToInt(OptsStrPtr, Int64Ty);
     llvm::Value* OptsAsDouble = context.Builder.CreateBitCast(OptsAsInt, DoubleTy, "opts_double");
 
     llvm::Value* CsvObj = context.Builder.CreateCall(importFunc, {FilenameAsDouble, OptsAsDouble});
@@ -562,8 +555,8 @@ TypedValue UnitExprAST::codegen(CodegenContext& context) {
         ValLLVM = context.Builder.CreateSIToFP(ValLLVM, DoubleTy, "inttodouble");
     }
 
-    uint64_t addr = reinterpret_cast<uint64_t>(getPermanentString(this->UnitStr));
-    llvm::Value* UnitStrAsInt = llvm::ConstantInt::get(Int64Ty, addr);
+    llvm::Value* UnitStrPtr = context.Builder.CreateGlobalStringPtr(this->UnitStr, "unit_str");
+    llvm::Value* UnitStrAsInt = context.Builder.CreatePtrToInt(UnitStrPtr, Int64Ty);
     llvm::Value* UnitStrAsDouble = context.Builder.CreateBitCast(UnitStrAsInt, DoubleTy, "unit_str_double");
 
     llvm::Value* QuantObj = context.Builder.CreateCall(createFunc, {ValLLVM, UnitStrAsDouble});
@@ -613,12 +606,12 @@ TypedValue ConvertExprAST::codegen(CodegenContext& context) {
         ValLLVM = context.Builder.CreateSIToFP(ValLLVM, DoubleTy, "inttodouble");
     }
 
-    uint64_t f_addr = reinterpret_cast<uint64_t>(getPermanentString(FromUnit));
-    llvm::Value* FromAsInt = llvm::ConstantInt::get(Int64Ty, f_addr);
+    llvm::Value* FromStrPtr = context.Builder.CreateGlobalStringPtr(FromUnit, "from_str");
+    llvm::Value* FromAsInt = context.Builder.CreatePtrToInt(FromStrPtr, Int64Ty);
     llvm::Value* FromAsDouble = context.Builder.CreateBitCast(FromAsInt, DoubleTy, "from_double");
 
-    uint64_t t_addr = reinterpret_cast<uint64_t>(getPermanentString(ToUnit));
-    llvm::Value* ToAsInt = llvm::ConstantInt::get(Int64Ty, t_addr);
+    llvm::Value* ToStrPtr = context.Builder.CreateGlobalStringPtr(ToUnit, "to_str");
+    llvm::Value* ToAsInt = context.Builder.CreatePtrToInt(ToStrPtr, Int64Ty);
     llvm::Value* ToAsDouble = context.Builder.CreateBitCast(ToAsInt, DoubleTy, "to_double");
 
     return TypedValue(context.Builder.CreateCall(convFunc, {ValLLVM, FromAsDouble, ToAsDouble}, "converted_value"), TypeKind::Double);
@@ -641,8 +634,8 @@ TypedValue HasUnitExprAST::codegen(CodegenContext& context) {
     llvm::Value* ValAsInt = context.Builder.CreateBitCast(ValResult.Val, Int64Ty, "handle_to_int");
     llvm::Value* ValAsPtr = context.Builder.CreateIntToPtr(ValAsInt, VoidPtrTy, "quant_ptr");
 
-    uint64_t addr = reinterpret_cast<uint64_t>(getPermanentString(this->UnitStr));
-    llvm::Value* UnitStrAsInt = llvm::ConstantInt::get(Int64Ty, addr);
+    llvm::Value* UnitStrPtr = context.Builder.CreateGlobalStringPtr(this->UnitStr, "unit_str");
+    llvm::Value* UnitStrAsInt = context.Builder.CreatePtrToInt(UnitStrPtr, Int64Ty);
     llvm::Value* UnitStrAsDouble = context.Builder.CreateBitCast(UnitStrAsInt, DoubleTy, "unit_str_double");
 
     return TypedValue(context.Builder.CreateCall(hasUnitFunc, {ValAsPtr, UnitStrAsDouble}, "has_unit_result"), TypeKind::Double);

@@ -230,9 +230,6 @@ void FluxJIT::addModule(std::unique_ptr<llvm::Module> M,
     prepareModule(*M);
 
     // ---- Tiered JIT: Save per-function IR as bitcode for recompilation ----
-    // Clone and strip per-function so each saved bitcode is a single function.
-    // We keep other functions as declarations (deleteBody) so cross-references
-    // remain valid and the >2000 instruction optimizer guard only sees one body.
     for (auto& F : *M) {
         if (F.isDeclaration() || !F.hasExternalLinkage() || F.getName().empty())
             continue;
@@ -251,13 +248,14 @@ void FluxJIT::addModule(std::unique_ptr<llvm::Module> M,
                 CF.deleteBody();
         }
 
-        SavedModule saved;
-        saved.functionNames.push_back(std::move(name));
-        std::string bitcode;
-        llvm::raw_string_ostream OS(bitcode);
+        std::string bc;
+        llvm::raw_string_ostream OS(bc);
         llvm::WriteBitcodeToFile(*PerFnMod, OS);
         OS.flush();
-        saved.bitcode = std::move(bitcode);
+
+        SavedModule saved;
+        saved.functionNames.push_back(std::move(name));
+        saved.bitcode = std::move(bc);
         m_savedModules.push_back(std::move(saved));
     }
 
@@ -386,8 +384,7 @@ void* FluxJIT::promoteFunction(const std::string& Name, OptimizationLevel target
         return nullptr;
     }
 
-    // Parse saved bitcode and optimize it in-place. No cloning needed —
-    // we just recompile the saved function at a higher optimization level.
+    // Parse saved bitcode and add it to the JIT at the target optimization level
     auto ctx = std::make_unique<llvm::LLVMContext>();
     auto buf = llvm::MemoryBuffer::getMemBuffer(bitcode, "saved", false);
     auto mod = llvm::parseBitcodeFile(buf->getMemBufferRef(), *ctx);
@@ -403,8 +400,7 @@ void* FluxJIT::promoteFunction(const std::string& Name, OptimizationLevel target
         return nullptr;
     }
 
-    // Remove all other definitions from the module to avoid duplicate symbol errors
-    // (the saved bitcode includes every function from the original module)
+    // Remove all other definitions from the module
     {
         std::vector<llvm::Function*> toRemove;
         for (auto& F : *fnModule) {
@@ -420,8 +416,7 @@ void* FluxJIT::promoteFunction(const std::string& Name, OptimizationLevel target
 
     optimizeModule(fnModule, targetLevel);
 
-    // Rename the function to avoid ORC's first-definition-wins.
-    // The promoted code is cached under the original name in m_functionPtrs.
+    // Rename to avoid ORC's first-definition-wins
     std::string promotedName = Name + ".__promoted";
     func->setName(promotedName);
 

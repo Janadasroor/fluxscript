@@ -978,14 +978,6 @@ public:
 
 // --- AI / Neural Network Nodes ---
 
-class NNCreateExprAST : public ExprAST {
-    std::vector<int> Layers;
-public:
-    NNCreateExprAST(std::vector<int> layers) : Layers(std::move(layers)) {}
-    TypedValue codegen(CodegenContext& context) override;
-    bool containsYield() const override { return false; }
-};
-
 class TrainExprAST : public ExprAST {
     std::unique_ptr<ExprAST> Model;
     std::unique_ptr<ExprAST> Inputs;

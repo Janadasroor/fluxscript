@@ -60,8 +60,6 @@ def eye(n) { matrix_eye(n) }
 
 def ones(r, c) { matrix_ones(r, c) }
 
-def zeros(r, c) { matrix_zeros(r, c) }
-
 def copy(m) { matrix_copy(m) }
 
 def flatten(m) {

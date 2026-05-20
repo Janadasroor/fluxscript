@@ -58,38 +58,6 @@ TypedValue SymExprAST::codegen(CodegenContext& context) {
 }
 
 // ============================================================================
-// SolveExprAST - Solve equation for variable
-// ============================================================================
-TypedValue SolveExprAST::codegen(CodegenContext& context) {
-    emitLocation(this, context);
-    llvm::LLVMContext& Ctx = context.TheContext;
-    llvm::Module* TheModule = context.TheModule;
-    
-    TypedValue ExprTV = Expression->codegen(context);
-    if (!ExprTV.Val) return TypedValue();
-    
-    // Call flux_sym_solve(double expr_ptr, double rhs_ptr, const char* var)
-    llvm::Function* SolveF = TheModule->getFunction("flux_sym_solve");
-    if (!SolveF) {
-        llvm::Type* Params[] = { llvm::Type::getDoubleTy(Ctx), llvm::Type::getDoubleTy(Ctx), llvm::PointerType::get(Ctx, 0) };
-        SolveF = llvm::Function::Create(llvm::FunctionType::get(llvm::Type::getDoubleTy(Ctx), Params, false),
-                                       llvm::Function::ExternalLinkage, "flux_sym_solve", TheModule);
-    }
-    
-    // Create symbolic zero
-    llvm::Function* SymNumF = TheModule->getFunction("flux_sym_number");
-    if (!SymNumF) {
-        SymNumF = llvm::Function::Create(llvm::FunctionType::get(llvm::Type::getDoubleTy(Ctx), {llvm::Type::getDoubleTy(Ctx)}, false),
-                                        llvm::Function::ExternalLinkage, "flux_sym_number", TheModule);
-    }
-    llvm::Value* ZeroPtr = context.Builder.CreateCall(SymNumF, {llvm::ConstantFP::get(Ctx, llvm::APFloat(0.0))}, "sym_zero");
-    
-    llvm::Value* VarNamePtr = context.Builder.CreateGlobalStringPtr(Variable, "solve_var");
-    
-    return TypedValue(context.Builder.CreateCall(SolveF, {ExprTV.Val, ZeroPtr, VarNamePtr}, "solution"), TypeKind::Double);
-}
-
-// ============================================================================
 // SimplifyExprAST - Simplify symbolic expression
 // ============================================================================
 TypedValue SimplifyExprAST::codegen(CodegenContext& context) {

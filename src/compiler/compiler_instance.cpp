@@ -218,11 +218,16 @@ void CompilerInstance::injectStandardLibrary(CodegenContext& context,
     };
 
     // Matrix/Vector math
+    regExtern("matrix",            MatTy(), {DblTy(), DblTy(), DblTy()});
+    returnTypes["matrix"] = FluxType(TypeKind::Matrix);
     injectRet("det", 1, TypeKind::Double);
-    injectRet("inv", 1, TypeKind::Matrix);
-    injectRet("eig", 1, TypeKind::Matrix);
+    regExtern("inv",               MatTy(), {MatTy()});
+    returnTypes["inv"] = FluxType(TypeKind::Matrix);
+    regExtern("eig",               MatTy(), {MatTy()});
+    returnTypes["eig"] = FluxType(TypeKind::Matrix);
     injectRet("dot", 2, TypeKind::Double);
-    injectRet("cross", 2, TypeKind::Matrix);
+    regExtern("cross",             MatTy(), {MatTy(), MatTy()});
+    returnTypes["cross"] = FluxType(TypeKind::Matrix);
     injectRet("norm", 1, TypeKind::Double);
     injectRet("rows", 1, TypeKind::Double);
     injectRet("cols", 1, TypeKind::Double);
@@ -386,29 +391,53 @@ static FluxType inferReturnType(const ExprAST* expr,
     if (auto* block = dynamic_cast<const BlockExprAST*>(expr)) {
         const auto& stmts = block->getStatements();
         if (stmts.empty()) return TypeKind::Double;
-        // If the last statement is a variable reference, search backward
-        // through the block for its initialization (var/let/assignment)
-        // and infer the return type from the initializer expression.
-        if (auto* var = dynamic_cast<const VariableExprAST*>(stmts.back().get())) {
-            for (auto it = stmts.rbegin() + 1; it != stmts.rend(); ++it) {
-                // Check for var/let initialization
-                if (auto* let = dynamic_cast<const LetExprAST*>(it->get())) {
-                    if (let->getVarName() == var->getName() && let->getInit()) {
-                        return inferReturnType(let->getInit(), externTypes);
+
+        // Helper: given the last statement, infer its return type.
+        // If it's a variable reference, search backward for its initialization.
+        auto inferLast = [&](const ExprAST* last) -> FluxType {
+            // If last statement is a return, look at its value
+            if (auto* ret = dynamic_cast<const ReturnExprAST*>(last)) {
+                const ExprAST* retVal = ret->getVal();
+                // If return value is a variable, search backward for its initialization
+                if (auto* var = dynamic_cast<const VariableExprAST*>(retVal)) {
+                    for (auto it = stmts.rbegin() + 1; it != stmts.rend(); ++it) {
+                        if (auto* let = dynamic_cast<const LetExprAST*>(it->get())) {
+                            if (let->getVarName() == var->getName() && let->getInit()) {
+                                return inferReturnType(let->getInit(), externTypes);
+                            }
+                        }
+                        if (auto* assign = dynamic_cast<const AssignExprAST*>(it->get())) {
+                            if (auto* lhs = dynamic_cast<const VariableExprAST*>(assign->getLHS())) {
+                                if (lhs->getName() == var->getName()) {
+                                    return inferReturnType(assign->getValueExpr(), externTypes);
+                                }
+                            }
+                        }
                     }
                 }
-                // Check for assignment statements
-                if (auto* assign = dynamic_cast<const AssignExprAST*>(it->get())) {
-                    if (auto* lhs = dynamic_cast<const VariableExprAST*>(assign->getLHS())) {
-                        if (lhs->getName() == var->getName()) {
-                            return inferReturnType(assign->getValueExpr(), externTypes);
+                return inferReturnType(retVal, externTypes);
+            }
+            // Direct variable reference (implicit return)
+            if (auto* var = dynamic_cast<const VariableExprAST*>(last)) {
+                for (auto it = stmts.rbegin() + 1; it != stmts.rend(); ++it) {
+                    if (auto* let = dynamic_cast<const LetExprAST*>(it->get())) {
+                        if (let->getVarName() == var->getName() && let->getInit()) {
+                            return inferReturnType(let->getInit(), externTypes);
+                        }
+                    }
+                    if (auto* assign = dynamic_cast<const AssignExprAST*>(it->get())) {
+                        if (auto* lhs = dynamic_cast<const VariableExprAST*>(assign->getLHS())) {
+                            if (lhs->getName() == var->getName()) {
+                                return inferReturnType(assign->getValueExpr(), externTypes);
+                            }
                         }
                     }
                 }
             }
-        }
-        auto res = inferReturnType(stmts.back().get(), externTypes);
-        return res;
+            return inferReturnType(last, externTypes);
+        };
+
+        return inferLast(stmts.back().get());
     }
 
     // IfExprAST: use the 'then' branch type (both should match)
@@ -421,6 +450,11 @@ static FluxType inferReturnType(const ExprAST* expr,
         const auto& thenBody = ifStmt->getThenBody();
         if (thenBody.empty()) return TypeKind::Double;
         return inferReturnType(thenBody.back().get(), externTypes);
+    }
+
+    // ReturnExprAST: infer from the returned expression
+    if (auto* ret = dynamic_cast<const ReturnExprAST*>(expr)) {
+        return inferReturnType(ret->getVal(), externTypes);
     }
 
     // UnaryExprAST: same type as operand
@@ -771,6 +805,7 @@ bool CompilerInstance::compileParser(Parser& parser,
     for (auto& func : functions) {
         if (!func->codegen(context)) {
             error = "Code generation failed for function: " + func->getProto()->getName();
+            std::cerr << "DEBUG: Codegen failed for " << func->getProto()->getName() << std::endl;
             context.importModuleFn = std::move(savedImportFn);
             return false;
         }

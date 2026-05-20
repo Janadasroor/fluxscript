@@ -106,7 +106,6 @@ private:
     
     // Symbolic math
     std::unique_ptr<ExprAST> ParseSymDecl();
-    std::unique_ptr<ExprAST> ParseSolveExpr();
     std::unique_ptr<ExprAST> ParseSimplifyExpr();
     std::unique_ptr<ExprAST> ParseDifferentiateExpr();
     std::unique_ptr<ExprAST> ParseSubstituteExpr();
@@ -116,7 +115,6 @@ private:
     std::unique_ptr<ExprAST> ParsePartialDiffExpr();
     
     // AI / Neural Network
-    std::unique_ptr<ExprAST> ParseNNExpr();
     std::unique_ptr<ExprAST> ParseTrainExpr();
     std::unique_ptr<ExprAST> ParsePredictExpr();
     std::unique_ptr<ExprAST> ParseGoalExpr();

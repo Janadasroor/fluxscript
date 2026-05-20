@@ -39,16 +39,6 @@ public:
     TypedValue codegen(CodegenContext& context) override;
 };
 
-// Solve equation: solve(expr, var)
-class SolveExprAST : public ExprAST {
-    std::unique_ptr<ExprAST> Expression;
-    std::string Variable;
-public:
-    SolveExprAST(std::unique_ptr<ExprAST> expr, std::string var)
-        : Expression(std::move(expr)), Variable(std::move(var)) {}
-    TypedValue codegen(CodegenContext& context) override;
-};
-
 // Simplify expression
 class SimplifyExprAST : public ExprAST {
     std::unique_ptr<ExprAST> Expression;

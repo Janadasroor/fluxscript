@@ -821,7 +821,6 @@ std::unique_ptr<ExprAST> Parser::ParsePrimary() {
     
     // Symbolic math
     case static_cast<int>(TokenType::tok_sym): Res = ParseSymDecl(); break;
-    case static_cast<int>(TokenType::tok_solve): Res = ParseSolveExpr(); break;
     case static_cast<int>(TokenType::tok_simplify): Res = ParseSimplifyExpr(); break;
     case static_cast<int>(TokenType::tok_differentiate): Res = ParseDifferentiateExpr(); break;
     case static_cast<int>(TokenType::tok_substitute): Res = ParseSubstituteExpr(); break;
@@ -830,7 +829,6 @@ std::unique_ptr<ExprAST> Parser::ParsePrimary() {
     case static_cast<int>(TokenType::tok_pde): Res = ParsePDEExpr(); break;
     case static_cast<int>(TokenType::tok_partial_diff): Res = ParsePartialDiffExpr(); break;
     case static_cast<int>(TokenType::tok_thermal): Res = ParseThermalBlock(); break;
-    case static_cast<int>(TokenType::tok_nn): Res = ParseNNExpr(); break;
     case static_cast<int>(TokenType::tok_goal): Res = ParseGoalExpr(); break;
     case static_cast<int>(TokenType::tok_optimize): Res = ParseOptimizeExpr(); break;
     case static_cast<int>(TokenType::tok_train): Res = ParseTrainExpr(); break;
@@ -2574,29 +2572,6 @@ std::unique_ptr<ExprAST> Parser::ParseHasUnitExpr() {
     return std::make_unique<HasUnitExprAST>(std::move(Val), std::move(unitStr));
 }
 
-
-std::unique_ptr<ExprAST> Parser::ParseNNExpr() {
-    int line = m_lexer.getCurrentLine();
-    int col = m_lexer.getCurrentColumn();
-    getNextToken(); // eat nn
-    
-    if (CurTok != '(') { ReportError("expected '(' after nn"); return nullptr; }
-    getNextToken(); // eat (
-    
-    std::vector<int> layers;
-    while (CurTok == static_cast<int>(TokenType::tok_number)) {
-        layers.push_back((int)m_lexer.NumVal);
-        getNextToken();
-        if (CurTok == ',') getNextToken();
-    }
-    
-    if (CurTok != ')') { ReportError("expected ')' after nn layers"); return nullptr; }
-    getNextToken();
-    
-    auto Res = std::make_unique<NNCreateExprAST>(std::move(layers));
-    Res->setLocation(line, col);
-    return Res;
-}
 
 std::unique_ptr<ExprAST> Parser::ParseTrainExpr() {
     int line = m_lexer.getCurrentLine();

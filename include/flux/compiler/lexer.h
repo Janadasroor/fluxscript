@@ -183,7 +183,6 @@ enum class TokenType {
     tok_endschematic = -163,    // end schematic block
     tok_pin = -164,             // pin specification
     tok_sym = -165,               // symbolic variable
-    tok_solve = -166,             // solve equation
     tok_simplify = -167,          // simplify expression
     tok_differentiate = -168,     // derivative
     tok_integrate = -169,         // integral
@@ -349,7 +348,6 @@ enum class TokenType {
     tok_surrogate = -256,           // surrogate model
     tok_train = -257,               // train model
     tok_predict = -258,             // predict using model
-    tok_nn = -259,                  // neural network
 
     // VioMATRIXC Integration: A-Device Digital Gates
     tok_adevice = -260,             // A-device (digital gate/flip-flop)

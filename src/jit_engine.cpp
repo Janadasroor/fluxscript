@@ -155,14 +155,15 @@ FluxValue JITEngine::callFunction(const std::string& name, const std::vector<dou
 
     if (retType.Kind == TypeKind::Matrix) {
         struct MatrixRet { void* ptr; int rows; int cols; };
-        using MatrixFn = MatrixRet(*)();
-        using MatrixFn1 = MatrixRet(*)(double);
-        using MatrixFn2 = MatrixRet(*)(double, double);
+        // sret convention: first arg is pointer to result struct, function returns void
+        using MatrixFn = void(*)(MatrixRet*);
+        using MatrixFn1 = void(*)(MatrixRet*, double);
+        using MatrixFn2 = void(*)(MatrixRet*, double, double);
 
         MatrixRet r = {nullptr, 0, 0};
-        if (args.empty()) r = reinterpret_cast<MatrixFn>(fnPtr)();
-        else if (args.size() == 1) r = reinterpret_cast<MatrixFn1>(fnPtr)(args[0]);
-        else if (args.size() == 2) r = reinterpret_cast<MatrixFn2>(fnPtr)(args[0], args[1]);
+        if (args.empty()) reinterpret_cast<MatrixFn>(fnPtr)(&r);
+        else if (args.size() == 1) reinterpret_cast<MatrixFn1>(fnPtr)(&r, args[0]);
+        else if (args.size() == 2) reinterpret_cast<MatrixFn2>(fnPtr)(&r, args[0], args[1]);
 
         return MatrixResult{r.ptr, r.rows, r.cols};
     } else if (retType.Kind == TypeKind::Complex) {
