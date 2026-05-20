@@ -14,23 +14,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install deps (Linux)
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            lsb-release wget software-properties-common gnupg \
-            libcurl4-openssl-dev libeigen3-dev \
-            patchelf
-
-      - name: Install LLVM 21 (Linux)
-        if: runner.os == 'Linux'
-        run: |
-          wget https://apt.llvm.org/llvm.sh
-          chmod +x llvm.sh
-          sudo ./llvm.sh 21 all
-          sudo apt-get install -y libclang-21-dev liblld-21-dev
-
       - name: Install LLVM + curl (Windows)
         if: runner.os == 'Windows'
         run: |
@@ -68,82 +51,37 @@ jobs:
           brew install llvm@21 eigen
           echo "LLVM_PREFIX=$(brew --prefix llvm@21)" >> "$GITHUB_ENV"
 
-      - name: Build (Linux)
+      - name: Build & Package (Linux)
         if: runner.os == 'Linux'
         run: |
-          cmake -B build \
-            -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_INSTALL_RPATH='$ORIGIN' \
-            -DLLVM_DIR=/usr/lib/llvm-21/lib/cmake/llvm \
-            -DClang_DIR=/usr/lib/llvm-21/lib/cmake/clang \
-            -DLLD_DIR=/usr/lib/llvm-21/lib/cmake/lld
-          cmake --build build -j$(nproc)
-
-      - name: Build (Windows)
-        if: runner.os == 'Windows'
-        run: |
-          cmake -B build -DCMAKE_BUILD_TYPE=Release `
-            -DLLVM_DIR="$env:LLVM_DIR"
-          cmake --build build --config Release
-
-      - name: Build (macOS)
-        if: runner.os == 'macOS'
-        run: |
-          cmake -B build \
-            -DCMAKE_BUILD_TYPE=Release \
-            -DLLVM_DIR="$LLVM_PREFIX/lib/cmake/llvm" \
-            -DClang_DIR="$LLVM_PREFIX/lib/cmake/clang" \
-            -DLLD_DIR="$LLVM_PREFIX/lib/cmake/lld" \
-            -DCMAKE_PREFIX_PATH="$(brew --prefix eigen)"
-          cmake --build build -j$(sysctl -n hw.logicalcpu)
-
-      - name: Package (macOS)
-        if: runner.os == 'macOS'
-        run: |
-          mkdir -p install/include install/lib
-          cp -r include/flux install/include/
-          cp build/libFluxScript.dylib install/lib/
-
-          # Bundle all Homebrew-origin dylib deps (LLVM, eigen, etc.)
-          for lib in $(otool -L install/lib/libFluxScript.dylib | grep -E "^\s+/opt/homebrew|^\s+/usr/local" | awk '{print $1}'); do
-            basename=$(basename "$lib")
-            [ ! -f "install/lib/$basename" ] && cp -L "$lib" install/lib/
-          done
-
-          # Fix install names so the dylib finds bundled deps
-          for lib in install/lib/*.dylib*; do
-            install_name_tool -id "@rpath/$(basename "$lib")" "$lib" 2>/dev/null || true
-            for dep in $(otool -L "$lib" | grep -E "^\s+/opt/homebrew|^\s+/usr/local" | awk '{print $1}'); do
-              depname=$(basename "$dep")
-              install_name_tool -change "$dep" "@rpath/$depname" "$lib" 2>/dev/null || true
-            done
-          done
-
-          tar czf fluxscript-macos-arm64.tar.gz -C install .
-
-      - name: Package (Linux)
-        if: runner.os == 'Linux'
-        run: |
-          mkdir -p install/include install/lib
-          cp -r include/flux install/include/
-          cp build/libFluxScript.so install/lib/
-
-          # Bundle LLVM shared library
-          LLVM_REAL="$(readlink -f /usr/lib/llvm-21/lib/libLLVM-21.so)"
-          cp -L "$LLVM_REAL" install/lib/
-          ln -sf "$(basename "$LLVM_REAL")" install/lib/libLLVM-21.so
-
-          # Bundle all non-system deps of libFluxScript.so and LLVM
-          for lib in $(ldd install/lib/libFluxScript.so "$LLVM_REAL" | grep "=> /" | awk '{print $3}' | sort -u); do
-            basename=$(basename "$lib")
-            case "$basename" in
-              libc.so.*|libm.so.*|libstdc++.so.*|libgcc_s.so.*|ld-linux-*|libpthread*|librt*|libdl*) ;;
-              *) [ ! -f "install/lib/$basename" ] && cp -L "$lib" install/lib/ ;;
-            esac
-          done
-
-          patchelf --set-rpath '$ORIGIN' install/lib/libFluxScript.so
-          tar czf fluxscript-linux-x86_64.tar.gz -C install .
+          docker run --rm -v $PWD:/src -w /src \
+            ubuntu:20.04 \
+            bash -xe -c "
+              apt-get update -qq &&
+              apt-get install -y -qq wget lsb-release software-properties-common gnupg &&
+              wget -q https://apt.llvm.org/llvm.sh && chmod +x llvm.sh && ./llvm.sh 21 all &&
+              apt-get install -y -qq libclang-21-dev liblld-21-dev cmake libcurl4-openssl-dev patchelf &&
+              cmake -B build -DCMAKE_BUILD_TYPE=Release \
+                -DLLVM_DIR=/usr/lib/llvm-21/lib/cmake/llvm \
+                -DClang_DIR=/usr/lib/llvm-21/lib/cmake/clang \
+                -DLLD_DIR=/usr/lib/llvm-21/lib/cmake/lld &&
+              cmake --build build -j\$(nproc) &&
+              mkdir -p install/include install/lib &&
+              cp -r include/flux install/include/ &&
+              cp build/libFluxScript.so install/lib/ &&
+              LLVM_REAL=\"\$(readlink -f /usr/lib/llvm-21/lib/libLLVM-21.so)\" &&
+              cp -L \"\$LLVM_REAL\" install/lib/ &&
+              ln -sf \"\$(basename \"\$LLVM_REAL\")\" install/lib/libLLVM-21.so &&
+              for lib in \$(ldd install/lib/libFluxScript.so \"\$LLVM_REAL\" | grep '=> /' | awk '{print \$3}' | sort -u); do
+                basename=\$(basename \"\$lib\")
+                case \"\$basename\" in
+                  libc.so.*|libm.so.*|libstdc++.so.*|libgcc_s.so.*|ld-linux-*|libpthread*|librt*|libdl*) ;;
+                  *) [ ! -f \"install/lib/\$basename\" ] && cp -L \"\$lib\" install/lib/ ;;
+                esac
+              done &&
+              patchelf --set-rpath '\$ORIGIN' install/lib/libFluxScript.so &&
+              tar czf fluxscript-linux-x86_64.tar.gz -C install .
+            "
 
       - name: Package (Windows)
         if: runner.os == 'Windows'
