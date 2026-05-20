@@ -214,20 +214,11 @@ set_source_files_properties(
 )
 
 if(ANDROID)
-    # Whole-archive only LLVMSupport (for llvm::cl:: RTTI symbols needed by
-    # executables). Other LLVM libs linked normally (dead code naturally excluded).
-    set(LLVM_WA_LIBS "")
-    set(LLVM_NOWA_LIBS "")
-    foreach(lib IN LISTS LLVM_LIB)
-        if(lib MATCHES "LLVMSupport$")
-            list(APPEND LLVM_WA_LIBS ${lib})
-        else()
-            list(APPEND LLVM_NOWA_LIBS ${lib})
-        endif()
-    endforeach()
+    # Whole-archive all LLVM static libs into libFluxScript.so to export
+    # all symbols (including RTTI typeinfo for llvm::cl::* classes) to
+    # CLI executables that include LLVM headers directly.
     target_link_libraries(FluxScript PUBLIC
-        -Wl,--whole-archive ${LLVM_WA_LIBS} -Wl,--no-whole-archive
-        ${LLVM_NOWA_LIBS}
+        -Wl,--whole-archive ${LLVM_LIB} -Wl,--no-whole-archive
         ${FLUX_MLIR_LIBS})
 else()
     target_link_libraries(FluxScript PUBLIC ${LLVM_LIB} ${FLUX_MLIR_LIBS})
