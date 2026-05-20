@@ -127,7 +127,7 @@ jobs:
           unzip -q ndk.zip
           echo "ANDROID_NDK_HOME=$(pwd)/android-ndk-r27c" >> "$GITHUB_ENV"
 
-      - name: Cache LLVM Android cross-build
+      - name: Restore LLVM Android from cache
         if: matrix.artifact == 'android-aarch64'
         id: cache-llvm-android
         uses: actions/cache@v4
