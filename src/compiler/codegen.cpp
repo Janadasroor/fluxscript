@@ -1329,25 +1329,25 @@ TypedValue CallExprAST::codegen(CodegenContext& context) {
                 llvm::Function* FabsF = llvm::Intrinsic::getOrInsertDeclaration(
                     context.TheModule, llvm::Intrinsic::fabs,
                     {llvm::Type::getDoubleTy(context.TheContext)});
-                return TypedValue(context.Builder.CreateCall(FabsF, {Arg.Val}, "abstmp"), TypeKind::Double);
+                return TypedValue(context.Builder.CreateCall(FabsF, {Arg.Val}, "abstmp"), FluxType(TypeKind::Double, Arg.Type.Dimensions));
             }
             if (Name == "floor") {
                 llvm::Function* FloorF = llvm::Intrinsic::getOrInsertDeclaration(
                     context.TheModule, llvm::Intrinsic::floor,
                     {llvm::Type::getDoubleTy(context.TheContext)});
-                return TypedValue(context.Builder.CreateCall(FloorF, {Arg.Val}, "floortmp"), TypeKind::Double);
+                return TypedValue(context.Builder.CreateCall(FloorF, {Arg.Val}, "floortmp"), FluxType(TypeKind::Double, Arg.Type.Dimensions));
             }
             if (Name == "ceil") {
                 llvm::Function* CeilF = llvm::Intrinsic::getOrInsertDeclaration(
                     context.TheModule, llvm::Intrinsic::ceil,
                     {llvm::Type::getDoubleTy(context.TheContext)});
-                return TypedValue(context.Builder.CreateCall(CeilF, {Arg.Val}, "ceiltmp"), TypeKind::Double);
+                return TypedValue(context.Builder.CreateCall(CeilF, {Arg.Val}, "ceiltmp"), FluxType(TypeKind::Double, Arg.Type.Dimensions));
             }
             if (Name == "round") {
                 llvm::Function* RoundF = llvm::Intrinsic::getOrInsertDeclaration(
                     context.TheModule, llvm::Intrinsic::round,
                     {llvm::Type::getDoubleTy(context.TheContext)});
-                return TypedValue(context.Builder.CreateCall(RoundF, {Arg.Val}, "roundtmp"), TypeKind::Double);
+                return TypedValue(context.Builder.CreateCall(RoundF, {Arg.Val}, "roundtmp"), FluxType(TypeKind::Double, Arg.Type.Dimensions));
             }
         }
     }
@@ -1372,7 +1372,10 @@ TypedValue CallExprAST::codegen(CodegenContext& context) {
             if (Name == "sqrt") {
                 llvm::Function* F = llvm::Intrinsic::getOrInsertDeclaration(
                     context.TheModule, llvm::Intrinsic::sqrt, {DoubleTy});
-                return TypedValue(context.Builder.CreateCall(F, {Arg0.Val}, "sqrttmp"), TypeKind::Double);
+                UnitDimensions dims = Arg0.Type.Dimensions;
+                dims.mass /= 2; dims.length /= 2; dims.time /= 2;
+                dims.current /= 2; dims.temperature /= 2; dims.amount /= 2; dims.luminous /= 2;
+                return TypedValue(context.Builder.CreateCall(F, {Arg0.Val}, "sqrttmp"), FluxType(TypeKind::Double, dims));
             }
             if (Name == "exp") {
                 llvm::Function* F = llvm::Intrinsic::getOrInsertDeclaration(
@@ -1519,10 +1522,12 @@ TypedValue CallExprAST::codegen(CodegenContext& context) {
         }
     }
 
+    std::vector<UnitDimensions> ArgDims;
     for (unsigned i = 0, e = Args.size(); i != e; ++i) {
         TypedValue ArgTV = Args[i]->codegen(context);
         if (!ArgTV.Val) return TypedValue();
         llvm::Value* ArgV = ArgTV.Val;
+        ArgDims.push_back(ArgTV.Type.Dimensions);
 
         // For sret calls, the actual parameter is at index i+1 (index 0 is hidden sret ptr)
         unsigned ParamIdx = isSretCall ? i + 1 : i;
@@ -1615,6 +1620,40 @@ TypedValue CallExprAST::codegen(CodegenContext& context) {
         auto ftIt = context.FuncReturnTypes.find(Callee);
         if (ftIt != context.FuncReturnTypes.end()) {
             retType.Dimensions = ftIt->second.Dimensions;
+        }
+    }
+    // Infer return dimensions for built-in math functions based on arg types
+    if (!ArgDims.empty()) {
+        static const std::set<std::string> kDimPreserve1 = {
+            "abs", "neg", "sign", "floor", "ceil", "round", "trunc", "erf", "erfc"
+        };
+        static const std::set<std::string> kDimPreserve2 = {
+            "min", "max"
+        };
+        static const std::set<std::string> kDimless = {
+            "sin", "cos", "tan", "asin", "acos", "atan", "atan2",
+            "sinh", "cosh", "tanh",
+            "log", "log10", "log2", "ln",
+            "exp", "exp2",
+            "tgamma", "lgamma"
+        };
+        if (kDimPreserve1.count(Name)) {
+            retType.Dimensions = ArgDims[0];
+        } else if (Name == "sqrt" || Name == "cbrt") {
+            int div = (Name == "cbrt") ? 3 : 2;
+            retType.Dimensions.mass = ArgDims[0].mass / div;
+            retType.Dimensions.length = ArgDims[0].length / div;
+            retType.Dimensions.time = ArgDims[0].time / div;
+            retType.Dimensions.current = ArgDims[0].current / div;
+            retType.Dimensions.temperature = ArgDims[0].temperature / div;
+            retType.Dimensions.amount = ArgDims[0].amount / div;
+            retType.Dimensions.luminous = ArgDims[0].luminous / div;
+        } else if (Name == "hypot" && ArgDims.size() >= 2) {
+            if (ArgDims[0] == ArgDims[1]) retType.Dimensions = ArgDims[0];
+        } else if (kDimPreserve2.count(Name) && ArgDims.size() >= 2) {
+            retType.Dimensions = ArgDims[0];
+        } else if (kDimless.count(Name)) {
+            retType.Dimensions = UnitDimensions();
         }
     }
     return TypedValue(context.Builder.CreateCall(CalleeF, ArgsV, "calltmp"), retType);
