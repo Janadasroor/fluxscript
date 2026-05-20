@@ -24,6 +24,7 @@
 
 #include "flux/compiler/ast.h"
 #include "flux/compiler/compiler_instance.h"
+#include "flux/compiler/module_loader.h"
 #include "flux/jit/flux_jit.h"
 
 
@@ -117,6 +118,7 @@ private:
     bool m_cacheEnabled = true;
     bool m_lastCompileUsedCache = false;
     bool m_initialized = false;
+    ModuleLoader m_moduleLoader;
 };
 
 } // namespace Flux

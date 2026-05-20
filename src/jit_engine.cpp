@@ -23,6 +23,7 @@
 #include "flux/flux_eigen.h"
 #include "flux/runtime/flux_runtime.h"
 #include "flux/tooling/tooling.h"
+#include "flux/compiler/module_loader.h"
 
 #include <iostream>
 #include <filesystem>
@@ -200,37 +201,99 @@ FluxValue JITEngine::callFunction(const std::string& name, const std::vector<dou
 // ============ Module System Integration ============
 
 bool JITEngine::importModule(const std::string& moduleName, std::string* error) {
-    // Use ModuleLoader to load module
-    return true;  // Simplified for now
+    if (!m_initialized) {
+        if (error) *error = "JIT Engine not initialized";
+        return false;
+    }
+
+    // Delegate to ModuleLoader
+    bool success = m_moduleLoader.loadModule(moduleName, error);
+    if (!success) return false;
+
+    // Add search path for the module's location so imports resolve correctly
+    m_moduleLoader.addSearchPath(
+        std::filesystem::path("modules") / moduleName);
+
+    // If the JIT engine has a running context, compile and add the module IR
+    if (m_codegenCtx) {
+        auto info = m_moduleLoader.getModuleInfo(moduleName);
+        if (!info.sourcePath.empty()) {
+            CompilerInstance compiler(m_compilerOptions);
+            auto content = llvm::MemoryBuffer::getFile(info.sourcePath.string());
+            if (content) {
+                auto artifacts = compiler.compileToIR(
+                    content->get()->getBuffer().str(), error);
+                if (artifacts && m_jit) {
+                    m_jit->addModule(
+                        std::move(artifacts->codegenContext->OwnedModule),
+                        std::move(artifacts->codegenContext->OwnedContext));
+                }
+            }
+        }
+    }
+
+    m_importedModules.insert(moduleName);
+    return true;
 }
 
 bool JITEngine::loadPlugin(const std::string& pluginPath, std::string* error) {
-    // Use ModuleLoader to load plugin
-    return true;  // Simplified for now
+    if (!m_initialized) {
+        if (error) *error = "JIT Engine not initialized";
+        return false;
+    }
+
+    return m_moduleLoader.loadPlugin(std::filesystem::path(pluginPath), error);
 }
 
 std::vector<std::string> JITEngine::getLoadedModules() const {
-    return {};  // Simplified for now
+    if (!m_initialized) return {};
+    return m_moduleLoader.getLoadedModules();
 }
 
 std::vector<std::string> JITEngine::getModuleExports(const std::string& moduleName) const {
-    return {};  // Simplified for now
+    if (!m_initialized) return {};
+    try {
+        auto info = m_moduleLoader.getModuleInfo(moduleName);
+        return info.exports;
+    } catch (...) {
+        return {};
+    }
 }
 
 std::string JITEngine::getFunctionSignature(const std::string& functionName) const {
-    return "";  // Simplified for now
+    if (!m_initialized) return "";
+    try {
+        auto reflection = m_moduleLoader.getFunctionReflection(functionName);
+        std::string sig = reflection.returnType + " " + reflection.name + "(";
+        for (size_t i = 0; i < reflection.parameters.size(); i++) {
+            if (i > 0) sig += ", ";
+            sig += reflection.parameters[i].second + " " + reflection.parameters[i].first;
+        }
+        sig += ")";
+        return sig;
+    } catch (...) {
+        return "";
+    }
 }
 
 void JITEngine::setDefine(const std::string& name, bool value) {
-    // Simplified for now
+    if (!m_initialized) return;
+    auto config = m_moduleLoader.getCompileConfig();
+    config.features[name] = value;
+    m_moduleLoader.setCompileConfig(config);
 }
 
 bool JITEngine::getDefine(const std::string& name) const {
-    return false;  // Simplified for now
+    if (!m_initialized) return false;
+    return m_moduleLoader.checkFeature(name);
 }
 
 void JITEngine::setOptimizationLevelForModules(OptimizationLevel level) {
-    // Simplified for now
+    if (!m_initialized) return;
+    auto config = m_moduleLoader.getCompileConfig();
+    config.features["opt_level"] = (level >= OptimizationLevel::O2);
+    config.constants["FLUX_OPT_LEVEL"] = std::to_string(static_cast<int>(level));
+    m_moduleLoader.setCompileConfig(config);
 }
 
 void JITEngine::clearJITCache() {

@@ -19,6 +19,7 @@
 #include "flux/jit/scaling_security.h"
 #include "flux/jit/jit_manager.h"
 #include "flux/jit_engine.h"
+#include "flux/compiler/compiler_instance.h"
 #include <iostream>
 #include <sstream>
 #include <algorithm>
@@ -78,9 +79,42 @@ bool HotReloadManager::prepareReload(const std::string& component_name,
     txn.state = HotReloadState::PREPARING;
     txn.start_time = std::chrono::steady_clock::now();
 
-    // Compile new version
+    // Compile new version using the JITManager's compilation pipeline
+    // which properly compiles FluxScript source through the full compiler pipeline
     txn.new_jit = std::make_unique<FluxJIT>();
-    txn.new_update_func = txn.new_jit->getPointerToFunction("update");
+
+    // Create a temporary component in a sub-JIT so we can compile independently
+    Flux::CompilerOptions opts;
+    opts.injectStdlib = true;
+    opts.optimizationLevel = Flux::OptimizationLevel::O0;
+    opts.inputName = component_name + "_new";
+    opts.moduleName = "component_" + component_name + "_new";
+
+    Flux::CompilerInstance compiler(opts);
+    auto artifacts = compiler.compileToIR(new_source, error);
+    if (!artifacts || !artifacts->codegenContext || !artifacts->codegenContext->TheModule) {
+        txn.state = HotReloadState::FAILED;
+        txn.error_message = error ? *error : "Compilation of new source failed";
+        return false;
+    }
+
+    txn.new_jit->addModule(
+        std::move(artifacts->codegenContext->OwnedModule),
+        std::move(artifacts->codegenContext->OwnedContext)
+    );
+
+    // Look up the update function
+    std::string func_name = "update";
+    size_t def_pos = new_source.find("def ");
+    if (def_pos != std::string::npos) {
+        size_t name_start = def_pos + 4;
+        size_t name_end = new_source.find_first_of("( \t\n", name_start);
+        if (name_end != std::string::npos && name_end > name_start) {
+            func_name = new_source.substr(name_start, name_end - name_start);
+        }
+    }
+
+    txn.new_update_func = txn.new_jit->getPointerToFunction(func_name);
     if (!txn.new_update_func) {
         txn.state = HotReloadState::FAILED;
         txn.error_message = "Missing update function in new code";
