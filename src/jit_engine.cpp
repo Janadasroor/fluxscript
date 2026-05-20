@@ -155,46 +155,43 @@ FluxValue JITEngine::callFunction(const std::string& name, const std::vector<dou
 
     if (retType.Kind == TypeKind::Matrix) {
         struct MatrixRet { void* ptr; int rows; int cols; };
-        // sret convention: first arg is pointer to result struct, function returns void
-        using MatrixFn = void(*)(MatrixRet*);
-        using MatrixFn1 = void(*)(MatrixRet*, double);
-        using MatrixFn2 = void(*)(MatrixRet*, double, double);
+        auto* r = new MatrixRet{nullptr, 0, 0};
 
-        MatrixRet r = {nullptr, 0, 0};
-        if (args.empty()) reinterpret_cast<MatrixFn>(fnPtr)(&r);
-        else if (args.size() == 1) reinterpret_cast<MatrixFn1>(fnPtr)(&r, args[0]);
-        else if (args.size() == 2) reinterpret_cast<MatrixFn2>(fnPtr)(&r, args[0], args[1]);
+        switch (args.size()) {
+            case 0:  reinterpret_cast<void(*)(MatrixRet*)>(fnPtr)(r); break;
+            case 1:  reinterpret_cast<void(*)(MatrixRet*, double)>(fnPtr)(r, args[0]); break;
+            case 2:  reinterpret_cast<void(*)(MatrixRet*, double, double)>(fnPtr)(r, args[0], args[1]); break;
+            case 3:  reinterpret_cast<void(*)(MatrixRet*, double, double, double)>(fnPtr)(r, args[0], args[1], args[2]); break;
+            case 4:  reinterpret_cast<void(*)(MatrixRet*, double, double, double, double)>(fnPtr)(r, args[0], args[1], args[2], args[3]); break;
+            case 5:  reinterpret_cast<void(*)(MatrixRet*, double, double, double, double, double)>(fnPtr)(r, args[0], args[1], args[2], args[3], args[4]); break;
+            default: delete r; if (error) *error = "Unsupported argument count for matrix function"; return 0.0;
+        }
 
-        return MatrixResult{r.ptr, r.rows, r.cols};
+        MatrixResult result{r->ptr, r->rows, r->cols};
+        delete r;
+        return result;
     } else if (retType.Kind == TypeKind::Complex) {
-        // Complex return: LLVM returns small structs in registers or via hidden pointer.
-        // For {double, double}, it's usually returned as a pair of registers.
-        // The safest way to handle this across different ABIs without a wrapper is to 
-        // use a helper that returns by value and hope it matches, but for {double, double}
-        // it's often more reliable to call a function that takes a pointer to the result.
-
-        // However, since we are using JIT and casting fnPtr directly:
         struct ComplexRet { double real; double imag; };
-        using ComplexFn = ComplexRet(*)();
-        using ComplexFn1 = ComplexRet(*)(double);
-        using ComplexFn2 = ComplexRet(*)(double, double);
-
-        if (args.empty()) {
-            ComplexRet r = reinterpret_cast<ComplexFn>(fnPtr)();
-            return std::complex<double>(r.real, r.imag);
+        ComplexRet r;
+        switch (args.size()) {
+            case 0: r = reinterpret_cast<ComplexRet(*)()>(fnPtr)(); break;
+            case 1: r = reinterpret_cast<ComplexRet(*)(double)>(fnPtr)(args[0]); break;
+            case 2: r = reinterpret_cast<ComplexRet(*)(double, double)>(fnPtr)(args[0], args[1]); break;
+            default: r = ComplexRet{0, 0}; break;
         }
-        if (args.size() == 1) {
-            ComplexRet r = reinterpret_cast<ComplexFn1>(fnPtr)(args[0]);
-            return std::complex<double>(r.real, r.imag);
-        }
-        if (args.size() == 2) {
-            ComplexRet r = reinterpret_cast<ComplexFn2>(fnPtr)(args[0], args[1]);
-            return std::complex<double>(r.real, r.imag);
-        }
+        return std::complex<double>(r.real, r.imag);
     } else {
-        if (args.empty()) return reinterpret_cast<double(*)()>(fnPtr)();
-        if (args.size() == 1) return reinterpret_cast<double(*)(double)>(fnPtr)(args[0]);
-        if (args.size() == 2) return reinterpret_cast<double(*)(double, double)>(fnPtr)(args[0], args[1]);
+        double result;
+        switch (args.size()) {
+            case 0: result = reinterpret_cast<double(*)()>(fnPtr)(); break;
+            case 1: result = reinterpret_cast<double(*)(double)>(fnPtr)(args[0]); break;
+            case 2: result = reinterpret_cast<double(*)(double, double)>(fnPtr)(args[0], args[1]); break;
+            case 3: result = reinterpret_cast<double(*)(double, double, double)>(fnPtr)(args[0], args[1], args[2]); break;
+            case 4: result = reinterpret_cast<double(*)(double, double, double, double)>(fnPtr)(args[0], args[1], args[2], args[3]); break;
+            case 5: result = reinterpret_cast<double(*)(double, double, double, double, double)>(fnPtr)(args[0], args[1], args[2], args[3], args[4]); break;
+            default: result = 0.0; break;
+        }
+        return result;
     }
     if (error) *error = "Unsupported arguments or return type";
     return 0.0;
