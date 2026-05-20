@@ -113,11 +113,12 @@ jobs:
           cmake --build build -j$(sysctl -n hw.logicalcpu)
 
       - name: Setup Android NDK
-        id: ndk
         if: matrix.artifact == 'android-aarch64'
-        uses: ncipollo/setup-ndk@v1
-        with:
-          ndk-version: r27c
+        run: |
+          curl -fsSL -o ndk.zip \
+            https://dl.google.com/android/repository/android-ndk-r27c-linux.zip
+          unzip -q ndk.zip
+          echo "ANDROID_NDK_HOME=$(pwd)/android-ndk-r27c" >> "$GITHUB_ENV"
 
       - name: Cache LLVM Android cross-build
         if: matrix.artifact == 'android-aarch64'
@@ -127,7 +128,7 @@ jobs:
           path: |
             llvm-native
             llvm-android
-          key: llvm-21.1.0-android-arm64-ndk-${{ steps.ndk.outputs.ndk-version }}
+          key: llvm-21.1.0-android-arm64-ndk-r27c
 
       - name: Build LLVM for Android
         if: matrix.artifact == 'android-aarch64' && steps.cache-llvm-android.outputs.cache-hit != 'true'
@@ -150,7 +151,7 @@ jobs:
           cmake --build llvm-native --target llvm-tblgen -j$(nproc)
 
           # Cross-build LLVM shared library for Android arm64
-          NDK="${{ steps.ndk.outputs.ndk-path }}"
+          NDK="$ANDROID_NDK_HOME"
           cmake -B llvm-android -S llvm-source \
             -DCMAKE_TOOLCHAIN_FILE="$NDK/build/cmake/android.toolchain.cmake" \
             -DANDROID_ABI=arm64-v8a \
@@ -174,7 +175,6 @@ jobs:
         if: matrix.artifact == 'android-aarch64'
         run: |
           set -xe
-          NDK="${{ steps.ndk.outputs.ndk-path }}"
 
           # Fetch Eigen (header-only, no build needed)
           curl -fsSL -o eigen.tar.xz \
@@ -183,7 +183,7 @@ jobs:
           tar xf eigen.tar.xz -C third_party
 
           cmake -B build \
-            -DCMAKE_TOOLCHAIN_FILE="$NDK/build/cmake/android.toolchain.cmake" \
+            -DCMAKE_TOOLCHAIN_FILE="$ANDROID_NDK_HOME/build/cmake/android.toolchain.cmake" \
             -DANDROID_ABI=arm64-v8a \
             -DANDROID_PLATFORM=android-24 \
             -DCMAKE_BUILD_TYPE=Release \
