@@ -96,16 +96,16 @@ void CompilerInstance::injectStandardLibrary(CodegenContext& context,
         PrototypeAST proto(name, params, FluxType(TypeKind::Double));
         proto.codegen(context);
         returnTypes[name] = FluxType(TypeKind::Double);
+        context.FuncReturnTypes[name] = FluxType(TypeKind::Double);
     };
 
-    // Register extern function types for the codegen so it can emit
-    // correct LLVM call instructions instead of assuming double(double,...).
     // Register extern function types for the codegen so it can emit
     // correct LLVM call instructions instead of assuming double(double,...).
     // LLVM return type for matrix-returning functions is void* (ptr).
     // The post-call code in codegen wraps it into {ptr, i32, i32}.
     auto regExtern = [&](const std::string& name, FluxType ret, std::vector<FluxType> argTypes) {
         context.ExternFuncTypes[name] = {ret, std::move(argTypes)};
+        context.FuncReturnTypes[name] = ret;
     };
 
     auto VoidPtr = [&]() { return FluxType(TypeKind::Double); }; // void* passed as opaque
@@ -698,6 +698,7 @@ bool CompilerInstance::compileParser(Parser& parser,
             auto proto = parser.ParseExtern();
             if (proto) {
                 returnTypes[proto->getName()] = proto->getReturnType();
+                context.FuncReturnTypes[proto->getName()] = proto->getReturnType();
                 proto->codegen(context);
             }
         } else if (parser.CurTok == static_cast<int>(TokenType::tok_semicolon)) {
@@ -781,6 +782,7 @@ bool CompilerInstance::compileParser(Parser& parser,
     for (auto& func : functions) {
         const std::string& name = func->getProto()->getName();
         returnTypes[name] = func->getProto()->getReturnType();
+        context.FuncReturnTypes[name] = func->getProto()->getReturnType();
         func->getProto()->codegen(context);
     }
 
@@ -806,6 +808,7 @@ bool CompilerInstance::compileParser(Parser& parser,
 
     if (hasUpdateFunc) {
         returnTypes["update"] = FluxType(TypeKind::Double);
+        context.FuncReturnTypes["update"] = FluxType(TypeKind::Double);
         if (!updateFunc->codegen(context)) {
             error = "Code generation failed for update function";
             context.importModuleFn = std::move(savedImportFn);

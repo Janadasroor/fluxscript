@@ -291,6 +291,11 @@ public:
     // user tries to call a non-imported function.
     std::set<std::string> ExcludedSymbols;
 
+    // Declared return type dimensions for user/extern functions, keyed by name.
+    // Populated during compilation so CallExprAST can propagate UnitDimensions
+    // through function calls.
+    std::map<std::string, FluxType> FuncReturnTypes;
+
     CodegenContext()
         : OwnedContext(std::make_unique<llvm::LLVMContext>()),
           TheContext(*OwnedContext),

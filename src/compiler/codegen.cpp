@@ -1609,7 +1609,14 @@ TypedValue CallExprAST::codegen(CodegenContext& context) {
         context.Builder.CreateCall(CalleeF, ArgsV);
         return TypedValue(llvm::ConstantFP::get(context.TheContext, llvm::APFloat(0.0)), TypeKind::Double);
     }
-    return TypedValue(context.Builder.CreateCall(CalleeF, ArgsV, "calltmp"), typeFromLLVM(CalleeF->getReturnType()));
+    FluxType retType = typeFromLLVM(CalleeF->getReturnType());
+    {
+        auto ftIt = context.FuncReturnTypes.find(Callee);
+        if (ftIt != context.FuncReturnTypes.end()) {
+            retType.Dimensions = ftIt->second.Dimensions;
+        }
+    }
+    return TypedValue(context.Builder.CreateCall(CalleeF, ArgsV, "calltmp"), retType);
 }
 
 
@@ -2132,6 +2139,8 @@ llvm::Function* FunctionAST::codegen(CodegenContext& context) {
     if (!TheFunction) TheFunction = Proto->codegen(context);
     if (!TheFunction) return nullptr;
 
+    context.FuncReturnTypes[Proto->getName()] = Proto->getReturnType();
+
     llvm::DISubprogram* subprogram = nullptr;
     if (context.DebugBuilder && context.DebugCompileUnit && context.DebugFile) {
         auto typeArray = context.DebugBuilder->getOrCreateTypeArray({});
@@ -2246,8 +2255,6 @@ llvm::Function* FunctionAST::codegen(CodegenContext& context) {
         llvm::Value* RetVal = RetTV.Val;
         llvm::Type* RetTy = Proto->getReturnType().getLLVMType(context.TheContext);
 
-        // Compile-time dimensional analysis: check return value dimensions
-        // match the declared return type.
         {
             const auto& retDims = Proto->getReturnType().Dimensions;
             const auto& bodyDims = RetTV.Type.Dimensions;
@@ -2258,11 +2265,13 @@ llvm::Function* FunctionAST::codegen(CodegenContext& context) {
                 retDims.temperature != bodyDims.temperature ||
                 retDims.amount != bodyDims.amount ||
                 retDims.luminous != bodyDims.luminous) {
-                std::string err = "Unit mismatch in return value: function returns ";
-                err += retDims.toString() + " but body produces ";
-                err += bodyDims.toString();
-                llvm::errs() << "[Flux] " << err << "\n";
-                // Continue codegen but warn — the IR is still valid
+                llvm::errs() << "[Flux] Unit mismatch in return value: function returns "
+                             << retDims.toString() << " but body produces "
+                             << bodyDims.toString() << "\n";
+                if (!retDims.isDimensionless()) {
+                    llvm::errs() << "[Flux] error: declared return type dimensions do not match body\n";
+                    return nullptr;
+                }
             }
         }
 
