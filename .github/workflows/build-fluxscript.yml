@@ -141,15 +141,15 @@ jobs:
         if: matrix.artifact == 'android-aarch64' && steps.cache-llvm-android.outputs.cache-hit != 'true'
         run: |
           set -xe
-          rm -rf llvm-native llvm-android llvm-source
+          rm -rf llvm-native llvm-android llvm-project
 
-          curl -fsSL -o llvm-src.tar.xz \
-            https://github.com/llvm/llvm-project/releases/download/llvmorg-21.1.0/llvm-21.1.0.src.tar.xz
-          mkdir -p llvm-source
-          tar xf llvm-src.tar.xz -C llvm-source --strip-components=1
+          curl -fsSL -o llvm-project.tar.xz \
+            https://github.com/llvm/llvm-project/releases/download/llvmorg-21.1.0/llvm-project-21.1.0.src.tar.xz
+          tar xf llvm-project.tar.xz
+          LLVM_SRC="$(pwd)/llvm-project-21.1.0.src/llvm"
 
           # Build host tablegen tools
-          cmake -G Ninja -B llvm-native -S llvm-source \
+          cmake -G Ninja -B llvm-native -S "$LLVM_SRC" \
             -DCMAKE_BUILD_TYPE=Release \
             -DLLVM_TARGETS_TO_BUILD=AArch64 \
             -DLLVM_INCLUDE_TESTS=OFF \
@@ -160,7 +160,7 @@ jobs:
 
           # Cross-build LLVM shared library for Android arm64
           NDK="$ANDROID_NDK_HOME"
-          cmake -G Ninja -B llvm-android -S llvm-source \
+          cmake -G Ninja -B llvm-android -S "$LLVM_SRC" \
             -DCMAKE_TOOLCHAIN_FILE="$NDK/build/cmake/android.toolchain.cmake" \
             -DANDROID_ABI=arm64-v8a \
             -DANDROID_PLATFORM=android-24 \
