@@ -184,10 +184,10 @@ jobs:
           set -xe
 
           # Fetch Eigen (header-only, no build needed)
-          curl -fsSL -o eigen.tar.xz \
-            https://gitlab.com/libeigen/eigen/-/archive/3.4.0/eigen-3.4.0.tar.xz
+          curl -fsSL -o eigen.tar.gz \
+            https://github.com/eigenteam/eigen-git-mirror/archive/3.4.0.tar.gz
           mkdir -p third_party
-          tar xf eigen.tar.xz -C third_party
+          tar xf eigen.tar.gz -C third_party --strip-components=1
 
           cmake -B build \
             -DCMAKE_TOOLCHAIN_FILE="$ANDROID_NDK_HOME/build/cmake/android.toolchain.cmake" \
