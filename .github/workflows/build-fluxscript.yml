@@ -130,13 +130,13 @@ jobs:
       - name: Restore LLVM Android from cache
         if: matrix.artifact == 'android-aarch64'
         id: cache-llvm-android
-        uses: actions/cache@v4
+        uses: actions/cache/restore@v4
         with:
           path: |
             llvm-native
             llvm-android
-          key: llvm-21.1.0-android-arm64-ndk-r27c-v2
-          save-always: true
+          key: llvm-21.1.0-android-arm64-ndk-r27c-v3
+          fail-on-cache-miss: false
 
       - name: Build LLVM for Android
         if: matrix.artifact == 'android-aarch64' && steps.cache-llvm-android.outputs.cache-hit != 'true'
@@ -178,6 +178,15 @@ jobs:
             -DLLVM_ENABLE_ZLIB=OFF \
             -DLLVM_ENABLE_ZSTD=OFF
           cmake --build llvm-android --target LLVM -j$(nproc)
+
+      - name: Save LLVM Android to cache
+        if: matrix.artifact == 'android-aarch64' && steps.cache-llvm-android.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            llvm-native
+            llvm-android
+          key: llvm-21.1.0-android-arm64-ndk-r27c-v3
 
       - name: Build FluxScript for Android
         if: matrix.artifact == 'android-aarch64'
