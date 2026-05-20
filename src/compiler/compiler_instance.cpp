@@ -151,13 +151,24 @@ void CompilerInstance::injectStandardLibrary(CodegenContext& context,
     regExtern("fft_thd",           DblTy(), {MatTy(), DblTy()});
     regExtern("fft_snr",           DblTy(), {MatTy(), DblTy()});
 
-    // SPICE simulation API (strings passed as double bitcast in JIT calling convention)
+    // SPICE simulation API
     regExtern("register_analysis", DblTy(), {DblTy()});
     regExtern("register_measure",  DblTy(), {DblTy(), DblTy()});
     regExtern("register_probe",    DblTy(), {DblTy(), DblTy()});
     regExtern("register_save",     DblTy(), {DblTy()});
     regExtern("register_param",    DblTy(), {DblTy(), DblTy()});
     regExtern("register_ic",       DblTy(), {DblTy(), DblTy()});
+
+    // flux_register_* names used by SPICE AST codegen (const char* args, double return)
+    regExtern("flux_register_analysis", DblTy(), {DblTy()});
+    regExtern("flux_register_measure",  DblTy(), {DblTy(), DblTy()});
+    regExtern("flux_register_probe",    DblTy(), {DblTy(), DblTy()});
+    regExtern("flux_register_save",     DblTy(), {DblTy()});
+    regExtern("flux_register_param",    DblTy(), {DblTy(), DblTy()});
+    regExtern("flux_register_ic",       DblTy(), {DblTy(), DblTy()});
+    regExtern("flux_register_model",    DblTy(), {DblTy(), DblTy()});
+    regExtern("flux_register_subckt",   DblTy(), {DblTy(), DblTy()});
+    regExtern("flux_register_bsource",  DblTy(), {DblTy(), DblTy(), DblTy(), DblTy()});
     regExtern("matrix_mul",        MatTy(), {MatTy(), MatTy()});
     regExtern("matrix_add",        MatTy(), {MatTy(), MatTy()});
     regExtern("matrix_sub",        MatTy(), {MatTy(), MatTy()});

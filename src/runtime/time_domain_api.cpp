@@ -136,7 +136,7 @@ std::map<std::string, double> TimeDomainEngine::getAllOutputs() const {
 
 extern "C" {
 
-int flux_register_bsource(const char* name, void* userData) {
+int flux_register_bsource_old(const char* name, void* userData) {
     if (!name) return -1;
     
     // userData would point to a compiled FluxScript function

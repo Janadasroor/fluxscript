@@ -40,19 +40,28 @@ FluxSimulationService* g_flux_sim_service = nullptr;
 // Global C-API declarations
 extern "C" {
     double flux_register_subckt(double name_ptr, double pins_ptr);
-    double flux_register_bsource(double name_ptr, double out_ptr, double ref_ptr);
     void flux_register_goal(double current, double target);
     void flux_hot_swap(double name_dbl, double model_ptr);
     double flux_optimize();
     double flux_edge_detect(double value, double edge_type);
 
     // SPICE simulation API (defined in spice_runtime.cpp)
-    double flux_register_analysis(double analysis_dbl);
-    double flux_register_measure(double name_dbl, double type_dbl);
-    double flux_register_probe(double var_dbl, double output_dbl);
-    double flux_register_save(double var_dbl);
-    double flux_register_param(double name_dbl, double value);
-    double flux_register_ic(double node_dbl, double value);
+    double flux_register_analysis(const char* analysis_type);
+    double flux_register_measure(const char* name, const char* measure_type);
+    double flux_register_probe(const char* var_name, const char* output_name);
+    double flux_register_save(const char* var_name);
+    double flux_register_param(const char* name, double value);
+    double flux_register_ic(const char* node_name, double value);
+    double flux_register_model(const char* name, const char* model_type);
+    double flux_register_bsource(const char* name, const char* pos_node, const char* neg_node, const char* type);
+    double flux_register_esource(const char* name, const char* pos_node, const char* neg_node,
+                                 const char* ctrl_pos, const char* ctrl_neg, double gain);
+    double flux_register_fsource(const char* name, const char* pos_node, const char* neg_node,
+                                 const char* vsense, double gain);
+    double flux_register_gsource(const char* name, const char* pos_node, const char* neg_node,
+                                 const char* ctrl_pos, const char* ctrl_neg, double transcond);
+    double flux_register_hsource(const char* name, const char* pos_node, const char* neg_node,
+                                 const char* vsense, double transres);
 }
 
 // JIT-callable wrappers (C++ linkage, call extern "C" functions internally)
@@ -62,22 +71,30 @@ inline To jit_bitcast(const From& src) noexcept {
     To dst; std::memcpy(&dst, &src, sizeof(To)); return dst;
 }
 double jit_register_analysis(double name_ptr) {
-    return flux_register_analysis(name_ptr);
+    const char* name = reinterpret_cast<const char*>(static_cast<uintptr_t>(jit_bitcast<uint64_t>(name_ptr)));
+    return flux_register_analysis(name);
 }
 double jit_register_measure(double name_ptr, double type_ptr) {
-    return flux_register_measure(name_ptr, type_ptr);
+    const char* name = reinterpret_cast<const char*>(static_cast<uintptr_t>(jit_bitcast<uint64_t>(name_ptr)));
+    const char* type = reinterpret_cast<const char*>(static_cast<uintptr_t>(jit_bitcast<uint64_t>(type_ptr)));
+    return flux_register_measure(name, type);
 }
 double jit_register_probe(double name_ptr, double out_ptr) {
-    return flux_register_probe(name_ptr, out_ptr);
+    const char* name = reinterpret_cast<const char*>(static_cast<uintptr_t>(jit_bitcast<uint64_t>(name_ptr)));
+    const char* out = reinterpret_cast<const char*>(static_cast<uintptr_t>(jit_bitcast<uint64_t>(out_ptr)));
+    return flux_register_probe(name, out);
 }
 double jit_register_save(double name_ptr) {
-    return flux_register_save(name_ptr);
+    const char* name = reinterpret_cast<const char*>(static_cast<uintptr_t>(jit_bitcast<uint64_t>(name_ptr)));
+    return flux_register_save(name);
 }
 double jit_register_param(double name_ptr, double value) {
-    return flux_register_param(name_ptr, value);
+    const char* name = reinterpret_cast<const char*>(static_cast<uintptr_t>(jit_bitcast<uint64_t>(name_ptr)));
+    return flux_register_param(name, value);
 }
 double jit_register_ic(double name_ptr, double value) {
-    return flux_register_ic(name_ptr, value);
+    const char* name = reinterpret_cast<const char*>(static_cast<uintptr_t>(jit_bitcast<uint64_t>(name_ptr)));
+    return flux_register_ic(name, value);
 }
 
 // File I/O and string utilities for FluxScript
@@ -654,8 +671,20 @@ void registerRuntimeFunctions(FluxJIT& jit) {
     jit.registerFunction("flux_nn_create", (void*)&AI::flux_nn_create);
     jit.registerFunction("flux_nn_train", (void*)&AI::flux_nn_train);
     jit.registerFunction("flux_nn_predict", (void*)&AI::flux_nn_predict);
+    // SPICE runtime functions
     jit.registerFunction("flux_register_subckt", (void*)&flux_register_subckt);
+    jit.registerFunction("flux_register_model", (void*)&flux_register_model);
     jit.registerFunction("flux_register_bsource", (void*)&flux_register_bsource);
+    jit.registerFunction("flux_register_esource", (void*)&flux_register_esource);
+    jit.registerFunction("flux_register_fsource", (void*)&flux_register_fsource);
+    jit.registerFunction("flux_register_gsource", (void*)&flux_register_gsource);
+    jit.registerFunction("flux_register_hsource", (void*)&flux_register_hsource);
+    jit.registerFunction("flux_register_analysis", (void*)&flux_register_analysis);
+    jit.registerFunction("flux_register_measure", (void*)&flux_register_measure);
+    jit.registerFunction("flux_register_probe", (void*)&flux_register_probe);
+    jit.registerFunction("flux_register_save", (void*)&flux_register_save);
+    jit.registerFunction("flux_register_param", (void*)&flux_register_param);
+    jit.registerFunction("flux_register_ic", (void*)&flux_register_ic);
     jit.registerFunction("flux_register_goal", (void*)&flux_register_goal);
     jit.registerFunction("optimize", (void*)&flux_optimize);
     jit.registerFunction("flux_hot_swap", (void*)&flux_hot_swap);
@@ -833,10 +862,6 @@ extern "C" double flux_optimize() {
     g_goals.clear();
     return total_error;
 }
-
-// End of file
-
-extern "C" double flux_register_subckt(double name_ptr, double pins_ptr) { return 0.0; }
 
 extern "C" void flux_hot_swap(double name_dbl, double model_ptr) {
     const char* name = reinterpret_cast<const char*>(static_cast<uintptr_t>(jit_bitcast<uint64_t>(name_dbl)));

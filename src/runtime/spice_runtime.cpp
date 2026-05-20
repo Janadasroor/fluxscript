@@ -196,37 +196,33 @@ double flux_register_hsource(const char* name, const char* pos_node, const char*
 // Analysis Control
 // ============================================================================
 
-double flux_register_analysis(double analysis_dbl) {
-    const char* analysis_type = bit_cast<const char*>(analysis_dbl);
+double flux_register_analysis(const char* analysis_type) {
     std::lock_guard<std::mutex> lock(g_sim_mutex);
-    g_current_analysis = analysis_type;
-    printf("[SPICE] Registered analysis: .%s\n", analysis_type);
+    g_current_analysis = analysis_type ? analysis_type : "";
+    printf("[SPICE] Registered analysis: .%s\n", analysis_type ? analysis_type : "?");
     return 0.0;
 }
 
-double flux_register_measure(double name_dbl, double type_dbl) {
-    const char* name = bit_cast<const char*>(name_dbl);
-    const char* measure_type = bit_cast<const char*>(type_dbl);
+double flux_register_measure(const char* name, const char* measure_type) {
     std::lock_guard<std::mutex> lock(g_sim_mutex);
-    g_measures[name] = {name, measure_type, 0.0, false};
-    printf("[SPICE] Registered measure: %s (%s)\n", name, measure_type);
+    std::string n = name ? name : "";
+    std::string t = measure_type ? measure_type : "";
+    g_measures[n] = {n, t, 0.0, false};
+    printf("[SPICE] Registered measure: %s (%s)\n", n.c_str(), t.c_str());
     return 0.0;
 }
 
-double flux_register_probe(double var_dbl, double output_dbl) {
-    const char* var_name = bit_cast<const char*>(var_dbl);
-    const char* output_name = bit_cast<const char*>(output_dbl);
+double flux_register_probe(const char* var_name, const char* output_name) {
     std::lock_guard<std::mutex> lock(g_sim_mutex);
-    g_probes.push_back({var_name, output_name});
-    printf("[SPICE] Registered probe: %s as \"%s\"\n", var_name, output_name);
+    g_probes.push_back({var_name ? var_name : "", output_name ? output_name : ""});
+    printf("[SPICE] Registered probe: %s as \"%s\"\n", var_name ? var_name : "?", output_name ? output_name : "?");
     return 0.0;
 }
 
-double flux_register_save(double var_dbl) {
-    const char* var_name = bit_cast<const char*>(var_dbl);
+double flux_register_save(const char* var_name) {
     std::lock_guard<std::mutex> lock(g_sim_mutex);
-    g_save_vars.push_back(var_name);
-    printf("[SPICE] Registered save: %s\n", var_name);
+    g_save_vars.push_back(var_name ? var_name : "");
+    printf("[SPICE] Registered save: %s\n", var_name ? var_name : "?");
     return 0.0;
 }
 
@@ -234,30 +230,66 @@ double flux_register_save(double var_dbl) {
 // Subcircuits and Models
 // ============================================================================
 
-double flux_register_model(double name_ptr_double, double model_type_ptr_double) {
+double flux_register_model(const char* name, const char* model_type) {
     std::lock_guard<std::mutex> lock(g_sim_mutex);
     
+    g_models[name ? name : ""] = {name ? name : "", model_type ? model_type : ""};
+    printf("[SPICE] Registered model: %s (type: %s)\n", name ? name : "?", model_type ? model_type : "?");
+    return 0.0;
+}
+
+double flux_register_bsource(const char* name, const char* pos_node, const char* neg_node, const char* type) {
+    std::lock_guard<std::mutex> lock(g_sim_mutex);
+    BSourceInfo info;
+    info.name = name ? name : "";
+    info.pos_node = pos_node ? pos_node : "";
+    info.neg_node = neg_node ? neg_node : "";
+    info.type = type ? type : "V";
+    g_bsources.push_back(info);
+    printf("[SPICE] Registered B-source: %s %s %s type=%s\n",
+           info.name.c_str(), info.pos_node.c_str(), info.neg_node.c_str(), info.type.c_str());
+    return 0.0;
+}
+
+double flux_register_subckt(double name_ptr_double, double pins_ptr_double) {
+    std::lock_guard<std::mutex> lock(g_sim_mutex);
     const char* name = bit_cast<const char*>(name_ptr_double);
-    const char* model_type = bit_cast<const char*>(model_type_ptr_double);
-    
-    g_models[name] = {name, model_type};
-    printf("[SPICE] Registered model: %s (type: %s)\n", name, model_type);
+    const char* pins_str = bit_cast<const char*>(pins_ptr_double);
+    SubcktInfo info;
+    info.name = name ? name : "";
+    // Parse space-separated pins
+    if (pins_str) {
+        std::string pins(pins_str);
+        size_t start = 0;
+        while (true) {
+            size_t end = pins.find(' ', start);
+            if (end == std::string::npos) {
+                std::string pin = pins.substr(start);
+                if (!pin.empty()) info.pins.push_back(pin);
+                break;
+            }
+            std::string pin = pins.substr(start, end - start);
+            if (!pin.empty()) info.pins.push_back(pin);
+            start = end + 1;
+        }
+    }
+    g_subckts[name ? name : ""] = info;
+    printf("[SPICE] Registered subcircuit: %s with %zu pins\n",
+           info.name.c_str(), info.pins.size());
     return 0.0;
 }
 
-double flux_register_param(double name_dbl, double value) {
-    const char* name = bit_cast<const char*>(name_dbl);
+double flux_register_param(const char* name, double value) {
     std::lock_guard<std::mutex> lock(g_sim_mutex);
-    g_parameters[name] = value;
-    printf("[SPICE] Registered parameter: %s = %g\n", name, value);
+    g_parameters[name ? name : ""] = value;
+    printf("[SPICE] Registered parameter: %s = %g\n", name ? name : "?", value);
     return 0.0;
 }
 
-double flux_register_ic(double node_dbl, double value) {
-    const char* node_name = bit_cast<const char*>(node_dbl);
+double flux_register_ic(const char* node_name, double value) {
     std::lock_guard<std::mutex> lock(g_sim_mutex);
-    g_node_voltages[node_name] = value;
-    printf("[SPICE] Registered initial condition: V(%s) = %g\n", node_name, value);
+    g_node_voltages[node_name ? node_name : ""] = value;
+    printf("[SPICE] Registered initial condition: V(%s) = %g\n", node_name ? node_name : "?", value);
     return 0.0;
 }
 

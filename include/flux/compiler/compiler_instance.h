@@ -58,6 +58,15 @@ struct ParsedAST {
     std::vector<std::unique_ptr<ModelAST>> models;
     std::vector<std::unique_ptr<AnalysisExprAST>> analyses;
     std::vector<std::unique_ptr<MeasureExprAST>> measures;
+    std::vector<std::unique_ptr<ExprAST>> params;
+    std::vector<std::unique_ptr<ExprAST>> ics;
+    std::vector<std::unique_ptr<ExprAST>> probes;
+    std::vector<std::unique_ptr<ExprAST>> saves;
+    std::vector<std::unique_ptr<ExprAST>> bsources;
+    std::vector<std::unique_ptr<ExprAST>> esources;
+    std::vector<std::unique_ptr<ExprAST>> fsources;
+    std::vector<std::unique_ptr<ExprAST>> gsources;
+    std::vector<std::unique_ptr<ExprAST>> hsources;
 };
 
 class CompilerInstance {

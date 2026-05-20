@@ -22,6 +22,9 @@ jobs:
           - os: windows-2022
             arch: x86_64
             artifact: windows-x86_64
+          - os: ubuntu-22.04
+            arch: aarch64
+            artifact: android-aarch64
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -60,7 +63,7 @@ jobs:
           echo "LLVM_PREFIX=$(brew --prefix llvm@21)" >> "$GITHUB_ENV"
 
       - name: Build & Package (Linux)
-        if: runner.os == 'Linux'
+        if: runner.os == 'Linux' && matrix.artifact != 'android-aarch64'
         run: |
           docker run --rm -v $PWD:/src -w /src \
             ubuntu:20.04 \
@@ -109,6 +112,85 @@ jobs:
             -DCMAKE_PREFIX_PATH="$(brew --prefix eigen)"
           cmake --build build -j$(sysctl -n hw.logicalcpu)
 
+      - name: Setup Android NDK
+        id: ndk
+        if: matrix.artifact == 'android-aarch64'
+        uses: ncipollo/setup-ndk@v1
+        with:
+          ndk-version: r27c
+
+      - name: Cache LLVM Android cross-build
+        if: matrix.artifact == 'android-aarch64'
+        id: cache-llvm-android
+        uses: actions/cache@v4
+        with:
+          path: |
+            llvm-native
+            llvm-android
+          key: llvm-21.1.0-android-arm64-ndk-${{ steps.ndk.outputs.ndk-version }}
+
+      - name: Build LLVM for Android
+        if: matrix.artifact == 'android-aarch64' && steps.cache-llvm-android.outputs.cache-hit != 'true'
+        run: |
+          set -xe
+          curl -fsSL -o llvm-src.tar.xz \
+            https://github.com/llvm/llvm-project/releases/download/llvmorg-21.1.0/llvm-21.1.0.src.tar.xz
+          mkdir -p llvm-source
+          tar xf llvm-src.tar.xz -C llvm-source --strip-components=1
+
+          # Build host tablegen tools
+          cmake -B llvm-native -S llvm-source \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DLLVM_TARGETS_TO_BUILD=AArch64 \
+            -DLLVM_BUILD_TOOLS=OFF \
+            -DLLVM_INCLUDE_TESTS=OFF \
+            -DLLVM_INCLUDE_EXAMPLES=OFF \
+            -DLLVM_INCLUDE_BENCHMARKS=OFF \
+            -DLLVM_ENABLE_PROJECTS=""
+          cmake --build llvm-native --target llvm-tblgen -j$(nproc)
+
+          # Cross-build LLVM shared library for Android arm64
+          NDK="${{ steps.ndk.outputs.ndk-path }}"
+          cmake -B llvm-android -S llvm-source \
+            -DCMAKE_TOOLCHAIN_FILE="$NDK/build/cmake/android.toolchain.cmake" \
+            -DANDROID_ABI=arm64-v8a \
+            -DANDROID_PLATFORM=android-24 \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DLLVM_TARGETS_TO_BUILD=AArch64 \
+            -DLLVM_TABLEGEN="$(pwd)/llvm-native/bin/llvm-tblgen" \
+            -DLLVM_BUILD_TOOLS=OFF \
+            -DLLVM_INCLUDE_TESTS=OFF \
+            -DLLVM_INCLUDE_EXAMPLES=OFF \
+            -DLLVM_INCLUDE_BENCHMARKS=OFF \
+            -DLLVM_ENABLE_PROJECTS="" \
+            -DLLVM_BUILD_LLVM_DYLIB=ON \
+            -DLLVM_LINK_LLVM_DYLIB=ON \
+            -DLLVM_ENABLE_TERMINFO=OFF \
+            -DLLVM_ENABLE_ZLIB=OFF \
+            -DLLVM_ENABLE_ZSTD=OFF
+          cmake --build llvm-android --target LLVM -j$(nproc)
+
+      - name: Build FluxScript for Android
+        if: matrix.artifact == 'android-aarch64'
+        run: |
+          set -xe
+          NDK="${{ steps.ndk.outputs.ndk-path }}"
+
+          # Fetch Eigen (header-only, no build needed)
+          curl -fsSL -o eigen.tar.xz \
+            https://gitlab.com/libeigen/eigen/-/archive/3.4.0/eigen-3.4.0.tar.xz
+          mkdir -p third_party
+          tar xf eigen.tar.xz -C third_party
+
+          cmake -B build \
+            -DCMAKE_TOOLCHAIN_FILE="$NDK/build/cmake/android.toolchain.cmake" \
+            -DANDROID_ABI=arm64-v8a \
+            -DANDROID_PLATFORM=android-24 \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DLLVM_DIR="$(pwd)/llvm-android/lib/cmake/llvm" \
+            -DFLUX_VIO_MATRIXC_LIB_DIR=""
+          cmake --build build -j$(nproc)
+
       - name: Package (macOS)
         if: runner.os == 'macOS'
         run: |
@@ -130,6 +212,16 @@ jobs:
           done
 
           tar czf fluxscript-${{ matrix.artifact }}.tar.gz -C install .
+
+      - name: Package (Android)
+        if: matrix.artifact == 'android-aarch64'
+        run: |
+          set -xe
+          mkdir -p install/include install/lib
+          cp -r include/flux install/include/
+          cp build/libFluxScript.so install/lib/
+          cp llvm-android/lib/libLLVM-21.so install/lib/
+          tar czf fluxscript-android-aarch64.tar.gz -C install .
 
       - name: Package (Windows)
         if: runner.os == 'Windows'
