@@ -83,6 +83,48 @@ jobs:
               tar czf fluxscript-linux-x86_64.tar.gz -C install .
             "
 
+      - name: Build (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          cmake -B build -DCMAKE_BUILD_TYPE=Release `
+            -DLLVM_DIR="$env:LLVM_DIR"
+          cmake --build build --config Release
+
+      - name: Build (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          cmake -B build \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DLLVM_DIR="$LLVM_PREFIX/lib/cmake/llvm" \
+            -DClang_DIR="$LLVM_PREFIX/lib/cmake/clang" \
+            -DLLD_DIR="$LLVM_PREFIX/lib/cmake/lld" \
+            -DCMAKE_PREFIX_PATH="$(brew --prefix eigen)"
+          cmake --build build -j$(sysctl -n hw.logicalcpu)
+
+      - name: Package (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          mkdir -p install/include install/lib
+          cp -r include/flux install/include/
+          cp build/libFluxScript.dylib install/lib/
+
+          # Bundle all Homebrew-origin dylib deps (LLVM, eigen, etc.)
+          for lib in $(otool -L install/lib/libFluxScript.dylib | grep -E "^\s+/opt/homebrew|^\s+/usr/local" | awk '{print $1}'); do
+            basename=$(basename "$lib")
+            [ ! -f "install/lib/$basename" ] && cp -L "$lib" install/lib/
+          done
+
+          # Fix install names so the dylib finds bundled deps
+          for lib in install/lib/*.dylib*; do
+            install_name_tool -id "@rpath/$(basename "$lib")" "$lib" 2>/dev/null || true
+            for dep in $(otool -L "$lib" | grep -E "^\s+/opt/homebrew|^\s+/usr/local" | awk '{print $1}'); do
+              depname=$(basename "$dep")
+              install_name_tool -change "$dep" "@rpath/$depname" "$lib" 2>/dev/null || true
+            done
+          done
+
+          tar czf fluxscript-macos-arm64.tar.gz -C install .
+
       - name: Package (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
