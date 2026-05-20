@@ -116,7 +116,8 @@ jobs:
         if: matrix.artifact == 'android-aarch64'
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq cmake curl unzip
+          sudo apt-get install -y -qq \
+            build-essential cmake ninja-build curl unzip
 
       - name: Setup Android NDK
         if: matrix.artifact == 'android-aarch64'
@@ -134,38 +135,38 @@ jobs:
           path: |
             llvm-native
             llvm-android
-          key: llvm-21.1.0-android-arm64-ndk-r27c
+          key: llvm-21.1.0-android-arm64-ndk-r27c-v2
 
       - name: Build LLVM for Android
         if: matrix.artifact == 'android-aarch64' && steps.cache-llvm-android.outputs.cache-hit != 'true'
         run: |
           set -xe
+          rm -rf llvm-native llvm-android llvm-source
+
           curl -fsSL -o llvm-src.tar.xz \
             https://github.com/llvm/llvm-project/releases/download/llvmorg-21.1.0/llvm-21.1.0.src.tar.xz
           mkdir -p llvm-source
           tar xf llvm-src.tar.xz -C llvm-source --strip-components=1
 
           # Build host tablegen tools
-          cmake -B llvm-native -S llvm-source \
+          cmake -G Ninja -B llvm-native -S llvm-source \
             -DCMAKE_BUILD_TYPE=Release \
             -DLLVM_TARGETS_TO_BUILD=AArch64 \
-            -DLLVM_BUILD_TOOLS=OFF \
             -DLLVM_INCLUDE_TESTS=OFF \
             -DLLVM_INCLUDE_EXAMPLES=OFF \
             -DLLVM_INCLUDE_BENCHMARKS=OFF \
             -DLLVM_ENABLE_PROJECTS=""
-          cmake --build llvm-native --target llvm-tblgen -j$(nproc)
+          cmake --build llvm-native --target LLVMTablegen -j$(nproc)
 
           # Cross-build LLVM shared library for Android arm64
           NDK="$ANDROID_NDK_HOME"
-          cmake -B llvm-android -S llvm-source \
+          cmake -G Ninja -B llvm-android -S llvm-source \
             -DCMAKE_TOOLCHAIN_FILE="$NDK/build/cmake/android.toolchain.cmake" \
             -DANDROID_ABI=arm64-v8a \
             -DANDROID_PLATFORM=android-24 \
             -DCMAKE_BUILD_TYPE=Release \
             -DLLVM_TARGETS_TO_BUILD=AArch64 \
             -DLLVM_TABLEGEN="$(pwd)/llvm-native/bin/llvm-tblgen" \
-            -DLLVM_BUILD_TOOLS=OFF \
             -DLLVM_INCLUDE_TESTS=OFF \
             -DLLVM_INCLUDE_EXAMPLES=OFF \
             -DLLVM_INCLUDE_BENCHMARKS=OFF \
