@@ -72,7 +72,7 @@ jobs:
               LLVM_REAL=\"\$(readlink -f /usr/lib/llvm-21/lib/libLLVM-21.so)\" &&
               cp -L \"\$LLVM_REAL\" install/lib/ &&
               ln -sf \"\$(basename \"\$LLVM_REAL\")\" install/lib/libLLVM-21.so &&
-              for lib in \$(ldd install/lib/libFluxScript.so \"\$LLVM_REAL\" | grep '=> /' | awk '{print \$3}' | sort -u); do
+              for lib in \$(ldd install/lib/libFluxScript.so 2>/dev/null | grep '=> /' | awk '{print \$3}' | sort -u); do
                 basename=\$(basename \"\$lib\")
                 case \"\$basename\" in
                   libc.so.*|libm.so.*|libstdc++.so.*|libgcc_s.so.*|ld-linux-*|libpthread*|librt*|libdl*) ;;
