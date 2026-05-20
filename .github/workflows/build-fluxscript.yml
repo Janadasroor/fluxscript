@@ -127,84 +127,14 @@ jobs:
           unzip -q ndk.zip
           echo "ANDROID_NDK_HOME=$(pwd)/android-ndk-r27c" >> "$GITHUB_ENV"
 
-      - name: Restore LLVM Android from cache
-        if: matrix.artifact == 'android-aarch64'
-        id: cache-llvm-android
-        uses: actions/cache/restore@v4
-        with:
-          path: |
-            llvm-android
-          key: llvm-21.1.0-android-arm64-ndk-r27c-v4
-          fail-on-cache-miss: false
-
       - name: Download pre-built LLVM for Android
-        if: matrix.artifact == 'android-aarch64' && steps.cache-llvm-android.outputs.cache-hit != 'true'
-        id: dl-llvm-android
-        continue-on-error: true
-        run: |
-          set -xe
-          mkdir -p llvm-android
-          # Try current release first, then fall back to dedicated LLVM release tag
-          URL="https://github.com/Janadasroor/fluxscript/releases/download/${GITHUB_REF_NAME}/llvm-android-aarch64.tar.gz"
-          echo "Trying: $URL"
-          curl -fsSL -o llvm-android.tar.gz "$URL" || \
-            curl -fsSL -o llvm-android.tar.gz \
-              https://github.com/Janadasroor/fluxscript/releases/download/llvm-android-21.1.0/llvm-android-aarch64.tar.gz
-          tar xf llvm-android.tar.gz -C llvm-android
-          echo "downloaded=true" >> "$GITHUB_OUTPUT"
-
-      - name: Build LLVM for Android from source
-        if: matrix.artifact == 'android-aarch64' && steps.cache-llvm-android.outputs.cache-hit != 'true' && steps.dl-llvm-android.outputs.downloaded != 'true'
-        run: |
-          set -xe
-          rm -rf llvm-native llvm-android llvm-project
-
-          curl -fsSL -o llvm-project.tar.xz \
-            https://github.com/llvm/llvm-project/releases/download/llvmorg-21.1.0/llvm-project-21.1.0.src.tar.xz
-          tar xf llvm-project.tar.xz
-          LLVM_SRC="$(pwd)/llvm-project-21.1.0.src/llvm"
-
-          # Build host tablegen tools
-          cmake -G Ninja -B llvm-native -S "$LLVM_SRC" \
-            -DCMAKE_BUILD_TYPE=Release \
-            -DLLVM_TARGETS_TO_BUILD=AArch64 \
-            -DLLVM_INCLUDE_TESTS=OFF \
-            -DLLVM_INCLUDE_EXAMPLES=OFF \
-            -DLLVM_INCLUDE_BENCHMARKS=OFF \
-            -DLLVM_ENABLE_PROJECTS=""
-          cmake --build llvm-native --target llvm-tblgen -j$(nproc)
-
-          # Cross-build LLVM shared library for Android arm64
-          NDK="$ANDROID_NDK_HOME"
-          cmake -G Ninja -B llvm-android -S "$LLVM_SRC" \
-            -DCMAKE_TOOLCHAIN_FILE="$NDK/build/cmake/android.toolchain.cmake" \
-            -DANDROID_ABI=arm64-v8a \
-            -DANDROID_PLATFORM=android-24 \
-            -DCMAKE_BUILD_TYPE=Release \
-            -DLLVM_TARGETS_TO_BUILD=AArch64 \
-            -DLLVM_TABLEGEN="$(pwd)/llvm-native/bin/llvm-tblgen" \
-            -DLLVM_INCLUDE_TESTS=OFF \
-            -DLLVM_INCLUDE_EXAMPLES=OFF \
-            -DLLVM_INCLUDE_BENCHMARKS=OFF \
-            -DLLVM_ENABLE_PROJECTS="" \
-            -DLLVM_ENABLE_TERMINFO=OFF \
-            -DLLVM_ENABLE_ZLIB=OFF \
-            -DLLVM_ENABLE_ZSTD=OFF
-          cmake --build llvm-android -j$(nproc)
-
-      - name: Save LLVM Android to cache
-        if: matrix.artifact == 'android-aarch64' && steps.cache-llvm-android.outputs.cache-hit != 'true' && steps.dl-llvm-android.outputs.downloaded != 'true'
-        uses: actions/cache/save@v4
-        with:
-          path: |
-            llvm-android
-          key: llvm-21.1.0-android-arm64-ndk-r27c-v4
-
-      - name: Package LLVM Android for release
         if: matrix.artifact == 'android-aarch64'
         run: |
           set -xe
-          tar czf llvm-android-aarch64.tar.gz -C llvm-android .
+          curl -fsSL -o llvm-android.tar.gz \
+            https://github.com/Janadasroor/llvm-releases/releases/download/llvm-21.1.0/llvm-android-aarch64.tar.gz
+          mkdir -p llvm-android
+          tar xf llvm-android.tar.gz -C llvm-android
 
       - name: Build FluxScript for Android
         if: matrix.artifact == 'android-aarch64'
@@ -276,6 +206,4 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          files: |
-            fluxscript-${{ matrix.artifact }}.*
-            llvm-android-aarch64.tar.gz
+          files: fluxscript-${{ matrix.artifact }}.*
