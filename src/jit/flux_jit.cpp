@@ -341,8 +341,8 @@ bool FluxJIT::redirectFunction(const std::string& Name, void* oldAddr, void* new
     mprotect(pageStart, pageSize, PROT_READ | PROT_EXEC);
 
     // Flush instruction cache to ensure the JMP is visible
-    __builtin___clear_cache(oldAddr, reinterpret_cast<void*>(
-        reinterpret_cast<intptr_t>(oldAddr) + 5));
+    __builtin___clear_cache(reinterpret_cast<char*>(oldAddr),
+        reinterpret_cast<char*>(reinterpret_cast<intptr_t>(oldAddr) + 5));
 
     return true;
 }

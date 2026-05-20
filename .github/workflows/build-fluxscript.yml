@@ -8,7 +8,7 @@ jobs:
   build:
     strategy:
       matrix:
-        os: [ubuntu-24.04, macos-14, windows-2022]
+        os: [ubuntu-22.04, macos-14, windows-2022]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -27,7 +27,7 @@ jobs:
         run: |
           wget https://apt.llvm.org/llvm.sh
           chmod +x llvm.sh
-          sudo ./llvm.sh 21
+          sudo ./llvm.sh 21 all
           sudo apt-get install -y libclang-21-dev liblld-21-dev
 
       - name: Install LLVM + curl (Windows)
@@ -64,13 +64,15 @@ jobs:
       - name: Install deps (macOS)
         if: runner.os == 'macOS'
         run: |
-          brew install llvm eigen
+          brew install llvm@21 eigen
+          echo "LLVM_PREFIX=$(brew --prefix llvm@21)" >> "$GITHUB_ENV"
 
       - name: Build (Linux)
         if: runner.os == 'Linux'
         run: |
           cmake -B build \
             -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_INSTALL_RPATH='$ORIGIN' \
             -DLLVM_DIR=/usr/lib/llvm-21/lib/cmake/llvm \
             -DClang_DIR=/usr/lib/llvm-21/lib/cmake/clang \
             -DLLD_DIR=/usr/lib/llvm-21/lib/cmake/lld
@@ -88,7 +90,10 @@ jobs:
         run: |
           cmake -B build \
             -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_PREFIX_PATH="$(brew --prefix llvm);$(brew --prefix eigen)"
+            -DLLVM_DIR="$LLVM_PREFIX/lib/cmake/llvm" \
+            -DClang_DIR="$LLVM_PREFIX/lib/cmake/clang" \
+            -DLLD_DIR="$LLVM_PREFIX/lib/cmake/lld" \
+            -DCMAKE_PREFIX_PATH="$(brew --prefix eigen)"
           cmake --build build -j$(sysctl -n hw.logicalcpu)
 
       - name: Package (macOS)
@@ -98,8 +103,8 @@ jobs:
           cp -r include/flux install/include/
           cp build/libFluxScript.dylib install/lib/
 
-          # Bundle LLVM and all transitive dylib deps
-          for lib in $(otool -L install/lib/libFluxScript.dylib | grep -E "^\s+/opt/homebrew|^\s+/usr/local" | awk '{print $1}'); do
+          # Bundle all Homebrew-origin dylib deps (LLVM, eigen, etc.)
+          for lib in $(otool -L install/lib/libFluxScript.dylib | grep -E "^\s+/opt/homebrew|^\s+/usr/local|^\s+/usr/lib" | grep -vE "libSystem|libc\+\+|libobjc" | awk '{print $1}'); do
             basename=$(basename "$lib")
             [ ! -f "install/lib/$basename" ] && cp -L "$lib" install/lib/
           done
@@ -122,12 +127,12 @@ jobs:
           cp -r include/flux install/include/
           cp build/libFluxScript.so install/lib/
 
-          # Bundle LLVM shared library and its non-standard deps
+          # Bundle LLVM shared library
           LLVM_REAL="$(readlink -f /usr/lib/llvm-21/lib/libLLVM-21.so)"
           cp -L "$LLVM_REAL" install/lib/
           ln -sf "$(basename "$LLVM_REAL")" install/lib/libLLVM-21.so
 
-          # Bundle all non-standard deps of libFluxScript.so and LLVM
+          # Bundle all non-system deps of libFluxScript.so and LLVM
           for lib in $(ldd install/lib/libFluxScript.so "$LLVM_REAL" | grep "=> /" | awk '{print $3}' | sort -u); do
             basename=$(basename "$lib")
             case "$basename" in
