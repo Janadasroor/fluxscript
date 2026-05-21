@@ -118,3 +118,41 @@ def test_spice_api() {
     register_ic("V(cap)", 0.0)
     1.0
 }
+
+# --- Compile-time dimensional analysis ---
+
+def test_simple_voltage() {
+    5V + 3V == 8.0
+}
+
+def test_ohns_law() {
+    var v = 10V; var i = 2A; var r = v / i; r == 5.0
+}
+
+def test_unit_builtin_compiletime() {
+    var v = unit(5, "V"); v + 3V == 8.0
+}
+
+def test_convert_builtin() {
+    var v = convert(5V, "V", "mV"); v == 5000.0
+}
+
+def test_abs_preserves_voltage() {
+    var x = -5V; abs(x) + 3V == 8.0
+}
+
+def test_sqrt_halves_voltage() {
+    var v = 5V; sqrt(v * v) + 5V == 10.0
+}
+
+def test_dimensionless_trig() {
+    sin(5V) + cos(5V) == sin(5.0) + cos(5.0)
+}
+
+def test_typed_param_propagation() {
+    var v = 5V; v + 3V == 8.0
+}
+
+def test_voltage_divider_typed() {
+    var vin = 10V; var r1 = 1k; var r2 = 2k; vin * r2 / (r1 + r2) == 6.666666666666667
+}
