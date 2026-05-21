@@ -7,6 +7,7 @@
 #include <llvm/IR/LLVMContext.h>
 #include "flux/compiler/compiler_instance.h"
 #include "flux/jit/flux_jit.h"
+#include "flux/runtime/flux_runtime.h"
 
 using namespace Flux;
 
@@ -19,6 +20,8 @@ extern "C" double flux_mock_get_voltage(double namePtr) {
 int main() {
     CompilerInstance compiler;
     FluxJIT jit;
+
+    registerRuntimeFunctions(jit);
 
     // Register the mock function
     jit.registerFunction("flux_get_voltage", (void*)flux_mock_get_voltage);

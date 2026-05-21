@@ -32,7 +32,15 @@ TypedValue ParallelForExprAST::codegen(CodegenContext& context) {
     TypedValue EndTV = End->codegen(context);
     if (!StartTV.Val || !EndTV.Val) return TypedValue();
 
-    // Convert start/end to int64 if they are doubles
+    // Promote int literals to double if needed
+    auto ensureDouble = [&](TypedValue& TV) {
+        if (TV.Type.Kind == TypeKind::Int)
+            TV = TypedValue(context.Builder.CreateSIToFP(TV.Val, DoubleTy, "int2double"), TypeKind::Double);
+    };
+    ensureDouble(StartTV);
+    ensureDouble(EndTV);
+
+    // Convert start/end to int64
     llvm::Value* StartIdx = context.Builder.CreateFPToSI(StartTV.Val, Int64Ty, "start_idx");
     llvm::Value* EndIdx = context.Builder.CreateFPToSI(EndTV.Val, Int64Ty, "end_idx");
 

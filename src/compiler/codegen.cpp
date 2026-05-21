@@ -1759,6 +1759,13 @@ TypedValue ForExprAST::codegen(CodegenContext& context) {
     TypedValue EndTV = End->codegen(context);
     TypedValue StepTV = Step ? Step->codegen(context) : TypedValue(llvm::ConstantFP::get(context.TheContext, llvm::APFloat(1.0)), TypeKind::Double);
     if (!StartTV.Val || !EndTV.Val || !StepTV.Val) return TypedValue();
+    auto ensureDouble = [&](TypedValue& TV) {
+        if (TV.Type.Kind == TypeKind::Int)
+            TV = TypedValue(context.Builder.CreateSIToFP(TV.Val, llvm::Type::getDoubleTy(context.TheContext), "int2double"), TypeKind::Double);
+    };
+    ensureDouble(StartTV);
+    ensureDouble(EndTV);
+    ensureDouble(StepTV);
     llvm::Function* TheFunction = context.Builder.GetInsertBlock()->getParent();
     llvm::BasicBlock* PreheaderBB = context.Builder.GetInsertBlock();
     llvm::BasicBlock* LoopBB = llvm::BasicBlock::Create(context.TheContext, "loop", TheFunction);

@@ -263,8 +263,11 @@ int flux_ngspice_run_dc(const char* source, double vstart, double vstop, double 
 
 double flux_ngspice_get_vector(const char* name, int index) {
 #ifdef FLUX_HAS_NGSPICE
-    // Simplified stub - in production, you'd parse wrdata output
-    std::cerr << "[ngspice] Vector access not yet implemented for ngspice-42" << std::endl;
+    std::lock_guard<std::mutex> lock(g_ngspiceMutex);
+    if (!g_ngspiceInitialized) return 0.0;
+    auto vi = ngGet_Vec_Info(const_cast<char*>(name));
+    if (vi && vi->v_realdata && index >= 0 && index < vi->v_length)
+        return vi->v_realdata[index];
     return 0.0;
 #else
     return 0.0;
@@ -275,8 +278,10 @@ double flux_ngspice_get_vector(const char* name, int index) {
 
 int flux_ngspice_get_vector_size(const char* name) {
 #ifdef FLUX_HAS_NGSPICE
-    // Simplified stub
-    return 0;
+    std::lock_guard<std::mutex> lock(g_ngspiceMutex);
+    if (!g_ngspiceInitialized) return 0;
+    auto vi = ngGet_Vec_Info(const_cast<char*>(name));
+    return (vi && vi->v_realdata) ? vi->v_length : 0;
 #else
     return 0;
 #endif
@@ -331,17 +336,31 @@ void flux_ngspice_cleanup() {
     std::lock_guard<std::mutex> lock(g_ngspiceMutex);
     
     if (g_ngspiceInitialized) {
-        // Reset ngspice
-        ngSpice_Command((char*)"quit");
+        // Destroy current circuit but keep ngspice initialized (re-init not supported)
+        ngSpice_Command((char*)"destroy all");
+        ngSpice_Command((char*)"reset");
         
         g_ngspiceCircLoaded = false;
-        g_ngspiceInitialized = false;
         
         std::cout << "[ngspice] Cleanup completed" << std::endl;
     }
 #else
-    g_ngspiceInitialized = false;
     g_ngspiceCircLoaded = false;
+#endif
+}
+
+// ============ Final Shutdown ============
+
+void flux_ngspice_shutdown() {
+#ifdef FLUX_HAS_NGSPICE
+    {
+        std::lock_guard<std::mutex> lock(g_ngspiceMutex);
+        if (g_ngspiceInitialized) {
+            ngSpice_Command((char*)"quit");
+            g_ngspiceInitialized = false;
+            g_ngspiceCircLoaded = false;
+        }
+    }
 #endif
 }
 

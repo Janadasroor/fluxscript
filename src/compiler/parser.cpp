@@ -1342,11 +1342,21 @@ std::unique_ptr<ExprAST> Parser::ParseBSource() {
     }
     getNextToken(); // eat (
     
-    if (CurTok != static_cast<int>(TokenType::tok_identifier) && CurTok != static_cast<int>(TokenType::tok_number)) {
+    auto isNodeToken = [](int tok) {
+        return tok == static_cast<int>(TokenType::tok_identifier)
+            || tok == static_cast<int>(TokenType::tok_number)
+            || tok == static_cast<int>(TokenType::tok_integer);
+    };
+    auto nodeName = [&](int tok) -> std::string {
+        if (tok == static_cast<int>(TokenType::tok_identifier)) return m_lexer.IdentifierStr;
+        if (tok == static_cast<int>(TokenType::tok_number)) return std::to_string(m_lexer.NumVal);
+        return std::to_string(static_cast<int>(m_lexer.IntVal));
+    };
+    if (!isNodeToken(CurTok)) {
         ReportError("expected positive node name");
         return nullptr;
     }
-    std::string PosNode = (CurTok == static_cast<int>(TokenType::tok_identifier)) ? m_lexer.IdentifierStr : std::to_string(static_cast<int>(m_lexer.NumVal));
+    std::string PosNode = nodeName(CurTok);
     getNextToken();
     
     if (CurTok != ',') {
@@ -1355,11 +1365,11 @@ std::unique_ptr<ExprAST> Parser::ParseBSource() {
     }
     getNextToken(); // eat ,
     
-    if (CurTok != static_cast<int>(TokenType::tok_identifier) && CurTok != static_cast<int>(TokenType::tok_number)) {
+    if (!isNodeToken(CurTok)) {
         ReportError("expected negative node name");
         return nullptr;
     }
-    std::string NegNode = (CurTok == static_cast<int>(TokenType::tok_identifier)) ? m_lexer.IdentifierStr : std::to_string(static_cast<int>(m_lexer.NumVal));
+    std::string NegNode = nodeName(CurTok);
     getNextToken();
     
     if (CurTok != ')') {

@@ -819,11 +819,17 @@ bool FluxJIT::isPromoted(const std::string& Name) const {
 void FluxJIT::registerFunction(const std::string& Name, void* FuncPtr) {
     if (!m_lljit || !m_runtimeDylib) return;
 
-    auto internedName = m_lljit->getExecutionSession().intern(Name);
+    auto& ES = m_lljit->getExecutionSession();
+    auto internedName = ES.intern(Name);
     llvm::orc::SymbolMap symMap;
     symMap[internedName] =
         { llvm::orc::ExecutorAddr::fromPtr(FuncPtr), llvm::JITSymbolFlags::Exported };
-    if (auto Err = m_runtimeDylib->define(llvm::orc::absoluteSymbols(std::move(symMap)))) {
+
+    (void)m_runtimeDylib->define(llvm::orc::absoluteSymbols(
+        llvm::orc::SymbolMap({{internedName, symMap[internedName]}})));
+
+    auto& mainJD = m_lljit->getMainJITDylib();
+    if (auto Err = mainJD.define(llvm::orc::absoluteSymbols(std::move(symMap)))) {
         llvm::handleAllErrors(std::move(Err), [](const llvm::ErrorInfoBase &EI) {
             std::string msg = EI.message();
             if (msg.find("duplicate definition") == std::string::npos)

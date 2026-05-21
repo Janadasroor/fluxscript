@@ -30,6 +30,7 @@ int flux_ngspice_get_vector_size(const char* name);
 std::vector<std::string> flux_ngspice_get_vector_names();
 std::vector<double> flux_ngspice_extract_vector(const char* name);
 void flux_ngspice_cleanup();
+void flux_ngspice_shutdown();
 bool flux_ngspice_is_initialized();
 const char* flux_ngspice_get_error();
 
