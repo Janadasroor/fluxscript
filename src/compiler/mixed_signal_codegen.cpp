@@ -622,8 +622,11 @@ TypedValue DimensionExprAST::codegen(CodegenContext& context)
         dimStr = "dimensionless";
     }
 
-    llvm::Value* StrVal = context.Builder.CreateGlobalString(dimStr, "dimension");
-    return TypedValue(StrVal, TypeKind::String);
+    llvm::errs() << "[Flux] dimension: " << dimStr << "\n";
+
+    auto DoubleTy = llvm::Type::getDoubleTy(context.TheContext);
+    auto Zero = llvm::ConstantFP::get(DoubleTy, 0.0);
+    return TypedValue(Zero, TypeKind::Double);
 }
 
 TypedValue ConvertExprAST::codegen(CodegenContext& context)
