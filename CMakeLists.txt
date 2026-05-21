@@ -59,15 +59,16 @@ else()
     set(NGSPICE_FOUND FALSE)
 endif()
 
-# Find Eigen
-find_package(Eigen3 3.4 QUIET)
-if(NOT Eigen3_FOUND)
-    set(EIGEN3_INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/third_party/eigen-3.4.0)
-    message(STATUS "Using bundled Eigen from: ${EIGEN3_INCLUDE_DIR}")
-else()
-    message(STATUS "Found Eigen ${EIGEN3_VERSION}")
-endif()
-add_definitions(-DEIGEN_MPL2_ONLY)
+# Fetch Eigen via FetchContent (header-only, no build needed)
+include(FetchContent)
+FetchContent_Declare(
+    eigen
+    GIT_REPOSITORY https://gitlab.com/libeigen/eigen.git
+    GIT_TAG        3.4.0
+)
+set(EIGEN_MPL2_ONLY TRUE)
+FetchContent_MakeAvailable(eigen)
+set(EIGEN3_INCLUDE_DIR ${eigen_SOURCE_DIR})
 
 # Use monolithic LLVM shared library on desktop Linux, component libs elsewhere
 if(UNIX AND NOT ANDROID)
