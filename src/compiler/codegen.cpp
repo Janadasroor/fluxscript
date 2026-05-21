@@ -1055,7 +1055,16 @@ TypedValue BinaryExprAST::codegen(CodegenContext& context) {
             PowF = llvm::Function::Create(PowFTy, llvm::Function::ExternalLinkage, "llvm.pow.f64", context.TheModule);
         }
         promoteIntToFP(LV); promoteIntToFP(RV);
-        return TypedValue(context.Builder.CreateCall(PowF, {LV, RV}, "powtmp"), FluxType(TypeKind::Double, L.Type.Dimensions));
+        UnitDimensions dims = L.Type.Dimensions;
+        if (auto* C = llvm::dyn_cast<llvm::ConstantFP>(RV)) {
+            double exp = C->getValueAPF().convertToDouble();
+            if (std::abs(exp - std::round(exp)) < 1e-10) {
+                int e = static_cast<int>(std::round(exp));
+                dims.mass *= e; dims.length *= e; dims.time *= e;
+                dims.current *= e; dims.temperature *= e; dims.amount *= e; dims.luminous *= e;
+            }
+        }
+        return TypedValue(context.Builder.CreateCall(PowF, {LV, RV}, "powtmp"), FluxType(TypeKind::Double, dims));
     }
     case '<':
         if (isIntOp) return createBoolResult(context.Builder.CreateICmpSLT(LV, RV, "cmptmp"));

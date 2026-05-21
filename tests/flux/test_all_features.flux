@@ -164,3 +164,15 @@ def test_pow_one() {
 def test_pow_sq() {
     var x = 5V; pow(x, 2) / 5V == 5.0
 }
+
+def test_pow_op_sq() {
+    var x = 5V; (x ^ 2) / 5V == 5.0
+}
+
+def test_hypot_dim() {
+    hypot(3V, 4V) == 5.0
+}
+
+def test_pow_op_dimensionless() {
+    2.0 ^ 3 == 8.0
+}
