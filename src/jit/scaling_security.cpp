@@ -17,23 +17,23 @@
 // ============================================================================
 
 #include "flux/jit/scaling_security.h"
+#include "flux/compiler/compiler_instance.h"
 #include "flux/jit/jit_manager.h"
 #include "flux/jit_engine.h"
-#include "flux/compiler/compiler_instance.h"
-#include <iostream>
-#include <sstream>
 #include <algorithm>
-#include <fstream>
-#include <numeric>
 #include <cmath>
+#include <fstream>
+#include <iostream>
+#include <numeric>
+#include <sstream>
 
 #ifdef __linux__
-#include <unistd.h>
-#include <sys/wait.h>
-#include <sys/resource.h>
-#include <sys/prctl.h>
 #include <linux/seccomp.h>
 #include <string.h>
+#include <sys/prctl.h>
+#include <sys/resource.h>
+#include <sys/wait.h>
+#include <unistd.h>
 #endif
 
 namespace Flux {
@@ -42,31 +42,35 @@ namespace Flux {
 // HotReloadManager Singleton
 // ============================================================================
 
-HotReloadManager& HotReloadManager::instance() {
+HotReloadManager& HotReloadManager::instance()
+{
     static HotReloadManager instance;
     return instance;
 }
 
-void HotReloadManager::initialize() {
+void HotReloadManager::initialize()
+{
     std::lock_guard<std::mutex> lock(m_mutex);
     std::cout << "[HotReloadManager] Initialized" << std::endl;
 }
 
-void HotReloadManager::finalize() {
+void HotReloadManager::finalize()
+{
     std::lock_guard<std::mutex> lock(m_mutex);
     m_transactions.clear();
     std::cout << "[HotReloadManager] Finalized" << std::endl;
 }
 
-bool HotReloadManager::prepareReload(const std::string& component_name, 
-                                     const std::string& new_source,
-                                     std::string* error) {
+bool HotReloadManager::prepareReload(const std::string& component_name, const std::string& new_source,
+                                     std::string* error)
+{
     std::lock_guard<std::mutex> lock(m_mutex);
 
     auto& jit_manager = JITManager::instance();
     auto* comp = jit_manager.getComponent(component_name);
     if (!comp) {
-        if (error) *error = "Component not found: " + component_name;
+        if (error)
+            *error = "Component not found: " + component_name;
         return false;
     }
 
@@ -98,10 +102,8 @@ bool HotReloadManager::prepareReload(const std::string& component_name,
         return false;
     }
 
-    txn.new_jit->addModule(
-        std::move(artifacts->codegenContext->OwnedModule),
-        std::move(artifacts->codegenContext->OwnedContext)
-    );
+    txn.new_jit->addModule(std::move(artifacts->codegenContext->OwnedModule),
+                           std::move(artifacts->codegenContext->OwnedContext));
 
     // Look up the update function
     std::string func_name = "update";
@@ -128,7 +130,8 @@ bool HotReloadManager::prepareReload(const std::string& component_name,
     return true;
 }
 
-bool HotReloadManager::executeReload(std::string* error) {
+bool HotReloadManager::executeReload(std::string* error)
+{
     std::lock_guard<std::mutex> lock(m_mutex);
 
     // Find transaction in READY state
@@ -141,7 +144,8 @@ bool HotReloadManager::executeReload(std::string* error) {
     }
 
     if (!txn) {
-        if (error) *error = "No prepared reload found";
+        if (error)
+            *error = "No prepared reload found";
         return false;
     }
 
@@ -151,7 +155,8 @@ bool HotReloadManager::executeReload(std::string* error) {
     auto* comp = jit_manager.getComponent(txn->component_name);
     if (!comp) {
         txn->state = HotReloadState::FAILED;
-        if (error) *error = "Component disappeared during reload";
+        if (error)
+            *error = "Component disappeared during reload";
         return false;
     }
 
@@ -159,7 +164,7 @@ bool HotReloadManager::executeReload(std::string* error) {
     comp->jit = std::move(txn->new_jit);
     comp->update_func = txn->new_update_func;
     comp->source_code = txn->new_source;
-    comp->state = txn->saved_state;  // Preserve state
+    comp->state = txn->saved_state; // Preserve state
     comp->compile_count++;
 
     txn->state = HotReloadState::SWAPPED;
@@ -168,12 +173,12 @@ bool HotReloadManager::executeReload(std::string* error) {
     return true;
 }
 
-bool HotReloadManager::abortReload(std::string* error) {
+bool HotReloadManager::abortReload(std::string* error)
+{
     std::lock_guard<std::mutex> lock(m_mutex);
-    
+
     for (auto it = m_transactions.begin(); it != m_transactions.end();) {
-        if (it->second.state != HotReloadState::IDLE && 
-            it->second.state != HotReloadState::SWAPPED) {
+        if (it->second.state != HotReloadState::IDLE && it->second.state != HotReloadState::SWAPPED) {
             it->second.state = HotReloadState::FAILED;
             it->second.error_message = "Aborted by user";
             it = m_transactions.erase(it);
@@ -186,9 +191,10 @@ bool HotReloadManager::abortReload(std::string* error) {
     return true;
 }
 
-bool HotReloadManager::commitReload(std::string* error) {
+bool HotReloadManager::commitReload(std::string* error)
+{
     std::lock_guard<std::mutex> lock(m_mutex);
-    
+
     for (auto it = m_transactions.begin(); it != m_transactions.end();) {
         if (it->second.state == HotReloadState::SWAPPED) {
             it->second.state = HotReloadState::CLEANUP;
@@ -203,9 +209,10 @@ bool HotReloadManager::commitReload(std::string* error) {
     return true;
 }
 
-bool HotReloadManager::rollbackReload(std::string* error) {
+bool HotReloadManager::rollbackReload(std::string* error)
+{
     std::lock_guard<std::mutex> lock(m_mutex);
-    
+
     for (auto& [name, txn] : m_transactions) {
         if (txn.state == HotReloadState::SWAPPED) {
             // Restore old version
@@ -223,7 +230,8 @@ bool HotReloadManager::rollbackReload(std::string* error) {
     return true;
 }
 
-HotReloadState HotReloadManager::getState(const std::string& component_name) const {
+HotReloadState HotReloadManager::getState(const std::string& component_name) const
+{
     std::lock_guard<std::mutex> lock(m_mutex);
     auto it = m_transactions.find(component_name);
     if (it == m_transactions.end()) {
@@ -232,31 +240,32 @@ HotReloadState HotReloadManager::getState(const std::string& component_name) con
     return it->second.state;
 }
 
-bool HotReloadManager::isReloadInProgress() const {
+bool HotReloadManager::isReloadInProgress() const
+{
     std::lock_guard<std::mutex> lock(m_mutex);
     for (const auto& [name, txn] : m_transactions) {
-        if (txn.state != HotReloadState::IDLE && 
-            txn.state != HotReloadState::SWAPPED) {
+        if (txn.state != HotReloadState::IDLE && txn.state != HotReloadState::SWAPPED) {
             return true;
         }
     }
     return false;
 }
 
-double HotReloadManager::getReloadProgress() const {
+double HotReloadManager::getReloadProgress() const
+{
     std::lock_guard<std::mutex> lock(m_mutex);
-    
+
     int total = m_transactions.size();
-    if (total == 0) return 0.0;
-    
+    if (total == 0)
+        return 0.0;
+
     int completed = 0;
     for (const auto& [name, txn] : m_transactions) {
-        if (txn.state == HotReloadState::SWAPPED || 
-            txn.state == HotReloadState::CLEANUP) {
+        if (txn.state == HotReloadState::SWAPPED || txn.state == HotReloadState::CLEANUP) {
             completed++;
         }
     }
-    
+
     return (double)completed / total;
 }
 
@@ -264,25 +273,28 @@ double HotReloadManager::getReloadProgress() const {
 // TimeoutProtector Singleton
 // ============================================================================
 
-TimeoutProtector& TimeoutProtector::instance() {
+TimeoutProtector& TimeoutProtector::instance()
+{
     static TimeoutProtector instance;
     return instance;
 }
 
-void TimeoutProtector::initialize() {
+void TimeoutProtector::initialize()
+{
     std::lock_guard<std::mutex> lock(m_mutex);
     m_stats = TimeoutStats();
-    std::cout << "[TimeoutProtector] Initialized (default timeout: " 
-              << m_default_timeout_ms << " ms)" << std::endl;
+    std::cout << "[TimeoutProtector] Initialized (default timeout: " << m_default_timeout_ms << " ms)" << std::endl;
 }
 
-void TimeoutProtector::finalize() {
+void TimeoutProtector::finalize()
+{
     std::lock_guard<std::mutex> lock(m_mutex);
     m_active_threads.clear();
     std::cout << "[TimeoutProtector] Finalized" << std::endl;
 }
 
-bool TimeoutProtector::shouldTimeout() const {
+bool TimeoutProtector::shouldTimeout() const
+{
     std::lock_guard<std::mutex> lock(m_mutex);
     auto it = m_active_threads.find(std::this_thread::get_id());
     if (it == m_active_threads.end()) {
@@ -294,7 +306,8 @@ bool TimeoutProtector::shouldTimeout() const {
     return elapsed_ms >= it->second.timeout_ms;
 }
 
-int TimeoutProtector::getRemainingTimeMs() const {
+int TimeoutProtector::getRemainingTimeMs() const
+{
     std::lock_guard<std::mutex> lock(m_mutex);
     auto it = m_active_threads.find(std::this_thread::get_id());
     if (it == m_active_threads.end()) {
@@ -306,7 +319,8 @@ int TimeoutProtector::getRemainingTimeMs() const {
     return std::max(0, it->second.timeout_ms - (int)elapsed_ms);
 }
 
-void TimeoutProtector::registerThread(std::thread::id id, int timeout_ms, const std::string& context) {
+void TimeoutProtector::registerThread(std::thread::id id, int timeout_ms, const std::string& context)
+{
     std::lock_guard<std::mutex> lock(m_mutex);
     ThreadInfo info;
     info.id = id;
@@ -317,18 +331,21 @@ void TimeoutProtector::registerThread(std::thread::id id, int timeout_ms, const 
     m_stats.active_threads = m_active_threads.size();
 }
 
-void TimeoutProtector::unregisterThread(std::thread::id id) {
+void TimeoutProtector::unregisterThread(std::thread::id id)
+{
     std::lock_guard<std::mutex> lock(m_mutex);
     m_active_threads.erase(id);
     m_stats.active_threads = m_active_threads.size();
 }
 
-TimeoutProtector::TimeoutStats TimeoutProtector::getStatistics() const {
+TimeoutProtector::TimeoutStats TimeoutProtector::getStatistics() const
+{
     std::lock_guard<std::mutex> lock(m_mutex);
     return m_stats;
 }
 
-void TimeoutProtector::resetStatistics() {
+void TimeoutProtector::resetStatistics()
+{
     std::lock_guard<std::mutex> lock(m_mutex);
     m_stats = TimeoutStats();
 }
@@ -337,43 +354,47 @@ void TimeoutProtector::resetStatistics() {
 // MultiCoreJIT Singleton
 // ============================================================================
 
-MultiCoreJIT& MultiCoreJIT::instance() {
+MultiCoreJIT& MultiCoreJIT::instance()
+{
     static MultiCoreJIT instance;
     return instance;
 }
 
-void MultiCoreJIT::initialize(int num_threads) {
+void MultiCoreJIT::initialize(int num_threads)
+{
     std::lock_guard<std::mutex> lock(m_mutex);
-    
+
     if (num_threads == 0) {
         // Auto-detect
         num_threads = std::thread::hardware_concurrency();
-        if (num_threads == 0) num_threads = 4;  // Fallback
+        if (num_threads == 0)
+            num_threads = 4; // Fallback
     }
-    
+
     m_num_threads = num_threads;
     m_stats = ParallelStats();
-    
+
     std::cout << "[MultiCoreJIT] Initialized with " << num_threads << " threads" << std::endl;
 }
 
-void MultiCoreJIT::finalize() {
+void MultiCoreJIT::finalize()
+{
     std::lock_guard<std::mutex> lock(m_mutex);
     std::cout << "[MultiCoreJIT] Finalized" << std::endl;
 }
 
-bool MultiCoreJIT::evaluateComponentsParallel(const std::vector<std::string>& component_names,
-                                             double time, double dt,
-                                             std::vector<std::vector<double>>& outputs) {
+bool MultiCoreJIT::evaluateComponentsParallel(const std::vector<std::string>& component_names, double time, double dt,
+                                              std::vector<std::vector<double>>& outputs)
+{
     auto start_time = std::chrono::steady_clock::now();
-    
+
     outputs.resize(component_names.size());
     std::atomic<bool> all_success{true};
     std::atomic<int> task_counter{0};
 
     auto worker = [&, this]() {
         auto& jit_manager = JITManager::instance();
-        
+
         while (true) {
             int idx = task_counter.fetch_add(1);
             if (idx >= component_names.size()) {
@@ -389,9 +410,7 @@ bool MultiCoreJIT::evaluateComponentsParallel(const std::vector<std::string>& co
 
             // Evaluate component
             std::vector<double> out(comp->num_outputs, 0.0);
-            if (!jit_manager.evaluateComponent(name, time, dt, 
-                                              comp->state.inputs.data(), 
-                                              out.data())) {
+            if (!jit_manager.evaluateComponent(name, time, dt, comp->state.inputs.data(), out.data())) {
                 all_success.store(false);
             }
             outputs[idx] = std::move(out);
@@ -411,18 +430,18 @@ bool MultiCoreJIT::evaluateComponentsParallel(const std::vector<std::string>& co
 
     auto end_time = std::chrono::steady_clock::now();
     double elapsed = std::chrono::duration<double>(end_time - start_time).count();
-    
+
     m_stats.total_tasks += component_names.size();
     m_stats.total_time_s += elapsed;
-    
-    std::cout << "[MultiCoreJIT] Evaluated " << component_names.size() 
-              << " components in " << elapsed << "s using " 
+
+    std::cout << "[MultiCoreJIT] Evaluated " << component_names.size() << " components in " << elapsed << "s using "
               << m_num_threads << " threads" << std::endl;
 
     return all_success.load();
 }
 
-MultiCoreJIT::ParallelStats MultiCoreJIT::getStatistics() const {
+MultiCoreJIT::ParallelStats MultiCoreJIT::getStatistics() const
+{
     std::lock_guard<std::mutex> lock(m_mutex);
     return m_stats;
 }
@@ -433,46 +452,54 @@ MultiCoreJIT::ParallelStats MultiCoreJIT::getStatistics() const {
 
 #ifdef HAVE_EIGEN
 
-SparseMatrixWrapper::SparseMatrixWrapper() {
-}
+SparseMatrixWrapper::SparseMatrixWrapper() {}
 
-SparseMatrixWrapper::SparseMatrixWrapper(int rows, int cols) {
+SparseMatrixWrapper::SparseMatrixWrapper(int rows, int cols)
+{
     m_matrix.resize(rows, cols);
 }
 
-void SparseMatrixWrapper::resize(int rows, int cols) {
+void SparseMatrixWrapper::resize(int rows, int cols)
+{
     m_matrix.resize(rows, cols);
 }
 
-void SparseMatrixWrapper::reserve(int non_zeros) {
+void SparseMatrixWrapper::reserve(int non_zeros)
+{
     m_matrix.reserve(non_zeros);
 }
 
-void SparseMatrixWrapper::setCoefficient(int row, int col, double value) {
+void SparseMatrixWrapper::setCoefficient(int row, int col, double value)
+{
     m_matrix.insert(row, col) = value;
 }
 
-double SparseMatrixWrapper::getCoefficient(int row, int col) const {
+double SparseMatrixWrapper::getCoefficient(int row, int col) const
+{
     return m_matrix.coeff(row, col);
 }
 
-void SparseMatrixWrapper::addToCoefficient(int row, int col, double value) {
+void SparseMatrixWrapper::addToCoefficient(int row, int col, double value)
+{
     m_matrix.coeffRef(row, col) += value;
 }
 
-SparseMatrixWrapper SparseMatrixWrapper::transpose() const {
+SparseMatrixWrapper SparseMatrixWrapper::transpose() const
+{
     SparseMatrixWrapper result;
     result.m_matrix = m_matrix.transpose();
     return result;
 }
 
-SparseMatrixWrapper SparseMatrixWrapper::multiply(const SparseMatrixWrapper& other) const {
+SparseMatrixWrapper SparseMatrixWrapper::multiply(const SparseMatrixWrapper& other) const
+{
     SparseMatrixWrapper result;
     result.m_matrix = m_matrix * other.m_matrix;
     return result;
 }
 
-std::vector<double> SparseMatrixWrapper::multiply(const std::vector<double>& vec) const {
+std::vector<double> SparseMatrixWrapper::multiply(const std::vector<double>& vec) const
+{
     Eigen::VectorXd v(vec.size());
     for (size_t i = 0; i < vec.size(); i++) {
         v[i] = vec[i];
@@ -481,15 +508,15 @@ std::vector<double> SparseMatrixWrapper::multiply(const std::vector<double>& vec
     return std::vector<double>(result.data(), result.data() + result.size());
 }
 
-std::vector<double> SparseMatrixWrapper::solve(const std::vector<double>& rhs,
-                                               const std::string& solver) const {
+std::vector<double> SparseMatrixWrapper::solve(const std::vector<double>& rhs, const std::string& solver) const
+{
     Eigen::VectorXd b(rhs.size());
     for (size_t i = 0; i < rhs.size(); i++) {
         b[i] = rhs[i];
     }
 
     Eigen::VectorXd x;
-    
+
     if (solver == "SparseLU") {
         Eigen::SparseLU<Eigen::SparseMatrix<double>> lu(m_matrix);
         x = lu.solve(b);
@@ -497,7 +524,7 @@ std::vector<double> SparseMatrixWrapper::solve(const std::vector<double>& rhs,
         Eigen::SparseQR<Eigen::SparseMatrix<double>, Eigen::COLAMDOrdering<int>> qr(m_matrix);
         x = qr.solve(b);
     } else if (solver == "ConjugateGradient") {
-        Eigen::ConjugateGradient<Eigen::SparseMatrix<double>, Eigen::Lower|Eigen::Upper> cg(m_matrix);
+        Eigen::ConjugateGradient<Eigen::SparseMatrix<double>, Eigen::Lower | Eigen::Upper> cg(m_matrix);
         x = cg.solve(b);
     } else if (solver == "BiCGSTAB") {
         Eigen::BiCGSTAB<Eigen::SparseMatrix<double>> bicg(m_matrix);
@@ -511,28 +538,34 @@ std::vector<double> SparseMatrixWrapper::solve(const std::vector<double>& rhs,
     return std::vector<double>(x.data(), x.data() + x.size());
 }
 
-int SparseMatrixWrapper::rows() const {
+int SparseMatrixWrapper::rows() const
+{
     return m_matrix.rows();
 }
 
-int SparseMatrixWrapper::cols() const {
+int SparseMatrixWrapper::cols() const
+{
     return m_matrix.cols();
 }
 
-int SparseMatrixWrapper::nonZeros() const {
+int SparseMatrixWrapper::nonZeros() const
+{
     return m_matrix.nonZeros();
 }
 
-double SparseMatrixWrapper::norm() const {
+double SparseMatrixWrapper::norm() const
+{
     return m_matrix.norm();
 }
 
-double SparseMatrixWrapper::conditionNumber() const {
+double SparseMatrixWrapper::conditionNumber() const
+{
     // Simplified - would compute actual condition number
     return 1.0;
 }
 
-std::vector<std::tuple<int, int, double>> SparseMatrixWrapper::toCOO() const {
+std::vector<std::tuple<int, int, double>> SparseMatrixWrapper::toCOO() const
+{
     std::vector<std::tuple<int, int, double>> coo;
     for (int k = 0; k < m_matrix.outerSize(); ++k) {
         for (Eigen::SparseMatrix<double>::InnerIterator it(m_matrix, k); it; ++it) {
@@ -542,12 +575,14 @@ std::vector<std::tuple<int, int, double>> SparseMatrixWrapper::toCOO() const {
     return coo;
 }
 
-std::vector<double> SparseMatrixWrapper::toDense() const {
+std::vector<double> SparseMatrixWrapper::toDense() const
+{
     Eigen::MatrixXd dense = Eigen::MatrixXd(m_matrix);
     return std::vector<double>(dense.data(), dense.data() + dense.size());
 }
 
-bool SparseMatrixWrapper::exportToMatrixMarket(const std::string& filename) const {
+bool SparseMatrixWrapper::exportToMatrixMarket(const std::string& filename) const
+{
     std::ofstream file(filename);
     if (!file.is_open()) {
         return false;
@@ -565,7 +600,8 @@ bool SparseMatrixWrapper::exportToMatrixMarket(const std::string& filename) cons
     return true;
 }
 
-bool SparseMatrixWrapper::exportToCSV(const std::string& filename) const {
+bool SparseMatrixWrapper::exportToCSV(const std::string& filename) const
+{
     std::ofstream file(filename);
     if (!file.is_open()) {
         return false;
@@ -584,7 +620,8 @@ bool SparseMatrixWrapper::exportToCSV(const std::string& filename) const {
 // SparseMatrixOps
 // ============================================================================
 
-SparseMatrixWrapper SparseMatrixOps::createDiagonal(const std::vector<double>& diag) {
+SparseMatrixWrapper SparseMatrixOps::createDiagonal(const std::vector<double>& diag)
+{
     int n = diag.size();
     SparseMatrixWrapper result(n, n);
     for (int i = 0; i < n; i++) {
@@ -595,10 +632,11 @@ SparseMatrixWrapper SparseMatrixOps::createDiagonal(const std::vector<double>& d
 
 SparseMatrixWrapper SparseMatrixOps::createTridiagonal(const std::vector<double>& lower,
                                                        const std::vector<double>& diag,
-                                                       const std::vector<double>& upper) {
+                                                       const std::vector<double>& upper)
+{
     int n = diag.size();
     SparseMatrixWrapper result(n, n);
-    
+
     for (int i = 0; i < n; i++) {
         result.setCoefficient(i, i, diag[i]);
         if (i > 0 && i - 1 < lower.size()) {
@@ -608,14 +646,15 @@ SparseMatrixWrapper SparseMatrixOps::createTridiagonal(const std::vector<double>
             result.setCoefficient(i, i + 1, upper[i]);
         }
     }
-    
+
     return result;
 }
 
-SparseMatrixWrapper SparseMatrixOps::createLaplacian1D(int n, double h) {
+SparseMatrixWrapper SparseMatrixOps::createLaplacian1D(int n, double h)
+{
     SparseMatrixWrapper result(n, n);
     double factor = 1.0 / (h * h);
-    
+
     for (int i = 0; i < n; i++) {
         result.setCoefficient(i, i, -2.0 * factor);
         if (i > 0) {
@@ -625,50 +664,58 @@ SparseMatrixWrapper SparseMatrixOps::createLaplacian1D(int n, double h) {
             result.setCoefficient(i, i + 1, factor);
         }
     }
-    
+
     return result;
 }
 
-SparseMatrixWrapper SparseMatrixOps::createLaplacian2D(int nx, int ny, double hx, double hy) {
+SparseMatrixWrapper SparseMatrixOps::createLaplacian2D(int nx, int ny, double hx, double hy)
+{
     int n = nx * ny;
     SparseMatrixWrapper result(n, n);
-    
+
     double fx = 1.0 / (hx * hx);
     double fy = 1.0 / (hy * hy);
     double center = -2.0 * (fx + fy);
-    
+
     for (int j = 0; j < ny; j++) {
         for (int i = 0; i < nx; i++) {
             int idx = j * nx + i;
             result.setCoefficient(idx, idx, center);
-            
-            if (i > 0) result.setCoefficient(idx, idx - 1, fx);
-            if (i < nx - 1) result.setCoefficient(idx, idx + 1, fx);
-            if (j > 0) result.setCoefficient(idx, idx - nx, fy);
-            if (j < ny - 1) result.setCoefficient(idx, idx + nx, fy);
+
+            if (i > 0)
+                result.setCoefficient(idx, idx - 1, fx);
+            if (i < nx - 1)
+                result.setCoefficient(idx, idx + 1, fx);
+            if (j > 0)
+                result.setCoefficient(idx, idx - nx, fy);
+            if (j < ny - 1)
+                result.setCoefficient(idx, idx + nx, fy);
         }
     }
-    
+
     return result;
 }
 
-double SparseMatrixOps::computeConditionNumber(const SparseMatrixWrapper& matrix) {
+double SparseMatrixOps::computeConditionNumber(const SparseMatrixWrapper& matrix)
+{
     return matrix.conditionNumber();
 }
 
-std::vector<double> SparseMatrixOps::computeEigenvalues(const SparseMatrixWrapper& matrix, 
-                                                        int num_eigenvalues) {
+std::vector<double> SparseMatrixOps::computeEigenvalues(const SparseMatrixWrapper& matrix, int num_eigenvalues)
+{
     // Would use Eigen's sparse eigenvalue solver
     return std::vector<double>();
 }
 
-SparseMatrixWrapper SparseMatrixOps::incompleteLU(const SparseMatrixWrapper& matrix) {
+SparseMatrixWrapper SparseMatrixOps::incompleteLU(const SparseMatrixWrapper& matrix)
+{
     SparseMatrixWrapper result;
     // Would compute ILU preconditioner
     return result;
 }
 
-SparseMatrixWrapper SparseMatrixOps::incompleteCholesky(const SparseMatrixWrapper& matrix) {
+SparseMatrixWrapper SparseMatrixOps::incompleteCholesky(const SparseMatrixWrapper& matrix)
+{
     SparseMatrixWrapper result;
     // Would compute IC preconditioner
     return result;
@@ -680,25 +727,27 @@ SparseMatrixWrapper SparseMatrixOps::incompleteCholesky(const SparseMatrixWrappe
 // JITSandbox Singleton
 // ============================================================================
 
-JITSandbox& JITSandbox::instance() {
+JITSandbox& JITSandbox::instance()
+{
     static JITSandbox instance;
     return instance;
 }
 
-void JITSandbox::initialize(const SandboxConfig& config) {
+void JITSandbox::initialize(const SandboxConfig& config)
+{
     std::lock_guard<std::mutex> lock(m_mutex);
     m_config = config;
     std::cout << "[JITSandbox] Initialized" << std::endl;
 }
 
-void JITSandbox::finalize() {
+void JITSandbox::finalize()
+{
     std::lock_guard<std::mutex> lock(m_mutex);
     std::cout << "[JITSandbox] Finalized" << std::endl;
 }
 
-bool JITSandbox::executeSandboxed(const std::string& source_code,
-                                 std::string* output,
-                                 std::string* error) {
+bool JITSandbox::executeSandboxed(const std::string& source_code, std::string* output, std::string* error)
+{
     std::lock_guard<std::mutex> lock(m_mutex);
 
     // Validate source code
@@ -709,37 +758,39 @@ bool JITSandbox::executeSandboxed(const std::string& source_code,
 #ifdef __linux__
     int pipefd[2];
     if (pipe(pipefd) == -1) {
-        if (error) *error = "Failed to create pipe";
+        if (error)
+            *error = "Failed to create pipe";
         return false;
     }
 
     pid_t pid = fork();
     if (pid < 0) {
-        if (error) *error = "Fork failed";
+        if (error)
+            *error = "Fork failed";
         return false;
     }
 
     if (pid == 0) {
         // Child process
         close(pipefd[0]); // Close read end
-        
+
         // Setup resource limits
         struct rlimit rl;
-        
+
         // Memory limit
         rl.rlim_cur = m_config.max_memory_mb * 1024 * 1024;
         rl.rlim_max = rl.rlim_cur;
         setrlimit(RLIMIT_AS, &rl);
-        
+
         // CPU limit (seconds)
         rl.rlim_cur = (m_config.max_execution_time_ms + 999) / 1000;
         rl.rlim_max = rl.rlim_cur;
         setrlimit(RLIMIT_CPU, &rl);
-        
+
         // Setup basic seccomp if strict config requested
-        // Note: Strict seccomp breaks LLVM JIT due to mmap/mprotect, 
+        // Note: Strict seccomp breaks LLVM JIT due to mmap/mprotect,
         // so we rely primarily on rlimit and process isolation for now.
-        
+
         // Execute the code
         std::string result_str;
         std::string exec_error;
@@ -748,14 +799,15 @@ bool JITSandbox::executeSandboxed(const std::string& source_code,
             if (!success) {
                 result_str = std::string("ERROR: ") + exec_error;
             } else {
-                result_str = "Success"; // Actual output should be handled differently, but this works for basic execution
+                result_str =
+                    "Success"; // Actual output should be handled differently, but this works for basic execution
             }
         } catch (const std::exception& e) {
             result_str = std::string("ERROR: ") + e.what();
         } catch (...) {
             result_str = "ERROR: Unknown exception";
         }
-        
+
         // Write result to pipe
         ssize_t written = write(pipefd[1], result_str.c_str(), result_str.length());
         (void)written; // Ignore write error in child
@@ -764,23 +816,25 @@ bool JITSandbox::executeSandboxed(const std::string& source_code,
     } else {
         // Parent process
         close(pipefd[1]); // Close write end
-        
+
         char buffer[4096];
         ssize_t bytes_read = read(pipefd[0], buffer, sizeof(buffer) - 1);
         if (bytes_read > 0) {
             buffer[bytes_read] = '\0';
             std::string res(buffer);
             if (res.length() >= 6 && res.substr(0, 6) == "ERROR:") {
-                if (error) *error = res.substr(7);
+                if (error)
+                    *error = res.substr(7);
             } else {
-                if (output) *output = res;
+                if (output)
+                    *output = res;
             }
         }
         close(pipefd[0]);
-        
+
         int status;
         waitpid(pid, &status, 0);
-        
+
         if (WIFSIGNALED(status)) {
             int sig = WTERMSIG(status);
             if (error) {
@@ -794,40 +848,42 @@ bool JITSandbox::executeSandboxed(const std::string& source_code,
             }
             return false;
         }
-        
+
         std::cout << "[JITSandbox] Executed sandboxed code" << std::endl;
         return WIFEXITED(status) && WEXITSTATUS(status) == 0;
     }
 #else
-    if (error) *error = "Actual sandboxing only supported on Linux";
+    if (error)
+        *error = "Actual sandboxing only supported on Linux";
     return false;
 #endif
 }
 
-bool JITSandbox::validateSource(const std::string& source_code, std::string* error) const {
+bool JITSandbox::validateSource(const std::string& source_code, std::string* error) const
+{
     std::lock_guard<std::mutex> lock(m_mutex);
 
     // Check for forbidden operations
     if (!m_config.allow_file_io) {
-        if (source_code.find("fopen") != std::string::npos ||
-            source_code.find("open(") != std::string::npos) {
-            if (error) *error = "File I/O not allowed in sandbox";
+        if (source_code.find("fopen") != std::string::npos || source_code.find("open(") != std::string::npos) {
+            if (error)
+                *error = "File I/O not allowed in sandbox";
             return false;
         }
     }
 
     if (!m_config.allow_system_calls) {
-        if (source_code.find("system(") != std::string::npos ||
-            source_code.find("exec(") != std::string::npos) {
-            if (error) *error = "System calls not allowed in sandbox";
+        if (source_code.find("system(") != std::string::npos || source_code.find("exec(") != std::string::npos) {
+            if (error)
+                *error = "System calls not allowed in sandbox";
             return false;
         }
     }
 
     if (!m_config.allow_network) {
-        if (source_code.find("socket(") != std::string::npos ||
-            source_code.find("connect(") != std::string::npos) {
-            if (error) *error = "Network access not allowed in sandbox";
+        if (source_code.find("socket(") != std::string::npos || source_code.find("connect(") != std::string::npos) {
+            if (error)
+                *error = "Network access not allowed in sandbox";
             return false;
         }
     }
@@ -835,12 +891,14 @@ bool JITSandbox::validateSource(const std::string& source_code, std::string* err
     return true;
 }
 
-void JITSandbox::setConfig(const SandboxConfig& config) {
+void JITSandbox::setConfig(const SandboxConfig& config)
+{
     std::lock_guard<std::mutex> lock(m_mutex);
     m_config = config;
 }
 
-SandboxConfig JITSandbox::getConfig() const {
+SandboxConfig JITSandbox::getConfig() const
+{
     std::lock_guard<std::mutex> lock(m_mutex);
     return m_config;
 }

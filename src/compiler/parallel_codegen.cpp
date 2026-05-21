@@ -14,13 +14,14 @@
 // Parallel for loop codegen - Actual parallel execution support
 #include "flux/compiler/ast.h"
 #include "flux/runtime/parallel_runtime.h"
-#include <llvm/IR/Function.h>
 #include <llvm/IR/BasicBlock.h>
 #include <llvm/IR/Constants.h>
+#include <llvm/IR/Function.h>
 
 namespace Flux {
 
-TypedValue ParallelForExprAST::codegen(CodegenContext& context) {
+TypedValue ParallelForExprAST::codegen(CodegenContext& context)
+{
     llvm::LLVMContext& Ctx = context.TheContext;
     llvm::Module* TheModule = context.TheModule;
     llvm::Type* DoubleTy = llvm::Type::getDoubleTy(Ctx);
@@ -30,7 +31,8 @@ TypedValue ParallelForExprAST::codegen(CodegenContext& context) {
     // 1. Generate start and end values in the current function
     TypedValue StartTV = Start->codegen(context);
     TypedValue EndTV = End->codegen(context);
-    if (!StartTV.Val || !EndTV.Val) return TypedValue();
+    if (!StartTV.Val || !EndTV.Val)
+        return TypedValue();
 
     // Promote int literals to double if needed
     auto ensureDouble = [&](TypedValue& TV) {
@@ -66,7 +68,8 @@ TypedValue ParallelForExprAST::codegen(CodegenContext& context) {
     // 3. Create the loop body function
     // Signature: void body(int64_t index, void* user_data)
     llvm::FunctionType* BodyFuncTy = llvm::FunctionType::get(llvm::Type::getVoidTy(Ctx), {Int64Ty, VoidPtrTy}, false);
-    llvm::Function* BodyFunc = llvm::Function::Create(BodyFuncTy, llvm::Function::InternalLinkage, "par_body", TheModule);
+    llvm::Function* BodyFunc =
+        llvm::Function::Create(BodyFuncTy, llvm::Function::InternalLinkage, "par_body", TheModule);
 
     // Create entry block in body function
     llvm::BasicBlock* EntryBB = llvm::BasicBlock::Create(Ctx, "entry", BodyFunc);
@@ -83,7 +86,8 @@ TypedValue ParallelForExprAST::codegen(CodegenContext& context) {
 
     // Extract captured variables
     llvm::Value* UserDataPtr = (BodyFunc->arg_begin() + 1);
-    llvm::Value* CastUserData = BodyBuilder.CreateBitCast(UserDataPtr, llvm::PointerType::get(CaptureStructTy, 0));
+    llvm::Value* CastUserData =
+        BodyBuilder.CreateBitCast(UserDataPtr, llvm::PointerType::get(CaptureStructTy->getContext(), 0));
 
     for (size_t i = 0; i < CapturedNames.size(); i++) {
         llvm::Value* MemberPtr = BodyBuilder.CreateStructGEP(CaptureStructTy, CastUserData, i);

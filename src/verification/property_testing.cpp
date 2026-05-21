@@ -16,11 +16,11 @@
 // ============================================================================
 
 #include "flux/verification/property_testing.h"
-#include <iostream>
-#include <sstream>
 #include <algorithm>
 #include <cmath>
+#include <iostream>
 #include <numeric>
+#include <sstream>
 
 namespace Flux {
 
@@ -28,46 +28,50 @@ namespace Flux {
 // RandomParameterGenerator Implementation
 // ============================================================================
 
-RandomParameterGenerator::RandomParameterGenerator(unsigned int seed) : m_rng(seed) {
-}
+RandomParameterGenerator::RandomParameterGenerator(unsigned int seed) : m_rng(seed) {}
 
-double RandomParameterGenerator::generateUniform(double min, double max) {
+double RandomParameterGenerator::generateUniform(double min, double max)
+{
     std::lock_guard<std::mutex> lock(m_mutex);
     std::uniform_real_distribution<double> dist(min, max);
     return dist(m_rng);
 }
 
-double RandomParameterGenerator::generateNormal(double mean, double std_dev) {
+double RandomParameterGenerator::generateNormal(double mean, double std_dev)
+{
     std::lock_guard<std::mutex> lock(m_mutex);
     std::normal_distribution<double> dist(mean, std_dev);
     return dist(m_rng);
 }
 
-double RandomParameterGenerator::generateLogNormal(double median, double sigma) {
+double RandomParameterGenerator::generateLogNormal(double median, double sigma)
+{
     std::lock_guard<std::mutex> lock(m_mutex);
     double log_median = std::log(median);
     std::lognormal_distribution<double> dist(log_median, sigma);
     return dist(m_rng);
 }
 
-int RandomParameterGenerator::generateInt(int min, int max) {
+int RandomParameterGenerator::generateInt(int min, int max)
+{
     std::lock_guard<std::mutex> lock(m_mutex);
     std::uniform_int_distribution<int> dist(min, max);
     return dist(m_rng);
 }
 
-bool RandomParameterGenerator::generateBool(double probability) {
+bool RandomParameterGenerator::generateBool(double probability)
+{
     std::lock_guard<std::mutex> lock(m_mutex);
     std::bernoulli_distribution dist(probability);
     return dist(m_rng);
 }
 
-std::map<std::string, double> RandomParameterGenerator::generateCircuitParameters(
-    const std::vector<std::string>& param_names,
-    const std::map<std::string, std::pair<double, double>>& ranges
-) {
+std::map<std::string, double>
+RandomParameterGenerator::generateCircuitParameters(const std::vector<std::string>& param_names,
+                                                    const std::map<std::string, std::pair<double, double>>& ranges)
+{
     std::map<std::string, double> params;
-    
+
     for (const auto& name : param_names) {
         auto it = ranges.find(name);
         if (it != ranges.end()) {
@@ -76,19 +80,18 @@ std::map<std::string, double> RandomParameterGenerator::generateCircuitParameter
             params[name] = generateUniform(0.0, 1.0);
         }
     }
-    
+
     return params;
 }
 
-std::map<std::string, double> RandomParameterGenerator::mutateParameters(
-    const std::map<std::string, double>& base,
-    double mutation_rate
-) {
+std::map<std::string, double> RandomParameterGenerator::mutateParameters(const std::map<std::string, double>& base,
+                                                                         double mutation_rate)
+{
     std::lock_guard<std::mutex> lock(m_mutex);
     std::map<std::string, double> mutated = base;
     std::uniform_real_distribution<double> uniform_dist(0.0, 1.0);
     std::normal_distribution<double> normal_dist(0.0, 1.0);
-    
+
     for (auto& [name, value] : mutated) {
         if (uniform_dist(m_rng) < mutation_rate) {
             // Mutate by adding Gaussian noise (10% of value)
@@ -96,7 +99,7 @@ std::map<std::string, double> RandomParameterGenerator::mutateParameters(
             mutated[name] = value + noise;
         }
     }
-    
+
     return mutated;
 }
 
@@ -104,34 +107,39 @@ std::map<std::string, double> RandomParameterGenerator::mutateParameters(
 // PropertyBasedTester Singleton
 // ============================================================================
 
-PropertyBasedTester& PropertyBasedTester::instance() {
+PropertyBasedTester& PropertyBasedTester::instance()
+{
     static PropertyBasedTester instance;
     return instance;
 }
 
-void PropertyBasedTester::initialize() {
+void PropertyBasedTester::initialize()
+{
     std::lock_guard<std::mutex> lock(m_mutex);
-    if (m_initialized) return;
-    
+    if (m_initialized)
+        return;
+
     m_generator = std::make_unique<RandomParameterGenerator>(42);
     m_properties.clear();
     m_total_tests_run = 0;
     m_total_failures = 0;
     m_total_execution_time_ms = 0.0;
     m_initialized = true;
-    
+
     std::cout << "[PropertyBasedTester] Initialized" << std::endl;
 }
 
-void PropertyBasedTester::finalize() {
+void PropertyBasedTester::finalize()
+{
     std::lock_guard<std::mutex> lock(m_mutex);
     m_properties.clear();
     m_initialized = false;
-    
+
     std::cout << "[PropertyBasedTester] Finalized" << std::endl;
 }
 
-bool PropertyBasedTester::registerProperty(const Property& prop) {
+bool PropertyBasedTester::registerProperty(const Property& prop)
+{
     std::lock_guard<std::mutex> lock(m_mutex);
     if (m_properties.count(prop.name)) {
         return false;
@@ -140,12 +148,14 @@ bool PropertyBasedTester::registerProperty(const Property& prop) {
     return true;
 }
 
-bool PropertyBasedTester::unregisterProperty(const std::string& name) {
+bool PropertyBasedTester::unregisterProperty(const std::string& name)
+{
     std::lock_guard<std::mutex> lock(m_mutex);
     return m_properties.erase(name) > 0;
 }
 
-std::vector<std::string> PropertyBasedTester::getRegisteredProperties() const {
+std::vector<std::string> PropertyBasedTester::getRegisteredProperties() const
+{
     std::lock_guard<std::mutex> lock(m_mutex);
     std::vector<std::string> names;
     for (const auto& [name, prop] : m_properties) {
@@ -155,19 +165,18 @@ std::vector<std::string> PropertyBasedTester::getRegisteredProperties() const {
 }
 
 PropertyTestResult PropertyBasedTester::testProperty(
-    const std::string& property_name,
-    const PropertyTestConfig& config,
-    std::function<std::map<std::string, double>(const std::map<std::string, double>&)> simulate
-) {
+    const std::string& property_name, const PropertyTestConfig& config,
+    std::function<std::map<std::string, double>(const std::map<std::string, double>&)> simulate)
+{
     auto start_time = std::chrono::steady_clock::now();
-    
+
     PropertyTestResult result;
     result.property_name = property_name;
     result.passed = true;
     result.test_cases_evaluated = 0;
     result.test_cases_passed = 0;
     result.test_cases_failed = 0;
-    
+
     {
         std::lock_guard<std::mutex> lock(m_mutex);
         auto it = m_properties.find(property_name);
@@ -176,12 +185,12 @@ PropertyTestResult PropertyBasedTester::testProperty(
             result.failure_message = "Property not found: " + property_name;
             return result;
         }
-        
+
         const auto& property = it->second;
         result.description = property.description;
-        
+
         RandomParameterGenerator gen(config.seed);
-        
+
         // Determine parameter ranges from the property or config
         // For now, we'll generate random parameters and let the simulate function handle validation
         for (int i = 0; i < config.num_test_cases; i++) {
@@ -190,52 +199,53 @@ PropertyTestResult PropertyBasedTester::testProperty(
             for (int j = 0; j < 10; j++) {
                 params["param_" + std::to_string(j)] = gen.generateUniform(0.0, 1.0);
             }
-            
+
             // Run simulation
             auto sim_result = simulate(params);
-            
+
             // Check property
             std::string failure_reason;
             bool prop_holds = property.predicate(params, sim_result, failure_reason);
-            
+
             result.test_cases_evaluated++;
-            
+
             if (prop_holds) {
                 result.test_cases_passed++;
             } else {
                 result.test_cases_failed++;
                 result.passed = false;
-                
+
                 if (config.shrink_on_failure) {
                     result.failure_message = "Failed at test case " + std::to_string(i) + ": " + failure_reason;
                 }
-                
+
                 if (!config.shrink_on_failure) {
-                    break;  // Stop on first failure
+                    break; // Stop on first failure
                 }
             }
         }
     }
-    
+
     auto end_time = std::chrono::steady_clock::now();
     result.execution_time_ms = std::chrono::duration<double, std::milli>(end_time - start_time).count();
-    
+
     {
         std::lock_guard<std::mutex> lock(m_mutex);
         m_total_tests_run++;
-        if (!result.passed) m_total_failures++;
+        if (!result.passed)
+            m_total_failures++;
         m_total_execution_time_ms += result.execution_time_ms;
     }
-    
+
     return result;
 }
 
 std::vector<PropertyTestResult> PropertyBasedTester::testAllProperties(
     const PropertyTestConfig& config,
-    std::function<std::map<std::string, double>(const std::map<std::string, double>&)> simulate
-) {
+    std::function<std::map<std::string, double>(const std::map<std::string, double>&)> simulate)
+{
     std::vector<PropertyTestResult> results;
-    
+
     std::vector<std::string> prop_names;
     {
         std::lock_guard<std::mutex> lock(m_mutex);
@@ -243,15 +253,16 @@ std::vector<PropertyTestResult> PropertyBasedTester::testAllProperties(
             prop_names.push_back(name);
         }
     }
-    
+
     for (const auto& name : prop_names) {
         results.push_back(testProperty(name, config, simulate));
     }
-    
+
     return results;
 }
 
-std::string PropertyBasedTester::generateShrinkReport(const PropertyTestResult& result) const {
+std::string PropertyBasedTester::generateShrinkReport(const PropertyTestResult& result) const
+{
     std::ostringstream oss;
     oss << "=== Property Test Report ===\n";
     oss << "Property: " << result.property_name << "\n";
@@ -261,15 +272,16 @@ std::string PropertyBasedTester::generateShrinkReport(const PropertyTestResult& 
     oss << "Passed: " << result.test_cases_passed << "\n";
     oss << "Failed: " << result.test_cases_failed << "\n";
     oss << "Execution time: " << result.execution_time_ms << " ms\n";
-    
+
     if (!result.passed) {
         oss << "\nFailure: " << result.failure_message << "\n";
     }
-    
+
     return oss.str();
 }
 
-void PropertyBasedTester::resetStatistics() {
+void PropertyBasedTester::resetStatistics()
+{
     std::lock_guard<std::mutex> lock(m_mutex);
     m_total_tests_run = 0;
     m_total_failures = 0;
@@ -282,7 +294,8 @@ void PropertyBasedTester::resetStatistics() {
 
 namespace CommonProperties {
 
-Property createPassivityProperty() {
+Property createPassivityProperty()
+{
     Property prop;
     prop.name = "passivity";
     prop.description = "Power consumed >= 0 for all passive components";
@@ -299,7 +312,8 @@ Property createPassivityProperty() {
     return prop;
 }
 
-Property createReciprocityProperty() {
+Property createReciprocityProperty()
+{
     Property prop;
     prop.name = "reciprocity";
     prop.description = "Sij = Sji for linear reciprocal networks";
@@ -307,7 +321,7 @@ Property createReciprocityProperty() {
         // Check S-parameter symmetry
         auto it1 = result.find("S12");
         auto it2 = result.find("S21");
-        
+
         if (it1 != result.end() && it2 != result.end()) {
             if (std::abs(it1->second - it2->second) > 1e-6) {
                 failure = "Reciprocity violated: S12 != S21";
@@ -319,7 +333,8 @@ Property createReciprocityProperty() {
     return prop;
 }
 
-Property createCausalityProperty() {
+Property createCausalityProperty()
+{
     Property prop;
     prop.name = "causality";
     prop.description = "Output cannot precede input in time domain";
@@ -334,15 +349,16 @@ Property createCausalityProperty() {
     return prop;
 }
 
-Property createBIBOStabilityProperty(double max_input, double max_output) {
+Property createBIBOStabilityProperty(double max_input, double max_output)
+{
     Property prop;
     prop.name = "bibo_stability";
     prop.description = "Bounded input produces bounded output";
     prop.predicate = [max_input, max_output](const auto& params, const auto& result, auto& failure) {
         for (const auto& [name, value] : result) {
             if (std::abs(value) > max_output) {
-                failure = "Output exceeds bound: " + name + " = " + std::to_string(value) + 
-                         " > " + std::to_string(max_output);
+                failure = "Output exceeds bound: " + name + " = " + std::to_string(value) + " > " +
+                          std::to_string(max_output);
                 return false;
             }
         }
@@ -351,7 +367,8 @@ Property createBIBOStabilityProperty(double max_input, double max_output) {
     return prop;
 }
 
-Property createMonotonicityProperty(const std::string& input_param, const std::string& output_param) {
+Property createMonotonicityProperty(const std::string& input_param, const std::string& output_param)
+{
     Property prop;
     prop.name = "monotonicity_" + input_param + "_" + output_param;
     prop.description = "Increasing " + input_param + " monotonically affects " + output_param;
@@ -368,7 +385,8 @@ Property createMonotonicityProperty(const std::string& input_param, const std::s
     return prop;
 }
 
-Property createKCLProperty(const std::vector<std::string>& node_names) {
+Property createKCLProperty(const std::vector<std::string>& node_names)
+{
     Property prop;
     prop.name = "kcl";
     prop.description = "Kirchhoff's Current Law: Sum of currents at node = 0";
@@ -386,7 +404,8 @@ Property createKCLProperty(const std::vector<std::string>& node_names) {
     return prop;
 }
 
-Property createEnergyConservationProperty() {
+Property createEnergyConservationProperty()
+{
     Property prop;
     prop.name = "energy_conservation";
     prop.description = "Total energy in = Total energy out + Dissipated";
@@ -394,7 +413,7 @@ Property createEnergyConservationProperty() {
         auto it_in = result.find("energy_in");
         auto it_out = result.find("energy_out");
         auto it_dissipated = result.find("energy_dissipated");
-        
+
         if (it_in != result.end() && it_out != result.end() && it_dissipated != result.end()) {
             double balance = it_in->second - it_out->second - it_dissipated->second;
             if (std::abs(balance) > 1e-6) {
@@ -407,7 +426,8 @@ Property createEnergyConservationProperty() {
     return prop;
 }
 
-Property createLinearityProperty(double tolerance) {
+Property createLinearityProperty(double tolerance)
+{
     Property prop;
     prop.name = "linearity";
     prop.description = "Superposition holds: f(a*x1 + b*x2) = a*f(x1) + b*f(x2)";
@@ -424,7 +444,8 @@ Property createLinearityProperty(double tolerance) {
     return prop;
 }
 
-Property createTimeInvarianceProperty() {
+Property createTimeInvarianceProperty()
+{
     Property prop;
     prop.name = "time_invariance";
     prop.description = "Shifted input produces shifted output";
@@ -435,7 +456,8 @@ Property createTimeInvarianceProperty() {
     return prop;
 }
 
-Property createPositiveRealProperty() {
+Property createPositiveRealProperty()
+{
     Property prop;
     prop.name = "positive_real";
     prop.description = "Impedance has positive real part for passive networks";
@@ -458,26 +480,29 @@ Property createPositiveRealProperty() {
 
 namespace CircuitTestGenerators {
 
-std::map<std::string, double> generateRCTestCase(RandomParameterGenerator& gen) {
+std::map<std::string, double> generateRCTestCase(RandomParameterGenerator& gen)
+{
     std::map<std::string, double> params;
     params["R"] = gen.generateLogNormal(1e3, 1.0);    // 1k typical
     params["C"] = gen.generateLogNormal(1e-6, 1.0);   // 1F typical
-    params["Vin"] = gen.generateUniform(0.1, 10.0);    // Input voltage
-    params["freq"] = gen.generateLogNormal(1e3, 2.0);  // Frequency
+    params["Vin"] = gen.generateUniform(0.1, 10.0);   // Input voltage
+    params["freq"] = gen.generateLogNormal(1e3, 2.0); // Frequency
     return params;
 }
 
-std::map<std::string, double> generateRLCTestCase(RandomParameterGenerator& gen) {
+std::map<std::string, double> generateRLCTestCase(RandomParameterGenerator& gen)
+{
     std::map<std::string, double> params;
     params["R"] = gen.generateLogNormal(100, 1.0);
-    params["L"] = gen.generateLogNormal(1e-3, 1.0);   // 1mH typical
+    params["L"] = gen.generateLogNormal(1e-3, 1.0); // 1mH typical
     params["C"] = gen.generateLogNormal(1e-6, 1.0);
     params["Vin"] = gen.generateUniform(0.1, 10.0);
     params["freq"] = gen.generateLogNormal(1e3, 2.0);
     return params;
 }
 
-std::map<std::string, double> generateOpAmpTestCase(RandomParameterGenerator& gen) {
+std::map<std::string, double> generateOpAmpTestCase(RandomParameterGenerator& gen)
+{
     std::map<std::string, double> params;
     params["R1"] = gen.generateLogNormal(1e3, 1.0);
     params["Rf"] = gen.generateLogNormal(10e3, 1.0);
@@ -487,7 +512,8 @@ std::map<std::string, double> generateOpAmpTestCase(RandomParameterGenerator& ge
     return params;
 }
 
-std::map<std::string, double> generateFilterTestCase(RandomParameterGenerator& gen, const std::string& type) {
+std::map<std::string, double> generateFilterTestCase(RandomParameterGenerator& gen, const std::string& type)
+{
     std::map<std::string, double> params;
     params["R"] = gen.generateLogNormal(1e3, 1.0);
     params["C"] = gen.generateLogNormal(1e-6, 1.0);
@@ -497,7 +523,8 @@ std::map<std::string, double> generateFilterTestCase(RandomParameterGenerator& g
     return params;
 }
 
-std::map<std::string, double> generateAmplifierTestCase(RandomParameterGenerator& gen, const std::string& type) {
+std::map<std::string, double> generateAmplifierTestCase(RandomParameterGenerator& gen, const std::string& type)
+{
     std::map<std::string, double> params;
     params["R1"] = gen.generateLogNormal(1e3, 1.0);
     params["R2"] = gen.generateLogNormal(10e3, 1.0);

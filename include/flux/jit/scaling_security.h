@@ -19,17 +19,17 @@
 #ifndef FLUX_SCALING_SECURITY_H
 #define FLUX_SCALING_SECURITY_H
 
-#include <string>
-#include <vector>
+#include <atomic>
+#include <chrono>
+#include <condition_variable>
+#include <functional>
+#include <future>
 #include <map>
 #include <memory>
 #include <mutex>
-#include <atomic>
+#include <string>
 #include <thread>
-#include <future>
-#include <chrono>
-#include <functional>
-#include <condition_variable>
+#include <vector>
 
 #include "flux/jit/flux_jit.h"
 #include "flux/jit/jit_manager.h"
@@ -46,18 +46,20 @@ namespace Flux {
 // ============================================================================
 
 // Hot-reload state machine
-enum class HotReloadState {
-    IDLE,           // No reload in progress
-    PREPARING,      // Compiling new version
-    READY,          // New version ready to swap
-    SWAPPING,       // Currently swapping implementations
-    SWAPPED,        // Swap complete, old version still active
-    CLEANUP,        // Cleaning up old version
-    FAILED          // Reload failed
+enum class HotReloadState
+{
+    IDLE,      // No reload in progress
+    PREPARING, // Compiling new version
+    READY,     // New version ready to swap
+    SWAPPING,  // Currently swapping implementations
+    SWAPPED,   // Swap complete, old version still active
+    CLEANUP,   // Cleaning up old version
+    FAILED     // Reload failed
 };
 
 // Hot-reload transaction
-struct HotReloadTransaction {
+struct HotReloadTransaction
+{
     std::string component_name;
     std::string old_source;
     std::string new_source;
@@ -70,7 +72,8 @@ struct HotReloadTransaction {
 };
 
 // Safe hot-reload manager
-class HotReloadManager {
+class HotReloadManager
+{
 public:
     static HotReloadManager& instance();
 
@@ -79,8 +82,7 @@ public:
     void finalize();
 
     // Hot-reload operations
-    bool prepareReload(const std::string& component_name, const std::string& new_source,
-                      std::string* error = nullptr);
+    bool prepareReload(const std::string& component_name, const std::string& new_source, std::string* error = nullptr);
     bool executeReload(std::string* error = nullptr);
     bool abortReload(std::string* error = nullptr);
     bool commitReload(std::string* error = nullptr);
@@ -89,7 +91,7 @@ public:
     // Status
     HotReloadState getState(const std::string& component_name) const;
     bool isReloadInProgress() const;
-    double getReloadProgress() const;  // 0.0 to 1.0
+    double getReloadProgress() const; // 0.0 to 1.0
 
     // Configuration
     void setMaxReloadTimeMs(int timeout_ms) { m_max_reload_time_ms = timeout_ms; }
@@ -101,7 +103,7 @@ private:
 
     std::map<std::string, HotReloadTransaction> m_transactions;
     mutable std::mutex m_mutex;
-    int m_max_reload_time_ms = 5000;  // 5 second default timeout
+    int m_max_reload_time_ms = 5000; // 5 second default timeout
 };
 
 // ============================================================================
@@ -109,14 +111,14 @@ private:
 // ============================================================================
 
 // Timeout exception
-struct TimeoutException : public std::exception {
-    const char* what() const noexcept override {
-        return "JIT evaluation timed out";
-    }
+struct TimeoutException : public std::exception
+{
+    const char* what() const noexcept override { return "JIT evaluation timed out"; }
 };
 
 // Timeout protector for JIT evaluation
-class TimeoutProtector {
+class TimeoutProtector
+{
 public:
     static TimeoutProtector& instance();
 
@@ -125,31 +127,29 @@ public:
     void finalize();
 
     // Execute with timeout
-    template<typename Func>
-    auto executeWithTimeout(Func&& func, int timeout_ms, const std::string& context = "")
-        -> decltype(func()) {
-        
+    template <typename Func>
+    auto executeWithTimeout(Func&& func, int timeout_ms, const std::string& context = "") -> decltype(func())
+    {
+
         std::promise<decltype(func())> promise;
         auto future = promise.get_future();
 
-        std::thread exec_thread([this, &promise, func = std::forward<Func>(func), 
-                                 context, timeout_ms]() {
+        std::thread exec_thread([this, &promise, func = std::forward<Func>(func), context, timeout_ms]() {
             // Register thread for timeout monitoring
             registerThread(std::this_thread::get_id(), timeout_ms, context);
-            
+
             try {
                 auto result = func();
                 promise.set_value(std::move(result));
             } catch (...) {
                 promise.set_exception(std::current_exception());
             }
-            
+
             unregisterThread(std::this_thread::get_id());
         });
 
         // Wait with timeout
-        if (future.wait_for(std::chrono::milliseconds(timeout_ms)) == 
-            std::future_status::timeout) {
+        if (future.wait_for(std::chrono::milliseconds(timeout_ms)) == std::future_status::timeout) {
             // Timeout occurred
             m_timeout_triggered.store(true);
             throw TimeoutException();
@@ -168,7 +168,8 @@ public:
     int getDefaultTimeoutMs() const { return m_default_timeout_ms; }
 
     // Statistics
-    struct TimeoutStats {
+    struct TimeoutStats
+    {
         int total_evaluations = 0;
         int timeouts = 0;
         double avg_eval_time_ms = 0.0;
@@ -179,7 +180,8 @@ public:
     void resetStatistics();
 
 private:
-    struct ThreadInfo {
+    struct ThreadInfo
+    {
         std::thread::id id;
         int timeout_ms;
         std::string context;
@@ -192,7 +194,7 @@ private:
     std::map<std::thread::id, ThreadInfo> m_active_threads;
     mutable std::mutex m_mutex;
     std::atomic<bool> m_timeout_triggered{false};
-    int m_default_timeout_ms = 1000;  // 1 second default
+    int m_default_timeout_ms = 1000; // 1 second default
     TimeoutStats m_stats;
 };
 
@@ -201,7 +203,8 @@ private:
 // ============================================================================
 
 // Parallel execution context
-struct ParallelExecutionContext {
+struct ParallelExecutionContext
+{
     int thread_id;
     int total_threads;
     std::atomic<bool>* cancel_flag;
@@ -209,19 +212,20 @@ struct ParallelExecutionContext {
 };
 
 // Multi-core JIT manager
-class MultiCoreJIT {
+class MultiCoreJIT
+{
 public:
     static MultiCoreJIT& instance();
 
     // Initialize/finalize
-    void initialize(int num_threads = 0);  // 0 = auto-detect
+    void initialize(int num_threads = 0); // 0 = auto-detect
     void finalize();
     int getNumThreads() const { return m_num_threads; }
 
     // Parallel execution
-    template<typename Func>
-    std::vector<decltype(Func()(ParallelExecutionContext{}))>
-    executeParallel(Func&& func, int num_tasks) {
+    template <typename Func>
+    std::vector<decltype(Func()(ParallelExecutionContext{}))> executeParallel(Func&& func, int num_tasks)
+    {
         using ResultType = decltype(func(ParallelExecutionContext{}));
         std::vector<ResultType> results(num_tasks);
         std::atomic<int> task_counter{0};
@@ -229,12 +233,7 @@ public:
         std::mutex output_mutex;
 
         auto worker = [&, func = std::forward<Func>(func)](int thread_id) {
-            ParallelExecutionContext ctx{
-                thread_id,
-                m_num_threads,
-                &cancel_flag,
-                &output_mutex
-            };
+            ParallelExecutionContext ctx{thread_id, m_num_threads, &cancel_flag, &output_mutex};
 
             while (true) {
                 int task_id = task_counter.fetch_add(1);
@@ -266,14 +265,14 @@ public:
     }
 
     // Parallel component evaluation
-    bool evaluateComponentsParallel(const std::vector<std::string>& component_names,
-                                   double time, double dt,
-                                   std::vector<std::vector<double>>& outputs);
+    bool evaluateComponentsParallel(const std::vector<std::string>& component_names, double time, double dt,
+                                    std::vector<std::vector<double>>& outputs);
 
     // Parallel parameter sweep
-    template<typename SweepFunc>
-    std::vector<typename std::result_of<SweepFunc(double)>::type>
-    parallelSweep(const std::vector<double>& param_values, SweepFunc&& func) {
+    template <typename SweepFunc>
+    std::vector<typename std::result_of<SweepFunc(double)>::type> parallelSweep(const std::vector<double>& param_values,
+                                                                                SweepFunc&& func)
+    {
         using ResultType = typename std::result_of<SweepFunc(double)>::type;
         std::vector<ResultType> results(param_values.size());
         std::atomic<int> task_counter{0};
@@ -282,18 +281,19 @@ public:
             [&param_values, &results, &func, &task_counter](ParallelExecutionContext& ctx) {
                 while (true) {
                     int idx = task_counter.fetch_add(1);
-                    if (idx >= param_values.size()) break;
+                    if (idx >= param_values.size())
+                        break;
                     results[idx] = func(param_values[idx]);
                 }
             },
-            param_values.size()
-        );
-        
+            param_values.size());
+
         return results;
     }
 
     // Statistics
-    struct ParallelStats {
+    struct ParallelStats
+    {
         int total_tasks = 0;
         double total_time_s = 0.0;
         double speedup = 1.0;
@@ -317,12 +317,13 @@ private:
 #ifdef HAVE_EIGEN
 
 // Sparse matrix wrapper for large netlist post-processing
-class SparseMatrixWrapper {
+class SparseMatrixWrapper
+{
 public:
     // Constructors
     SparseMatrixWrapper();
     SparseMatrixWrapper(int rows, int cols);
-    
+
     // Initialize
     void resize(int rows, int cols);
     void reserve(int non_zeros);
@@ -336,11 +337,10 @@ public:
     SparseMatrixWrapper transpose() const;
     SparseMatrixWrapper multiply(const SparseMatrixWrapper& other) const;
     std::vector<double> multiply(const std::vector<double>& vec) const;
-    
+
     // Solvers
-    std::vector<double> solve(const std::vector<double>& rhs, 
-                             const std::string& solver = "SparseLU") const;
-    
+    std::vector<double> solve(const std::vector<double>& rhs, const std::string& solver = "SparseLU") const;
+
     // Properties
     int rows() const;
     int cols() const;
@@ -361,12 +361,12 @@ private:
 };
 
 // Sparse matrix operations
-class SparseMatrixOps {
+class SparseMatrixOps
+{
 public:
     // Create common matrix types
     static SparseMatrixWrapper createDiagonal(const std::vector<double>& diag);
-    static SparseMatrixWrapper createTridiagonal(const std::vector<double>& lower,
-                                                 const std::vector<double>& diag,
+    static SparseMatrixWrapper createTridiagonal(const std::vector<double>& lower, const std::vector<double>& diag,
                                                  const std::vector<double>& upper);
     static SparseMatrixWrapper createLaplacian1D(int n, double h);
     static SparseMatrixWrapper createLaplacian2D(int nx, int ny, double hx, double hy);
@@ -385,7 +385,8 @@ public:
 // ============================================================================
 
 // JIT sandbox configuration
-struct SandboxConfig {
+struct SandboxConfig
+{
     bool allow_file_io = false;
     bool allow_network = false;
     bool allow_system_calls = false;
@@ -397,7 +398,8 @@ struct SandboxConfig {
 };
 
 // JIT sandbox manager
-class JITSandbox {
+class JITSandbox
+{
 public:
     static JITSandbox& instance();
 
@@ -406,9 +408,7 @@ public:
     void finalize();
 
     // Execute code in sandbox
-    bool executeSandboxed(const std::string& source_code, 
-                         std::string* output = nullptr,
-                         std::string* error = nullptr);
+    bool executeSandboxed(const std::string& source_code, std::string* output = nullptr, std::string* error = nullptr);
 
     // Validation
     bool validateSource(const std::string& source_code, std::string* error = nullptr) const;

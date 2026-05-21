@@ -14,13 +14,13 @@
 #ifndef FLUX_MIXED_SIGNAL_RUNTIME_H
 #define FLUX_MIXED_SIGNAL_RUNTIME_H
 
-#include <string>
-#include <vector>
+#include <cmath>
 #include <map>
 #include <memory>
-#include <cmath>
 #include <random>
 #include <stdexcept>
+#include <string>
+#include <vector>
 
 /* ========================================================================
  * Section 7.2: Mixed-Signal & Modeling Extensions - Runtime
@@ -31,7 +31,8 @@
 // ============================================================================
 
 // Previous value tracking for edge detection
-struct EventState {
+struct EventState
+{
     double PrevValue = 0.0;
     double EventTime = 0.0;
     bool Initialized = false;
@@ -51,22 +52,23 @@ extern "C" double flux_timer_get();
 // ============================================================================
 
 // FSM object (opaque handle)
-struct FSMObject {
+struct FSMObject
+{
     int CurrentState;
-    std::string OutputFn;  // "moore" or "mealy"
+    std::string OutputFn; // "moore" or "mealy"
 
-    struct Transition {
+    struct Transition
+    {
         int CurrentState;
         int NextState;
-        double (*Condition)(void*);  // Guard function
-        double (*Output)(void*);     // Output function
+        double (*Condition)(void*); // Guard function
+        double (*Output)(void*);    // Output function
     };
     std::vector<Transition> Transitions;
 };
 
 extern "C" void* flux_fsm_create(int initial_state, double output_fn);
-extern "C" void flux_fsm_add_transition(void* fsm, int cur, int next,
-                                         double (*cond)(void*), double (*out)(void*));
+extern "C" void flux_fsm_add_transition(void* fsm, int cur, int next, double (*cond)(void*), double (*out)(void*));
 
 // Edge detection: returns 1.0 on edge, 0.0 otherwise
 extern "C" double flux_edge_detect(double value, int edge_type);
@@ -92,9 +94,13 @@ extern "C" double flux_thermal_noise(double resistance, double temperature);
 // ============================================================================
 
 // Piecewise interpolation context
-struct PiecewiseContext {
-    std::string Interpolation;  // "linear", "cubic", "spline", "step"
-    struct Point { double X, Y; };
+struct PiecewiseContext
+{
+    std::string Interpolation; // "linear", "cubic", "spline", "step"
+    struct Point
+    {
+        double X, Y;
+    };
     std::vector<Point> Points;
 };
 
@@ -103,7 +109,8 @@ extern "C" void flux_piecewise_add_point(void* pw, double x, double y);
 extern "C" double flux_piecewise_eval(void* pw, double x);
 
 // Table lookup
-struct TableObject {
+struct TableObject
+{
     std::map<double, double> Entries;
     double DefaultValue = 0.0;
     bool HasDefault = false;

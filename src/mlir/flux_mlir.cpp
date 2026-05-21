@@ -19,9 +19,9 @@
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/Tensor/IR/Tensor.h>
+#include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/BuiltinTypes.h>
-#include <mlir/IR/Builders.h>
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/MLIRContext.h>
 
@@ -35,12 +35,14 @@ namespace Flux::MLIR {
 
 namespace {
 
-struct ParsedProgram {
+struct ParsedProgram
+{
     std::vector<std::unique_ptr<PrototypeAST>> externs;
     std::vector<std::unique_ptr<FunctionAST>> functions;
 };
 
-std::optional<ParsedProgram> parseProgram(const std::string& code, std::string& error) {
+std::optional<ParsedProgram> parseProgram(const std::string& code, std::string& error)
+{
     Parser parser(code);
     ParsedProgram program;
 
@@ -96,14 +98,16 @@ std::optional<ParsedProgram> parseProgram(const std::string& code, std::string& 
     return program;
 }
 
-class ModuleLowering {
+class ModuleLowering
+{
 public:
     explicit ModuleLowering(mlir::MLIRContext& context)
-        : m_builder(&context),
-          m_loc(m_builder.getUnknownLoc()),
-          m_module(mlir::ModuleOp::create(m_loc)) {}
+        : m_builder(&context), m_loc(m_builder.getUnknownLoc()), m_module(mlir::ModuleOp::create(m_loc))
+    {
+    }
 
-    EmitResult lower(const ParsedProgram& program) {
+    EmitResult lower(const ParsedProgram& program)
+    {
         declareBuiltins();
 
         for (const auto& proto : program.externs) {
@@ -133,45 +137,48 @@ public:
     }
 
 private:
-    EmitResult failureResult() const {
+    EmitResult failureResult() const
+    {
         EmitResult result;
         result.error = m_error.empty() ? "MLIR lowering failed" : m_error;
         return result;
     }
 
-    void setError(const std::string& error) {
+    void setError(const std::string& error)
+    {
         if (m_error.empty())
             m_error = error;
     }
 
-    bool isScalarFloatType(mlir::Type type) const {
-        return mlir::isa<mlir::FloatType>(type);
-    }
+    bool isScalarFloatType(mlir::Type type) const { return mlir::isa<mlir::FloatType>(type); }
 
-    bool isFloatTensorType(mlir::Type type) const {
+    bool isFloatTensorType(mlir::Type type) const
+    {
         auto shaped = mlir::dyn_cast<mlir::ShapedType>(type);
         return shaped && mlir::isa<mlir::FloatType>(shaped.getElementType());
     }
 
-    mlir::Type lowerType(const FluxType& type) {
+    mlir::Type lowerType(const FluxType& type)
+    {
         switch (type.Kind) {
-            case TypeKind::Float:
-                return m_builder.getF32Type();
-            case TypeKind::Int:
-                return m_builder.getI32Type();
-            case TypeKind::Void:
-                return mlir::Type();
-            case TypeKind::Vector:
-                return mlir::UnrankedTensorType::get(m_builder.getF64Type());
-            case TypeKind::Matrix:
-                return mlir::UnrankedTensorType::get(m_builder.getF64Type());
-            case TypeKind::Double:
-            default:
-                return m_builder.getF64Type();
+        case TypeKind::Float:
+            return m_builder.getF32Type();
+        case TypeKind::Int:
+            return m_builder.getI32Type();
+        case TypeKind::Void:
+            return mlir::Type();
+        case TypeKind::Vector:
+            return mlir::UnrankedTensorType::get(m_builder.getF64Type());
+        case TypeKind::Matrix:
+            return mlir::UnrankedTensorType::get(m_builder.getF64Type());
+        case TypeKind::Double:
+        default:
+            return m_builder.getF64Type();
         }
     }
 
-    bool declarePrototype(const PrototypeAST& proto) {
+    bool declarePrototype(const PrototypeAST& proto)
+    {
         if (m_module.lookupSymbol<mlir::func::FuncOp>(proto.getName()))
             return true;
 
@@ -196,7 +203,8 @@ private:
         return true;
     }
 
-    void declareBuiltins() {
+    void declareBuiltins()
+    {
         auto declareBuiltin = [&](const std::string& name, int arity) {
             if (m_module.lookupSymbol<mlir::func::FuncOp>(name))
                 return;
@@ -226,7 +234,8 @@ private:
         declareBuiltin("e", 0);
     }
 
-    mlir::Value lookupValue(const std::string& name) const {
+    mlir::Value lookupValue(const std::string& name) const
+    {
         for (auto it = m_scopes.rbegin(); it != m_scopes.rend(); ++it) {
             auto found = it->find(name);
             if (found != it->end())
@@ -235,20 +244,18 @@ private:
         return {};
     }
 
-    void pushScope() {
-        m_scopes.emplace_back();
-    }
+    void pushScope() { m_scopes.emplace_back(); }
 
-    void popScope() {
-        m_scopes.pop_back();
-    }
+    void popScope() { m_scopes.pop_back(); }
 
-    void bindValue(const std::string& name, mlir::Value value) {
+    void bindValue(const std::string& name, mlir::Value value)
+    {
         if (!m_scopes.empty())
             m_scopes.back()[name] = value;
     }
 
-    mlir::Value castValue(mlir::Value value, mlir::Type targetType) {
+    mlir::Value castValue(mlir::Value value, mlir::Type targetType)
+    {
         if (!value || !targetType)
             return {};
         if (value.getType() == targetType)
@@ -266,12 +273,13 @@ private:
         return {};
     }
 
-    mlir::Value lowerNumericConstant(double value) {
-        return m_builder.create<mlir::arith::ConstantFloatOp>(
-            m_loc, llvm::APFloat(value), m_builder.getF64Type());
+    mlir::Value lowerNumericConstant(double value)
+    {
+        return m_builder.create<mlir::arith::ConstantFloatOp>(m_loc, llvm::APFloat(value), m_builder.getF64Type());
     }
 
-    mlir::Value lowerExpr(const ExprAST* expr) {
+    mlir::Value lowerExpr(const ExprAST* expr)
+    {
         if (!expr)
             return {};
 
@@ -291,16 +299,16 @@ private:
                 return {};
 
             switch (unary->getOp()) {
-                case '+':
-                    return operand;
-                case '-':
-                    if (isScalarFloatType(operand.getType()) || isFloatTensorType(operand.getType()))
-                        return m_builder.create<mlir::arith::NegFOp>(m_loc, operand);
-                    setError("unsupported unary '-' operand in MLIR lowering");
-                    return {};
-                default:
-                    setError("unsupported unary operator in MLIR lowering");
-                    return {};
+            case '+':
+                return operand;
+            case '-':
+                if (isScalarFloatType(operand.getType()) || isFloatTensorType(operand.getType()))
+                    return m_builder.create<mlir::arith::NegFOp>(m_loc, operand);
+                setError("unsupported unary '-' operand in MLIR lowering");
+                return {};
+            default:
+                setError("unsupported unary operator in MLIR lowering");
+                return {};
             }
         }
 
@@ -319,40 +327,52 @@ private:
             }
 
             switch (binary->getOp()) {
-                case '+':
-                    return m_builder.create<mlir::arith::AddFOp>(m_loc, lhs, rhs);
-                case '-':
-                    return m_builder.create<mlir::arith::SubFOp>(m_loc, lhs, rhs);
-                case '*':
-                    return m_builder.create<mlir::arith::MulFOp>(m_loc, lhs, rhs);
-                case '/':
-                    return m_builder.create<mlir::arith::DivFOp>(m_loc, lhs, rhs);
-                case static_cast<int>(TokenType::tok_power): {
-                    auto callee = m_module.lookupSymbol<mlir::func::FuncOp>("pow");
-                    auto call = m_builder.create<mlir::func::CallOp>(m_loc, callee, mlir::ValueRange{lhs, rhs});
-                    return call.getNumResults() == 1 ? call.getResult(0) : mlir::Value();
-                }
+            case '+':
+                return m_builder.create<mlir::arith::AddFOp>(m_loc, lhs, rhs);
+            case '-':
+                return m_builder.create<mlir::arith::SubFOp>(m_loc, lhs, rhs);
+            case '*':
+                return m_builder.create<mlir::arith::MulFOp>(m_loc, lhs, rhs);
+            case '/':
+                return m_builder.create<mlir::arith::DivFOp>(m_loc, lhs, rhs);
+            case static_cast<int>(TokenType::tok_power): {
+                auto callee = m_module.lookupSymbol<mlir::func::FuncOp>("pow");
+                auto call = m_builder.create<mlir::func::CallOp>(m_loc, callee, mlir::ValueRange{lhs, rhs});
+                return call.getNumResults() == 1 ? call.getResult(0) : mlir::Value();
+            }
+            case '<':
+            case '>':
+            case static_cast<int>(TokenType::tok_less_equal):
+            case static_cast<int>(TokenType::tok_greater_equal):
+            case static_cast<int>(TokenType::tok_equal):
+            case static_cast<int>(TokenType::tok_not_equal): {
+                mlir::arith::CmpFPredicate predicate;
+                switch (binary->getOp()) {
                 case '<':
+                    predicate = mlir::arith::CmpFPredicate::OLT;
+                    break;
                 case '>':
+                    predicate = mlir::arith::CmpFPredicate::OGT;
+                    break;
                 case static_cast<int>(TokenType::tok_less_equal):
+                    predicate = mlir::arith::CmpFPredicate::OLE;
+                    break;
                 case static_cast<int>(TokenType::tok_greater_equal):
+                    predicate = mlir::arith::CmpFPredicate::OGE;
+                    break;
                 case static_cast<int>(TokenType::tok_equal):
-                case static_cast<int>(TokenType::tok_not_equal): {
-                    mlir::arith::CmpFPredicate predicate;
-                    switch (binary->getOp()) {
-                        case '<': predicate = mlir::arith::CmpFPredicate::OLT; break;
-                        case '>': predicate = mlir::arith::CmpFPredicate::OGT; break;
-                        case static_cast<int>(TokenType::tok_less_equal): predicate = mlir::arith::CmpFPredicate::OLE; break;
-                        case static_cast<int>(TokenType::tok_greater_equal): predicate = mlir::arith::CmpFPredicate::OGE; break;
-                        case static_cast<int>(TokenType::tok_equal): predicate = mlir::arith::CmpFPredicate::OEQ; break;
-                        default: predicate = mlir::arith::CmpFPredicate::ONE; break;
-                    }
-                    auto cmp = m_builder.create<mlir::arith::CmpFOp>(m_loc, predicate, lhs, rhs);
-                    return m_builder.create<mlir::arith::UIToFPOp>(m_loc, m_builder.getF64Type(), cmp.getResult());
-                }
+                    predicate = mlir::arith::CmpFPredicate::OEQ;
+                    break;
                 default:
-                    setError("unsupported binary operator in MLIR lowering");
-                    return {};
+                    predicate = mlir::arith::CmpFPredicate::ONE;
+                    break;
+                }
+                auto cmp = m_builder.create<mlir::arith::CmpFOp>(m_loc, predicate, lhs, rhs);
+                return m_builder.create<mlir::arith::UIToFPOp>(m_loc, m_builder.getF64Type(), cmp.getResult());
+            }
+            default:
+                setError("unsupported binary operator in MLIR lowering");
+                return {};
             }
         }
 
@@ -425,8 +445,7 @@ private:
                 elements.push_back(value);
             }
 
-            auto type = mlir::RankedTensorType::get(
-                {static_cast<int64_t>(elements.size())}, m_builder.getF64Type());
+            auto type = mlir::RankedTensorType::get({static_cast<int64_t>(elements.size())}, m_builder.getF64Type());
             return m_builder.create<mlir::tensor::FromElementsOp>(m_loc, type, elements);
         }
 
@@ -444,8 +463,8 @@ private:
                 }
             }
 
-            auto type = mlir::RankedTensorType::get(
-                {matrix->getNumRows(), matrix->getNumCols()}, m_builder.getF64Type());
+            auto type =
+                mlir::RankedTensorType::get({matrix->getNumRows(), matrix->getNumCols()}, m_builder.getF64Type());
             return m_builder.create<mlir::tensor::FromElementsOp>(m_loc, type, elements);
         }
 
@@ -464,7 +483,8 @@ private:
         return {};
     }
 
-    bool lowerFunction(const FunctionAST& functionAst) {
+    bool lowerFunction(const FunctionAST& functionAst)
+    {
         auto proto = functionAst.getProto();
         auto function = m_module.lookupSymbol<mlir::func::FuncOp>(proto->getName());
         if (!function) {
@@ -517,11 +537,13 @@ private:
 
 } // namespace
 
-bool isAvailable() {
+bool isAvailable()
+{
     return true;
 }
 
-EmitResult emitModule(const std::string& code) {
+EmitResult emitModule(const std::string& code)
+{
     std::string parseError;
     auto program = parseProgram(code, parseError);
     if (!program) {

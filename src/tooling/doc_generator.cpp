@@ -17,13 +17,13 @@
 // ============================================================================
 
 #include "flux/tooling/doc_generator.h"
+#include <algorithm>
+#include <chrono>
+#include <ctime>
+#include <fstream>
+#include <iomanip>
 #include <iostream>
 #include <sstream>
-#include <algorithm>
-#include <fstream>
-#include <chrono>
-#include <iomanip>
-#include <ctime>
 
 namespace Flux {
 
@@ -31,16 +31,19 @@ namespace Flux {
 // DocGenerator Singleton
 // ============================================================================
 
-DocGenerator& DocGenerator::instance() {
+DocGenerator& DocGenerator::instance()
+{
     static DocGenerator instance;
     return instance;
 }
 
-void DocGenerator::initialize() {
+void DocGenerator::initialize()
+{
     std::cout << "[DocGenerator] Initialized" << std::endl;
 }
 
-void DocGenerator::finalize() {
+void DocGenerator::finalize()
+{
     std::cout << "[DocGenerator] Finalized" << std::endl;
 }
 
@@ -48,130 +51,142 @@ void DocGenerator::finalize() {
 // Source File Parsing
 // ============================================================================
 
-DocOutput DocGenerator::parseSourceFile(const std::string& source_code, const std::string& filename) {
+DocOutput DocGenerator::parseSourceFile(const std::string& source_code, const std::string& filename)
+{
     DocOutput doc;
     doc.title = "FluxScript API Documentation";
     doc.version = "1.0";
-    
+
     auto now = std::chrono::system_clock::now();
     auto time_t = std::chrono::system_clock::to_time_t(now);
     std::stringstream ss;
     ss << std::put_time(std::localtime(&time_t), "%Y-%m-%d %H:%M:%S");
     doc.generated_date = ss.str();
-    
+
     doc.items = extractDocItems(source_code, filename);
-    
+
     std::cout << "[DocGenerator] Parsed " << doc.items.size() << " items from " << filename << std::endl;
     return doc;
 }
 
-DocOutput DocGenerator::parseSourceFiles(
-    const std::vector<std::pair<std::string, std::string>>& files
-) {
+DocOutput DocGenerator::parseSourceFiles(const std::vector<std::pair<std::string, std::string>>& files)
+{
     DocOutput doc;
     doc.title = "FluxScript API Documentation";
     doc.version = "1.0";
-    
+
     auto now = std::chrono::system_clock::now();
     auto time_t = std::chrono::system_clock::to_time_t(now);
     std::stringstream ss;
     ss << std::put_time(std::localtime(&time_t), "%Y-%m-%d %H:%M:%S");
     doc.generated_date = ss.str();
-    
+
     for (const auto& [source, filename] : files) {
         auto items = extractDocItems(source, filename);
         doc.items.insert(doc.items.end(), items.begin(), items.end());
     }
-    
-    std::cout << "[DocGenerator] Parsed " << doc.items.size() << " items from " << files.size() << " files" << std::endl;
+
+    std::cout << "[DocGenerator] Parsed " << doc.items.size() << " items from " << files.size() << " files"
+              << std::endl;
     return doc;
 }
 
-std::vector<DocItem> DocGenerator::extractDocItems(const std::string& source, const std::string& filename) {
+std::vector<DocItem> DocGenerator::extractDocItems(const std::string& source, const std::string& filename)
+{
     std::vector<DocItem> items;
     size_t pos = 0;
-    
+
     while (pos < source.length()) {
         // Look for doc comments: /// or /**
         if (source.substr(pos, 3) == "///") {
             int line = 1;
             for (size_t i = 0; i < pos && i < source.length(); i++) {
-                if (source[i] == '\n') line++;
+                if (source[i] == '\n')
+                    line++;
             }
-            
+
             std::string comment = extractDocComment(source, pos, line);
             DocItem item = parseDocComment(comment, filename, line);
-            
+
             // Extract the identifier after the comment
             size_t id_pos = pos + comment.length();
-            while (id_pos < source.length() && (source[id_pos] == ' ' || source[id_pos] == '\t' || source[id_pos] == '\n')) {
+            while (id_pos < source.length() &&
+                   (source[id_pos] == ' ' || source[id_pos] == '\t' || source[id_pos] == '\n')) {
                 id_pos++;
             }
-            
+
             if (id_pos < source.length()) {
                 item.name = extractIdentifier(source, id_pos);
                 item.kind = determineKind(source, id_pos);
-                item.signatures.push_back( extractSignature(source, id_pos));
+                item.signatures.push_back(extractSignature(source, id_pos));
                 items.push_back(item);
             }
         } else if (source.substr(pos, 2) == "/**") {
             int line = 1;
             for (size_t i = 0; i < pos && i < source.length(); i++) {
-                if (source[i] == '\n') line++;
+                if (source[i] == '\n')
+                    line++;
             }
-            
+
             size_t end = source.find("*/", pos + 2);
-            if (end == std::string::npos) break;
-            
+            if (end == std::string::npos)
+                break;
+
             std::string comment = source.substr(pos, end - pos + 2);
             DocItem item = parseDocComment(comment, filename, line);
-            
+
             // Extract identifier after comment
             size_t id_pos = end + 2;
-            while (id_pos < source.length() && (source[id_pos] == ' ' || source[id_pos] == '\t' || source[id_pos] == '\n')) {
+            while (id_pos < source.length() &&
+                   (source[id_pos] == ' ' || source[id_pos] == '\t' || source[id_pos] == '\n')) {
                 id_pos++;
             }
-            
+
             if (id_pos < source.length()) {
                 item.name = extractIdentifier(source, id_pos);
                 item.kind = determineKind(source, id_pos);
-                item.signatures.push_back( extractSignature(source, id_pos));
+                item.signatures.push_back(extractSignature(source, id_pos));
                 items.push_back(item);
             }
         }
-        
+
         pos++;
     }
-    
+
     return items;
 }
 
-std::string DocGenerator::extractDocComment(const std::string& source, size_t pos, int& line) {
+std::string DocGenerator::extractDocComment(const std::string& source, size_t pos, int& line)
+{
     if (source.substr(pos, 3) == "///") {
         // Single-line doc comment
         size_t end = source.find('\n', pos);
-        if (end == std::string::npos) end = source.length();
+        if (end == std::string::npos)
+            end = source.length();
         return source.substr(pos, end - pos);
     } else if (source.substr(pos, 2) == "/**") {
         // Multi-line doc comment
         size_t end = source.find("*/", pos + 2);
-        if (end == std::string::npos) end = source.length();
-        else end += 2;
+        if (end == std::string::npos)
+            end = source.length();
+        else
+            end += 2;
         return source.substr(pos, end - pos);
     }
     return "";
 }
 
-DocItem DocGenerator::parseDocComment(const std::string& comment, const std::string& filename, int line) {
+DocItem DocGenerator::parseDocComment(const std::string& comment, const std::string& filename, int line)
+{
     DocItem item;
     item.file = filename;
     item.line_number = line;
-    
+
     std::istringstream stream(comment);
     std::string line_str;
     bool in_description = false;
     std::string description;
-    
+
     while (std::getline(stream, line_str)) {
         // Strip leading comment markers
         size_t start = 0;
@@ -180,25 +195,27 @@ DocItem DocGenerator::parseDocComment(const std::string& comment, const std::str
         } else if (line_str.find("/**") == 0) {
             start = 3;
         } else if (line_str.find("*/") != std::string::npos) {
-            continue;  // End marker
+            continue; // End marker
         }
-        
+
         // Strip leading whitespace and *
-        while (start < line_str.length() && (line_str[start] == ' ' || line_str[start] == '*' || line_str[start] == '\t')) {
+        while (start < line_str.length() &&
+               (line_str[start] == ' ' || line_str[start] == '*' || line_str[start] == '\t')) {
             start++;
         }
-        
+
         std::string content = line_str.substr(start);
-        
-        if (content.empty()) continue;
-        
+
+        if (content.empty())
+            continue;
+
         // Check for tags (@param, @return, @example, @see, etc.)
         if (content[0] == '@') {
             in_description = false;
             size_t space_pos = content.find(' ');
             std::string tag_name = content.substr(0, space_pos);
             std::string tag_value = (space_pos != std::string::npos) ? content.substr(space_pos + 1) : "";
-            
+
             if (tag_name == "@param" || tag_name == "@parameter") {
                 size_t param_space = tag_value.find(' ');
                 if (param_space != std::string::npos) {
@@ -226,16 +243,18 @@ DocItem DocGenerator::parseDocComment(const std::string& comment, const std::str
             item.summary = content;
             in_description = true;
         } else if (in_description) {
-            if (!description.empty()) description += "\n";
+            if (!description.empty())
+                description += "\n";
             description += content;
         }
     }
-    
+
     item.description = description;
     return item;
 }
 
-std::string DocGenerator::extractIdentifier(const std::string& source, size_t pos) {
+std::string DocGenerator::extractIdentifier(const std::string& source, size_t pos)
+{
     std::string ident;
     while (pos < source.length() && (isalnum(source[pos]) || source[pos] == '_')) {
         ident += source[pos];
@@ -244,39 +263,46 @@ std::string DocGenerator::extractIdentifier(const std::string& source, size_t po
     return ident;
 }
 
-std::string DocGenerator::extractSignature(const std::string& source, size_t pos) {
+std::string DocGenerator::extractSignature(const std::string& source, size_t pos)
+{
     // Skip identifier
     while (pos < source.length() && (isalnum(source[pos]) || source[pos] == '_')) {
         pos++;
     }
-    
+
     // Skip whitespace
     while (pos < source.length() && (source[pos] == ' ' || source[pos] == '\t')) {
         pos++;
     }
-    
+
     // Extract until { or ; or newline
     std::string sig;
     int paren_depth = 0;
     while (pos < source.length()) {
         char c = source[pos];
-        if (c == '{' && paren_depth == 0) break;
-        if (c == ';' && paren_depth == 0) break;
-        if (c == '\n' && paren_depth == 0) break;
-        if (c == '(') paren_depth++;
-        if (c == ')') paren_depth--;
+        if (c == '{' && paren_depth == 0)
+            break;
+        if (c == ';' && paren_depth == 0)
+            break;
+        if (c == '\n' && paren_depth == 0)
+            break;
+        if (c == '(')
+            paren_depth++;
+        if (c == ')')
+            paren_depth--;
         sig += c;
         pos++;
     }
-    
+
     return sig;
 }
 
-std::string DocGenerator::determineKind(const std::string& source, size_t pos) {
+std::string DocGenerator::determineKind(const std::string& source, size_t pos)
+{
     // Look backwards for keyword
     size_t search_start = (pos > 100) ? pos - 100 : 0;
     std::string context = source.substr(search_start, pos - search_start);
-    
+
     if (context.find("def ") != std::string::npos || context.find("fn ") != std::string::npos) {
         return "function";
     } else if (context.find("let ") != std::string::npos || context.find("var ") != std::string::npos) {
@@ -286,7 +312,7 @@ std::string DocGenerator::determineKind(const std::string& source, size_t pos) {
     } else if (context.find("module ") != std::string::npos || context.find("import ") != std::string::npos) {
         return "module";
     }
-    
+
     return "unknown";
 }
 
@@ -294,14 +320,15 @@ std::string DocGenerator::determineKind(const std::string& source, size_t pos) {
 // Documentation Generation
 // ============================================================================
 
-std::string DocGenerator::generateMarkdown(const DocOutput& doc) {
+std::string DocGenerator::generateMarkdown(const DocOutput& doc)
+{
     std::ostringstream oss;
-    
+
     oss << "# " << doc.title << "\n\n";
     oss << "**Version:** " << doc.version << "  \n";
     oss << "**Generated:** " << doc.generated_date << "\n\n";
     oss << "---\n\n";
-    
+
     // Table of contents
     oss << "## Table of Contents\n\n";
     for (const auto& item : doc.items) {
@@ -312,24 +339,24 @@ std::string DocGenerator::generateMarkdown(const DocOutput& doc) {
         oss << "\n";
     }
     oss << "\n---\n\n";
-    
+
     // Items
     for (const auto& item : doc.items) {
         oss << "## " << item.name << "\n\n";
-        
+
         if (!item.summary.empty()) {
             oss << "**Summary:** " << item.summary << "\n\n";
         }
-        
+
         if (!item.signatures.empty()) {
             oss << "### Signature\n\n";
             oss << "```fluxscript\n" << item.signatures[0] << "\n```\n\n";
         }
-        
+
         if (!item.description.empty()) {
             oss << "### Description\n\n" << item.description << "\n\n";
         }
-        
+
         if (!item.parameters.empty()) {
             oss << "### Parameters\n\n";
             for (const auto& [param, desc] : item.parameters) {
@@ -337,18 +364,18 @@ std::string DocGenerator::generateMarkdown(const DocOutput& doc) {
             }
             oss << "\n";
         }
-        
+
         if (!item.return_type.empty()) {
             oss << "### Returns\n\n" << item.return_type << "\n\n";
         }
-        
+
         if (!item.examples.empty()) {
             oss << "### Examples\n\n";
             for (const auto& example : item.examples) {
                 oss << "```fluxscript\n" << example << "\n```\n\n";
             }
         }
-        
+
         if (!item.tags.empty()) {
             oss << "### See Also\n\n";
             for (const auto& tag : item.tags) {
@@ -358,16 +385,17 @@ std::string DocGenerator::generateMarkdown(const DocOutput& doc) {
             }
             oss << "\n";
         }
-        
+
         oss << "---\n\n";
     }
-    
+
     return oss.str();
 }
 
-std::string DocGenerator::generateHTML(const DocOutput& doc) {
+std::string DocGenerator::generateHTML(const DocOutput& doc)
+{
     std::ostringstream oss;
-    
+
     oss << "<!DOCTYPE html>\n<html>\n<head>\n";
     oss << "<title>" << doc.title << "</title>\n";
     oss << "<style>\n";
@@ -381,12 +409,12 @@ std::string DocGenerator::generateHTML(const DocOutput& doc) {
     oss << ".summary { color: #666; font-style: italic; }\n";
     oss << ".parameters { margin: 10px 0; }\n";
     oss << "</style>\n</head>\n<body>\n";
-    
+
     oss << "<h1>" << doc.title << "</h1>\n";
     oss << "<p><strong>Version:</strong> " << doc.version << "<br>\n";
     oss << "<strong>Generated:</strong> " << doc.generated_date << "</p>\n";
     oss << "<hr>\n";
-    
+
     // TOC
     oss << "<h2>Table of Contents</h2>\n<ul>\n";
     for (const auto& item : doc.items) {
@@ -397,26 +425,26 @@ std::string DocGenerator::generateHTML(const DocOutput& doc) {
         oss << "</li>\n";
     }
     oss << "</ul>\n<hr>\n";
-    
+
     // Items
     for (const auto& item : doc.items) {
         oss << "<div class=\"item\">\n";
         oss << "<h2 id=\"" << item.name << "\">" << item.name << "</h2>\n";
-        
+
         if (!item.summary.empty()) {
             oss << "<p class=\"summary\">" << item.summary << "</p>\n";
         }
-        
+
         if (!item.signatures.empty()) {
             oss << "<h3>Signature</h3>\n";
             oss << "<pre>" << item.signatures[0] << "</pre>\n";
         }
-        
+
         if (!item.description.empty()) {
             oss << "<h3>Description</h3>\n";
             oss << "<p>" << item.description << "</p>\n";
         }
-        
+
         if (!item.parameters.empty()) {
             oss << "<h3>Parameters</h3>\n<div class=\"parameters\">\n<ul>\n";
             for (const auto& [param, desc] : item.parameters) {
@@ -424,34 +452,35 @@ std::string DocGenerator::generateHTML(const DocOutput& doc) {
             }
             oss << "</ul>\n</div>\n";
         }
-        
+
         if (!item.return_type.empty()) {
             oss << "<h3>Returns</h3>\n<p>" << item.return_type << "</p>\n";
         }
-        
+
         if (!item.examples.empty()) {
             oss << "<h3>Examples</h3>\n";
             for (const auto& example : item.examples) {
                 oss << "<pre>" << example << "</pre>\n";
             }
         }
-        
+
         oss << "</div>\n<hr>\n";
     }
-    
+
     oss << "</body>\n</html>";
     return oss.str();
 }
 
-std::string DocGenerator::generateJSON(const DocOutput& doc) {
+std::string DocGenerator::generateJSON(const DocOutput& doc)
+{
     std::ostringstream oss;
-    
+
     oss << "{\n";
     oss << "  \"title\": \"" << doc.title << "\",\n";
     oss << "  \"version\": \"" << doc.version << "\",\n";
     oss << "  \"generated_date\": \"" << doc.generated_date << "\",\n";
     oss << "  \"items\": [\n";
-    
+
     for (size_t i = 0; i < doc.items.size(); i++) {
         const auto& item = doc.items[i];
         oss << "    {\n";
@@ -462,73 +491,76 @@ std::string DocGenerator::generateJSON(const DocOutput& doc) {
         oss << "      \"file\": \"" << item.file << "\",\n";
         oss << "      \"line\": " << item.line_number << "\n";
         oss << "    }";
-        if (i < doc.items.size() - 1) oss << ",";
+        if (i < doc.items.size() - 1)
+            oss << ",";
         oss << "\n";
     }
-    
+
     oss << "  ]\n";
     oss << "}\n";
-    
+
     return oss.str();
 }
 
-std::string DocGenerator::generateText(const DocOutput& doc) {
+std::string DocGenerator::generateText(const DocOutput& doc)
+{
     std::ostringstream oss;
-    
+
     oss << doc.title << "\n";
     oss << std::string(doc.title.length(), '=') << "\n\n";
     oss << "Version: " << doc.version << "  |  Generated: " << doc.generated_date << "\n\n";
-    
+
     for (const auto& item : doc.items) {
         oss << item.name << " (" << item.kind << ")\n";
         oss << std::string(item.name.length(), '-') << "\n";
-        
+
         if (!item.summary.empty()) {
             oss << "  " << item.summary << "\n";
         }
-        
+
         if (!item.signatures.empty()) {
             oss << "  Signature: " << item.signatures[0] << "\n";
         }
-        
+
         if (!item.parameters.empty()) {
             oss << "  Parameters:\n";
             for (const auto& [param, desc] : item.parameters) {
                 oss << "    " << param << ": " << desc << "\n";
             }
         }
-        
+
         oss << "\n";
     }
-    
+
     return oss.str();
 }
 
-std::string DocGenerator::generateRST(const DocOutput& doc) {
+std::string DocGenerator::generateRST(const DocOutput& doc)
+{
     std::ostringstream oss;
-    
+
     oss << doc.title << "\n";
     oss << std::string(doc.title.length(), '=') << "\n\n";
     oss << "**Version:** " << doc.version << "\n\n";
     oss << "**Generated:** " << doc.generated_date << "\n\n";
-    
+
     for (const auto& item : doc.items) {
         oss << item.name << "\n";
         oss << std::string(item.name.length(), '-') << "\n\n";
-        
+
         if (!item.summary.empty()) {
             oss << item.summary << "\n\n";
         }
-        
+
         if (!item.signatures.empty()) {
             oss << ".. code-block:: fluxscript\n\n";
             oss << "   " << item.signatures[0][0] << "\n\n";
         }
-        
+
         if (!item.description.empty()) {
             oss << item.description << "\n\n";
         }
-        
+
         if (!item.parameters.empty()) {
             oss << ":Parameters:\n";
             for (const auto& [param, desc] : item.parameters) {
@@ -537,37 +569,50 @@ std::string DocGenerator::generateRST(const DocOutput& doc) {
             oss << "\n";
         }
     }
-    
+
     return oss.str();
 }
 
-std::string DocGenerator::generateFunctionDocs(const DocItem& item, const std::string& format) {
+std::string DocGenerator::generateFunctionDocs(const DocItem& item, const std::string& format)
+{
     DocOutput doc;
     doc.title = "FluxScript Function Documentation";
     doc.items.push_back(item);
-    
-    if (format == "markdown") return generateMarkdown(doc);
-    if (format == "html") return generateHTML(doc);
-    if (format == "json") return generateJSON(doc);
-    if (format == "text") return generateText(doc);
-    if (format == "rst") return generateRST(doc);
-    
+
+    if (format == "markdown")
+        return generateMarkdown(doc);
+    if (format == "html")
+        return generateHTML(doc);
+    if (format == "json")
+        return generateJSON(doc);
+    if (format == "text")
+        return generateText(doc);
+    if (format == "rst")
+        return generateRST(doc);
+
     return generateMarkdown(doc);
 }
 
-std::string DocGenerator::generateModuleDocs(const DocOutput& doc, const std::string& format) {
-    if (format == "markdown") return generateMarkdown(doc);
-    if (format == "html") return generateHTML(doc);
-    if (format == "json") return generateJSON(doc);
-    if (format == "text") return generateText(doc);
-    if (format == "rst") return generateRST(doc);
-    
+std::string DocGenerator::generateModuleDocs(const DocOutput& doc, const std::string& format)
+{
+    if (format == "markdown")
+        return generateMarkdown(doc);
+    if (format == "html")
+        return generateHTML(doc);
+    if (format == "json")
+        return generateJSON(doc);
+    if (format == "text")
+        return generateText(doc);
+    if (format == "rst")
+        return generateRST(doc);
+
     return generateMarkdown(doc);
 }
 
-bool DocGenerator::exportToFile(const DocOutput& doc, const std::string& filename, const std::string& format) {
+bool DocGenerator::exportToFile(const DocOutput& doc, const std::string& filename, const std::string& format)
+{
     std::string content;
-    
+
     if (format == "md" || format == "markdown") {
         content = generateMarkdown(doc);
     } else if (format == "html") {
@@ -582,16 +627,16 @@ bool DocGenerator::exportToFile(const DocOutput& doc, const std::string& filenam
         std::cerr << "[DocGenerator] Unsupported format: " << format << std::endl;
         return false;
     }
-    
+
     std::ofstream file(filename);
     if (!file.is_open()) {
         std::cerr << "[DocGenerator] Failed to open file: " << filename << std::endl;
         return false;
     }
-    
+
     file << content;
     file.close();
-    
+
     std::cout << "[DocGenerator] Exported documentation to: " << filename << std::endl;
     return true;
 }
@@ -600,29 +645,30 @@ bool DocGenerator::exportToFile(const DocOutput& doc, const std::string& filenam
 // Search and Utilities
 // ============================================================================
 
-std::vector<DocItem> DocGenerator::searchDocs(const DocOutput& doc, const std::string& query) {
+std::vector<DocItem> DocGenerator::searchDocs(const DocOutput& doc, const std::string& query)
+{
     std::vector<DocItem> results;
-    
+
     std::string query_lower = query;
     std::transform(query_lower.begin(), query_lower.end(), query_lower.begin(), ::tolower);
-    
+
     for (const auto& item : doc.items) {
         std::string name_lower = item.name;
         std::transform(name_lower.begin(), name_lower.end(), name_lower.begin(), ::tolower);
-        
+
         std::string summary_lower = item.summary;
         std::transform(summary_lower.begin(), summary_lower.end(), summary_lower.begin(), ::tolower);
-        
-        if (name_lower.find(query_lower) != std::string::npos ||
-            summary_lower.find(query_lower) != std::string::npos) {
+
+        if (name_lower.find(query_lower) != std::string::npos || summary_lower.find(query_lower) != std::string::npos) {
             results.push_back(item);
         }
     }
-    
+
     return results;
 }
 
-DocItem* DocGenerator::findItem(DocOutput& doc, const std::string& name) {
+DocItem* DocGenerator::findItem(DocOutput& doc, const std::string& name)
+{
     for (auto& item : doc.items) {
         if (item.name == name) {
             return &item;

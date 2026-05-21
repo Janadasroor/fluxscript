@@ -14,14 +14,15 @@
 // flux-stability: Analyze circuit stability (Phase Margin, Gain Margin, Bandwidth)
 // Usage: flux-stability <circuit.flux>
 
-#include <iostream>
-#include <fstream>
-#include <string>
 #include "flux/analysis/advanced_analysis.h"
+#include <fstream>
+#include <iostream>
+#include <string>
 
 using namespace Flux::AdvancedAnalysis;
 
-int main(int argc, char** argv) {
+int main(int argc, char** argv)
+{
     std::cout << "\n";
     std::cout << "\n";
     std::cout << "          FluxScript Stability Analyzer                  \n";

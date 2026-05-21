@@ -16,10 +16,10 @@
 // ============================================================================
 
 #include "flux/package/dependency_resolver.h"
-#include <iostream>
-#include <sstream>
 #include <algorithm>
+#include <iostream>
 #include <queue>
+#include <sstream>
 
 namespace Flux {
 
@@ -27,10 +27,12 @@ namespace Flux {
 // SemanticVersion
 // ============================================================================
 
-SemanticVersion SemanticVersion::parse(const std::string& str) {
+SemanticVersion SemanticVersion::parse(const std::string& str)
+{
     SemanticVersion v;
     int n = sscanf(str.c_str(), "%d.%d.%d", &v.major, &v.minor, &v.patch);
-    if (n < 1) return v;
+    if (n < 1)
+        return v;
 
     // Check for prerelease
     size_t dash = str.find('-');
@@ -41,28 +43,38 @@ SemanticVersion SemanticVersion::parse(const std::string& str) {
     return v;
 }
 
-std::string SemanticVersion::str() const {
+std::string SemanticVersion::str() const
+{
     std::ostringstream oss;
     oss << major << "." << minor << "." << patch;
-    if (!prerelease.empty()) oss << "-" << prerelease;
+    if (!prerelease.empty())
+        oss << "-" << prerelease;
     return oss.str();
 }
 
-bool SemanticVersion::operator<(const SemanticVersion& other) const {
-    if (major != other.major) return major < other.major;
-    if (minor != other.minor) return minor < other.minor;
-    if (patch != other.patch) return patch < other.patch;
+bool SemanticVersion::operator<(const SemanticVersion& other) const
+{
+    if (major != other.major)
+        return major < other.major;
+    if (minor != other.minor)
+        return minor < other.minor;
+    if (patch != other.patch)
+        return patch < other.patch;
     // Prerelease < release
-    if (prerelease.empty() && !other.prerelease.empty()) return false;
-    if (!prerelease.empty() && other.prerelease.empty()) return true;
+    if (prerelease.empty() && !other.prerelease.empty())
+        return false;
+    if (!prerelease.empty() && other.prerelease.empty())
+        return true;
     return prerelease < other.prerelease;
 }
 
-bool SemanticVersion::operator==(const SemanticVersion& other) const {
+bool SemanticVersion::operator==(const SemanticVersion& other) const
+{
     return major == other.major && minor == other.minor && patch == other.patch && prerelease == other.prerelease;
 }
 
-bool SemanticVersion::operator>=(const SemanticVersion& other) const {
+bool SemanticVersion::operator>=(const SemanticVersion& other) const
+{
     return !(*this < other);
 }
 
@@ -70,7 +82,8 @@ bool SemanticVersion::operator>=(const SemanticVersion& other) const {
 // VersionConstraint
 // ============================================================================
 
-VersionConstraint VersionConstraint::parse(const std::string& str) {
+VersionConstraint VersionConstraint::parse(const std::string& str)
+{
     VersionConstraint vc;
     vc.raw = str;
 
@@ -134,18 +147,29 @@ VersionConstraint VersionConstraint::parse(const std::string& str) {
     return vc;
 }
 
-bool VersionConstraint::satisfies(const SemanticVersion& version) const {
+bool VersionConstraint::satisfies(const SemanticVersion& version) const
+{
     switch (type) {
-        case Any: return true;
-        case Exact: return version == min_version;
-        case GTE: return version >= min_version;
-        case LTE: return version < min_version || version == min_version;
-        case GT: return min_version < version;
-        case LT: return version < min_version;
-        case Caret: return version >= min_version && version < max_version;
-        case Tilde: return version >= min_version && version < max_version;
-        case Range: return version >= min_version && version < max_version;
-        default: return true;
+    case Any:
+        return true;
+    case Exact:
+        return version == min_version;
+    case GTE:
+        return version >= min_version;
+    case LTE:
+        return version < min_version || version == min_version;
+    case GT:
+        return min_version < version;
+    case LT:
+        return version < min_version;
+    case Caret:
+        return version >= min_version && version < max_version;
+    case Tilde:
+        return version >= min_version && version < max_version;
+    case Range:
+        return version >= min_version && version < max_version;
+    default:
+        return true;
     }
 }
 
@@ -153,26 +177,31 @@ bool VersionConstraint::satisfies(const SemanticVersion& version) const {
 // DependencyResolver Singleton
 // ============================================================================
 
-DependencyResolver& DependencyResolver::instance() {
+DependencyResolver& DependencyResolver::instance()
+{
     static DependencyResolver instance;
     return instance;
 }
 
-void DependencyResolver::registerPackage(const PackageMetadata& pkg) {
+void DependencyResolver::registerPackage(const PackageMetadata& pkg)
+{
     m_registry[pkg.name][pkg.version] = pkg;
 }
 
-void DependencyResolver::registerPackages(const std::vector<PackageMetadata>& pkgs) {
+void DependencyResolver::registerPackages(const std::vector<PackageMetadata>& pkgs)
+{
     for (const auto& pkg : pkgs) {
         registerPackage(pkg);
     }
 }
 
-void DependencyResolver::clearRegistry() {
+void DependencyResolver::clearRegistry()
+{
     m_registry.clear();
 }
 
-ResolutionResult DependencyResolver::resolve(const std::vector<Dependency>& root_deps) {
+ResolutionResult DependencyResolver::resolve(const std::vector<Dependency>& root_deps)
+{
     ResolutionResult result;
     result.success = true;
 
@@ -200,14 +229,10 @@ ResolutionResult DependencyResolver::resolve(const std::vector<Dependency>& root
     return result;
 }
 
-bool DependencyResolver::resolveRecursive(
-    const std::string& pkg_name,
-    const VersionConstraint& constraint,
-    int depth,
-    std::map<std::string, SemanticVersion>& resolved,
-    std::vector<std::string>& path,
-    std::string& error
-) {
+bool DependencyResolver::resolveRecursive(const std::string& pkg_name, const VersionConstraint& constraint, int depth,
+                                          std::map<std::string, SemanticVersion>& resolved,
+                                          std::vector<std::string>& path, std::string& error)
+{
     if (depth > 100) {
         error = "Dependency resolution exceeded maximum depth (cycle detected?)";
         return false;
@@ -223,8 +248,8 @@ bool DependencyResolver::resolveRecursive(
             path.pop_back();
             return true;
         } else {
-            error = "Version conflict for " + pkg_name + ": " +
-                    "need " + constraint.raw + ", but " + it->second.str() + " already resolved";
+            error = "Version conflict for " + pkg_name + ": " + "need " + constraint.raw + ", but " + it->second.str() +
+                    " already resolved";
             return false;
         }
     }
@@ -269,11 +294,9 @@ bool DependencyResolver::resolveRecursive(
     return true;
 }
 
-SemanticVersion DependencyResolver::selectBestVersion(
-    const std::string& name,
-    const VersionConstraint& constraint,
-    const std::map<std::string, SemanticVersion>& already_resolved
-) {
+SemanticVersion DependencyResolver::selectBestVersion(const std::string& name, const VersionConstraint& constraint,
+                                                      const std::map<std::string, SemanticVersion>& already_resolved)
+{
     auto pkg_it = m_registry.find(name);
     if (pkg_it == m_registry.end()) {
         return {};
@@ -309,16 +332,16 @@ SemanticVersion DependencyResolver::selectBestVersion(
     return found ? best : SemanticVersion{};
 }
 
-bool DependencyResolver::hasConflict(
-    const std::string& name,
-    const SemanticVersion& version,
-    const std::map<std::string, SemanticVersion>& resolved
-) const {
+bool DependencyResolver::hasConflict(const std::string& name, const SemanticVersion& version,
+                                     const std::map<std::string, SemanticVersion>& resolved) const
+{
     auto pkg_it = m_registry.find(name);
-    if (pkg_it == m_registry.end()) return true;
+    if (pkg_it == m_registry.end())
+        return true;
 
     auto ver_it = pkg_it->second.find(version);
-    if (ver_it == pkg_it->second.end()) return true;
+    if (ver_it == pkg_it->second.end())
+        return true;
 
     for (const auto& dep : ver_it->second.dependencies) {
         auto resolved_it = resolved.find(dep.name);
@@ -332,15 +355,18 @@ bool DependencyResolver::hasConflict(
     return false;
 }
 
-SemanticVersion DependencyResolver::findBestVersion(const std::string& name, const VersionConstraint& constraint) {
+SemanticVersion DependencyResolver::findBestVersion(const std::string& name, const VersionConstraint& constraint)
+{
     std::map<std::string, SemanticVersion> empty;
     return selectBestVersion(name, constraint, empty);
 }
 
-std::vector<SemanticVersion> DependencyResolver::getAvailableVersions(const std::string& name) const {
+std::vector<SemanticVersion> DependencyResolver::getAvailableVersions(const std::string& name) const
+{
     std::vector<SemanticVersion> versions;
     auto it = m_registry.find(name);
-    if (it == m_registry.end()) return versions;
+    if (it == m_registry.end())
+        return versions;
 
     for (const auto& [ver, meta] : it->second) {
         versions.push_back(ver);
@@ -350,13 +376,15 @@ std::vector<SemanticVersion> DependencyResolver::getAvailableVersions(const std:
     return versions;
 }
 
-std::vector<DepGraphNode> DependencyResolver::buildDependencyTree(const std::vector<Dependency>& root_deps) {
+std::vector<DepGraphNode> DependencyResolver::buildDependencyTree(const std::vector<Dependency>& root_deps)
+{
     std::vector<DepGraphNode> tree;
     std::set<std::string> visited;
 
     for (const auto& dep : root_deps) {
         auto version = findBestVersion(dep.name, dep.constraint);
-        if (version.major == 0 && version.minor == 0 && version.patch == 0) continue;
+        if (version.major == 0 && version.minor == 0 && version.patch == 0)
+            continue;
 
         auto nodes = buildTreeRecursive(dep.name, version, 0, visited);
         tree.insert(tree.end(), nodes.begin(), nodes.end());
@@ -365,16 +393,15 @@ std::vector<DepGraphNode> DependencyResolver::buildDependencyTree(const std::vec
     return tree;
 }
 
-std::vector<DepGraphNode> DependencyResolver::buildTreeRecursive(
-    const std::string& name,
-    const SemanticVersion& version,
-    int depth,
-    std::set<std::string>& visited
-) {
+std::vector<DepGraphNode> DependencyResolver::buildTreeRecursive(const std::string& name,
+                                                                 const SemanticVersion& version, int depth,
+                                                                 std::set<std::string>& visited)
+{
     std::vector<DepGraphNode> nodes;
     std::string key = name + "@" + version.str();
 
-    if (visited.count(key)) return nodes;
+    if (visited.count(key))
+        return nodes;
     visited.insert(key);
 
     DepGraphNode node;
@@ -401,17 +428,21 @@ std::vector<DepGraphNode> DependencyResolver::buildTreeRecursive(
     return nodes;
 }
 
-bool DependencyResolver::isSatisfiable(const std::string& name, const VersionConstraint& constraint) const {
+bool DependencyResolver::isSatisfiable(const std::string& name, const VersionConstraint& constraint) const
+{
     auto it = m_registry.find(name);
-    if (it == m_registry.end()) return false;
+    if (it == m_registry.end())
+        return false;
 
     for (const auto& [ver, meta] : it->second) {
-        if (constraint.satisfies(ver)) return true;
+        if (constraint.satisfies(ver))
+            return true;
     }
     return false;
 }
 
-int DependencyResolver::registrySize() const {
+int DependencyResolver::registrySize() const
+{
     return m_registry.size();
 }
 

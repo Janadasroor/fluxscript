@@ -14,24 +14,26 @@
 #ifndef FLUX_FFT_ENGINE_H
 #define FLUX_FFT_ENGINE_H
 
-#include <vector>
-#include <string>
 #include <complex>
+#include <string>
+#include <vector>
 
 namespace Flux {
 namespace FFT {
 
-// 
-//  FFT Result Structure                                 
-// 
+//
+//  FFT Result Structure
+//
 
-struct FFTPoint {
+struct FFTPoint
+{
     double frequency; // Hz
     double magnitude; // dB
     double phase;     // degrees
 };
 
-struct FFTReport {
+struct FFTReport
+{
     std::vector<FFTPoint> spectrum;
     double sampleRate;
     double fundamentalFreq;
@@ -44,11 +46,12 @@ struct FFTReport {
     std::string toASCIIPlot(int width = 80, int height = 20) const;
 };
 
-// 
-//  FFT Engine Class                                     
-// 
+//
+//  FFT Engine Class
+//
 
-class FFTEngine {
+class FFTEngine
+{
 public:
     FFTEngine();
     ~FFTEngine();

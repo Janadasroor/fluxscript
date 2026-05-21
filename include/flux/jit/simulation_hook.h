@@ -19,27 +19,29 @@
 #ifndef FLUX_SIMULATION_HOOK_H
 #define FLUX_SIMULATION_HOOK_H
 
-#include <string>
-#include <vector>
+#include <functional>
 #include <map>
 #include <memory>
 #include <mutex>
-#include <functional>
+#include <string>
+#include <vector>
 
 #include "flux/jit/jit_manager.h"
 
 namespace Flux {
 
 // Ngspice node data (zero-copy interface)
-struct NgspiceNodeData {
+struct NgspiceNodeData
+{
     std::string node_name;
-    double* voltage_ptr;      // Pointer to ngspice node voltage (zero-copy)
-    double* current_ptr;      // Pointer to ngspice branch current (zero-copy)
-    int node_index = -1;      // Index in ngspice vector for direct access
+    double* voltage_ptr; // Pointer to ngspice node voltage (zero-copy)
+    double* current_ptr; // Pointer to ngspice branch current (zero-copy)
+    int node_index = -1; // Index in ngspice vector for direct access
 };
 
 // Timestep callback data
-struct TimestepData {
+struct TimestepData
+{
     double current_time;
     double dt;
     int iteration;
@@ -47,7 +49,8 @@ struct TimestepData {
 };
 
 // Simulation hook interface
-class SimulationHook {
+class SimulationHook
+{
 public:
     virtual ~SimulationHook() = default;
 
@@ -65,7 +68,8 @@ public:
 };
 
 // Ngspice simulation hook implementation
-class NgspiceSimulationHook : public SimulationHook {
+class NgspiceSimulationHook : public SimulationHook
+{
 public:
     static NgspiceSimulationHook& instance();
 
@@ -90,18 +94,17 @@ public:
     bool isNodeBound(const std::string& node_name) const;
 
     // Component integration
-    bool integrateJITComponent(const std::string& component_name,
-                              const std::vector<std::string>& input_nodes,
-                              const std::vector<std::string>& output_nodes);
+    bool integrateJITComponent(const std::string& component_name, const std::vector<std::string>& input_nodes,
+                               const std::vector<std::string>& output_nodes);
 
     // Transient loop integration - called at each timestep by ngspice
     bool onTransientTimestep(const TimestepData& timestep_data);
-    
+
     // Direct ngspice vector access (for zero-copy operation)
     bool bindNgspiceVector(const std::string& node_name, int vector_index);
     double readFromVector(int vector_index);
     void writeToVector(int vector_index, double value);
-    
+
     // Get all bound node voltages as array (for bulk operations)
     std::vector<double> getAllInputVoltages() const;
     void setAllOutputVoltages(const std::vector<double>& voltages);
@@ -122,27 +125,29 @@ private:
     mutable std::mutex m_mutex;
     bool m_initialized = false;
     bool m_simulation_active = false;
-    
+
     // ngspice vector storage (for zero-copy access)
-    std::vector<double> m_ngspice_voltages;    // Cached node voltages
-    std::vector<double> m_ngspice_currents;    // Cached branch currents
-    
+    std::vector<double> m_ngspice_voltages; // Cached node voltages
+    std::vector<double> m_ngspice_currents; // Cached branch currents
+
     // Statistics
     int m_timestep_count = 0;
     double m_total_eval_time = 0.0;
 };
 
 // Behavioral source interface for ngspice
-struct BehavioralSource {
+struct BehavioralSource
+{
     std::string name;
-    std::string type;  // "B", "E", "F", "G", "H"
+    std::string type; // "B", "E", "F", "G", "H"
     std::vector<std::string> nodes;
-    std::string expression;  // FluxScript expression
-    void* jit_function = nullptr;  // Compiled JIT function
+    std::string expression;       // FluxScript expression
+    void* jit_function = nullptr; // Compiled JIT function
 };
 
 // Behavioral source manager
-class BehavioralSourceManager {
+class BehavioralSourceManager
+{
 public:
     static BehavioralSourceManager& instance();
 
@@ -157,8 +162,7 @@ public:
     bool compileAllSources(std::string* error = nullptr);
 
     // Evaluation (called by ngspice)
-    double evaluateSource(const std::string& name, double time, double dt,
-                         const double* node_voltages, int num_nodes);
+    double evaluateSource(const std::string& name, double time, double dt, const double* node_voltages, int num_nodes);
 
     // Netlist generation
     std::string generateNetlist() const;
@@ -173,7 +177,8 @@ private:
 };
 
 // Simulation controller
-class SimulationController {
+class SimulationController
+{
 public:
     static SimulationController& instance();
 

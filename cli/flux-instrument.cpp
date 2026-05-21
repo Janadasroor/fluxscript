@@ -14,13 +14,14 @@
 // flux-instrument: Test and control laboratory instruments via SCPI
 // Usage: flux-instrument <IP_ADDRESS> <COMMAND>
 
+#include "flux/instruments/instrument.h"
 #include <iostream>
 #include <string>
-#include "flux/instruments/instrument.h"
 
 using namespace Flux::Instruments;
 
-int main(int argc, char** argv) {
+int main(int argc, char** argv)
+{
     std::cout << "\n";
     std::cout << "\n";
     std::cout << "          FluxScript Instrument Controller               \n";
@@ -37,26 +38,29 @@ int main(int argc, char** argv) {
     // If no command, just test connectivity
     if (argc == 2) {
         Instrument inst;
-        if (!inst.connect(ip, 5025)) return 1;
+        if (!inst.connect(ip, 5025))
+            return 1;
         std::cout << "Connected to: " << inst.getID() << "\n";
         return 0;
     }
 
     // Handle commands
     std::string arg = argv[2];
-    
+
     // Raw SCPI command
     if (arg.find("--") == std::string::npos || arg.find("?") != std::string::npos) {
         Instrument inst;
-        if (!inst.connect(ip, 5025)) return 1;
+        if (!inst.connect(ip, 5025))
+            return 1;
         std::cout << "Response: " << inst.query(arg) << "\n";
-    } 
+    }
     // Power Supply Helper
     else if (arg == "--ps") {
         PowerSupply ps;
-        if (!ps.connect(ip, 5025)) return 1;
+        if (!ps.connect(ip, 5025))
+            return 1;
         std::cout << "Device: " << ps.getID() << "\n";
-        
+
         ps.setOutput(true);
 
         for (int i = 3; i < argc; ++i) {
@@ -70,6 +74,6 @@ int main(int argc, char** argv) {
             }
         }
     }
-    
+
     return 0;
 }

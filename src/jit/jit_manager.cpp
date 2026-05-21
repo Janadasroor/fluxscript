@@ -17,29 +17,31 @@
 // ============================================================================
 
 #include "flux/jit/jit_manager.h"
+#include "flux/compiler/compiler_instance.h"
 #include "flux/jit/flux_jit.h"
 #include "flux/runtime/flux_runtime.h"
-#include "flux/compiler/compiler_instance.h"
-#include <llvm/IR/Verifier.h>
-#include <llvm/IR/LLVMContext.h>
-#include <llvm/IR/Module.h>
-#include <llvm/IR/Function.h>
-#include <llvm/IR/BasicBlock.h>
-#include <llvm/IR/IRBuilder.h>
-#include <llvm/IR/Type.h>
-#include <llvm/IR/Constants.h>
-#include <iostream>
-#include <sstream>
 #include <algorithm>
 #include <cstring>
+#include <iostream>
+#include <llvm/IR/BasicBlock.h>
+#include <llvm/IR/Constants.h>
+#include <llvm/IR/Function.h>
+#include <llvm/IR/IRBuilder.h>
+#include <llvm/IR/LLVMContext.h>
+#include <llvm/IR/Module.h>
+#include <llvm/IR/Type.h>
+#include <llvm/IR/Verifier.h>
+#include <sstream>
 
 namespace Flux {
 
 namespace {
 
-double defaultComponentUpdate(double /*time*/, double /*dt*/, const double* inputs, double* outputs, void* statePtr) {
+double defaultComponentUpdate(double /*time*/, double /*dt*/, const double* inputs, double* outputs, void* statePtr)
+{
     auto* state = reinterpret_cast<ComponentState*>(statePtr);
-    if (!state) return 0.0;
+    if (!state)
+        return 0.0;
 
     if (inputs) {
         for (size_t i = 0; i < state->inputs.size(); ++i) {
@@ -56,9 +58,11 @@ double defaultComponentUpdate(double /*time*/, double /*dt*/, const double* inpu
     return state->outputs.empty() ? 0.0 : state->outputs.front();
 }
 
-void defaultComponentInit(void* statePtr) {
+void defaultComponentInit(void* statePtr)
+{
     auto* state = reinterpret_cast<ComponentState*>(statePtr);
-    if (!state) return;
+    if (!state)
+        return;
     std::fill(state->outputs.begin(), state->outputs.end(), 0.0);
     state->is_valid = true;
 }
@@ -69,7 +73,8 @@ void defaultComponentInit(void* statePtr) {
 // JITManager Singleton
 // ============================================================================
 
-JITManager& JITManager::instance() {
+JITManager& JITManager::instance()
+{
     static JITManager instance;
     return instance;
 }
@@ -78,7 +83,8 @@ JITManager& JITManager::instance() {
 // Initialization
 // ============================================================================
 
-void JITManager::initialize() {
+void JITManager::initialize()
+{
     std::lock_guard<std::mutex> lock(m_mutex);
     if (m_initialized) {
         return;
@@ -95,7 +101,8 @@ void JITManager::initialize() {
     std::cout << "[JITManager] Initialized successfully" << std::endl;
 }
 
-void JITManager::finalize() {
+void JITManager::finalize()
+{
     std::lock_guard<std::mutex> lock(m_mutex);
     m_components.clear();
     m_probe_data.clear();
@@ -111,17 +118,20 @@ void JITManager::finalize() {
 // Component Registration
 // ============================================================================
 
-bool JITManager::registerComponent(const std::string& name, const std::string& source_code,
-                                   int num_inputs, int num_outputs, std::string* error) {
+bool JITManager::registerComponent(const std::string& name, const std::string& source_code, int num_inputs,
+                                   int num_outputs, std::string* error)
+{
     std::lock_guard<std::mutex> lock(m_mutex);
 
     if (!m_initialized) {
-        if (error) *error = "JITManager not initialized";
+        if (error)
+            *error = "JITManager not initialized";
         return false;
     }
 
     if (m_components.count(name)) {
-        if (error) *error = "Component already exists: " + name;
+        if (error)
+            *error = "Component already exists: " + name;
         return false;
     }
 
@@ -138,13 +148,14 @@ bool JITManager::registerComponent(const std::string& name, const std::string& s
     m_components[name] = std::move(comp);
     m_stats.total_components++;
 
-    std::cout << "[JITManager] Registered component: " << name 
-              << " (inputs: " << num_inputs << ", outputs: " << num_outputs << ")" << std::endl;
+    std::cout << "[JITManager] Registered component: " << name << " (inputs: " << num_inputs
+              << ", outputs: " << num_outputs << ")" << std::endl;
 
     return true;
 }
 
-bool JITManager::unregisterComponent(const std::string& name) {
+bool JITManager::unregisterComponent(const std::string& name)
+{
     std::lock_guard<std::mutex> lock(m_mutex);
 
     auto it = m_components.find(name);
@@ -162,12 +173,14 @@ bool JITManager::unregisterComponent(const std::string& name) {
     return true;
 }
 
-bool JITManager::hasComponent(const std::string& name) const {
+bool JITManager::hasComponent(const std::string& name) const
+{
     std::lock_guard<std::mutex> lock(m_mutex);
     return m_components.count(name) > 0;
 }
 
-JITComponent* JITManager::getComponent(const std::string& name) {
+JITComponent* JITManager::getComponent(const std::string& name)
+{
     std::lock_guard<std::mutex> lock(m_mutex);
     auto it = m_components.find(name);
     if (it == m_components.end()) {
@@ -176,7 +189,8 @@ JITComponent* JITManager::getComponent(const std::string& name) {
     return &it->second;
 }
 
-const JITComponent* JITManager::getComponent(const std::string& name) const {
+const JITComponent* JITManager::getComponent(const std::string& name) const
+{
     std::lock_guard<std::mutex> lock(m_mutex);
     auto it = m_components.find(name);
     if (it == m_components.end()) {
@@ -185,7 +199,8 @@ const JITComponent* JITManager::getComponent(const std::string& name) const {
     return &it->second;
 }
 
-std::vector<std::string> JITManager::getComponentNames() const {
+std::vector<std::string> JITManager::getComponentNames() const
+{
     std::lock_guard<std::mutex> lock(m_mutex);
     std::vector<std::string> names;
     for (const auto& [name, comp] : m_components) {
@@ -198,25 +213,28 @@ std::vector<std::string> JITManager::getComponentNames() const {
 // Compilation
 // ============================================================================
 
-bool JITManager::compileComponent(const std::string& name, std::string* error) {
+bool JITManager::compileComponent(const std::string& name, std::string* error)
+{
     std::lock_guard<std::mutex> lock(m_mutex);
 
     auto it = m_components.find(name);
     if (it == m_components.end()) {
-        if (error) *error = "Component not found: " + name;
+        if (error)
+            *error = "Component not found: " + name;
         return false;
     }
 
     return compileSource(it->second.source_code, it->second, error);
 }
 
-bool JITManager::recompileComponent(const std::string& name, const std::string& new_source,
-                                    std::string* error) {
+bool JITManager::recompileComponent(const std::string& name, const std::string& new_source, std::string* error)
+{
     std::lock_guard<std::mutex> lock(m_mutex);
 
     auto it = m_components.find(name);
     if (it == m_components.end()) {
-        if (error) *error = "Component not found: " + name;
+        if (error)
+            *error = "Component not found: " + name;
         return false;
     }
 
@@ -224,18 +242,20 @@ bool JITManager::recompileComponent(const std::string& name, const std::string& 
     return compileSource(new_source, it->second, error);
 }
 
-bool JITManager::hotReloadComponent(const std::string& name, const std::string& new_source,
-                                    std::string* error) {
+bool JITManager::hotReloadComponent(const std::string& name, const std::string& new_source, std::string* error)
+{
     std::lock_guard<std::mutex> lock(m_mutex);
 
     auto it = m_components.find(name);
     if (it == m_components.end()) {
-        if (error) *error = "Component not found: " + name;
+        if (error)
+            *error = "Component not found: " + name;
         return false;
     }
 
     if (!it->second.is_hot_reloadable) {
-        if (error) *error = "Component is not hot-reloadable: " + name;
+        if (error)
+            *error = "Component is not hot-reloadable: " + name;
         return false;
     }
 
@@ -256,9 +276,11 @@ bool JITManager::hotReloadComponent(const std::string& name, const std::string& 
     return success;
 }
 
-bool JITManager::compileSource(const std::string& source, JITComponent& comp, std::string* error) {
+bool JITManager::compileSource(const std::string& source, JITComponent& comp, std::string* error)
+{
     if (source.empty()) {
-        if (error) *error = "Component source is empty";
+        if (error)
+            *error = "Component source is empty";
         comp.jit.reset();
         comp.update_func = nullptr;
         comp.init_func = nullptr;
@@ -274,7 +296,7 @@ bool JITManager::compileSource(const std::string& source, JITComponent& comp, st
         // Use the real FluxScript compiler pipeline
         Flux::CompilerOptions opts;
         opts.injectStdlib = true;
-        opts.optimizationLevel = Flux::OptimizationLevel::O0;  // O0 for debugging
+        opts.optimizationLevel = Flux::OptimizationLevel::O0; // O0 for debugging
         opts.inputName = comp.name;
         opts.moduleName = "component_" + comp.name;
 
@@ -286,7 +308,8 @@ bool JITManager::compileSource(const std::string& source, JITComponent& comp, st
         if (!artifacts || !artifacts->codegenContext || !artifacts->codegenContext->TheModule) {
             comp.state.is_valid = false;
             if (!error || error->empty()) {
-                if (error) *error = "Compilation produced no module";
+                if (error)
+                    *error = "Compilation produced no module";
             }
             return false;
         }
@@ -298,10 +321,8 @@ bool JITManager::compileSource(const std::string& source, JITComponent& comp, st
             std::cout << "  " << F.getName().str() << " (linkage: " << F.getLinkage() << ")" << std::endl;
         }
 
-        comp.jit->addModule(
-            std::move(artifacts->codegenContext->OwnedModule),
-            std::move(artifacts->codegenContext->OwnedContext)
-        );
+        comp.jit->addModule(std::move(artifacts->codegenContext->OwnedModule),
+                            std::move(artifacts->codegenContext->OwnedContext));
 
         // Register runtime functions (sin, cos, etc.) so the JIT can resolve them
         registerRuntimeFunctions(*comp.jit);
@@ -323,7 +344,8 @@ bool JITManager::compileSource(const std::string& source, JITComponent& comp, st
 
         // If no function was found, that's an error
         if (!comp.update_func) {
-            if (error) *error = "No function '" + func_name + "' defined in component source";
+            if (error)
+                *error = "No function '" + func_name + "' defined in component source";
             comp.state.is_valid = false;
             return false;
         }
@@ -335,24 +357,27 @@ bool JITManager::compileSource(const std::string& source, JITComponent& comp, st
 
         std::cout << "[JITManager] Compiled component: " << comp.name
                   << " (update: " << (comp.update_func ? "OK" : "FAIL")
-                  << ", eval: " << (comp.eval_func ? "OK" : "FAIL")
-                  << ")" << std::endl;
+                  << ", eval: " << (comp.eval_func ? "OK" : "FAIL") << ")" << std::endl;
         return true;
     } catch (const std::exception& e) {
-        if (error) *error = std::string("Compilation error: ") + e.what();
+        if (error)
+            *error = std::string("Compilation error: ") + e.what();
         comp.state.is_valid = false;
         return false;
     }
 }
 
-bool JITManager::validateComponent(const JITComponent& comp, std::string* error) const {
+bool JITManager::validateComponent(const JITComponent& comp, std::string* error) const
+{
     if (!comp.state.is_valid) {
-        if (error) *error = "Component not compiled: " + comp.name;
+        if (error)
+            *error = "Component not compiled: " + comp.name;
         return false;
     }
 
     if (!comp.update_func) {
-        if (error) *error = "Component missing update function: " + comp.name;
+        if (error)
+            *error = "Component missing update function: " + comp.name;
         return false;
     }
 
@@ -363,7 +388,8 @@ bool JITManager::validateComponent(const JITComponent& comp, std::string* error)
 // Simulation Control
 // ============================================================================
 
-bool JITManager::initializeSimulation() {
+bool JITManager::initializeSimulation()
+{
     std::lock_guard<std::mutex> lock(m_mutex);
 
     m_simulation_active = true;
@@ -383,12 +409,12 @@ bool JITManager::initializeSimulation() {
         comp.state.dt = 1e-12;
     }
 
-    std::cout << "[JITManager] Simulation initialized with " 
-              << m_components.size() << " components" << std::endl;
+    std::cout << "[JITManager] Simulation initialized with " << m_components.size() << " components" << std::endl;
     return true;
 }
 
-bool JITManager::stepSimulation(double time, double dt) {
+bool JITManager::stepSimulation(double time, double dt)
+{
     std::lock_guard<std::mutex> lock(m_mutex);
 
     if (!m_simulation_active) {
@@ -403,9 +429,7 @@ bool JITManager::stepSimulation(double time, double dt) {
         comp.state.dt = dt;
 
         // Evaluate component
-        if (!evaluateComponent(name, time, dt, 
-                              comp.state.inputs.data(), 
-                              comp.state.outputs.data())) {
+        if (!evaluateComponent(name, time, dt, comp.state.inputs.data(), comp.state.outputs.data())) {
             all_success = false;
             std::cerr << "[JITManager] Failed to evaluate component: " << name << std::endl;
         }
@@ -414,8 +438,9 @@ bool JITManager::stepSimulation(double time, double dt) {
     return all_success;
 }
 
-bool JITManager::evaluateComponent(const std::string& name, double time, double dt,
-                                   const double* inputs, double* outputs) {
+bool JITManager::evaluateComponent(const std::string& name, double time, double dt, const double* inputs,
+                                   double* outputs)
+{
     auto it = m_components.find(name);
     if (it == m_components.end()) {
         return false;
@@ -438,15 +463,16 @@ bool JITManager::evaluateComponent(const std::string& name, double time, double 
     typedef double (*UpdateFunc2SS)(double, double);
     auto update2ss = reinterpret_cast<UpdateFunc2SS>(comp.update_func);
     result = update2ss(time, inputs ? inputs[0] : 0.0);
-    if (outputs) outputs[0] = result;
+    if (outputs)
+        outputs[0] = result;
 
     auto end_time = std::chrono::steady_clock::now();
     double eval_time_us = std::chrono::duration<double, std::micro>(end_time - start_time).count();
 
     // Update statistics
     m_stats.total_evaluations++;
-    m_stats.avg_eval_time_us = (m_stats.avg_eval_time_us * (m_stats.total_evaluations - 1) +
-                                eval_time_us) / m_stats.total_evaluations;
+    m_stats.avg_eval_time_us =
+        (m_stats.avg_eval_time_us * (m_stats.total_evaluations - 1) + eval_time_us) / m_stats.total_evaluations;
 
     // Record probe data if enabled
     if (m_probe_data.count(name)) {
@@ -462,14 +488,13 @@ bool JITManager::evaluateComponent(const std::string& name, double time, double 
     return true;
 }
 
-bool JITManager::evaluateAllComponents(double time, double dt) {
+bool JITManager::evaluateAllComponents(double time, double dt)
+{
     std::lock_guard<std::mutex> lock(m_mutex);
     bool all_success = true;
 
     for (auto& [name, comp] : m_components) {
-        if (!evaluateComponent(name, time, dt,
-                              comp.state.inputs.data(),
-                              comp.state.outputs.data())) {
+        if (!evaluateComponent(name, time, dt, comp.state.inputs.data(), comp.state.outputs.data())) {
             all_success = false;
         }
     }
@@ -481,7 +506,8 @@ bool JITManager::evaluateAllComponents(double time, double dt) {
 // State Management
 // ============================================================================
 
-bool JITManager::setComponentState(const std::string& name, const ComponentState& state) {
+bool JITManager::setComponentState(const std::string& name, const ComponentState& state)
+{
     std::lock_guard<std::mutex> lock(m_mutex);
     auto it = m_components.find(name);
     if (it == m_components.end()) {
@@ -491,7 +517,8 @@ bool JITManager::setComponentState(const std::string& name, const ComponentState
     return true;
 }
 
-bool JITManager::getComponentState(const std::string& name, ComponentState& state) const {
+bool JITManager::getComponentState(const std::string& name, ComponentState& state) const
+{
     std::lock_guard<std::mutex> lock(m_mutex);
     auto it = m_components.find(name);
     if (it == m_components.end()) {
@@ -501,7 +528,8 @@ bool JITManager::getComponentState(const std::string& name, ComponentState& stat
     return true;
 }
 
-bool JITManager::resetComponentState(const std::string& name) {
+bool JITManager::resetComponentState(const std::string& name)
+{
     std::lock_guard<std::mutex> lock(m_mutex);
     auto it = m_components.find(name);
     if (it == m_components.end()) {
@@ -514,7 +542,8 @@ bool JITManager::resetComponentState(const std::string& name) {
     return true;
 }
 
-bool JITManager::resetAllStates() {
+bool JITManager::resetAllStates()
+{
     std::lock_guard<std::mutex> lock(m_mutex);
     for (auto& [name, comp] : m_components) {
         comp.state = ComponentState();
@@ -529,7 +558,8 @@ bool JITManager::resetAllStates() {
 // Zero-Copy Data Interface
 // ============================================================================
 
-bool JITManager::bindInputBuffer(const std::string& name, double* buffer, int size) {
+bool JITManager::bindInputBuffer(const std::string& name, double* buffer, int size)
+{
     std::lock_guard<std::mutex> lock(m_mutex);
     auto it = m_components.find(name);
     if (it == m_components.end()) {
@@ -540,7 +570,8 @@ bool JITManager::bindInputBuffer(const std::string& name, double* buffer, int si
     return true;
 }
 
-bool JITManager::bindOutputBuffer(const std::string& name, double* buffer, int size) {
+bool JITManager::bindOutputBuffer(const std::string& name, double* buffer, int size)
+{
     std::lock_guard<std::mutex> lock(m_mutex);
     auto it = m_components.find(name);
     if (it == m_components.end()) {
@@ -550,7 +581,8 @@ bool JITManager::bindOutputBuffer(const std::string& name, double* buffer, int s
     return true;
 }
 
-double* JITManager::getInputBuffer(const std::string& name) {
+double* JITManager::getInputBuffer(const std::string& name)
+{
     std::lock_guard<std::mutex> lock(m_mutex);
     auto it = m_input_buffers.find(name);
     if (it == m_input_buffers.end()) {
@@ -559,7 +591,8 @@ double* JITManager::getInputBuffer(const std::string& name) {
     return it->second;
 }
 
-double* JITManager::getOutputBuffer(const std::string& name) {
+double* JITManager::getOutputBuffer(const std::string& name)
+{
     std::lock_guard<std::mutex> lock(m_mutex);
     auto it = m_output_buffers.find(name);
     if (it == m_output_buffers.end()) {
@@ -572,8 +605,8 @@ double* JITManager::getOutputBuffer(const std::string& name) {
 // Signal Generation Support
 // ============================================================================
 
-bool JITManager::registerSignalGenerator(const std::string& name, const std::string& source_code,
-                                         std::string* error) {
+bool JITManager::registerSignalGenerator(const std::string& name, const std::string& source_code, std::string* error)
+{
     // Register as a component with 0 inputs and 1 output (signal generator)
     bool result = registerComponent(name, source_code, 0, 1, error);
     if (result) {
@@ -587,7 +620,8 @@ bool JITManager::registerSignalGenerator(const std::string& name, const std::str
     return result;
 }
 
-double JITManager::evaluateSignal(const std::string& name, double time) {
+double JITManager::evaluateSignal(const std::string& name, double time)
+{
     std::lock_guard<std::mutex> lock(m_mutex);
     auto it = m_components.find(name);
     if (it == m_components.end() || !it->second.eval_func) {
@@ -600,24 +634,26 @@ double JITManager::evaluateSignal(const std::string& name, double time) {
     return eval(time);
 }
 
-std::vector<double> JITManager::generateWaveform(const std::string& name,
-                                                 double t_start, double t_stop, double sample_rate,
-                                                 std::string* error) {
+std::vector<double> JITManager::generateWaveform(const std::string& name, double t_start, double t_stop,
+                                                 double sample_rate, std::string* error)
+{
     std::lock_guard<std::mutex> lock(m_mutex);
     auto it = m_components.find(name);
     if (it == m_components.end()) {
-        if (error) *error = "Component not found: " + name;
+        if (error)
+            *error = "Component not found: " + name;
         return {};
     }
 
     if (!it->second.eval_func) {
-        if (error) *error = "Component has no eval function: " + name;
+        if (error)
+            *error = "Component has no eval function: " + name;
         return {};
     }
 
     double dt = 1.0 / sample_rate;
     int num_points = static_cast<int>((t_stop - t_start) / dt) + 1;
-    
+
     std::vector<double> values;
     values.reserve(num_points);
 
@@ -636,13 +672,15 @@ std::vector<double> JITManager::generateWaveform(const std::string& name,
 // Probing
 // ============================================================================
 
-bool JITManager::enableProbe(const std::string& component_name, const std::string& signal_name) {
+bool JITManager::enableProbe(const std::string& component_name, const std::string& signal_name)
+{
     std::lock_guard<std::mutex> lock(m_mutex);
     m_probe_data[component_name][signal_name] = std::vector<double>();
     return true;
 }
 
-bool JITManager::disableProbe(const std::string& component_name, const std::string& signal_name) {
+bool JITManager::disableProbe(const std::string& component_name, const std::string& signal_name)
+{
     std::lock_guard<std::mutex> lock(m_mutex);
     auto it = m_probe_data.find(component_name);
     if (it == m_probe_data.end()) {
@@ -652,8 +690,8 @@ bool JITManager::disableProbe(const std::string& component_name, const std::stri
     return true;
 }
 
-std::vector<double> JITManager::getProbeData(const std::string& component_name,
-                                             const std::string& signal_name) const {
+std::vector<double> JITManager::getProbeData(const std::string& component_name, const std::string& signal_name) const
+{
     std::lock_guard<std::mutex> lock(m_mutex);
     auto it = m_probe_data.find(component_name);
     if (it == m_probe_data.end()) {
@@ -666,7 +704,8 @@ std::vector<double> JITManager::getProbeData(const std::string& component_name,
     return sit->second;
 }
 
-bool JITManager::clearProbeData(const std::string& component_name) {
+bool JITManager::clearProbeData(const std::string& component_name)
+{
     std::lock_guard<std::mutex> lock(m_mutex);
     m_probe_data.erase(component_name);
     return true;
@@ -676,18 +715,21 @@ bool JITManager::clearProbeData(const std::string& component_name) {
 // Statistics
 // ============================================================================
 
-SimulationStats JITManager::getStatistics() const {
+SimulationStats JITManager::getStatistics() const
+{
     std::lock_guard<std::mutex> lock(m_mutex);
     return m_stats;
 }
 
-double JITManager::getComponentEvalTime(const std::string& name) const {
+double JITManager::getComponentEvalTime(const std::string& name) const
+{
     std::lock_guard<std::mutex> lock(m_mutex);
     // Return average evaluation time for component
     return m_stats.avg_eval_time_us;
 }
 
-void JITManager::resetStatistics() {
+void JITManager::resetStatistics()
+{
     std::lock_guard<std::mutex> lock(m_mutex);
     m_stats.total_sim_time = 0.0;
     m_stats.avg_eval_time_us = 0.0;
@@ -701,28 +743,30 @@ void JITManager::resetStatistics() {
 
 namespace JITUtils {
 
-std::string generateComponentTemplate(const std::string& name, int num_inputs, int num_outputs) {
+std::string generateComponentTemplate(const std::string& name, int num_inputs, int num_outputs)
+{
     std::ostringstream oss;
     oss << "// " << name << " - JIT Component Template\n";
     oss << "// Inputs: " << num_inputs << ", Outputs: " << num_outputs << "\n\n";
     oss << "update(t, inputs) {\n";
     oss << "    // t: current simulation time\n";
     oss << "    // inputs: array of input voltages\n\n";
-    
+
     for (int i = 0; i < num_inputs; i++) {
         oss << "    var vin" << i << " = inputs[" << i << "];\n";
     }
-    
+
     oss << "\n    // TODO: Implement component behavior\n";
     oss << "    var vout = 0.0;\n\n";
-    
+
     oss << "    return vout;\n";
     oss << "}\n";
-    
+
     return oss.str();
 }
 
-std::string generateTestbench(const std::string& component_name) {
+std::string generateTestbench(const std::string& component_name)
+{
     std::ostringstream oss;
     oss << "// Testbench for " << component_name << "\n\n";
     oss << "import \"signal\"\n";
@@ -740,7 +784,7 @@ std::string generateTestbench(const std::string& component_name) {
     oss << "    from = 2e-3,\n";
     oss << "    to = 5e-3\n";
     oss << "}\n";
-    
+
     return oss.str();
 }
 

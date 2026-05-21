@@ -14,68 +14,85 @@
 // AI Circuit Doctor - Diagnostic Rule Engine Implementation
 // Analyzes circuits for common design errors and provides suggestions
 #include "flux/doctor/circuit_doctor.h"
-#include <fstream>
-#include <sstream>
 #include <algorithm>
 #include <cmath>
+#include <fstream>
 #include <iostream>
-#include <set>
 #include <map>
+#include <set>
+#include <sstream>
 
 namespace Flux {
 namespace Doctor {
 
-// 
-//  DiagnosticIssue Output Methods                       
-// 
+//
+//  DiagnosticIssue Output Methods
+//
 
-std::string DiagnosticIssue::severityToString() const {
+std::string DiagnosticIssue::severityToString() const
+{
     switch (severity) {
-        case Severity::Error: return "ERROR";
-        case Severity::Warning: return "WARNING";
-        case Severity::Info: return "TIP";
-        default: return "INFO";
+    case Severity::Error:
+        return "ERROR";
+    case Severity::Warning:
+        return "WARNING";
+    case Severity::Info:
+        return "TIP";
+    default:
+        return "INFO";
     }
 }
 
-std::string DiagnosticIssue::severityIcon() const {
+std::string DiagnosticIssue::severityIcon() const
+{
     switch (severity) {
-        case Severity::Error: return "";
-        case Severity::Warning: return "";
-        case Severity::Info: return "";
-        default: return "";
+    case Severity::Error:
+        return "";
+    case Severity::Warning:
+        return "";
+    case Severity::Info:
+        return "";
+    default:
+        return "";
     }
 }
 
-std::string DiagnosticIssue::toText() const {
+std::string DiagnosticIssue::toText() const
+{
     std::ostringstream oss;
     oss << severityIcon() << " " << severityToString() << ": " << message << "\n";
-    if (!location.empty()) oss << "   Location: " << location << "\n";
-    if (!component.empty()) oss << "   Component: " << component << "\n";
+    if (!location.empty())
+        oss << "   Location: " << location << "\n";
+    if (!component.empty())
+        oss << "   Component: " << component << "\n";
     oss << "    Suggestion: " << suggestion << "\n";
     return oss.str();
 }
 
-std::string DiagnosticIssue::toMarkdown() const {
+std::string DiagnosticIssue::toMarkdown() const
+{
     std::ostringstream oss;
     oss << "### " << severityIcon() << " " << severityToString() << ": " << message << "\n\n";
-    if (!location.empty()) oss << "- **Location:** " << location << "\n";
-    if (!component.empty()) oss << "- **Component:** " << component << "\n";
+    if (!location.empty())
+        oss << "- **Location:** " << location << "\n";
+    if (!component.empty())
+        oss << "- **Component:** " << component << "\n";
     oss << "- ** Suggestion:** " << suggestion << "\n\n";
     return oss.str();
 }
 
-// 
-//  DiagnosticReport Output Methods                      
-// 
+//
+//  DiagnosticReport Output Methods
+//
 
-std::string DiagnosticReport::toText() const {
+std::string DiagnosticReport::toText() const
+{
     std::ostringstream oss;
     oss << "\n";
     oss << "         AI CIRCUIT DOCTOR - DIAGNOSTIC REPORT\n";
     oss << "\n\n";
     oss << "Circuit: " << circuitFile << "\n\n";
-    
+
     if (issues.empty()) {
         oss << " No issues found! Your circuit looks good.\n";
     } else {
@@ -83,34 +100,35 @@ std::string DiagnosticReport::toText() const {
             oss << issue.toText() << "\n";
         }
     }
-    
+
     oss << "\n";
-    oss << "Summary: " << errorCount << " Error(s), " 
-        << warningCount << " Warning(s), " << infoCount << " Tip(s)\n";
+    oss << "Summary: " << errorCount << " Error(s), " << warningCount << " Warning(s), " << infoCount << " Tip(s)\n";
     oss << "Status: " << (passesDesignRules ? " PASS" : " FAIL") << "\n";
     oss << "\n";
-    
+
     return oss.str();
 }
 
-std::string DiagnosticReport::toMarkdown() const {
+std::string DiagnosticReport::toMarkdown() const
+{
     std::ostringstream oss;
     oss << "# AI Circuit Doctor - Diagnostic Report\n\n";
     oss << "**Circuit:** " << circuitFile << "\n\n";
-    
+
     for (const auto& issue : issues) {
         oss << issue.toMarkdown();
     }
-    
+
     oss << "\n---\n\n";
-    oss << "**Summary:** " << errorCount << " Error(s), " 
-        << warningCount << " Warning(s), " << infoCount << " Tip(s)\n";
+    oss << "**Summary:** " << errorCount << " Error(s), " << warningCount << " Warning(s), " << infoCount
+        << " Tip(s)\n";
     oss << "**Status:** " << (passesDesignRules ? " PASS" : " FAIL") << "\n";
-    
+
     return oss.str();
 }
 
-std::string DiagnosticReport::toJSON() const {
+std::string DiagnosticReport::toJSON() const
+{
     std::ostringstream oss;
     oss << "{\n";
     oss << "  \"circuit\": \"" << circuitFile << "\",\n";
@@ -119,7 +137,7 @@ std::string DiagnosticReport::toJSON() const {
     oss << "  \"warnings\": " << warningCount << ",\n";
     oss << "  \"tips\": " << infoCount << ",\n";
     oss << "  \"issues\": [\n";
-    
+
     for (size_t i = 0; i < issues.size(); ++i) {
         const auto& issue = issues[i];
         oss << "    {\n";
@@ -128,85 +146,83 @@ std::string DiagnosticReport::toJSON() const {
         oss << "      \"message\": \"" << issue.message << "\",\n";
         oss << "      \"suggestion\": \"" << issue.suggestion << "\"\n";
         oss << "    }";
-        if (i < issues.size() - 1) oss << ",";
+        if (i < issues.size() - 1)
+            oss << ",";
         oss << "\n";
     }
-    
+
     oss << "  ]\n";
     oss << "}\n";
-    
+
     return oss.str();
 }
 
-// 
-//  Circuit Doctor Implementation                        
-// 
+//
+//  Circuit Doctor Implementation
+//
 
-CircuitDoctor::CircuitDoctor() : m_minSeverity(Severity::Info) {
+CircuitDoctor::CircuitDoctor() : m_minSeverity(Severity::Info)
+{
     // Enable all rules by default
-    m_enabledRules = {
-        "FloatingNode",
-        "DCPath",
-        "PowerDissipation",
-        "ShortCircuit",
-        "UnrealisticValues",
-        "MissingDecoupling",
-        "StabilityHeuristics",
-        "ComponentStress"
-    };
+    m_enabledRules = {"FloatingNode",        "DCPath",
+                      "PowerDissipation",    "ShortCircuit",
+                      "UnrealisticValues",   "MissingDecoupling",
+                      "StabilityHeuristics", "ComponentStress"};
 }
 
 CircuitDoctor::~CircuitDoctor() = default;
 
-void CircuitDoctor::setMinSeverity(Severity severity) {
+void CircuitDoctor::setMinSeverity(Severity severity)
+{
     m_minSeverity = severity;
 }
 
-void CircuitDoctor::enableRule(const std::string& ruleName) {
+void CircuitDoctor::enableRule(const std::string& ruleName)
+{
     if (std::find(m_enabledRules.begin(), m_enabledRules.end(), ruleName) == m_enabledRules.end()) {
         m_enabledRules.push_back(ruleName);
     }
 }
 
-void CircuitDoctor::disableRule(const std::string& ruleName) {
-    m_enabledRules.erase(
-        std::remove(m_enabledRules.begin(), m_enabledRules.end(), ruleName),
-        m_enabledRules.end()
-    );
+void CircuitDoctor::disableRule(const std::string& ruleName)
+{
+    m_enabledRules.erase(std::remove(m_enabledRules.begin(), m_enabledRules.end(), ruleName), m_enabledRules.end());
 }
 
-// 
-//  Helper Methods                                       
-// 
+//
+//  Helper Methods
+//
 
-std::vector<CircuitDoctor::ParsedComponent> CircuitDoctor::parseComponents(const std::string& netlist) {
+std::vector<CircuitDoctor::ParsedComponent> CircuitDoctor::parseComponents(const std::string& netlist)
+{
     std::vector<ParsedComponent> components;
     std::istringstream stream(netlist);
     std::string line;
     int lineNum = 0;
-    
+
     while (std::getline(stream, line)) {
         lineNum++;
-        
+
         // Remove carriage return if present (Windows line endings)
         if (!line.empty() && line.back() == '\r') {
             line.pop_back();
         }
-        
+
         // Skip comments and empty lines
-        if (line.empty() || line[0] == '*' || line[0] == '#' || 
-            (line.size() > 1 && line[0] == '/' && line[1] == '/')) {
+        if (line.empty() || line[0] == '*' || line[0] == '#' || (line.size() > 1 && line[0] == '/' && line[1] == '/')) {
             continue;
         }
-        
+
         // Skip directives and empty lines after trimming
         size_t start = line.find_first_not_of(" \t");
-        if (start == std::string::npos) continue;
-        if (line[start] == '.') continue;
-        
+        if (start == std::string::npos)
+            continue;
+        if (line[start] == '.')
+            continue;
+
         std::istringstream ls(line);
         std::string name, n1, n2, val;
-        
+
         if (ls >> name >> n1 >> n2 >> val) {
             ParsedComponent comp;
             comp.name = name;
@@ -215,46 +231,73 @@ std::vector<CircuitDoctor::ParsedComponent> CircuitDoctor::parseComponents(const
             comp.value = parseValue(val);
             comp.lineNumber = lineNum;
             comp.type = getComponentType(name[0]);
-            
+
             components.push_back(comp);
         }
     }
-    
+
     return components;
 }
 
-std::map<std::string, std::vector<std::string>> CircuitDoctor::buildNodeMap(const std::string& netlist) {
+std::map<std::string, std::vector<std::string>> CircuitDoctor::buildNodeMap(const std::string& netlist)
+{
     std::map<std::string, std::vector<std::string>> nodeMap;
     auto components = parseComponents(netlist);
-    
+
     for (const auto& comp : components) {
         nodeMap[comp.node1].push_back(comp.name);
         if (comp.node2 != comp.node1) {
             nodeMap[comp.node2].push_back(comp.name);
         }
     }
-    
+
     return nodeMap;
 }
 
-double CircuitDoctor::parseValue(const std::string& valueStr) {
+double CircuitDoctor::parseValue(const std::string& valueStr)
+{
     std::string val = valueStr;
     double multiplier = 1.0;
-    
+
     // Check for suffixes
     char lastChar = tolower(val.back());
     switch (lastChar) {
-        case 'k': multiplier = 1e3; val.pop_back(); break;
-        case 'm': multiplier = 1e-3; val.pop_back(); break;
-        case 'u': multiplier = 1e-6; val.pop_back(); break;
-        case 'n': multiplier = 1e-9; val.pop_back(); break;
-        case 'p': multiplier = 1e-12; val.pop_back(); break;
-        case 'f': multiplier = 1e-15; val.pop_back(); break;
-        case 'g': multiplier = 1e9; val.pop_back(); break;
-        case 't': multiplier = 1e12; val.pop_back(); break;
-        default: break;
+    case 'k':
+        multiplier = 1e3;
+        val.pop_back();
+        break;
+    case 'm':
+        multiplier = 1e-3;
+        val.pop_back();
+        break;
+    case 'u':
+        multiplier = 1e-6;
+        val.pop_back();
+        break;
+    case 'n':
+        multiplier = 1e-9;
+        val.pop_back();
+        break;
+    case 'p':
+        multiplier = 1e-12;
+        val.pop_back();
+        break;
+    case 'f':
+        multiplier = 1e-15;
+        val.pop_back();
+        break;
+    case 'g':
+        multiplier = 1e9;
+        val.pop_back();
+        break;
+    case 't':
+        multiplier = 1e12;
+        val.pop_back();
+        break;
+    default:
+        break;
     }
-    
+
     try {
         return std::stod(val) * multiplier;
     } catch (...) {
@@ -262,40 +305,58 @@ double CircuitDoctor::parseValue(const std::string& valueStr) {
     }
 }
 
-std::string CircuitDoctor::getComponentType(char prefix) {
+std::string CircuitDoctor::getComponentType(char prefix)
+{
     switch (toupper(prefix)) {
-        case 'R': return "Resistor";
-        case 'C': return "Capacitor";
-        case 'L': return "Inductor";
-        case 'Q': return "Transistor";
-        case 'M': return "MOSFET";
-        case 'U': return "IC";
-        case 'D': return "Diode";
-        case 'V': return "Voltage Source";
-        case 'I': return "Current Source";
-        case 'B': return "Behavioral Source";
-        case 'E': return "VCVS";
-        case 'F': return "CCCS";
-        case 'G': return "VCCS";
-        case 'H': return "CCVS";
-        default: return "Unknown";
+    case 'R':
+        return "Resistor";
+    case 'C':
+        return "Capacitor";
+    case 'L':
+        return "Inductor";
+    case 'Q':
+        return "Transistor";
+    case 'M':
+        return "MOSFET";
+    case 'U':
+        return "IC";
+    case 'D':
+        return "Diode";
+    case 'V':
+        return "Voltage Source";
+    case 'I':
+        return "Current Source";
+    case 'B':
+        return "Behavioral Source";
+    case 'E':
+        return "VCVS";
+    case 'F':
+        return "CCCS";
+    case 'G':
+        return "VCCS";
+    case 'H':
+        return "CCVS";
+    default:
+        return "Unknown";
     }
 }
 
-// 
-//  Rule 1: Floating Node Detection                     
-// 
+//
+//  Rule 1: Floating Node Detection
+//
 
-void CircuitDoctor::checkFloatingNodes(const std::string& netlist, DiagnosticReport& report) {
+void CircuitDoctor::checkFloatingNodes(const std::string& netlist, DiagnosticReport& report)
+{
     auto nodeMap = buildNodeMap(netlist);
-    
+
     for (const auto& pair : nodeMap) {
         const std::string& node = pair.first;
         const auto& connections = pair.second;
-        
+
         // Skip ground node
-        if (node == "0" || node == "gnd" || node == "GND") continue;
-        
+        if (node == "0" || node == "gnd" || node == "GND")
+            continue;
+
         // Node with only 1 connection is floating
         if (connections.size() == 1) {
             DiagnosticIssue issue;
@@ -311,22 +372,22 @@ void CircuitDoctor::checkFloatingNodes(const std::string& netlist, DiagnosticRep
     }
 }
 
-// 
-//  Rule 2: DC Path to Ground Check                     
-// 
+//
+//  Rule 2: DC Path to Ground Check
+//
 
-void CircuitDoctor::checkDCPaths(const std::string& netlist, DiagnosticReport& report) {
+void CircuitDoctor::checkDCPaths(const std::string& netlist, DiagnosticReport& report)
+{
     auto components = parseComponents(netlist);
     bool hasGroundPath = false;
-    
+
     for (const auto& comp : components) {
-        if (comp.node1 == "0" || comp.node2 == "0" || 
-            comp.node1 == "gnd" || comp.node2 == "gnd") {
+        if (comp.node1 == "0" || comp.node2 == "0" || comp.node1 == "gnd" || comp.node2 == "gnd") {
             hasGroundPath = true;
             break;
         }
     }
-    
+
     if (!hasGroundPath) {
         DiagnosticIssue issue;
         issue.rule = "DCPath";
@@ -339,20 +400,22 @@ void CircuitDoctor::checkDCPaths(const std::string& netlist, DiagnosticReport& r
     }
 }
 
-// 
-//  Rule 3: Power Dissipation Check                     
-// 
+//
+//  Rule 3: Power Dissipation Check
+//
 
-void CircuitDoctor::checkPowerDissipation(const std::string& netlist, DiagnosticReport& report) {
+void CircuitDoctor::checkPowerDissipation(const std::string& netlist, DiagnosticReport& report)
+{
     // Simplified: Check for very low resistor values with voltage sources
     auto components = parseComponents(netlist);
-    
+
     for (const auto& comp : components) {
         if (comp.type == "Resistor" && comp.value < 1.0 && comp.value > 0) {
             DiagnosticIssue issue;
             issue.rule = "PowerDissipation";
             issue.severity = Severity::Warning;
-            issue.message = comp.name + " has very low resistance (" + std::to_string(comp.value) + ") - may dissipate excessive power";
+            issue.message = comp.name + " has very low resistance (" + std::to_string(comp.value) +
+                            ") - may dissipate excessive power";
             issue.component = comp.name;
             issue.location = "Line " + std::to_string(comp.lineNumber);
             issue.suggestion = "Verify power rating: P = V/R. Consider using higher resistance or power resistor";
@@ -362,13 +425,14 @@ void CircuitDoctor::checkPowerDissipation(const std::string& netlist, Diagnostic
     }
 }
 
-// 
-//  Rule 4: Short Circuit Detection                     
-// 
+//
+//  Rule 4: Short Circuit Detection
+//
 
-void CircuitDoctor::checkShortCircuits(const std::string& netlist, DiagnosticReport& report) {
+void CircuitDoctor::checkShortCircuits(const std::string& netlist, DiagnosticReport& report)
+{
     auto components = parseComponents(netlist);
-    
+
     for (const auto& comp : components) {
         if (comp.node1 == comp.node2) {
             DiagnosticIssue issue;
@@ -383,7 +447,7 @@ void CircuitDoctor::checkShortCircuits(const std::string& netlist, DiagnosticRep
             report.passesDesignRules = false;
         }
     }
-    
+
     // Check for voltage source loops (two V sources in parallel)
     std::map<std::string, int> voltageSourceNodes;
     for (const auto& comp : components) {
@@ -394,17 +458,18 @@ void CircuitDoctor::checkShortCircuits(const std::string& netlist, DiagnosticRep
     }
 }
 
-// 
-//  Rule 5: Unrealistic Values Check                    
-// 
+//
+//  Rule 5: Unrealistic Values Check
+//
 
-void CircuitDoctor::checkUnrealisticValues(const std::string& netlist, DiagnosticReport& report) {
+void CircuitDoctor::checkUnrealisticValues(const std::string& netlist, DiagnosticReport& report)
+{
     auto components = parseComponents(netlist);
-    
+
     for (const auto& comp : components) {
         bool unrealistic = false;
         std::string reason;
-        
+
         if (comp.type == "Resistor") {
             if (comp.value < 1.0 && comp.value > 0) {
                 unrealistic = true;
@@ -422,7 +487,7 @@ void CircuitDoctor::checkUnrealisticValues(const std::string& netlist, Diagnosti
                 reason = "Capacitance > 1F";
             }
         }
-        
+
         if (unrealistic) {
             DiagnosticIssue issue;
             issue.rule = "UnrealisticValues";
@@ -437,22 +502,24 @@ void CircuitDoctor::checkUnrealisticValues(const std::string& netlist, Diagnosti
     }
 }
 
-// 
-//  Rule 6: Missing Decoupling Capacitor Check          
-// 
+//
+//  Rule 6: Missing Decoupling Capacitor Check
+//
 
-void CircuitDoctor::checkMissingDecoupling(const std::string& netlist, DiagnosticReport& report) {
+void CircuitDoctor::checkMissingDecoupling(const std::string& netlist, DiagnosticReport& report)
+{
     auto components = parseComponents(netlist);
     bool hasIC = false;
     bool hasDecoupling = false;
-    
+
     for (const auto& comp : components) {
-        if (comp.type == "IC") hasIC = true;
+        if (comp.type == "IC")
+            hasIC = true;
         if (comp.type == "Capacitor" && comp.value >= 10e-9 && comp.value <= 1e-6) {
             hasDecoupling = true;
         }
     }
-    
+
     if (hasIC && !hasDecoupling) {
         DiagnosticIssue issue;
         issue.rule = "MissingDecoupling";
@@ -464,23 +531,25 @@ void CircuitDoctor::checkMissingDecoupling(const std::string& netlist, Diagnosti
     }
 }
 
-// 
-//  Rule 7: Stability Heuristics                        
-// 
+//
+//  Rule 7: Stability Heuristics
+//
 
-void CircuitDoctor::checkStabilityHeuristics(const std::string& netlist, DiagnosticReport& report) {
+void CircuitDoctor::checkStabilityHeuristics(const std::string& netlist, DiagnosticReport& report)
+{
     auto components = parseComponents(netlist);
     bool hasFeedback = false;
     bool hasCompensation = false;
-    
+
     // Simple heuristic: Look for op-amp with feedback but no compensation
     for (const auto& comp : components) {
-        if (comp.type == "IC") hasFeedback = true;
+        if (comp.type == "IC")
+            hasFeedback = true;
         if (comp.type == "Capacitor" && comp.value < 100e-12) {
             hasCompensation = true;
         }
     }
-    
+
     if (hasFeedback && !hasCompensation) {
         DiagnosticIssue issue;
         issue.rule = "StabilityHeuristics";
@@ -492,13 +561,14 @@ void CircuitDoctor::checkStabilityHeuristics(const std::string& netlist, Diagnos
     }
 }
 
-// 
-//  Rule 8: Component Stress Analysis                   
-// 
+//
+//  Rule 8: Component Stress Analysis
+//
 
-void CircuitDoctor::checkComponentStress(const std::string& netlist, DiagnosticReport& report) {
+void CircuitDoctor::checkComponentStress(const std::string& netlist, DiagnosticReport& report)
+{
     auto components = parseComponents(netlist);
-    
+
     for (const auto& comp : components) {
         // Check for very high voltage across small resistors
         if (comp.type == "Resistor" && comp.value < 100 && comp.value > 0) {
@@ -515,14 +585,15 @@ void CircuitDoctor::checkComponentStress(const std::string& netlist, DiagnosticR
     }
 }
 
-// 
-//  Main Analysis Methods                                
-// 
+//
+//  Main Analysis Methods
+//
 
-DiagnosticReport CircuitDoctor::analyze(const std::string& circuitFile) {
+DiagnosticReport CircuitDoctor::analyze(const std::string& circuitFile)
+{
     DiagnosticReport report;
     report.circuitFile = circuitFile;
-    
+
     // Read file
     std::ifstream file(circuitFile);
     if (!file.is_open()) {
@@ -536,37 +607,45 @@ DiagnosticReport CircuitDoctor::analyze(const std::string& circuitFile) {
         report.passesDesignRules = false;
         return report;
     }
-    
-    std::string netlist((std::istreambuf_iterator<char>(file)),
-                         std::istreambuf_iterator<char>());
+
+    std::string netlist((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
     file.close();
-    
+
     auto result = analyzeFromString(netlist);
-    result.circuitFile = circuitFile;  // Preserve filename
+    result.circuitFile = circuitFile; // Preserve filename
     return result;
 }
 
-DiagnosticReport CircuitDoctor::analyzeFromString(const std::string& netlist) {
+DiagnosticReport CircuitDoctor::analyzeFromString(const std::string& netlist)
+{
     DiagnosticReport report;
     report.circuitFile = "string";
-    
+
     // Run enabled rules
     for (const auto& rule : m_enabledRules) {
-        if (rule == "FloatingNode") checkFloatingNodes(netlist, report);
-        else if (rule == "DCPath") checkDCPaths(netlist, report);
-        else if (rule == "PowerDissipation") checkPowerDissipation(netlist, report);
-        else if (rule == "ShortCircuit") checkShortCircuits(netlist, report);
-        else if (rule == "UnrealisticValues") checkUnrealisticValues(netlist, report);
-        else if (rule == "MissingDecoupling") checkMissingDecoupling(netlist, report);
-        else if (rule == "StabilityHeuristics") checkStabilityHeuristics(netlist, report);
-        else if (rule == "ComponentStress") checkComponentStress(netlist, report);
+        if (rule == "FloatingNode")
+            checkFloatingNodes(netlist, report);
+        else if (rule == "DCPath")
+            checkDCPaths(netlist, report);
+        else if (rule == "PowerDissipation")
+            checkPowerDissipation(netlist, report);
+        else if (rule == "ShortCircuit")
+            checkShortCircuits(netlist, report);
+        else if (rule == "UnrealisticValues")
+            checkUnrealisticValues(netlist, report);
+        else if (rule == "MissingDecoupling")
+            checkMissingDecoupling(netlist, report);
+        else if (rule == "StabilityHeuristics")
+            checkStabilityHeuristics(netlist, report);
+        else if (rule == "ComponentStress")
+            checkComponentStress(netlist, report);
     }
-    
+
     // Count issues by severity BEFORE filtering
     int totalErrors = report.errorCount;
     int totalWarnings = report.warningCount;
     int totalInfos = report.infoCount;
-    
+
     // Filter by minimum severity
     std::vector<DiagnosticIssue> filtered;
     for (const auto& issue : report.issues) {
@@ -577,60 +656,70 @@ DiagnosticReport CircuitDoctor::analyzeFromString(const std::string& netlist) {
         }
     }
     report.issues = filtered;
-    
+
     // Update counts to match filtered issues
     report.errorCount = 0;
     report.warningCount = 0;
     report.infoCount = 0;
     for (const auto& issue : report.issues) {
         switch (issue.severity) {
-            case Severity::Error: report.errorCount++; break;
-            case Severity::Warning: report.warningCount++; break;
-            case Severity::Info: report.infoCount++; break;
+        case Severity::Error:
+            report.errorCount++;
+            break;
+        case Severity::Warning:
+            report.warningCount++;
+            break;
+        case Severity::Info:
+            report.infoCount++;
+            break;
         }
     }
-    
+
     // Update pass/fail based on errors
     if (report.errorCount > 0) {
         report.passesDesignRules = false;
     }
-    
-    report.summary = std::to_string(report.errorCount) + " error(s), " +
-                     std::to_string(report.warningCount) + " warning(s), " +
-                     std::to_string(report.infoCount) + " tip(s)";
-    
+
+    report.summary = std::to_string(report.errorCount) + " error(s), " + std::to_string(report.warningCount) +
+                     " warning(s), " + std::to_string(report.infoCount) + " tip(s)";
+
     return report;
 }
 
-// 
-//  Convenience Functions                                
-// 
+//
+//  Convenience Functions
+//
 
-DiagnosticReport circuit_doctor(const std::string& circuitFile) {
+DiagnosticReport circuit_doctor(const std::string& circuitFile)
+{
     CircuitDoctor doctor;
     return doctor.analyze(circuitFile);
 }
 
-// 
-//  C Interface Implementation                           
-// 
+//
+//  C Interface Implementation
+//
 
 extern "C" {
 
-void* flux_doctor_create() {
+void* flux_doctor_create()
+{
     return new CircuitDoctor();
 }
 
-void flux_doctor_destroy(void* doctor) {
+void flux_doctor_destroy(void* doctor)
+{
     delete static_cast<CircuitDoctor*>(doctor);
 }
 
-void flux_doctor_set_severity(void* doctor, int severity) {
+void flux_doctor_set_severity(void* doctor, int severity)
+{
     auto* d = static_cast<CircuitDoctor*>(doctor);
     d->setMinSeverity(static_cast<Severity>(severity));
 }
 
-const char* flux_doctor_analyze(void* doctor, const char* circuitFile) {
+const char* flux_doctor_analyze(void* doctor, const char* circuitFile)
+{
     static std::string result;
     auto* d = static_cast<CircuitDoctor*>(doctor);
     auto report = d->analyze(circuitFile ? circuitFile : "");
@@ -638,7 +727,8 @@ const char* flux_doctor_analyze(void* doctor, const char* circuitFile) {
     return result.c_str();
 }
 
-const char* flux_doctor_get_markdown(void* doctor) {
+const char* flux_doctor_get_markdown(void* doctor)
+{
     static std::string result;
     auto* d = static_cast<CircuitDoctor*>(doctor);
     auto report = d->analyze("string");
@@ -646,24 +736,26 @@ const char* flux_doctor_get_markdown(void* doctor) {
     return result.c_str();
 }
 
-int flux_doctor_get_error_count(void* doctor) {
+int flux_doctor_get_error_count(void* doctor)
+{
     auto* d = static_cast<CircuitDoctor*>(doctor);
     auto report = d->analyzeFromString("");
     return report.errorCount;
 }
 
-int flux_doctor_get_warning_count(void* doctor) {
+int flux_doctor_get_warning_count(void* doctor)
+{
     auto* d = static_cast<CircuitDoctor*>(doctor);
     auto report = d->analyzeFromString("");
     return report.warningCount;
 }
 
-bool flux_doctor_passes(void* doctor) {
+bool flux_doctor_passes(void* doctor)
+{
     auto* d = static_cast<CircuitDoctor*>(doctor);
     auto report = d->analyzeFromString("");
     return report.passesDesignRules;
 }
-
 }
 
 } // namespace Doctor

@@ -14,6 +14,7 @@
 #include "flux/tooling/tooling.h"
 
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <cmath>
 #include <cstdlib>
@@ -23,19 +24,18 @@
 #include <optional>
 #include <regex>
 #include <sstream>
-#include <array>
 
 #include <llvm/ADT/SmallVector.h>
+#include <llvm/Bitcode/BitcodeReader.h>
+#include <llvm/Bitcode/BitcodeWriter.h>
 #include <llvm/IR/LegacyPassManager.h>
 #include <llvm/MC/TargetRegistry.h>
 #include <llvm/Support/FileSystem.h>
+#include <llvm/Support/MemoryBuffer.h>
 #include <llvm/Support/SHA256.h>
 #include <llvm/Support/TargetSelect.h>
-#include <llvm/TargetParser/Host.h>
 #include <llvm/Target/TargetMachine.h>
-#include <llvm/Bitcode/BitcodeReader.h>
-#include <llvm/Bitcode/BitcodeWriter.h>
-#include <llvm/Support/MemoryBuffer.h>
+#include <llvm/TargetParser/Host.h>
 
 #include "flux/jit_engine.h"
 
@@ -45,7 +45,8 @@ namespace fs = std::filesystem;
 
 namespace {
 
-std::string shellQuote(const std::string& value) {
+std::string shellQuote(const std::string& value)
+{
     std::string quoted = "'";
     for (char ch : value) {
         if (ch == '\'')
@@ -57,7 +58,8 @@ std::string shellQuote(const std::string& value) {
     return quoted;
 }
 
-std::string trim(const std::string& value) {
+std::string trim(const std::string& value)
+{
     const auto start = value.find_first_not_of(" \t\r\n");
     if (start == std::string::npos)
         return {};
@@ -65,22 +67,33 @@ std::string trim(const std::string& value) {
     return value.substr(start, end - start + 1);
 }
 
-std::string typeName(TypeKind kind) {
+std::string typeName(TypeKind kind)
+{
     switch (kind) {
-        case TypeKind::Auto: return "auto";
-        case TypeKind::Double: return "double";
-        case TypeKind::Float: return "float";
-        case TypeKind::Int: return "int";
-        case TypeKind::Void: return "void";
-        case TypeKind::Complex: return "complex";
-        case TypeKind::String: return "string";
-        case TypeKind::Matrix: return "matrix";
-        case TypeKind::Vector: return "vector";
+    case TypeKind::Auto:
+        return "auto";
+    case TypeKind::Double:
+        return "double";
+    case TypeKind::Float:
+        return "float";
+    case TypeKind::Int:
+        return "int";
+    case TypeKind::Void:
+        return "void";
+    case TypeKind::Complex:
+        return "complex";
+    case TypeKind::String:
+        return "string";
+    case TypeKind::Matrix:
+        return "matrix";
+    case TypeKind::Vector:
+        return "vector";
     }
     return "double";
 }
 
-bool ensureParentDirectory(const std::string& path, std::string* error) {
+bool ensureParentDirectory(const std::string& path, std::string* error)
+{
     std::error_code ec;
     const fs::path parent = fs::path(path).parent_path();
     if (!parent.empty())
@@ -93,8 +106,8 @@ bool ensureParentDirectory(const std::string& path, std::string* error) {
     return true;
 }
 
-std::unique_ptr<llvm::TargetMachine> createTargetMachine(const OptimizationLevel level,
-                                                         std::string* error) {
+std::unique_ptr<llvm::TargetMachine> createTargetMachine(const OptimizationLevel level, std::string* error)
+{
     llvm::InitializeNativeTarget();
     llvm::InitializeNativeTargetAsmPrinter();
     llvm::InitializeNativeTargetAsmParser();
@@ -111,18 +124,27 @@ std::unique_ptr<llvm::TargetMachine> createTargetMachine(const OptimizationLevel
     llvm::TargetOptions options;
     llvm::CodeGenOptLevel codegenLevel = llvm::CodeGenOptLevel::Default;
     switch (level) {
-        case OptimizationLevel::O0: codegenLevel = llvm::CodeGenOptLevel::None; break;
-        case OptimizationLevel::O1: codegenLevel = llvm::CodeGenOptLevel::Less; break;
-        case OptimizationLevel::O2: codegenLevel = llvm::CodeGenOptLevel::Default; break;
-        case OptimizationLevel::O3: codegenLevel = llvm::CodeGenOptLevel::Aggressive; break;
+    case OptimizationLevel::O0:
+        codegenLevel = llvm::CodeGenOptLevel::None;
+        break;
+    case OptimizationLevel::O1:
+        codegenLevel = llvm::CodeGenOptLevel::Less;
+        break;
+    case OptimizationLevel::O2:
+        codegenLevel = llvm::CodeGenOptLevel::Default;
+        break;
+    case OptimizationLevel::O3:
+        codegenLevel = llvm::CodeGenOptLevel::Aggressive;
+        break;
     }
 
     return std::unique_ptr<llvm::TargetMachine>(
-        target->createTargetMachine(llvm::Triple(triple), llvm::sys::getHostCPUName().str(), "", options,
-                                    std::nullopt, std::nullopt, codegenLevel));
+        target->createTargetMachine(llvm::Triple(triple), llvm::sys::getHostCPUName().str(), "", options, std::nullopt,
+                                    std::nullopt, codegenLevel));
 }
 
-bool writeBufferToFile(llvm::MemoryBuffer& buffer, const std::string& outputPath, std::string* error) {
+bool writeBufferToFile(llvm::MemoryBuffer& buffer, const std::string& outputPath, std::string* error)
+{
     if (!ensureParentDirectory(outputPath, error))
         return false;
 
@@ -138,14 +160,16 @@ bool writeBufferToFile(llvm::MemoryBuffer& buffer, const std::string& outputPath
     return true;
 }
 
-std::string baseNameWithoutExtension(const std::string& inputName) {
+std::string baseNameWithoutExtension(const std::string& inputName)
+{
     const fs::path path(inputName.empty() ? "module" : inputName);
     return path.stem().empty() ? std::string("module") : path.stem().string();
 }
 
 } // namespace
 
-std::string defaultCacheDirectory() {
+std::string defaultCacheDirectory()
+{
     const char* xdg = std::getenv("XDG_CACHE_HOME");
     if (xdg && *xdg)
         return (fs::path(xdg) / "fluxscript" / "jit").string();
@@ -157,7 +181,8 @@ std::string defaultCacheDirectory() {
     return ".fluxcache/jit";
 }
 
-std::string computeCacheKey(const std::string& code, const CompilerOptions& options) {
+std::string computeCacheKey(const std::string& code, const CompilerOptions& options)
+{
     const std::string payload = code + "|" + options.inputName + "|" + options.moduleName + "|" +
                                 std::to_string(static_cast<int>(options.optimizationLevel)) + "|" +
                                 (options.debugInfo ? "dbg" : "nodbg");
@@ -170,10 +195,9 @@ std::string computeCacheKey(const std::string& code, const CompilerOptions& opti
     return os.str();
 }
 
-bool emitObjectBuffer(CompileArtifacts& artifacts,
-                      OptimizationLevel optimizationLevel,
-                      std::unique_ptr<llvm::MemoryBuffer>& output,
-                      std::string* error) {
+bool emitObjectBuffer(CompileArtifacts& artifacts, OptimizationLevel optimizationLevel,
+                      std::unique_ptr<llvm::MemoryBuffer>& output, std::string* error)
+{
     auto targetMachine = createTargetMachine(optimizationLevel, error);
     if (!targetMachine)
         return false;
@@ -185,23 +209,20 @@ bool emitObjectBuffer(CompileArtifacts& artifacts,
     llvm::SmallVector<char, 0> objectBytes;
     llvm::raw_svector_ostream objectStream(objectBytes);
     llvm::legacy::PassManager passManager;
-    if (targetMachine->addPassesToEmitFile(passManager, objectStream, nullptr,
-                                           llvm::CodeGenFileType::ObjectFile)) {
+    if (targetMachine->addPassesToEmitFile(passManager, objectStream, nullptr, llvm::CodeGenFileType::ObjectFile)) {
         if (error)
             *error = "Target machine could not emit an object file.";
         return false;
     }
 
     passManager.run(module);
-    output = llvm::MemoryBuffer::getMemBufferCopy(
-        llvm::StringRef(objectBytes.data(), objectBytes.size()),
-        module.getName().str() + ".o");
+    output = llvm::MemoryBuffer::getMemBufferCopy(llvm::StringRef(objectBytes.data(), objectBytes.size()),
+                                                  module.getName().str() + ".o");
     return true;
 }
 
-bool emitObjectFile(CompileArtifacts& artifacts,
-                    const std::string& outputPath,
-                    std::string* error) {
+bool emitObjectFile(CompileArtifacts& artifacts, const std::string& outputPath, std::string* error)
+{
     std::unique_ptr<llvm::MemoryBuffer> objectBuffer;
     if (!emitObjectBuffer(artifacts, OptimizationLevel::O2, objectBuffer, error))
         return false;
@@ -209,13 +230,12 @@ bool emitObjectFile(CompileArtifacts& artifacts,
     return writeBufferToFile(*objectBuffer, outputPath, error);
 }
 
-bool emitArtifact(const std::string& code,
-                  const AOTOptions& options,
-                  std::string* error) {
+bool emitArtifact(const std::string& code, const AOTOptions& options, std::string* error)
+{
     CompilerOptions compilerOptions;
     compilerOptions.inputName = options.inputName;
-    compilerOptions.moduleName = options.moduleName.empty() ? baseNameWithoutExtension(options.inputName)
-                                                            : options.moduleName;
+    compilerOptions.moduleName =
+        options.moduleName.empty() ? baseNameWithoutExtension(options.inputName) : options.moduleName;
     compilerOptions.optimizationLevel = options.optimizationLevel;
     compilerOptions.debugInfo = options.debugInfo;
 
@@ -224,8 +244,7 @@ bool emitArtifact(const std::string& code,
     if (!artifacts)
         return false;
 
-    const bool emitShared = options.sharedLibrary ||
-        fs::path(options.outputPath).extension() == ".so";
+    const bool emitShared = options.sharedLibrary || fs::path(options.outputPath).extension() == ".so";
     std::unique_ptr<llvm::MemoryBuffer> objectBuffer;
     if (!emitObjectBuffer(*artifacts, options.optimizationLevel, objectBuffer, error))
         return false;
@@ -237,8 +256,8 @@ bool emitArtifact(const std::string& code,
     if (!writeBufferToFile(*objectBuffer, objectPath.string(), error))
         return false;
 
-    const std::string command = "c++ -shared -o " + shellQuote(options.outputPath) + " " +
-                                shellQuote(objectPath.string());
+    const std::string command =
+        "c++ -shared -o " + shellQuote(options.outputPath) + " " + shellQuote(objectPath.string());
     if (std::system(command.c_str()) != 0) {
         if (error)
             *error = "Failed to link shared library with system C++ driver.";
@@ -248,9 +267,8 @@ bool emitArtifact(const std::string& code,
     return true;
 }
 
-bool saveReturnTypes(const std::string& path,
-                     const std::map<std::string, FluxType>& returnTypes,
-                     std::string* error) {
+bool saveReturnTypes(const std::string& path, const std::map<std::string, FluxType>& returnTypes, std::string* error)
+{
     if (!ensureParentDirectory(path, error))
         return false;
 
@@ -266,9 +284,8 @@ bool saveReturnTypes(const std::string& path,
     return true;
 }
 
-bool loadReturnTypes(const std::string& path,
-                     std::map<std::string, FluxType>& returnTypes,
-                     std::string* error) {
+bool loadReturnTypes(const std::string& path, std::map<std::string, FluxType>& returnTypes, std::string* error)
+{
     std::ifstream in(path);
     if (!in) {
         if (error)
@@ -284,7 +301,8 @@ bool loadReturnTypes(const std::string& path,
     return true;
 }
 
-std::string formatCode(const std::string& code) {
+std::string formatCode(const std::string& code)
+{
     std::istringstream input(code);
     std::ostringstream out;
     std::string line;
@@ -309,7 +327,8 @@ std::string formatCode(const std::string& code) {
     return out.str();
 }
 
-std::string generateDocsMarkdown(const std::string& code, const std::string& moduleName) {
+std::string generateDocsMarkdown(const std::string& code, const std::string& moduleName)
+{
     std::istringstream input(code);
     std::ostringstream out;
     out << "# " << moduleName << "\n\n";
@@ -340,10 +359,12 @@ std::string generateDocsMarkdown(const std::string& code, const std::string& mod
     return out.str();
 }
 
-std::vector<TestCase> discoverTests(const std::string& code) {
+std::vector<TestCase> discoverTests(const std::string& code)
+{
     std::vector<TestCase> tests;
     std::istringstream input(code);
-    std::regex pattern(R"(^\s*(#|//)\s*TEST:\s*(.*?)\s*=>\s*([-+]?[0-9]*\.?[0-9]+(?:[eE][-+]?[0-9]+)?)\s*(?:\+/-\s*([-+]?[0-9]*\.?[0-9]+(?:[eE][-+]?[0-9]+)?))?\s*$)");
+    std::regex pattern(
+        R"(^\s*(#|//)\s*TEST:\s*(.*?)\s*=>\s*([-+]?[0-9]*\.?[0-9]+(?:[eE][-+]?[0-9]+)?)\s*(?:\+/-\s*([-+]?[0-9]*\.?[0-9]+(?:[eE][-+]?[0-9]+)?))?\s*$)");
 
     std::string line;
     int lineNumber = 0;
@@ -365,9 +386,8 @@ std::vector<TestCase> discoverTests(const std::string& code) {
     return tests;
 }
 
-TestSuiteResult runTests(const std::string& code,
-                         const std::vector<TestCase>& tests,
-                         OptimizationLevel optLevel) {
+TestSuiteResult runTests(const std::string& code, const std::vector<TestCase>& tests, OptimizationLevel optLevel)
+{
     TestSuiteResult result;
     for (const auto& test : tests) {
         auto& engine = JITEngine::instance();
@@ -395,8 +415,8 @@ TestSuiteResult runTests(const std::string& code,
         } else {
             ++result.failed;
             std::ostringstream message;
-            message << "Line " << test.line << ": expected " << test.expected
-                    << " +/- " << test.tolerance << ", got " << actual;
+            message << "Line " << test.line << ": expected " << test.expected << " +/- " << test.tolerance << ", got "
+                    << actual;
             result.failures.push_back(message.str());
         }
     }
@@ -404,11 +424,9 @@ TestSuiteResult runTests(const std::string& code,
     return result;
 }
 
-ProfileResult profileScript(JITEngine& engine,
-                            const std::string& code,
-                            const std::string& entryPoint,
-                            int iterations,
-                            std::string* error) {
+ProfileResult profileScript(JITEngine& engine, const std::string& code, const std::string& entryPoint, int iterations,
+                            std::string* error)
+{
     ProfileResult result;
     result.iterations = std::max(1, iterations);
 
@@ -439,14 +457,16 @@ ProfileResult profileScript(JITEngine& engine,
 
 // ---- Persistent JIT Cache: bitcode save/load ----
 
-bool saveBitcodeToFile(llvm::Module& M, const std::string& path, std::string* error) {
+bool saveBitcodeToFile(llvm::Module& M, const std::string& path, std::string* error)
+{
     if (!ensureParentDirectory(path, error))
         return false;
 
     std::error_code ec;
     llvm::raw_fd_ostream OS(path, ec, llvm::sys::fs::OF_None);
     if (ec) {
-        if (error) *error = ec.message();
+        if (error)
+            *error = ec.message();
         return false;
     }
     llvm::WriteBitcodeToFile(M, OS);
@@ -454,21 +474,19 @@ bool saveBitcodeToFile(llvm::Module& M, const std::string& path, std::string* er
     return true;
 }
 
-std::unique_ptr<llvm::Module> loadBitcodeFromFile(const std::string& path,
-                                                    llvm::LLVMContext& Ctx,
-                                                    std::string* error) {
+std::unique_ptr<llvm::Module> loadBitcodeFromFile(const std::string& path, llvm::LLVMContext& Ctx, std::string* error)
+{
     auto buf = llvm::MemoryBuffer::getFile(path);
     if (!buf) {
-        if (error) *error = "Could not open bitcode file: " + path;
+        if (error)
+            *error = "Could not open bitcode file: " + path;
         return nullptr;
     }
     auto mod = llvm::parseBitcodeFile((*buf)->getMemBufferRef(), Ctx);
     if (!mod) {
         if (error) {
             llvm::raw_string_ostream os(*error);
-            llvm::handleAllErrors(mod.takeError(), [&](const llvm::ErrorInfoBase& EI) {
-                os << EI.message();
-            });
+            llvm::handleAllErrors(mod.takeError(), [&](const llvm::ErrorInfoBase& EI) { os << EI.message(); });
         }
         return nullptr;
     }

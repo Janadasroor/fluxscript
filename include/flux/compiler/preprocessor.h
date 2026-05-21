@@ -14,16 +14,17 @@
 #ifndef FLUX_COMPILER_PREPROCESSOR_H
 #define FLUX_COMPILER_PREPROCESSOR_H
 
-#include <string>
-#include <vector>
 #include <map>
 #include <set>
 #include <stack>
+#include <string>
+#include <vector>
 
 namespace Flux {
 
 // Preprocessor directive types
-enum class DirectiveType {
+enum class DirectiveType
+{
     None,
     Ifdef,
     Ifndef,
@@ -41,7 +42,8 @@ enum class DirectiveType {
 };
 
 // Preprocessor result
-struct PreprocessResult {
+struct PreprocessResult
+{
     std::string output;
     std::vector<std::string> errors;
     std::vector<std::string> warnings;
@@ -50,52 +52,54 @@ struct PreprocessResult {
 };
 
 // Preprocessor class for handling #ifdef, #define, etc.
-class Preprocessor {
+class Preprocessor
+{
 public:
     Preprocessor();
     ~Preprocessor();
-    
+
     // Set feature flags for conditional compilation
     void define(const std::string& name, const std::string& value = "1");
     void undefine(const std::string& name);
     bool isDefined(const std::string& name) const;
-    
+
     // Get all defined macros
     std::map<std::string, std::string> getDefinitions() const;
-    
+
     // Preprocess source code
     PreprocessResult process(const std::string& source, const std::string& filename = "<input>");
-    
+
     // Set compile configuration
     void setFeatures(const std::map<std::string, bool>& features);
     void setConstants(const std::map<std::string, std::string>& constants);
-    
+
     // Include path management
     void addIncludePath(const std::string& path);
-    
+
     // Get line number mapping (for error reporting)
     std::map<int, int> getLineNumberMap() const { return m_lineNumberMap; }
-    
+
 private:
-    struct ConditionalState {
-        bool conditionMet;      // Was the condition true?
-        bool hasBeenTrue;       // Has any branch been true?
-        bool inActiveBranch;    // Are we currently in an active branch?
+    struct ConditionalState
+    {
+        bool conditionMet;   // Was the condition true?
+        bool hasBeenTrue;    // Has any branch been true?
+        bool inActiveBranch; // Are we currently in an active branch?
     };
-    
+
     std::map<std::string, std::string> m_macros;
     std::stack<ConditionalState> m_conditionalStack;
     std::vector<std::string> m_includePaths;
-    std::map<int, int> m_lineNumberMap;  // Output line -> Input line
+    std::map<int, int> m_lineNumberMap; // Output line -> Input line
     int m_currentLine = 1;
     int m_outputLine = 1;
-    bool m_skipMode = false;  // Are we skipping lines?
-    
+    bool m_skipMode = false; // Are we skipping lines?
+
     DirectiveType parseDirective(const std::string& line, std::string& argument);
     bool evaluateCondition(const std::string& expr);
     std::string expandMacros(const std::string& text);
     std::string trim(const std::string& str);
-    
+
     void handleDefine(const std::string& args);
     void handleUndef(const std::string& args);
     void handleIfdef(const std::string& args);

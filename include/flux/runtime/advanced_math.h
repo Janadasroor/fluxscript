@@ -84,7 +84,6 @@ double* flux_polyroots(double* coeffs, int order);
 // ============================================================================
 double* flux_least_squares(double* a, double* b, int m, int n);
 double* flux_gradient_descent(int n_vars);
-
 }
 
 #endif

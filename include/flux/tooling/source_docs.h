@@ -14,9 +14,9 @@
 #ifndef FLUX_TOOLING_SOURCE_DOCS_H
 #define FLUX_TOOLING_SOURCE_DOCS_H
 
+#include <map>
 #include <string>
 #include <vector>
-#include <map>
 
 namespace Flux {
 namespace Tooling {
@@ -25,31 +25,35 @@ namespace Tooling {
 // Source-level Documentation Types
 // ============================================================================
 
-struct DocComment {
-    std::string text;           // The comment text (/// content)
-    int line = 0;               // Line number in source
-    std::string format = "md";  // "md" for markdown, "rst", "plain"
+struct DocComment
+{
+    std::string text;          // The comment text (/// content)
+    int line = 0;              // Line number in source
+    std::string format = "md"; // "md" for markdown, "rst", "plain"
 };
 
-struct FunctionDoc {
+struct FunctionDoc
+{
     std::string name;
-    std::string signature;      // e.g., "def sin(x: double) -> double"
+    std::string signature; // e.g., "def sin(x: double) -> double"
     DocComment docComment;
     std::vector<std::string> parameters;
     std::string returnType;
-    std::string body;           // Implementation snippet for reference
+    std::string body; // Implementation snippet for reference
     std::vector<std::string> examples;
-    std::string deprecated;     // Deprecation message if deprecated
+    std::string deprecated; // Deprecation message if deprecated
 };
 
-struct TypeDoc {
+struct TypeDoc
+{
     std::string name;
     DocComment docComment;
-    std::string kind;           // "struct", "enum", "alias"
-    std::vector<std::pair<std::string, std::string>> members;  // name: type
+    std::string kind;                                         // "struct", "enum", "alias"
+    std::vector<std::pair<std::string, std::string>> members; // name: type
 };
 
-struct ModuleDoc {
+struct ModuleDoc
+{
     std::string name;
     DocComment docComment;
     std::vector<FunctionDoc> functions;
@@ -57,7 +61,8 @@ struct ModuleDoc {
     std::string description;
 };
 
-struct ApiDocumentation {
+struct ApiDocumentation
+{
     std::string projectName;
     std::string version;
     std::map<std::string, ModuleDoc> modules;
@@ -69,7 +74,8 @@ struct ApiDocumentation {
 // Source Documentation Generator
 // ============================================================================
 
-class SourceDocGenerator {
+class SourceDocGenerator
+{
 public:
     SourceDocGenerator();
 
@@ -105,7 +111,7 @@ private:
     std::string formatFunctionSignature(const FunctionDoc& func) const;
 
     ApiDocumentation m_apiDoc;
-    std::map<int, DocComment> m_pendingDocComments;  // Line -> comment
+    std::map<int, DocComment> m_pendingDocComments; // Line -> comment
     std::string m_currentFile;
 };
 

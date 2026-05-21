@@ -21,17 +21,18 @@ extern "C" {
 /**
  * @brief Interface for simulation services provided by the host (VioSpice).
  */
-typedef struct {
+typedef struct
+{
     double (*get_voltage)(const char* node);
     double (*get_current)(const char* branch);
     double (*get_parameter)(const char* name);
-    void   (*set_parameter)(const char* name, double value);
-    
-    void   (*sim_run)();
-    void   (*sim_stop)();
-    void   (*sim_pause)(int pause);
-    
-    void   (*log_message)(const char* msg);
+    void (*set_parameter)(const char* name, double value);
+
+    void (*sim_run)();
+    void (*sim_stop)();
+    void (*sim_pause)(int pause);
+
+    void (*log_message)(const char* msg);
 } FluxSimulationService;
 
 /**

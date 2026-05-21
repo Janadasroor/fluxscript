@@ -16,12 +16,13 @@
 
 #include "flux/compiler/ast.h"
 #include "flux/compiler/lexer.h"
-#include <memory>
 #include <map>
+#include <memory>
 
 namespace Flux {
 
-class Parser {
+class Parser
+{
 public:
     explicit Parser(const std::string& input);
 
@@ -36,7 +37,7 @@ public:
     std::unique_ptr<ExplainExprAST> ParseExplainExpr();
     std::unique_ptr<SubstituteStmtAST> ParseSubstituteStmt();
     std::unique_ptr<ExprAST> ParseUpdateFunc();
-    
+
     // Time-domain simulation and SPICE
     std::unique_ptr<AnalysisExprAST> ParseAnalysis();
     std::unique_ptr<MeasureExprAST> ParseMeasure();
@@ -45,7 +46,7 @@ public:
 
     int CurTok;
     int getNextToken();
-    
+
     // Error recovery (public for use by JIT engine)
     void SkipToSynchronizationPoint();
     bool IsSynchronizationToken(int token);
@@ -83,12 +84,12 @@ private:
     std::unique_ptr<ExprAST> ParsePrimary();
     std::unique_ptr<ExprAST> ParseBinOpRHS(int ExprPrec, std::unique_ptr<ExprAST> LHS);
     std::unique_ptr<PrototypeAST> ParsePrototype();
-    
+
     // Advanced control flow
     std::unique_ptr<ExprAST> ParseSwitchExpr();
     std::unique_ptr<ExprAST> ParseBreakExpr();
     std::unique_ptr<ExprAST> ParseContinueExpr();
-    
+
     // Additional keywords
     std::unique_ptr<ExprAST> ParseTryCatchExpr();
     std::unique_ptr<ExprAST> ParseThrowExpr();
@@ -99,11 +100,11 @@ private:
     std::unique_ptr<ExprAST> ParseForeachExpr();
     std::unique_ptr<ExprAST> ParseRepeatUntil();
     std::unique_ptr<ExprAST> ParseParallelForExpr();
-    
+
     // Schematic generation
     std::unique_ptr<ExprAST> ParseSchematicExpr();
     std::unique_ptr<ExprAST> ParseExportSchematic();
-    
+
     // Symbolic math
     std::unique_ptr<ExprAST> ParseSymDecl();
     std::unique_ptr<ExprAST> ParseSimplifyExpr();
@@ -113,7 +114,7 @@ private:
     std::unique_ptr<ExprAST> ParseJacobianExpr();
     std::unique_ptr<ExprAST> ParsePDEExpr();
     std::unique_ptr<ExprAST> ParsePartialDiffExpr();
-    
+
     // AI / Neural Network
     std::unique_ptr<ExprAST> ParseTrainExpr();
     std::unique_ptr<ExprAST> ParsePredictExpr();
@@ -123,7 +124,7 @@ private:
     std::unique_ptr<ExprAST> ParseMonteCarlo();
     std::unique_ptr<ExprAST> ParseVirtualProbe();
     std::unique_ptr<ExprAST> ParseHotSwap();
-    
+
     // Time-domain simulation
     std::unique_ptr<ExprAST> ParseBSourceDecl();
     std::unique_ptr<ExprAST> ParseTransientAnalysis();
@@ -149,20 +150,19 @@ private:
 
     std::unique_ptr<ExprAST> ParseProbe();
     std::unique_ptr<ExprAST> ParseSave();
-    
+
     /* Hierarchical Design */
     std::unique_ptr<ExprAST> ParseSubcktInstance();
-    
+
     /* Verilog-A Lite */
     std::unique_ptr<ExprAST> ParseAnalogBlock();
     std::unique_ptr<ExprAST> ParseDdtExpr();
     std::unique_ptr<ExprAST> ParseIdtExpr();
 
-    
     /* Symbol Pin Mapping */
     std::unique_ptr<ExprAST> ParseSymbolDecl();
     std::unique_ptr<ExprAST> ParsePinMap();
-    
+
     /* Section 7.1: Model Quality & Verification */
     std::unique_ptr<ExprAST> ParseAssertDecl();
     std::unique_ptr<ExprAST> ParseSettleDecl();

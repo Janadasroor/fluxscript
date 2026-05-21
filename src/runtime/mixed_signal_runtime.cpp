@@ -17,11 +17,11 @@
 
 // For thermal noise: Boltzmann constant
 #ifndef BOLTZMANN_K
-#define BOLTZMANN_K 1.380649e-23  // J/K
+#define BOLTZMANN_K 1.380649e-23 // J/K
 #endif
 
-template <typename To, typename From>
-inline To bit_cast(const From& src) noexcept {
+template <typename To, typename From> inline To bit_cast(const From& src) noexcept
+{
     static_assert(sizeof(To) == sizeof(From), "bit_cast sizes must match");
     To dst;
     std::memcpy(&dst, &src, sizeof(To));
@@ -36,7 +36,8 @@ extern "C" {
 
 static EventState g_eventState;
 
-double flux_cross_detect(double value, int rise_fall) {
+double flux_cross_detect(double value, int rise_fall)
+{
     if (!g_eventState.Initialized) {
         g_eventState.PrevValue = value;
         g_eventState.Initialized = true;
@@ -46,8 +47,7 @@ double flux_cross_detect(double value, int rise_fall) {
     bool crossed = false;
     if (rise_fall == 0) {
         // Any crossing
-        crossed = (g_eventState.PrevValue < 0.0 && value >= 0.0) ||
-                  (g_eventState.PrevValue > 0.0 && value <= 0.0);
+        crossed = (g_eventState.PrevValue < 0.0 && value >= 0.0) || (g_eventState.PrevValue > 0.0 && value <= 0.0);
     } else if (rise_fall == 1) {
         // Rising only
         crossed = (g_eventState.PrevValue < 0.0 && value >= 0.0);
@@ -60,7 +60,8 @@ double flux_cross_detect(double value, int rise_fall) {
     return crossed ? 1.0 : 0.0;
 }
 
-double flux_above_detect(double value, double threshold) {
+double flux_above_detect(double value, double threshold)
+{
     if (!g_eventState.Initialized) {
         g_eventState.PrevValue = value;
         g_eventState.Initialized = true;
@@ -71,7 +72,8 @@ double flux_above_detect(double value, double threshold) {
     return isAbove ? 1.0 : 0.0;
 }
 
-double flux_timer_get() {
+double flux_timer_get()
+{
     // Returns simulated time (in a real system, this would be tied to the simulation clock)
     // For now, return a placeholder that can be overridden by the simulation environment
     return g_eventState.EventTime;
@@ -81,7 +83,8 @@ double flux_timer_get() {
  * Real-valued digital modeling
  * ======================================================================== */
 
-void* flux_fsm_create(int initial_state, double output_fn) {
+void* flux_fsm_create(int initial_state, double output_fn)
+{
     auto* fsm = new FSMObject();
     fsm->CurrentState = initial_state;
     const char* output_fn_ptr = reinterpret_cast<const char*>(bit_cast<uint64_t>(output_fn));
@@ -89,9 +92,10 @@ void* flux_fsm_create(int initial_state, double output_fn) {
     return static_cast<void*>(fsm);
 }
 
-void flux_fsm_add_transition(void* fsm, int cur, int next,
-                              double (*cond)(void*), double (*out)(void*)) {
-    if (!fsm) return;
+void flux_fsm_add_transition(void* fsm, int cur, int next, double (*cond)(void*), double (*out)(void*))
+{
+    if (!fsm)
+        return;
     auto* f = static_cast<FSMObject*>(fsm);
     FSMObject::Transition t;
     t.CurrentState = cur;
@@ -101,7 +105,8 @@ void flux_fsm_add_transition(void* fsm, int cur, int next,
     f->Transitions.push_back(t);
 }
 
-double flux_edge_detect(double value, int edge_type) {
+double flux_edge_detect(double value, int edge_type)
+{
     if (!g_eventState.Initialized) {
         g_eventState.PrevValue = value;
         g_eventState.Initialized = true;
@@ -111,8 +116,7 @@ double flux_edge_detect(double value, int edge_type) {
     bool edge = false;
     if (edge_type == 0) {
         // Any edge
-        edge = (g_eventState.PrevValue < 0.5 && value >= 0.5) ||
-               (g_eventState.PrevValue >= 0.5 && value < 0.5);
+        edge = (g_eventState.PrevValue < 0.5 && value >= 0.5) || (g_eventState.PrevValue >= 0.5 && value < 0.5);
     } else if (edge_type == 1) {
         // Positive edge
         edge = (g_eventState.PrevValue < 0.5 && value >= 0.5);
@@ -133,9 +137,11 @@ double flux_edge_detect(double value, int edge_type) {
 static thread_local std::mt19937_64 g_rng(std::random_device{}());
 static thread_local std::normal_distribution<double> g_normalDist(0.0, 1.0);
 
-double flux_noise_generate(double type, double amplitude, double freq) {
+double flux_noise_generate(double type, double amplitude, double freq)
+{
     const char* type_ptr = reinterpret_cast<const char*>(bit_cast<uint64_t>(type));
-    if (!type_ptr) return 0.0;
+    if (!type_ptr)
+        return 0.0;
 
     std::string t(type_ptr);
     if (t == "white") {
@@ -149,11 +155,13 @@ double flux_noise_generate(double type, double amplitude, double freq) {
     return 0.0;
 }
 
-double flux_white_noise(double amplitude) {
+double flux_white_noise(double amplitude)
+{
     return amplitude * g_normalDist(g_rng);
 }
 
-double flux_flicker_noise(double amplitude, double corner_freq) {
+double flux_flicker_noise(double amplitude, double corner_freq)
+{
     // Simplified 1/f noise model
     // V_flicker = amplitude * sqrt(corner_freq / f) * gaussian
     // For simulation, we use a simplified approach
@@ -161,13 +169,14 @@ double flux_flicker_noise(double amplitude, double corner_freq) {
     // The actual frequency-dependent behavior would need simulation context
     // For now, return amplitude-weighted Gaussian with 1/f characteristic
     double flickerFactor = (corner_freq > 0.0) ? std::sqrt(corner_freq) : 1.0;
-    return amplitude * flickerFactor * gaussian * 0.1;  // 0.1 is a scaling factor
+    return amplitude * flickerFactor * gaussian * 0.1; // 0.1 is a scaling factor
 }
 
-double flux_thermal_noise(double resistance, double temperature) {
+double flux_thermal_noise(double resistance, double temperature)
+{
     // Johnson-Nyquist noise: Vn = sqrt(4 * k * T * R * BW)
     // Assuming 1 Hz bandwidth for per-sample noise
-    double bw = 1.0;  // 1 Hz bandwidth
+    double bw = 1.0; // 1 Hz bandwidth
     double variance = 4.0 * BOLTZMANN_K * temperature * resistance * bw;
     double stdDev = std::sqrt(variance);
     return stdDev * g_normalDist(g_rng);
@@ -177,30 +186,34 @@ double flux_thermal_noise(double resistance, double temperature) {
  * Piecewise and table-based models
  * ======================================================================== */
 
-void* flux_piecewise_create(double interpolation) {
+void* flux_piecewise_create(double interpolation)
+{
     auto* pw = new PiecewiseContext();
     const char* interp_ptr = reinterpret_cast<const char*>(bit_cast<uint64_t>(interpolation));
     pw->Interpolation = interp_ptr ? interp_ptr : "linear";
     return static_cast<void*>(pw);
 }
 
-void flux_piecewise_add_point(void* pw, double x, double y) {
-    if (!pw) return;
+void flux_piecewise_add_point(void* pw, double x, double y)
+{
+    if (!pw)
+        return;
     auto* ctx = static_cast<PiecewiseContext*>(pw);
     ctx->Points.push_back({x, y});
     // Keep points sorted by x
     std::sort(ctx->Points.begin(), ctx->Points.end(),
-              [](const PiecewiseContext::Point& a, const PiecewiseContext::Point& b) {
-                  return a.X < b.X;
-              });
+              [](const PiecewiseContext::Point& a, const PiecewiseContext::Point& b) { return a.X < b.X; });
 }
 
-static double linearInterp(double x0, double y0, double x1, double y1, double x) {
-    if (x1 == x0) return y0;
+static double linearInterp(double x0, double y0, double x1, double y1, double x)
+{
+    if (x1 == x0)
+        return y0;
     return y0 + (y1 - y0) * (x - x0) / (x1 - x0);
 }
 
-static double stepInterp(const std::vector<PiecewiseContext::Point>& points, double x) {
+static double stepInterp(const std::vector<PiecewiseContext::Point>& points, double x)
+{
     // Return y of the nearest point with x_point <= x
     double result = points.empty() ? 0.0 : points.back().Y;
     for (const auto& pt : points) {
@@ -213,8 +226,9 @@ static double stepInterp(const std::vector<PiecewiseContext::Point>& points, dou
     return result;
 }
 
-static double cubicInterp(double x0, double y0, double x1, double y1,
-                          double x2, double y2, double x3, double y3, double x) {
+static double cubicInterp(double x0, double y0, double x1, double y1, double x2, double y2, double x3, double y3,
+                          double x)
+{
     // Catmull-Rom spline interpolation
     double t = (x - x1) / (x2 - x1);
     double t2 = t * t;
@@ -228,12 +242,16 @@ static double cubicInterp(double x0, double y0, double x1, double y1,
     return c0 + c1 * t + c2 * t2 + c3 * t3;
 }
 
-double flux_piecewise_eval(void* pw, double x) {
-    if (!pw) return 0.0;
+double flux_piecewise_eval(void* pw, double x)
+{
+    if (!pw)
+        return 0.0;
     auto* ctx = static_cast<PiecewiseContext*>(pw);
 
-    if (ctx->Points.empty()) return 0.0;
-    if (ctx->Points.size() == 1) return ctx->Points[0].Y;
+    if (ctx->Points.empty())
+        return 0.0;
+    if (ctx->Points.size() == 1)
+        return ctx->Points[0].Y;
 
     if (ctx->Interpolation == "step") {
         return stepInterp(ctx->Points, x);
@@ -242,7 +260,7 @@ double flux_piecewise_eval(void* pw, double x) {
     // Find segment containing x
     size_t i = 0;
     for (; i < ctx->Points.size() - 1; ++i) {
-        if (ctx->Points[i].X <= x && ctx->Points[i+1].X >= x) {
+        if (ctx->Points[i].X <= x && ctx->Points[i + 1].X >= x) {
             break;
         }
     }
@@ -253,7 +271,7 @@ double flux_piecewise_eval(void* pw, double x) {
             i = ctx->Points.size() - 2;
         }
         const auto& p0 = ctx->Points[i];
-        const auto& p1 = ctx->Points[i+1];
+        const auto& p1 = ctx->Points[i + 1];
         return linearInterp(p0.X, p0.Y, p1.X, p1.Y, x);
     } else if (ctx->Interpolation == "cubic" || ctx->Interpolation == "spline") {
         // Need 4 points for cubic interpolation
@@ -271,9 +289,10 @@ double flux_piecewise_eval(void* pw, double x) {
     }
 
     // Default to linear
-    if (i >= ctx->Points.size() - 1) i = ctx->Points.size() - 2;
+    if (i >= ctx->Points.size() - 1)
+        i = ctx->Points.size() - 2;
     const auto& p0 = ctx->Points[i];
-    const auto& p1 = ctx->Points[i+1];
+    const auto& p1 = ctx->Points[i + 1];
     return linearInterp(p0.X, p0.Y, p1.X, p1.Y, x);
 }
 
@@ -281,25 +300,32 @@ double flux_piecewise_eval(void* pw, double x) {
  * Table lookup
  * ======================================================================== */
 
-void* flux_table_create() {
+void* flux_table_create()
+{
     return static_cast<void*>(new TableObject());
 }
 
-void flux_table_add_entry(void* table, double key, double value) {
-    if (!table) return;
+void flux_table_add_entry(void* table, double key, double value)
+{
+    if (!table)
+        return;
     auto* t = static_cast<TableObject*>(table);
     t->Entries[key] = value;
 }
 
-void flux_table_set_default(void* table, double value) {
-    if (!table) return;
+void flux_table_set_default(void* table, double value)
+{
+    if (!table)
+        return;
     auto* t = static_cast<TableObject*>(table);
     t->DefaultValue = value;
     t->HasDefault = true;
 }
 
-double flux_table_lookup(void* table, double key) {
-    if (!table) return 0.0;
+double flux_table_lookup(void* table, double key)
+{
+    if (!table)
+        return 0.0;
     auto* t = static_cast<TableObject*>(table);
 
     auto it = t->Entries.find(key);
@@ -323,7 +349,8 @@ double flux_table_lookup(void* table, double key) {
         // Linear interpolation between lower and upper
         double x0 = lower->first, y0 = lower->second;
         double x1 = upper->first, y1 = upper->second;
-        if (x1 == x0) return y0;
+        if (x1 == x0)
+            return y0;
         return y0 + (y1 - y0) * (key - x0) / (x1 - x0);
     }
 
@@ -331,16 +358,18 @@ double flux_table_lookup(void* table, double key) {
         return t->DefaultValue;
     }
 
-    return 0.0;  // Default if no match
+    return 0.0; // Default if no match
 }
 
 /* ========================================================================
  * CSV import
  * ======================================================================== */
 
-void* flux_csv_import(double filename, double options_json) {
+void* flux_csv_import(double filename, double options_json)
+{
     const char* filename_ptr = reinterpret_cast<const char*>(bit_cast<uint64_t>(filename));
-    if (!filename_ptr) return nullptr;
+    if (!filename_ptr)
+        return nullptr;
 
     const char* options_ptr = reinterpret_cast<const char*>(bit_cast<uint64_t>(options_json));
     // In a full implementation, this would:

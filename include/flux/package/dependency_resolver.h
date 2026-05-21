@@ -19,16 +19,17 @@
 #ifndef FLUX_DEPENDENCY_RESOLVER_H
 #define FLUX_DEPENDENCY_RESOLVER_H
 
+#include <map>
+#include <memory>
+#include <set>
 #include <string>
 #include <vector>
-#include <map>
-#include <set>
-#include <memory>
 
 namespace Flux {
 
 // Version
-struct SemanticVersion {
+struct SemanticVersion
+{
     int major = 0;
     int minor = 0;
     int patch = 0;
@@ -45,9 +46,21 @@ struct SemanticVersion {
 };
 
 // Version constraint: ^1.2.0, >=1.0, ~1.2, =1.2.3, etc.
-struct VersionConstraint {
+struct VersionConstraint
+{
     std::string raw;
-    enum Type { Exact, GTE, LTE, GT, LT, Caret, Tilde, Range, Any };
+    enum Type
+    {
+        Exact,
+        GTE,
+        LTE,
+        GT,
+        LT,
+        Caret,
+        Tilde,
+        Range,
+        Any
+    };
     Type type = Any;
     SemanticVersion min_version;
     SemanticVersion max_version;
@@ -57,26 +70,30 @@ struct VersionConstraint {
 };
 
 // Dependency
-struct Dependency {
+struct Dependency
+{
     std::string name;
     VersionConstraint constraint;
 };
 
 // Package metadata
-struct PackageMetadata {
+struct PackageMetadata
+{
     std::string name;
     SemanticVersion version;
     std::vector<Dependency> dependencies;
 };
 
 // Resolution result
-struct ResolvedPackage {
+struct ResolvedPackage
+{
     std::string name;
     SemanticVersion version;
 };
 
 // Resolution result or error
-struct ResolutionResult {
+struct ResolutionResult
+{
     bool success;
     std::vector<ResolvedPackage> packages;
     std::string error_message;
@@ -84,7 +101,8 @@ struct ResolutionResult {
 };
 
 // Dependency graph node
-struct DepGraphNode {
+struct DepGraphNode
+{
     std::string name;
     SemanticVersion version;
     std::vector<std::string> dependencies;
@@ -92,7 +110,8 @@ struct DepGraphNode {
 };
 
 // Enhanced Dependency Resolver
-class DependencyResolver {
+class DependencyResolver
+{
 public:
     static DependencyResolver& instance();
 
@@ -124,33 +143,18 @@ private:
     ~DependencyResolver() = default;
 
     // Internal resolution helpers
-    bool resolveRecursive(
-        const std::string& pkg_name,
-        const VersionConstraint& constraint,
-        int depth,
-        std::map<std::string, SemanticVersion>& resolved,
-        std::vector<std::string>& path,
-        std::string& error
-    );
+    bool resolveRecursive(const std::string& pkg_name, const VersionConstraint& constraint, int depth,
+                          std::map<std::string, SemanticVersion>& resolved, std::vector<std::string>& path,
+                          std::string& error);
 
-    SemanticVersion selectBestVersion(
-        const std::string& name,
-        const VersionConstraint& constraint,
-        const std::map<std::string, SemanticVersion>& already_resolved
-    );
+    SemanticVersion selectBestVersion(const std::string& name, const VersionConstraint& constraint,
+                                      const std::map<std::string, SemanticVersion>& already_resolved);
 
-    bool hasConflict(
-        const std::string& name,
-        const SemanticVersion& version,
-        const std::map<std::string, SemanticVersion>& resolved
-    ) const;
+    bool hasConflict(const std::string& name, const SemanticVersion& version,
+                     const std::map<std::string, SemanticVersion>& resolved) const;
 
-    std::vector<DepGraphNode> buildTreeRecursive(
-        const std::string& name,
-        const SemanticVersion& version,
-        int depth,
-        std::set<std::string>& visited
-    );
+    std::vector<DepGraphNode> buildTreeRecursive(const std::string& name, const SemanticVersion& version, int depth,
+                                                 std::set<std::string>& visited);
 
     // Registry: name -> version -> metadata
     std::map<std::string, std::map<SemanticVersion, PackageMetadata>> m_registry;

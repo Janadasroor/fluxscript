@@ -14,27 +14,30 @@
 // flux-optimize: Automated circuit optimization
 // Usage: flux-optimize <circuit.flux> [--var Name:Init:Min:Max] [--target Name=Value:Weight]
 
-#include <iostream>
-#include <vector>
-#include <string>
-#include <algorithm>
-#include <sstream>
 #include "flux/analysis/advanced_analysis.h"
+#include <algorithm>
+#include <iostream>
+#include <sstream>
+#include <string>
+#include <vector>
 
 using namespace Flux::AdvancedAnalysis;
 
-struct VarDef {
+struct VarDef
+{
     std::string name;
     double init, min, max;
 };
 
-struct TargetDef {
+struct TargetDef
+{
     std::string name;
     double value;
     double weight;
 };
 
-int main(int argc, char** argv) {
+int main(int argc, char** argv)
+{
     std::cout << "\n";
     std::cout << "\n";
     std::cout << "          FluxScript Circuit Optimizer                   \n";

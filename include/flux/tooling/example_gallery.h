@@ -19,39 +19,42 @@
 #ifndef FLUX_EXAMPLE_GALLERY_H
 #define FLUX_EXAMPLE_GALLERY_H
 
-#include <string>
-#include <vector>
+#include <functional>
 #include <map>
 #include <memory>
 #include <mutex>
-#include <functional>
+#include <string>
+#include <vector>
 
 namespace Flux {
 
 // Example entry
-struct ExampleEntry {
-    std::string name;             // Filename without extension
-    std::string path;             // Full path to .flux file
-    std::string category;         // e.g., "math", "control_flow", "spice"
-    std::string description;      // Short description
-    std::string difficulty;       // "beginner", "intermediate", "advanced"
+struct ExampleEntry
+{
+    std::string name;              // Filename without extension
+    std::string path;              // Full path to .flux file
+    std::string category;          // e.g., "math", "control_flow", "spice"
+    std::string description;       // Short description
+    std::string difficulty;        // "beginner", "intermediate", "advanced"
     std::vector<std::string> tags; // Keywords
-    std::string source_preview;   // First 20 lines of the file
+    std::string source_preview;    // First 20 lines of the file
     size_t line_count;
-    bool runnable;                // Whether it passes JIT compilation
+    bool runnable; // Whether it passes JIT compilation
 };
 
 // Category summary
-struct CategorySummary {
+struct CategorySummary
+{
     std::string name;
     std::string description;
-    std::string icon;              // Emoji or icon
+    std::string icon; // Emoji or icon
     int example_count;
     std::vector<std::string> tags; // Common tags in this category
 };
 
 // Gallery search/filter options
-struct GalleryFilter {
+struct GalleryFilter
+{
     std::string category;
     std::string difficulty;
     std::string tag;
@@ -60,7 +63,8 @@ struct GalleryFilter {
 };
 
 // Example Gallery
-class ExampleGallery {
+class ExampleGallery
+{
 public:
     static ExampleGallery& instance();
 

@@ -20,11 +20,12 @@
 namespace Flux {
 namespace Instruments {
 
-// 
-//  Base Instrument Class                               
-// 
+//
+//  Base Instrument Class
+//
 
-class Instrument {
+class Instrument
+{
 public:
     Instrument();
     virtual ~Instrument();
@@ -53,11 +54,12 @@ protected:
     std::string readSocket();
 };
 
-// 
-//  DC Power Supply                                     
-// 
+//
+//  DC Power Supply
+//
 
-class PowerSupply : public Instrument {
+class PowerSupply : public Instrument
+{
 public:
     PowerSupply();
 
@@ -71,11 +73,12 @@ public:
     double measureCurrent();
 };
 
-// 
-//  Digital Multimeter                                  
-// 
+//
+//  Digital Multimeter
+//
 
-class Multimeter : public Instrument {
+class Multimeter : public Instrument
+{
 public:
     Multimeter();
 
@@ -86,11 +89,12 @@ public:
     double measureFrequency();
 };
 
-// 
-//  Oscilloscope                                        
-// 
+//
+//  Oscilloscope
+//
 
-class Oscilloscope : public Instrument {
+class Oscilloscope : public Instrument
+{
 public:
     Oscilloscope();
 
@@ -105,7 +109,8 @@ public:
     void single();
 
     // Data Retrieval (simplified waveform capture)
-    struct WaveformData {
+    struct WaveformData
+    {
         std::vector<double> time;
         std::vector<double> voltage;
         double xIncrement;
@@ -117,17 +122,17 @@ public:
     WaveformData captureWaveform(int channel = 1);
 };
 
-// 
-//  Convenience Functions                                
-// 
+//
+//  Convenience Functions
+//
 
 extern "C" {
-    void* flux_ps_create();
-    void flux_ps_destroy(void* ps);
-    bool flux_ps_connect(void* ps, const char* ip, int port);
-    void flux_ps_set_voltage(void* ps, double v);
-    double flux_ps_measure_voltage(void* ps);
-    void flux_ps_disconnect(void* ps);
+void* flux_ps_create();
+void flux_ps_destroy(void* ps);
+bool flux_ps_connect(void* ps, const char* ip, int port);
+void flux_ps_set_voltage(void* ps, double v);
+double flux_ps_measure_voltage(void* ps);
+void flux_ps_disconnect(void* ps);
 }
 
 } // namespace Instruments

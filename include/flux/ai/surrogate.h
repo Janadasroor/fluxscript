@@ -14,17 +14,18 @@
 #ifndef FLUX_AI_SURROGATE_H
 #define FLUX_AI_SURROGATE_H
 
-#include <vector>
-#include <string>
-#include <memory>
-#include <map>
-#include <functional>
 #include <Eigen/Dense>
+#include <functional>
+#include <map>
+#include <memory>
+#include <string>
+#include <vector>
 
 namespace Flux {
 namespace AI {
 
-struct NetworkArchitecture {
+struct NetworkArchitecture
+{
     std::vector<int> layers;
     int epochs = 100;
     double learningRate = 0.01;
@@ -32,13 +33,15 @@ struct NetworkArchitecture {
     std::string outputActivation = "linear";
 };
 
-struct TrainingData {
+struct TrainingData
+{
     std::vector<std::vector<double>> inputs;
     std::vector<std::vector<double>> outputs;
     size_t numSamples() const { return inputs.size(); }
 };
 
-struct TrainingResult {
+struct TrainingResult
+{
     bool success = false;
     std::string message;
     std::vector<double> lossHistory;
@@ -46,14 +49,16 @@ struct TrainingResult {
     double finalLoss = 0.0;
 };
 
-struct PredictionResult {
+struct PredictionResult
+{
     std::vector<double> prediction;
     double inferenceTime = 0.0;
 };
 
 typedef std::function<void(size_t, double)> LossCallback;
 
-class NeuralNetworkSurrogate {
+class NeuralNetworkSurrogate
+{
 public:
     NeuralNetworkSurrogate();
     explicit NeuralNetworkSurrogate(const NetworkArchitecture& arch);
@@ -61,11 +66,11 @@ public:
 
     void setArchitecture(const NetworkArchitecture& arch);
     void setEpochs(int epochs) { m_arch.epochs = epochs; }
-    
+
     TrainingResult train(const TrainingData& data);
     TrainingResult train(const TrainingData& trainData, const TrainingData& valData);
     TrainingResult train(const TrainingData& data, LossCallback callback);
-    
+
     PredictionResult predict(const std::vector<double>& input) const;
     std::vector<PredictionResult> predictBatch(const std::vector<std::vector<double>>& inputs) const;
 
@@ -103,7 +108,8 @@ private:
     std::vector<Eigen::VectorXd> m_deltas;
 };
 
-class SurrogateFactory {
+class SurrogateFactory
+{
 public:
     static SurrogateFactory& instance();
     static NetworkArchitecture suggestArchitecture(size_t inputDim, size_t outputDim, size_t numSamples);
@@ -116,41 +122,50 @@ public:
 
 typedef std::vector<double> (*SimulationFunction)(const std::vector<double>&);
 
-class TrainingDataGenerator {
+class TrainingDataGenerator
+{
 public:
     TrainingDataGenerator(SimulationFunction simFunc);
     ~TrainingDataGenerator();
-    TrainingData generateRandomSamples(size_t numSamples, const std::map<std::string, std::pair<double, double>>& paramRanges);
-    TrainingData generateLatinHypercube(size_t numSamples, const std::map<std::string, std::pair<double, double>>& paramRanges);
+    TrainingData generateRandomSamples(size_t numSamples,
+                                       const std::map<std::string, std::pair<double, double>>& paramRanges);
+    TrainingData generateLatinHypercube(size_t numSamples,
+                                        const std::map<std::string, std::pair<double, double>>& paramRanges);
     TrainingData generateFullFactorial(const std::map<std::string, std::vector<double>>& paramValues);
-    TrainingData adaptiveSampling(NeuralNetworkSurrogate& surrogate, size_t numAdditionalSamples, const std::map<std::string, std::pair<double, double>>& paramRanges);
+    TrainingData adaptiveSampling(NeuralNetworkSurrogate& surrogate, size_t numAdditionalSamples,
+                                  const std::map<std::string, std::pair<double, double>>& paramRanges);
     void normalize(TrainingData& data);
     void denormalize(TrainingData& data);
     TrainingData splitTrainVal(const TrainingData& data, double valFraction);
+
 private:
     SimulationFunction m_simFunc;
 };
 
-class EnsembleModel {
+class EnsembleModel
+{
 public:
     EnsembleModel();
     ~EnsembleModel();
     void addModel(std::shared_ptr<NeuralNetworkSurrogate> model, double weight = 1.0);
     PredictionResult predict(const std::vector<double>& input) const;
-    static std::shared_ptr<EnsembleModel> selectBest(const std::vector<std::shared_ptr<NeuralNetworkSurrogate>>& models, const TrainingData& testData);
+    static std::shared_ptr<EnsembleModel> selectBest(const std::vector<std::shared_ptr<NeuralNetworkSurrogate>>& models,
+                                                     const TrainingData& testData);
 };
 
 // C interface
 extern "C" {
-    void* flux_nn_create(const int* layers, int numLayers);
-    void flux_nn_destroy(void* nn);
-    void flux_nn_train(void* nn, const double* inputs, const double* outputs, int numSamples, int inputDim, int outputDim, int epochs);
-    void flux_nn_predict(void* nn, const double* input, double* output, int inputDim, int outputDim);
-    void flux_nn_save(void* nn, const char* filename);
-    void* flux_nn_load(const char* filename);
-    void* flux_surrogate_create();
-    void flux_surrogate_train(void* surrogate, const char* circuit_type, const double* params, const double* results, int numSamples);
-    void flux_surrogate_predict(void* surrogate, const double* params, double* results, int numParams);
+void* flux_nn_create(const int* layers, int numLayers);
+void flux_nn_destroy(void* nn);
+void flux_nn_train(void* nn, const double* inputs, const double* outputs, int numSamples, int inputDim, int outputDim,
+                   int epochs);
+void flux_nn_predict(void* nn, const double* input, double* output, int inputDim, int outputDim);
+void flux_nn_save(void* nn, const char* filename);
+void* flux_nn_load(const char* filename);
+void* flux_surrogate_create();
+void flux_surrogate_train(void* surrogate, const char* circuit_type, const double* params, const double* results,
+                          int numSamples);
+void flux_surrogate_predict(void* surrogate, const double* params, double* results, int numParams);
 }
 
 } // namespace AI

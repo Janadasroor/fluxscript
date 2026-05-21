@@ -15,46 +15,46 @@
 
 #include <cstdlib>
 
-#include <llvm/IR/Verifier.h>
-#include <llvm/IR/DebugInfoMetadata.h>
-#include <llvm/Support/MemoryBuffer.h>
 #include <llvm/ADT/SmallString.h>
-#include <llvm/Support/raw_ostream.h>
+#include <llvm/IR/DebugInfoMetadata.h>
+#include <llvm/IR/Verifier.h>
+#include <llvm/Support/MemoryBuffer.h>
 #include <llvm/Support/Path.h>
+#include <llvm/Support/raw_ostream.h>
 
 #include "flux/compiler/lexer.h"
 #include "flux/compiler/parser.h"
 
-#include <sstream>
 #include <iostream>
+#include <sstream>
 
 namespace Flux {
 
 namespace {
 
-std::string tokenSpelling(const Lexer& lexer, int token) {
+std::string tokenSpelling(const Lexer& lexer, int token)
+{
     if (token == static_cast<int>(TokenType::tok_identifier))
         return lexer.IdentifierStr;
     if (token == static_cast<int>(TokenType::tok_string))
         return "\"" + lexer.StringVal + "\"";
-    if (token == static_cast<int>(TokenType::tok_number) ||
-        token == static_cast<int>(TokenType::tok_imaginary)) {
+    if (token == static_cast<int>(TokenType::tok_number) || token == static_cast<int>(TokenType::tok_imaginary)) {
         std::ostringstream os;
         os << lexer.NumVal;
         if (token == static_cast<int>(TokenType::tok_imaginary))
             os << "j";
         return os.str();
     }
-    
+
     return Lexer::tokenSpelling(token);
 }
 
 } // namespace
 
-CompilerInstance::CompilerInstance(CompilerOptions options)
-    : m_options(std::move(options)) {}
+CompilerInstance::CompilerInstance(CompilerOptions options) : m_options(std::move(options)) {}
 
-std::unique_ptr<CodegenContext> CompilerInstance::createCodegenContext() const {
+std::unique_ptr<CodegenContext> CompilerInstance::createCodegenContext() const
+{
     auto context = std::make_unique<CodegenContext>();
     context->OwnedModule = std::make_unique<llvm::Module>(m_options.moduleName, context->TheContext);
     context->TheModule = context->OwnedModule.get();
@@ -67,27 +67,22 @@ std::unique_ptr<CodegenContext> CompilerInstance::createCodegenContext() const {
         const llvm::StringRef fileName = path::filename(fullPath);
 
         context->DebugEnabled = true;
-        context->TheModule->addModuleFlag(llvm::Module::Warning, "Debug Info Version",
-                                          llvm::DEBUG_METADATA_VERSION);
+        context->TheModule->addModuleFlag(llvm::Module::Warning, "Debug Info Version", llvm::DEBUG_METADATA_VERSION);
         context->TheModule->addModuleFlag(llvm::Module::Warning, "Dwarf Version", 5);
         context->DebugBuilder = std::make_unique<llvm::DIBuilder>(*context->TheModule);
-        context->DebugFile = context->DebugBuilder->createFile(
-            fileName.empty() ? llvm::StringRef("<stdin>") : fileName,
-            directory.empty() ? llvm::StringRef(".") : llvm::StringRef(directory));
+        context->DebugFile =
+            context->DebugBuilder->createFile(fileName.empty() ? llvm::StringRef("<stdin>") : fileName,
+                                              directory.empty() ? llvm::StringRef(".") : llvm::StringRef(directory));
         context->DebugCompileUnit = context->DebugBuilder->createCompileUnit(
-            llvm::dwarf::DW_LANG_C_plus_plus,
-            context->DebugFile,
-            "FluxScript",
-            false,
-            "",
-            0);
+            llvm::dwarf::DW_LANG_C_plus_plus, context->DebugFile, "FluxScript", false, "", 0);
     }
 
     return context;
 }
 
 void CompilerInstance::injectStandardLibrary(CodegenContext& context,
-                                             std::map<std::string, FluxType>& returnTypes) const {
+                                             std::map<std::string, FluxType>& returnTypes) const
+{
     auto inject = [&](const std::string& name, int args) {
         std::vector<std::pair<std::string, FluxType>> params;
         for (int i = 0; i < args; ++i)
@@ -114,87 +109,87 @@ void CompilerInstance::injectStandardLibrary(CodegenContext& context,
     auto MatTy = [&]() { return FluxType(TypeKind::Matrix); };
 
     // Matrix functions returning void* (wrapped to Matrix by codegen)
-    regExtern("matrix_zeros",      MatTy(), {IntTy(), IntTy()});
-    regExtern("matrix_create",     MatTy(), {IntTy(), IntTy()});
-    regExtern("matrix_eye",        MatTy(), {IntTy()});
-    regExtern("matrix_ones",       MatTy(), {IntTy(), IntTy()});
-    regExtern("matrix_copy",       MatTy(), {MatTy()});
-    regExtern("matrix_diag",       MatTy(), {MatTy()});
-    regExtern("matrix_hcat",       MatTy(), {MatTy(), MatTy()});
-    regExtern("matrix_vcat",       MatTy(), {MatTy(), MatTy()});
-    regExtern("matrix_sum",        DblTy(), {MatTy()});
-    regExtern("matrix_mean",       DblTy(), {MatTy()});
-    regExtern("matrix_slice",      MatTy(), {MatTy(), IntTy(), IntTy(), IntTy(), IntTy()});
-    regExtern("matrix_trace",      DblTy(), {MatTy()});
-    regExtern("matrix_diag",       MatTy(), {MatTy()});
+    regExtern("matrix_zeros", MatTy(), {IntTy(), IntTy()});
+    regExtern("matrix_create", MatTy(), {IntTy(), IntTy()});
+    regExtern("matrix_eye", MatTy(), {IntTy()});
+    regExtern("matrix_ones", MatTy(), {IntTy(), IntTy()});
+    regExtern("matrix_copy", MatTy(), {MatTy()});
+    regExtern("matrix_diag", MatTy(), {MatTy()});
+    regExtern("matrix_hcat", MatTy(), {MatTy(), MatTy()});
+    regExtern("matrix_vcat", MatTy(), {MatTy(), MatTy()});
+    regExtern("matrix_sum", DblTy(), {MatTy()});
+    regExtern("matrix_mean", DblTy(), {MatTy()});
+    regExtern("matrix_slice", MatTy(), {MatTy(), IntTy(), IntTy(), IntTy(), IntTy()});
+    regExtern("matrix_trace", DblTy(), {MatTy()});
+    regExtern("matrix_diag", MatTy(), {MatTy()});
 
     // File I/O and string utilities (flux_ prefix avoids libc symbol conflicts)
-    regExtern("flux_fopen",   DblTy(), {DblTy(), DblTy()});
-    regExtern("flux_fclose",  DblTy(), {DblTy()});
-    regExtern("flux_feof",    DblTy(), {DblTy()});
-    regExtern("flux_fgets",   DblTy(), {DblTy()});
+    regExtern("flux_fopen", DblTy(), {DblTy(), DblTy()});
+    regExtern("flux_fclose", DblTy(), {DblTy()});
+    regExtern("flux_feof", DblTy(), {DblTy()});
+    regExtern("flux_fgets", DblTy(), {DblTy()});
     regExtern("flux_fprintf", DblTy(), {DblTy(), DblTy(), DblTy()});
-    regExtern("flux_strcmp",  DblTy(), {DblTy(), DblTy()});
-    regExtern("flux_strlen",        DblTy(), {DblTy()});
-    regExtern("flux_string_at",     DblTy(), {DblTy(), DblTy()});
-    regExtern("flux_string_slice",  DblTy(), {DblTy(), DblTy(), DblTy()});
-    regExtern("flux_string_find",   DblTy(), {DblTy(), DblTy()});
-    regExtern("flux_parse_number",  DblTy(), {DblTy()});
+    regExtern("flux_strcmp", DblTy(), {DblTy(), DblTy()});
+    regExtern("flux_strlen", DblTy(), {DblTy()});
+    regExtern("flux_string_at", DblTy(), {DblTy(), DblTy()});
+    regExtern("flux_string_slice", DblTy(), {DblTy(), DblTy(), DblTy()});
+    regExtern("flux_string_find", DblTy(), {DblTy(), DblTy()});
+    regExtern("flux_parse_number", DblTy(), {DblTy()});
     regExtern("flux_string_concat", DblTy(), {DblTy(), DblTy()});
     regExtern("flux_double_to_string", DblTy(), {DblTy()});
-    regExtern("flux_regex_match",   DblTy(), {DblTy(), DblTy()});
+    regExtern("flux_regex_match", DblTy(), {DblTy(), DblTy()});
     regExtern("flux_regex_replace", DblTy(), {DblTy(), DblTy(), DblTy()});
-    regExtern("flux_print_string",  DblTy(), {DblTy()});
+    regExtern("flux_print_string", DblTy(), {DblTy()});
 
     // FFT
-    regExtern("fft",               MatTy(), {MatTy(), DblTy()});
-    regExtern("fft_thd",           DblTy(), {MatTy(), DblTy()});
-    regExtern("fft_snr",           DblTy(), {MatTy(), DblTy()});
+    regExtern("fft", MatTy(), {MatTy(), DblTy()});
+    regExtern("fft_thd", DblTy(), {MatTy(), DblTy()});
+    regExtern("fft_snr", DblTy(), {MatTy(), DblTy()});
 
     // SPICE simulation API
     regExtern("register_analysis", DblTy(), {DblTy()});
-    regExtern("register_measure",  DblTy(), {DblTy(), DblTy()});
-    regExtern("register_probe",    DblTy(), {DblTy(), DblTy()});
-    regExtern("register_save",     DblTy(), {DblTy()});
-    regExtern("register_param",    DblTy(), {DblTy(), DblTy()});
-    regExtern("register_ic",       DblTy(), {DblTy(), DblTy()});
+    regExtern("register_measure", DblTy(), {DblTy(), DblTy()});
+    regExtern("register_probe", DblTy(), {DblTy(), DblTy()});
+    regExtern("register_save", DblTy(), {DblTy()});
+    regExtern("register_param", DblTy(), {DblTy(), DblTy()});
+    regExtern("register_ic", DblTy(), {DblTy(), DblTy()});
 
     // flux_register_* names used by SPICE AST codegen (const char* args, double return)
     regExtern("flux_register_analysis", DblTy(), {DblTy()});
-    regExtern("flux_register_measure",  DblTy(), {DblTy(), DblTy()});
-    regExtern("flux_register_probe",    DblTy(), {DblTy(), DblTy()});
-    regExtern("flux_register_save",     DblTy(), {DblTy()});
-    regExtern("flux_register_param",    DblTy(), {DblTy(), DblTy()});
-    regExtern("flux_register_ic",       DblTy(), {DblTy(), DblTy()});
-    regExtern("flux_register_model",    DblTy(), {DblTy(), DblTy()});
-    regExtern("flux_register_subckt",   DblTy(), {DblTy(), DblTy()});
-    regExtern("flux_register_bsource",  DblTy(), {DblTy(), DblTy(), DblTy(), DblTy()});
-    regExtern("matrix_mul",        MatTy(), {MatTy(), MatTy()});
-    regExtern("matrix_add",        MatTy(), {MatTy(), MatTy()});
-    regExtern("matrix_sub",        MatTy(), {MatTy(), MatTy()});
-    regExtern("matrix_transpose",  MatTy(), {MatTy()});
-    regExtern("matrix_inv",        MatTy(), {MatTy()});
-    regExtern("matrix_solve",      MatTy(), {MatTy(), MatTy()});
+    regExtern("flux_register_measure", DblTy(), {DblTy(), DblTy()});
+    regExtern("flux_register_probe", DblTy(), {DblTy(), DblTy()});
+    regExtern("flux_register_save", DblTy(), {DblTy()});
+    regExtern("flux_register_param", DblTy(), {DblTy(), DblTy()});
+    regExtern("flux_register_ic", DblTy(), {DblTy(), DblTy()});
+    regExtern("flux_register_model", DblTy(), {DblTy(), DblTy()});
+    regExtern("flux_register_subckt", DblTy(), {DblTy(), DblTy()});
+    regExtern("flux_register_bsource", DblTy(), {DblTy(), DblTy(), DblTy(), DblTy()});
+    regExtern("matrix_mul", MatTy(), {MatTy(), MatTy()});
+    regExtern("matrix_add", MatTy(), {MatTy(), MatTy()});
+    regExtern("matrix_sub", MatTy(), {MatTy(), MatTy()});
+    regExtern("matrix_transpose", MatTy(), {MatTy()});
+    regExtern("matrix_inv", MatTy(), {MatTy()});
+    regExtern("matrix_solve", MatTy(), {MatTy(), MatTy()});
 
     // Matrix functions returning scalar
-    regExtern("matrix_det",        DblTy(), {MatTy()});
-    regExtern("matrix_get",        DblTy(), {MatTy(), IntTy(), IntTy()});
-    regExtern("matrix_rows",       IntTy(), {MatTy()});
-    regExtern("matrix_cols",       IntTy(), {MatTy()});
+    regExtern("matrix_det", DblTy(), {MatTy()});
+    regExtern("matrix_get", DblTy(), {MatTy(), IntTy(), IntTy()});
+    regExtern("matrix_rows", IntTy(), {MatTy()});
+    regExtern("matrix_cols", IntTy(), {MatTy()});
 
     // Matrix functions returning void
-    regExtern("matrix_set",        FluxType(TypeKind::Void), {MatTy(), IntTy(), IntTy(), DblTy()});
+    regExtern("matrix_set", FluxType(TypeKind::Void), {MatTy(), IntTy(), IntTy(), DblTy()});
 
     // Decompositions (all return Matrix)
-    regExtern("matrix_lu",         MatTy(), {MatTy()});
-    regExtern("matrix_qr",         MatTy(), {MatTy()});
-    regExtern("matrix_svd",        MatTy(), {MatTy()});
-    regExtern("matrix_cholesky",   MatTy(), {MatTy()});
-    regExtern("matrix_eigenvalues",MatTy(), {MatTy()});
-    regExtern("matrix_eigenvectors",MatTy(), {MatTy()});
-    regExtern("matrix_rank",       DblTy(), {MatTy()});
-    regExtern("matrix_cond",       DblTy(), {MatTy()});
-    regExtern("matrix_norm",       DblTy(), {MatTy(), DblTy()});
+    regExtern("matrix_lu", MatTy(), {MatTy()});
+    regExtern("matrix_qr", MatTy(), {MatTy()});
+    regExtern("matrix_svd", MatTy(), {MatTy()});
+    regExtern("matrix_cholesky", MatTy(), {MatTy()});
+    regExtern("matrix_eigenvalues", MatTy(), {MatTy()});
+    regExtern("matrix_eigenvectors", MatTy(), {MatTy()});
+    regExtern("matrix_rank", DblTy(), {MatTy()});
+    regExtern("matrix_cond", DblTy(), {MatTy()});
+    regExtern("matrix_norm", DblTy(), {MatTy(), DblTy()});
 
     // Math functions: double in, double out
     inject("sin", 1);
@@ -229,15 +224,15 @@ void CompilerInstance::injectStandardLibrary(CodegenContext& context,
     };
 
     // Matrix/Vector math
-    regExtern("matrix",            MatTy(), {DblTy(), DblTy(), DblTy()});
+    regExtern("matrix", MatTy(), {DblTy(), DblTy(), DblTy()});
     returnTypes["matrix"] = FluxType(TypeKind::Matrix);
     injectRet("det", 1, TypeKind::Double);
-    regExtern("inv",               MatTy(), {MatTy()});
+    regExtern("inv", MatTy(), {MatTy()});
     returnTypes["inv"] = FluxType(TypeKind::Matrix);
-    regExtern("eig",               MatTy(), {MatTy()});
+    regExtern("eig", MatTy(), {MatTy()});
     returnTypes["eig"] = FluxType(TypeKind::Matrix);
     injectRet("dot", 2, TypeKind::Double);
-    regExtern("cross",             MatTy(), {MatTy(), MatTy()});
+    regExtern("cross", MatTy(), {MatTy(), MatTy()});
     returnTypes["cross"] = FluxType(TypeKind::Matrix);
     injectRet("norm", 1, TypeKind::Double);
     injectRet("rows", 1, TypeKind::Double);
@@ -266,21 +261,22 @@ void CompilerInstance::injectStandardLibrary(CodegenContext& context,
     inject("erc_check", 0);
 }
 
-std::string CompilerInstance::resolveImportPath(const std::string& moduleName) const {
+std::string CompilerInstance::resolveImportPath(const std::string& moduleName) const
+{
     // Use ModuleLoader's search paths (CWD, modules/, stdlib/, ~/.flux, /usr/share, FLUX_MODULE_PATH)
     auto path = m_moduleLoader.findModule(moduleName);
-    if (!path.empty()) return path.string();
+    if (!path.empty())
+        return path.string();
 
     // Fallback: try basic .flux in CWD (for error message)
     return moduleName + ".flux";
 }
 
-bool CompilerInstance::importModule(const std::string& moduleName,
-                                    CodegenContext& context,
-                                    std::map<std::string, FluxType>& returnTypes,
-                                    std::string* error,
+bool CompilerInstance::importModule(const std::string& moduleName, CodegenContext& context,
+                                    std::map<std::string, FluxType>& returnTypes, std::string* error,
                                     std::map<std::string, bool>& importedModules,
-                                    const std::vector<std::string>& symbols) const {
+                                    const std::vector<std::string>& symbols) const
+{
     if (importedModules.find(moduleName) != importedModules.end())
         return true;
     importedModules[moduleName] = true;
@@ -302,7 +298,8 @@ bool CompilerInstance::importModule(const std::string& moduleName,
     return result;
 }
 
-std::unique_ptr<ParsedAST> CompilerInstance::parse(const std::string& code, std::string* error) const {
+std::unique_ptr<ParsedAST> CompilerInstance::parse(const std::string& code, std::string* error) const
+{
     auto ast = std::make_unique<ParsedAST>();
     Parser parser(code);
 
@@ -350,30 +347,33 @@ std::unique_ptr<ParsedAST> CompilerInstance::parse(const std::string& code, std:
                    parser.CurTok != static_cast<int>(TokenType::tok_extern) &&
                    parser.CurTok != static_cast<int>(TokenType::tok_import) &&
                    parser.CurTok != static_cast<int>(TokenType::tok_rbrace)) {
-                
+
                 if (parser.CurTok == static_cast<int>(TokenType::tok_semicolon)) {
                     parser.getNextToken();
                     continue;
                 }
-                
+
                 if (auto E = parser.ParseExpression()) {
                     Exprs.push_back(std::move(E));
                 } else {
                     break;
                 }
             }
-            
+
             if (!Exprs.empty()) {
                 auto Block = std::make_unique<BlockExprAST>(std::move(Exprs));
-                auto Proto = std::make_unique<PrototypeAST>("__anon_expr", std::vector<std::pair<std::string, FluxType>>(), FluxType(TypeKind::Double));
+                auto Proto = std::make_unique<PrototypeAST>(
+                    "__anon_expr", std::vector<std::pair<std::string, FluxType>>(), FluxType(TypeKind::Double));
                 ast->functions.push_back(std::make_unique<FunctionAST>(std::move(Proto), std::move(Block)));
             }
         }
 
-        if (parser.hasError()) break;
+        if (parser.hasError())
+            break;
     }
 
-    if (error && parser.hasError()) *error = "Parsing failed";
+    if (error && parser.hasError())
+        *error = "Parsing failed";
     return ast;
 }
 
@@ -383,8 +383,10 @@ std::unique_ptr<ParsedAST> CompilerInstance::parse(const std::string& code, std:
 // based on called extern functions, last expression in blocks, etc.
 // ---------------------------------------------------------------------------
 static FluxType inferReturnType(const ExprAST* expr,
-                                const std::map<std::string, std::pair<FluxType, std::vector<FluxType>>>& externTypes) {
-    if (!expr) return TypeKind::Double;
+                                const std::map<std::string, std::pair<FluxType, std::vector<FluxType>>>& externTypes)
+{
+    if (!expr)
+        return TypeKind::Double;
 
     // CallExprAST: look up the callee in known extern function types
     if (auto* call = dynamic_cast<const CallExprAST*>(expr)) {
@@ -394,14 +396,15 @@ static FluxType inferReturnType(const ExprAST* expr,
             name = name.substr(sepPos + 2);
         auto it = externTypes.find(name);
         if (it != externTypes.end())
-            return it->second.first;  // Return type from extern registry
-        return TypeKind::Double;      // Unknown function → assume double
+            return it->second.first; // Return type from extern registry
+        return TypeKind::Double;     // Unknown function → assume double
     }
 
     // BlockExprAST: use the type of the last statement
     if (auto* block = dynamic_cast<const BlockExprAST*>(expr)) {
         const auto& stmts = block->getStatements();
-        if (stmts.empty()) return TypeKind::Double;
+        if (stmts.empty())
+            return TypeKind::Double;
 
         // Helper: given the last statement, infer its return type.
         // If it's a variable reference, search backward for its initialization.
@@ -459,7 +462,8 @@ static FluxType inferReturnType(const ExprAST* expr,
     // IfStmtAST: use the last statement in the then body
     if (auto* ifStmt = dynamic_cast<const IfStmtAST*>(expr)) {
         const auto& thenBody = ifStmt->getThenBody();
-        if (thenBody.empty()) return TypeKind::Double;
+        if (thenBody.empty())
+            return TypeKind::Double;
         return inferReturnType(thenBody.back().get(), externTypes);
     }
 
@@ -475,7 +479,7 @@ static FluxType inferReturnType(const ExprAST* expr,
 
     // BinaryExprAST: check for known matrix-returning ops
     if (auto* bin = dynamic_cast<const BinaryExprAST*>(expr)) {
-        if (bin->getOp() == 'm') {  // matrix multiplication
+        if (bin->getOp() == 'm') { // matrix multiplication
             return FluxType(TypeKind::Matrix);
         }
         return TypeKind::Double;
@@ -488,12 +492,12 @@ static FluxType inferReturnType(const ExprAST* expr,
 // Recursive helper: visit an expression and record which variables are used
 // as matrix arguments to extern calls or user-defined functions.
 static void visitExprForParamInference(
-    const ExprAST* expr,
-    const std::map<std::string, std::pair<FluxType, std::vector<FluxType>>>& externTypes,
-    const std::map<std::string, std::vector<FluxType>>& userFuncParamTypes,
-    std::map<std::string, FluxType>& paramTypes) {
+    const ExprAST* expr, const std::map<std::string, std::pair<FluxType, std::vector<FluxType>>>& externTypes,
+    const std::map<std::string, std::vector<FluxType>>& userFuncParamTypes, std::map<std::string, FluxType>& paramTypes)
+{
 
-    if (!expr) return;
+    if (!expr)
+        return;
 
     // CallExprAST: check each argument against extern or user function param types
     if (auto* call = dynamic_cast<const CallExprAST*>(expr)) {
@@ -610,9 +614,9 @@ static void visitExprForParamInference(
     }
 }
 
-static void inferParamTypes(
-    const std::vector<std::unique_ptr<FunctionAST>>& functions,
-    const std::map<std::string, std::pair<FluxType, std::vector<FluxType>>>& externTypes) {
+static void inferParamTypes(const std::vector<std::unique_ptr<FunctionAST>>& functions,
+                            const std::map<std::string, std::pair<FluxType, std::vector<FluxType>>>& externTypes)
+{
 
     // Map of user function name → parameter types, built incrementally
     // as we process functions in definition order (callees before callers).
@@ -620,7 +624,8 @@ static void inferParamTypes(
 
     for (auto& func : functions) {
         auto* proto = func->getProto();
-        if (!proto) continue;
+        if (!proto)
+            continue;
 
         // Build map of parameter name → current type
         std::map<std::string, FluxType> paramTypes;
@@ -645,12 +650,11 @@ static void inferParamTypes(
     }
 }
 
-bool CompilerInstance::compileParser(Parser& parser,
-                                     CodegenContext& context,
-                                     std::map<std::string, FluxType>& returnTypes,
-                                     std::string& error,
+bool CompilerInstance::compileParser(Parser& parser, CodegenContext& context,
+                                     std::map<std::string, FluxType>& returnTypes, std::string& error,
                                      std::map<std::string, bool>& importedModules,
-                                     const std::vector<std::string>& symbols) const {
+                                     const std::vector<std::string>& symbols) const
+{
     // --- Pass 1: Parse all definitions (defer prototype declaration) ---
     // Prototype declaration is deferred until after selective-import
     // filtering so that only selected functions get LLVM declarations.
@@ -692,8 +696,8 @@ bool CompilerInstance::compileParser(Parser& parser,
                 return false;
             }
             const std::string& alias = importExpr->getAlias().empty() ? moduleName : importExpr->getAlias();
-            context.NamedValues[alias + ".*"] = llvm::ConstantPointerNull::get(
-                llvm::PointerType::get(context.TheContext, 0));
+            context.NamedValues[alias + ".*"] =
+                llvm::ConstantPointerNull::get(llvm::PointerType::get(context.TheContext, 0));
         } else if (parser.CurTok == static_cast<int>(TokenType::tok_extern)) {
             auto proto = parser.ParseExtern();
             if (proto) {
@@ -735,7 +739,8 @@ bool CompilerInstance::compileParser(Parser& parser,
                     anonName = m_options.moduleName + "_anon_expr";
                 }
                 anonName += "_" + std::to_string(anonCounter++);
-                auto Proto = std::make_unique<PrototypeAST>(anonName, std::vector<std::pair<std::string, FluxType>>(), FluxType(TypeKind::Double));
+                auto Proto = std::make_unique<PrototypeAST>(anonName, std::vector<std::pair<std::string, FluxType>>(),
+                                                            FluxType(TypeKind::Double));
                 functions.push_back(std::make_unique<FunctionAST>(std::move(Proto), std::move(Block)));
             }
         }
@@ -771,8 +776,7 @@ bool CompilerInstance::compileParser(Parser& parser,
         // that the default Double return type cannot represent.
         // Scalar types (Int, Float, Bool) use Double as the canonical return
         // type; FunctionAST::codegen handles scalar conversion via SIToFP etc.
-        if (inferred.Kind == TypeKind::Matrix ||
-            inferred.Kind == TypeKind::ComplexMatrix ||
+        if (inferred.Kind == TypeKind::Matrix || inferred.Kind == TypeKind::ComplexMatrix ||
             inferred.Kind == TypeKind::Vector) {
             func->getProto()->setReturnType(inferred);
         }
@@ -791,18 +795,19 @@ bool CompilerInstance::compileParser(Parser& parser,
     // Set up the import callback so ImportExprAST inside function bodies works.
     // Save any existing callback so recursive calls (via importModule) can restore it.
     auto savedImportFn = std::move(context.importModuleFn);
-    context.importModuleFn = [&](const std::string& moduleName,
-                                 const std::string& alias,
+    context.importModuleFn = [&](const std::string& moduleName, const std::string& alias,
                                  const std::vector<std::string>& fnBodySymbols) -> bool {
         auto* SavedInsertBlock = context.Builder.GetInsertBlock();
         if (!importModule(moduleName, context, returnTypes, &error, importedModules, fnBodySymbols)) {
-            if (SavedInsertBlock) context.Builder.SetInsertPoint(SavedInsertBlock);
+            if (SavedInsertBlock)
+                context.Builder.SetInsertPoint(SavedInsertBlock);
             return false;
         }
-        if (SavedInsertBlock) context.Builder.SetInsertPoint(SavedInsertBlock);
+        if (SavedInsertBlock)
+            context.Builder.SetInsertPoint(SavedInsertBlock);
         const std::string& nsAlias = alias.empty() ? moduleName : alias;
-        context.NamedValues[nsAlias + ".*"] = llvm::ConstantPointerNull::get(
-            llvm::PointerType::get(context.TheContext, 0));
+        context.NamedValues[nsAlias + ".*"] =
+            llvm::ConstantPointerNull::get(llvm::PointerType::get(context.TheContext, 0));
         return true;
     };
 
@@ -829,21 +834,16 @@ bool CompilerInstance::compileParser(Parser& parser,
     return !parser.hasError();
 }
 
-std::vector<TokenInfo> CompilerInstance::tokenize(const std::string& code, std::string* error) const {
+std::vector<TokenInfo> CompilerInstance::tokenize(const std::string& code, std::string* error) const
+{
     std::vector<TokenInfo> tokens;
     Lexer lexer(code);
 
     while (true) {
         const int token = lexer.getNextToken();
-        tokens.push_back(TokenInfo{
-            token,
-            tokenSpelling(lexer, token),
-            lexer.getCurrentLine(),
-            lexer.getCurrentColumn(),
-            lexer.getCurrentTokenOffset(),
-            lexer.getCurrentTokenLength(),
-            lexer.getCurrentTokenText()
-        });
+        tokens.push_back(TokenInfo{token, tokenSpelling(lexer, token), lexer.getCurrentLine(), lexer.getCurrentColumn(),
+                                   lexer.getCurrentTokenOffset(), lexer.getCurrentTokenLength(),
+                                   lexer.getCurrentTokenText()});
 
         if (token == static_cast<int>(TokenType::tok_eof))
             break;
@@ -854,8 +854,8 @@ std::vector<TokenInfo> CompilerInstance::tokenize(const std::string& code, std::
     return tokens;
 }
 
-std::unique_ptr<CompileArtifacts> CompilerInstance::compileToIR(const std::string& code,
-                                                                std::string* error) {
+std::unique_ptr<CompileArtifacts> CompilerInstance::compileToIR(const std::string& code, std::string* error)
+{
     auto artifacts = std::make_unique<CompileArtifacts>();
     artifacts->codegenContext = createCodegenContext();
 
@@ -876,15 +876,17 @@ std::unique_ptr<CompileArtifacts> CompilerInstance::compileToIR(const std::strin
         std::vector<std::string> stdlibModules = {"math", "trig", "array", "stats", "string"};
         for (const auto& mod : stdlibModules) {
             std::string importError;
-            importModule(mod, *artifacts->codegenContext, artifacts->functionReturnTypes,
-                         &importError, importedModules);
+            importModule(mod, *artifacts->codegenContext, artifacts->functionReturnTypes, &importError,
+                         importedModules);
         }
     }
 
     Parser parser(code); // Constructor primes the lexer with getNextToken()
     std::string compileError;
-    if (!compileParser(parser, *artifacts->codegenContext, artifacts->functionReturnTypes, compileError, importedModules)) {
-        if (error) *error = compileError;
+    if (!compileParser(parser, *artifacts->codegenContext, artifacts->functionReturnTypes, compileError,
+                       importedModules)) {
+        if (error)
+            *error = compileError;
         return nullptr;
     }
 
@@ -902,7 +904,8 @@ std::unique_ptr<CompileArtifacts> CompilerInstance::compileToIR(const std::strin
     return artifacts;
 }
 
-std::string CompilerInstance::emitLLVMIR(const std::string& code, std::string* error) {
+std::string CompilerInstance::emitLLVMIR(const std::string& code, std::string* error)
+{
     auto artifacts = compileToIR(code, error);
     if (!artifacts)
         return {};

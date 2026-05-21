@@ -14,22 +14,24 @@
 // flux-monte-carlo: Statistical analysis and yield prediction
 // Usage: flux-monte-carlo <circuit.flux> [--param Name:Nom:Tol] [--spec Min:Max] [--iterations N]
 
-#include <iostream>
-#include <vector>
-#include <string>
-#include <algorithm>
-#include <sstream>
 #include "flux/analysis/advanced_analysis.h"
+#include <algorithm>
+#include <iostream>
+#include <sstream>
+#include <string>
+#include <vector>
 
 using namespace Flux::AdvancedAnalysis;
 
-struct ParamDef {
+struct ParamDef
+{
     std::string name;
     double nominal;
     double tolerance;
 };
 
-int main(int argc, char** argv) {
+int main(int argc, char** argv)
+{
     std::cout << "\n";
     std::cout << "\n";
     std::cout << "          FluxScript Monte Carlo Analyzer                \n";
@@ -76,8 +78,8 @@ int main(int argc, char** argv) {
     // Default demo if no params provided
     if (params.empty()) {
         std::cout << "  No parameters specified. Running demo with R1 and C1...\n";
-        params.push_back({"R1", 10000.0, 100.0});   // 10k +/- 100
-        params.push_back({"C1", 1e-9, 0.2e-9});      // 1nF +/- 20%
+        params.push_back({"R1", 10000.0, 100.0}); // 10k +/- 100
+        params.push_back({"C1", 1e-9, 0.2e-9});   // 1nF +/- 20%
     }
 
     std::cout << " Analyzing: " << filename << "\n";

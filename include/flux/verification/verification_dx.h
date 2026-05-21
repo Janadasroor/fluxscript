@@ -19,17 +19,17 @@
 #ifndef FLUX_VERIFICATION_DX_H
 #define FLUX_VERIFICATION_DX_H
 
-#include <string>
-#include <vector>
+#include <algorithm>
+#include <chrono>
+#include <cmath>
+#include <fstream>
+#include <functional>
 #include <map>
 #include <memory>
 #include <mutex>
-#include <functional>
-#include <chrono>
-#include <fstream>
 #include <sstream>
-#include <cmath>
-#include <algorithm>
+#include <string>
+#include <vector>
 
 namespace Flux {
 
@@ -38,7 +38,8 @@ namespace Flux {
 // ============================================================================
 
 // Test result
-struct TestResult {
+struct TestResult
+{
     std::string test_name;
     std::string component_name;
     bool passed;
@@ -51,7 +52,8 @@ struct TestResult {
 };
 
 // Test case
-struct TestCase {
+struct TestCase
+{
     std::string name;
     std::string description;
     std::string netlist;
@@ -64,7 +66,8 @@ struct TestCase {
 };
 
 // Test suite
-struct TestSuite {
+struct TestSuite
+{
     std::string name;
     std::string description;
     std::vector<TestCase> test_cases;
@@ -73,7 +76,8 @@ struct TestSuite {
 };
 
 // SPICE model verifier
-class SPICEModelVerifier {
+class SPICEModelVerifier
+{
 public:
     static SPICEModelVerifier& instance();
 
@@ -84,8 +88,7 @@ public:
     // Test suite management
     bool loadTestSuite(const std::string& suite_name, const std::string& filename);
     bool addTestSuite(const TestSuite& suite);
-    bool runTestSuite(const std::string& suite_name,
-                     std::function<void(const TestResult&)> result_callback = nullptr);
+    bool runTestSuite(const std::string& suite_name, std::function<void(const TestResult&)> result_callback = nullptr);
     bool runAllTestSuites(std::function<void(const std::string&, const TestResult&)> callback = nullptr);
 
     // Individual test execution
@@ -120,9 +123,10 @@ private:
 // ============================================================================
 
 // Symbol information
-struct SymbolInfo {
+struct SymbolInfo
+{
     std::string name;
-    std::string type;  // "function", "variable", "keyword", "constant"
+    std::string type; // "function", "variable", "keyword", "constant"
     std::string signature;
     std::string description;
     std::string return_type;
@@ -134,7 +138,8 @@ struct SymbolInfo {
 };
 
 // Autocompletion database
-class AutocompletionDB {
+class AutocompletionDB
+{
 public:
     static AutocompletionDB& instance();
 
@@ -190,7 +195,8 @@ private:
 // ============================================================================
 
 // Benchmark result
-struct BenchmarkResult {
+struct BenchmarkResult
+{
     std::string test_name;
     std::string description;
     double fluxscript_time_s;
@@ -203,7 +209,8 @@ struct BenchmarkResult {
 };
 
 // Benchmark suite
-class BenchmarkSuite {
+class BenchmarkSuite
+{
 public:
     static BenchmarkSuite& instance();
 
@@ -212,12 +219,9 @@ public:
     void finalize();
 
     // Benchmark execution
-    bool runBenchmark(const std::string& test_name,
-                     std::function<void()> fluxscript_func,
-                     std::function<void()> python_func,
-                     std::function<void()> ngspice_func,
-                     int iterations = 100);
-    
+    bool runBenchmark(const std::string& test_name, std::function<void()> fluxscript_func,
+                      std::function<void()> python_func, std::function<void()> ngspice_func, int iterations = 100);
+
     bool runAllBenchmarks(int iterations = 100);
 
     // Results
@@ -252,7 +256,8 @@ private:
 // ============================================================================
 
 // Verification result
-struct VerificationResult {
+struct VerificationResult
+{
     std::string property_name;
     std::string description;
     bool verified;
@@ -262,19 +267,21 @@ struct VerificationResult {
 };
 
 // Property types
-enum class PropertyType {
-    BOUNDEDNESS,      // Output stays within bounds
-    STABILITY,        // System is stable
-    MONOTONICITY,     // Output increases with input
-    LINEARITY,        // System is linear
-    PASSIVITY,        // System doesn't generate energy
-    CAUSALITY,        // Output depends only on past inputs
-    CONSERVATION,     // Energy/mass conservation
-    SYMMETRY          // System has symmetry properties
+enum class PropertyType
+{
+    BOUNDEDNESS,  // Output stays within bounds
+    STABILITY,    // System is stable
+    MONOTONICITY, // Output increases with input
+    LINEARITY,    // System is linear
+    PASSIVITY,    // System doesn't generate energy
+    CAUSALITY,    // Output depends only on past inputs
+    CONSERVATION, // Energy/mass conservation
+    SYMMETRY      // System has symmetry properties
 };
 
 // Formal verifier
-class FormalVerifier {
+class FormalVerifier
+{
 public:
     static FormalVerifier& instance();
 
@@ -283,31 +290,23 @@ public:
     void finalize();
 
     // Verification
-    VerificationResult verifyProperty(const std::string& component_name,
-                                     PropertyType property,
-                                     const std::map<std::string, double>& params,
-                                     double tolerance = 1e-6);
-    
-    bool verifyAllProperties(const std::string& component_name,
-                            const std::map<std::string, double>& params);
+    VerificationResult verifyProperty(const std::string& component_name, PropertyType property,
+                                      const std::map<std::string, double>& params, double tolerance = 1e-6);
+
+    bool verifyAllProperties(const std::string& component_name, const std::map<std::string, double>& params);
 
     // Specific verifications
-    VerificationResult verifyBoundedness(const std::string& component_name,
-                                        double input_min, double input_max,
-                                        double output_min, double output_max);
-    
-    VerificationResult verifyStability(const std::string& component_name,
-                                      const std::vector<double>& poles);
-    
-    VerificationResult verifyLinearity(const std::string& component_name,
-                                      double input1, double input2,
-                                      double alpha, double beta);
-    
-    VerificationResult verifyPassivity(const std::string& component_name,
-                                      double time_window, double dt);
-    
-    VerificationResult verifyCausality(const std::string& component_name,
-                                      double time_window, double dt);
+    VerificationResult verifyBoundedness(const std::string& component_name, double input_min, double input_max,
+                                         double output_min, double output_max);
+
+    VerificationResult verifyStability(const std::string& component_name, const std::vector<double>& poles);
+
+    VerificationResult verifyLinearity(const std::string& component_name, double input1, double input2, double alpha,
+                                       double beta);
+
+    VerificationResult verifyPassivity(const std::string& component_name, double time_window, double dt);
+
+    VerificationResult verifyCausality(const std::string& component_name, double time_window, double dt);
 
     // Export
     bool exportVerificationReport(const std::string& filename, const std::string& format = "pdf");
@@ -325,34 +324,35 @@ private:
 // ============================================================================
 
 namespace DXUtils {
-    // Code formatting
-    std::string formatFluxCode(const std::string& code);
-    std::string lintFluxCode(const std::string& code, std::vector<std::string>& warnings);
-    
-    // Type checking
-    bool checkTypes(const std::string& code, std::vector<std::string>& errors);
-    
-    // Refactoring
-    std::string renameSymbol(const std::string& code, const std::string& old_name, const std::string& new_name);
-    std::string extractFunction(const std::string& code, const std::string& func_name, int start_line, int end_line);
-    
-    // Documentation
-    std::string generateDocstring(const std::string& func_signature);
-    std::string generateExample(const std::string& func_name);
-    
-    // Analysis
-    struct CodeMetrics {
-        int total_lines;
-        int code_lines;
-        int comment_lines;
-        int blank_lines;
-        int num_functions;
-        int num_variables;
-        int cyclomatic_complexity;
-        double maintainability_index;
-    };
-    CodeMetrics analyzeCode(const std::string& code);
-}
+// Code formatting
+std::string formatFluxCode(const std::string& code);
+std::string lintFluxCode(const std::string& code, std::vector<std::string>& warnings);
+
+// Type checking
+bool checkTypes(const std::string& code, std::vector<std::string>& errors);
+
+// Refactoring
+std::string renameSymbol(const std::string& code, const std::string& old_name, const std::string& new_name);
+std::string extractFunction(const std::string& code, const std::string& func_name, int start_line, int end_line);
+
+// Documentation
+std::string generateDocstring(const std::string& func_signature);
+std::string generateExample(const std::string& func_name);
+
+// Analysis
+struct CodeMetrics
+{
+    int total_lines;
+    int code_lines;
+    int comment_lines;
+    int blank_lines;
+    int num_functions;
+    int num_variables;
+    int cyclomatic_complexity;
+    double maintainability_index;
+};
+CodeMetrics analyzeCode(const std::string& code);
+} // namespace DXUtils
 
 } // namespace Flux
 

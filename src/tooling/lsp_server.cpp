@@ -12,14 +12,14 @@
  limitations under the License. */
 
 #include "flux/tooling/lsp_server.h"
+#include "flux/compiler/ast.h"
 #include "flux/compiler/lexer.h"
 #include "flux/compiler/parser.h"
-#include "flux/compiler/ast.h"
 #include "flux/jit/flux_jit.h"
-#include <sstream>
 #include <algorithm>
-#include <iostream>
 #include <cstring>
+#include <iostream>
+#include <sstream>
 
 namespace Flux {
 namespace Tooling {
@@ -28,7 +28,8 @@ namespace Tooling {
 // TextDocument Utilities
 // ============================================================================
 
-Position TextDocument::offsetToPosition(size_t offset) const {
+Position TextDocument::offsetToPosition(size_t offset) const
+{
     Position pos;
     size_t current = 0;
     while (current < offset && current < text.size()) {
@@ -43,7 +44,8 @@ Position TextDocument::offsetToPosition(size_t offset) const {
     return pos;
 }
 
-size_t TextDocument::positionToOffset(Position pos) const {
+size_t TextDocument::positionToOffset(Position pos) const
+{
     size_t offset = 0;
     int currentLine = 0;
     for (size_t i = 0; i < text.size(); ++i) {
@@ -51,19 +53,25 @@ size_t TextDocument::positionToOffset(Position pos) const {
             offset = i;
             break;
         }
-        if (text[i] == '\n') currentLine++;
-        if (i == text.size() - 1) offset = text.size();
+        if (text[i] == '\n')
+            currentLine++;
+        if (i == text.size() - 1)
+            offset = text.size();
     }
     // Move to character position on the line
     size_t lineStart = 0;
     int l = 0;
     for (size_t i = 0; i < text.size() && l < pos.line; ++i) {
-        if (text[i] == '\n') { l++; lineStart = i + 1; }
+        if (text[i] == '\n') {
+            l++;
+            lineStart = i + 1;
+        }
     }
     return lineStart + static_cast<size_t>(pos.character);
 }
 
-std::string TextDocument::getLine(size_t lineNum) const {
+std::string TextDocument::getLine(size_t lineNum) const
+{
     size_t start = 0;
     int currentLine = 0;
     for (size_t i = 0; i < text.size(); ++i) {
@@ -71,22 +79,28 @@ std::string TextDocument::getLine(size_t lineNum) const {
             start = i;
             break;
         }
-        if (text[i] == '\n') currentLine++;
+        if (text[i] == '\n')
+            currentLine++;
     }
     size_t end = text.find('\n', start);
-    if (end == std::string::npos) end = text.size();
+    if (end == std::string::npos)
+        end = text.size();
     return text.substr(start, end - start);
 }
 
-std::string TextDocument::getWordAtPosition(Position pos) const {
+std::string TextDocument::getWordAtPosition(Position pos) const
+{
     size_t offset = positionToOffset(pos);
-    if (offset >= text.size()) return "";
+    if (offset >= text.size())
+        return "";
 
     // Find word boundaries
     size_t start = offset;
-    while (start > 0 && (std::isalnum(text[start-1]) || text[start-1] == '_')) start--;
+    while (start > 0 && (std::isalnum(text[start - 1]) || text[start - 1] == '_'))
+        start--;
     size_t end = offset;
-    while (end < text.size() && (std::isalnum(text[end]) || text[end] == '_')) end++;
+    while (end < text.size() && (std::isalnum(text[end]) || text[end] == '_'))
+        end++;
 
     return text.substr(start, end - start);
 }
@@ -98,20 +112,21 @@ std::string TextDocument::getWordAtPosition(Position pos) const {
 LspServer::LspServer() = default;
 LspServer::~LspServer() = default;
 
-std::string LspServer::processRequest(const std::string& jsonRequest) {
+std::string LspServer::processRequest(const std::string& jsonRequest)
+{
     std::string method = jsonGet(jsonRequest, "method");
     int id = jsonGetInt(jsonRequest, "id", -1);
-    std::string params = jsonRequest;  // Full request for nested extraction
+    std::string params = jsonRequest; // Full request for nested extraction
 
     if (method == "initialize") {
         return makeResponse(id, handleInitialize(params));
     } else if (method == "shutdown") {
         return makeResponse(id, handleShutdown(params));
     } else if (method == "exit") {
-        return "";  // No response needed
+        return ""; // No response needed
     } else if (method == "textDocument/didOpen") {
         handleTextDocumentDidOpen(params);
-        return "";  // Notification, no response
+        return ""; // Notification, no response
     } else if (method == "textDocument/didChange") {
         handleTextDocumentDidChange(params);
         return "";
@@ -146,17 +161,20 @@ std::string LspServer::processRequest(const std::string& jsonRequest) {
     return "";
 }
 
-int LspServer::run() {
+int LspServer::run()
+{
     std::string line;
     int contentLength = 0;
 
     while (std::getline(std::cin, line)) {
         // Strip CR if present
-        if (!line.empty() && line.back() == '\r') line.pop_back();
+        if (!line.empty() && line.back() == '\r')
+            line.pop_back();
 
         if (line.empty()) {
             // End of headers, read content
-            if (contentLength <= 0) continue;
+            if (contentLength <= 0)
+                continue;
 
             std::string content(contentLength, '\0');
             std::cin.read(&content[0], contentLength);
@@ -177,7 +195,9 @@ int LspServer::run() {
     return 0;
 }
 
-void LspServer::openDocument(const std::string& uri, const std::string& languageId, int version, const std::string& text) {
+void LspServer::openDocument(const std::string& uri, const std::string& languageId, int version,
+                             const std::string& text)
+{
     TextDocument doc;
     doc.uri = uri;
     doc.languageId = languageId;
@@ -190,7 +210,8 @@ void LspServer::openDocument(const std::string& uri, const std::string& language
     publishDiagnostics(uri, diags);
 }
 
-void LspServer::changeDocument(const std::string& uri, int version, const std::string& text) {
+void LspServer::changeDocument(const std::string& uri, int version, const std::string& text)
+{
     auto it = m_documents.find(uri);
     if (it != m_documents.end()) {
         it->second.version = version;
@@ -202,12 +223,14 @@ void LspServer::changeDocument(const std::string& uri, int version, const std::s
     }
 }
 
-void LspServer::closeDocument(const std::string& uri) {
+void LspServer::closeDocument(const std::string& uri)
+{
     m_documents.erase(uri);
     m_symbolTables.erase(uri);
 }
 
-TextDocument* LspServer::getDocument(const std::string& uri) {
+TextDocument* LspServer::getDocument(const std::string& uri)
+{
     auto it = m_documents.find(uri);
     return (it != m_documents.end()) ? &it->second : nullptr;
 }
@@ -216,10 +239,12 @@ TextDocument* LspServer::getDocument(const std::string& uri) {
 // Semantic Analysis
 // ============================================================================
 
-std::vector<Diagnostic> LspServer::analyzeDocument(const std::string& uri) {
+std::vector<Diagnostic> LspServer::analyzeDocument(const std::string& uri)
+{
     std::vector<Diagnostic> diags;
     auto* doc = getDocument(uri);
-    if (!doc) return diags;
+    if (!doc)
+        return diags;
 
     // Parse the full script (handles def, extern, and top-level expressions)
     {
@@ -237,7 +262,8 @@ std::vector<Diagnostic> LspServer::analyzeDocument(const std::string& uri) {
             }
             if (!parsed) {
                 parser.getNextToken();
-                if (parser.CurTok == static_cast<int>(Flux::TokenType::tok_eof)) break;
+                if (parser.CurTok == static_cast<int>(Flux::TokenType::tok_eof))
+                    break;
             }
         }
 
@@ -258,10 +284,12 @@ std::vector<Diagnostic> LspServer::analyzeDocument(const std::string& uri) {
     return diags;
 }
 
-std::vector<SymbolEntry> LspServer::buildSymbolTable(const std::string& uri) {
+std::vector<SymbolEntry> LspServer::buildSymbolTable(const std::string& uri)
+{
     std::vector<SymbolEntry> symbols;
     auto* doc = getDocument(uri);
-    if (!doc) return symbols;
+    if (!doc)
+        return symbols;
 
     Flux::Lexer lexer(doc->text);
 
@@ -295,7 +323,8 @@ std::vector<SymbolEntry> LspServer::buildSymbolTable(const std::string& uri) {
 // LSP Handlers
 // ============================================================================
 
-std::string LspServer::handleInitialize(const std::string& params) {
+std::string LspServer::handleInitialize(const std::string& params)
+{
     return R"({
         "capabilities": {
             "textDocumentSync": {
@@ -324,11 +353,13 @@ std::string LspServer::handleInitialize(const std::string& params) {
     })";
 }
 
-std::string LspServer::handleShutdown(const std::string& params) {
+std::string LspServer::handleShutdown(const std::string& params)
+{
     return "null";
 }
 
-std::string LspServer::handleTextDocumentDidOpen(const std::string& params) {
+std::string LspServer::handleTextDocumentDidOpen(const std::string& params)
+{
     std::string uri = jsonGetNested(params, "textDocument", "uri");
     std::string langId = jsonGetNested(params, "textDocument", "languageId");
     int version = jsonGetInt(params, "textDocument.version");
@@ -337,16 +368,19 @@ std::string LspServer::handleTextDocumentDidOpen(const std::string& params) {
     return "";
 }
 
-std::string LspServer::handleTextDocumentDidChange(const std::string& params) {
+std::string LspServer::handleTextDocumentDidChange(const std::string& params)
+{
     std::string uri = jsonGet(params, "textDocument.uri");
     int version = jsonGetInt(params, "textDocument.version");
 
     auto it = m_documents.find(uri);
-    if (it == m_documents.end()) return "";
+    if (it == m_documents.end())
+        return "";
 
     // Check for incremental changes (mode 2) vs full text (mode 1)
     size_t arrStart = params.find("\"contentChanges\"");
-    if (arrStart == std::string::npos) return "";
+    if (arrStart == std::string::npos)
+        return "";
 
     // Try to find a "range" key — if present, it's incremental
     size_t rangePos = params.find("\"range\"", arrStart);
@@ -361,7 +395,8 @@ std::string LspServer::handleTextDocumentDidChange(const std::string& params) {
         if (quoteStart != std::string::npos) {
             size_t quoteEnd = quoteStart + 1;
             while (quoteEnd < params.size()) {
-                if (params[quoteEnd] == '"' && params[quoteEnd-1] != '\\') break;
+                if (params[quoteEnd] == '"' && params[quoteEnd - 1] != '\\')
+                    break;
                 replacement += params[quoteEnd];
                 quoteEnd++;
             }
@@ -373,7 +408,8 @@ std::string LspServer::handleTextDocumentDidChange(const std::string& params) {
         if (startLinePos != std::string::npos) {
             size_t colon = params.find(':', startLinePos);
             size_t numStart = colon + 1;
-            while (numStart < params.size() && params[numStart] == ' ') numStart++;
+            while (numStart < params.size() && params[numStart] == ' ')
+                numStart++;
             startLine = std::stoi(params.substr(numStart));
         }
 
@@ -381,7 +417,8 @@ std::string LspServer::handleTextDocumentDidChange(const std::string& params) {
         if (startCharPos != std::string::npos) {
             size_t colon = params.find(':', startCharPos);
             size_t numStart = colon + 1;
-            while (numStart < params.size() && params[numStart] == ' ') numStart++;
+            while (numStart < params.size() && params[numStart] == ' ')
+                numStart++;
             startChar = std::stoi(params.substr(numStart));
         }
 
@@ -392,14 +429,16 @@ std::string LspServer::handleTextDocumentDidChange(const std::string& params) {
             if (endLinePos != std::string::npos) {
                 size_t colon = params.find(':', endLinePos);
                 size_t numStart = colon + 1;
-                while (numStart < params.size() && params[numStart] == ' ') numStart++;
+                while (numStart < params.size() && params[numStart] == ' ')
+                    numStart++;
                 endLine = std::stoi(params.substr(numStart));
             }
             size_t endCharPos = params.find("\"character\"", endRangePos);
             if (endCharPos != std::string::npos) {
                 size_t colon = params.find(':', endCharPos);
                 size_t numStart = colon + 1;
-                while (numStart < params.size() && params[numStart] == ' ') numStart++;
+                while (numStart < params.size() && params[numStart] == ' ')
+                    numStart++;
                 endChar = std::stoi(params.substr(numStart));
             }
         }
@@ -422,7 +461,8 @@ std::string LspServer::handleTextDocumentDidChange(const std::string& params) {
             size_t quoteEnd = quoteStart + 1;
             std::string text;
             while (quoteEnd < params.size()) {
-                if (params[quoteEnd] == '"' && params[quoteEnd-1] != '\\') break;
+                if (params[quoteEnd] == '"' && params[quoteEnd - 1] != '\\')
+                    break;
                 text += params[quoteEnd];
                 quoteEnd++;
             }
@@ -432,13 +472,15 @@ std::string LspServer::handleTextDocumentDidChange(const std::string& params) {
     return "";
 }
 
-std::string LspServer::handleTextDocumentDidClose(const std::string& params) {
+std::string LspServer::handleTextDocumentDidClose(const std::string& params)
+{
     std::string uri = jsonGet(params, "textDocument.uri");
     closeDocument(uri);
     return "";
 }
 
-std::string LspServer::handleTextDocumentCompletion(const std::string& params) {
+std::string LspServer::handleTextDocumentCompletion(const std::string& params)
+{
     std::string uri = jsonGet(params, "textDocument.uri");
     int line = jsonGetInt(params, "position.line");
     int col = jsonGetInt(params, "position.character");
@@ -448,7 +490,8 @@ std::string LspServer::handleTextDocumentCompletion(const std::string& params) {
     std::ostringstream oss;
     oss << R"({"isIncomplete":false,"items":[)";
     for (size_t i = 0; i < items.size(); ++i) {
-        if (i > 0) oss << ",";
+        if (i > 0)
+            oss << ",";
         oss << "{";
         oss << R"("label":")" << jsonEscape(items[i].label) << "\",";
         oss << R"("kind":)" << items[i].kind << ",";
@@ -468,14 +511,16 @@ std::string LspServer::handleTextDocumentCompletion(const std::string& params) {
     return oss.str();
 }
 
-std::string LspServer::handleTextDocumentHover(const std::string& params) {
+std::string LspServer::handleTextDocumentHover(const std::string& params)
+{
     std::string uri = jsonGet(params, "textDocument.uri");
     int line = jsonGetInt(params, "position.line");
     int col = jsonGetInt(params, "position.character");
 
     auto hover = getHover(uri, {line, col});
 
-    if (hover.contents.empty()) return "null";
+    if (hover.contents.empty())
+        return "null";
 
     std::ostringstream oss;
     oss << R"({"contents":{"kind":"markdown","value":")" << jsonEscape(hover.contents) << "\"";
@@ -486,13 +531,15 @@ std::string LspServer::handleTextDocumentHover(const std::string& params) {
     return oss.str();
 }
 
-std::string LspServer::handleTextDocumentDefinition(const std::string& params) {
+std::string LspServer::handleTextDocumentDefinition(const std::string& params)
+{
     std::string uri = jsonGet(params, "textDocument.uri");
     int line = jsonGetInt(params, "position.line");
     int col = jsonGetInt(params, "position.character");
 
     auto loc = getDefinition(uri, {line, col});
-    if (loc.uri.empty()) return "null";
+    if (loc.uri.empty())
+        return "null";
 
     std::ostringstream oss;
     oss << R"({"uri":")" << jsonEscape(loc.uri) << "\",";
@@ -503,7 +550,8 @@ std::string LspServer::handleTextDocumentDefinition(const std::string& params) {
     return oss.str();
 }
 
-std::string LspServer::handleTextDocumentReferences(const std::string& params) {
+std::string LspServer::handleTextDocumentReferences(const std::string& params)
+{
     std::string uri = jsonGet(params, "textDocument.uri");
     int line = jsonGetInt(params, "position.line");
     int col = jsonGetInt(params, "position.character");
@@ -513,7 +561,8 @@ std::string LspServer::handleTextDocumentReferences(const std::string& params) {
     std::ostringstream oss;
     oss << "[";
     for (size_t i = 0; i < refs.size(); ++i) {
-        if (i > 0) oss << ",";
+        if (i > 0)
+            oss << ",";
         oss << R"({"uri":")" << jsonEscape(refs[i].uri) << "\",";
         oss << R"("range":{"start":{"line":)" << refs[i].range.start.line << ",";
         oss << R"("character":)" << refs[i].range.start.character << "},";
@@ -524,7 +573,8 @@ std::string LspServer::handleTextDocumentReferences(const std::string& params) {
     return oss.str();
 }
 
-std::string LspServer::handleTextDocumentCodeAction(const std::string& params) {
+std::string LspServer::handleTextDocumentCodeAction(const std::string& params)
+{
     std::string uri = jsonGet(params, "textDocument.uri");
 
     // Get diagnostics at this position
@@ -539,7 +589,8 @@ std::string LspServer::handleTextDocumentCodeAction(const std::string& params) {
     std::ostringstream oss;
     oss << "[";
     for (size_t i = 0; i < actions.size(); ++i) {
-        if (i > 0) oss << ",";
+        if (i > 0)
+            oss << ",";
         oss << "{";
         oss << R"("title":")" << jsonEscape(actions[i].title) << "\",";
         oss << R"("kind":")" << jsonEscape(actions[i].kind) << "\"";
@@ -552,17 +603,19 @@ std::string LspServer::handleTextDocumentCodeAction(const std::string& params) {
     return oss.str();
 }
 
-std::string LspServer::handleTextDocumentFormatting(const std::string& params) {
+std::string LspServer::handleTextDocumentFormatting(const std::string& params)
+{
     std::string uri = jsonGet(params, "textDocument.uri");
 
     // Determine tab size from options
     std::string tabSizeStr = jsonGet(params, "options.tabSize");
-    std::string tabStr = "    ";  // default 4 spaces
+    std::string tabStr = "    "; // default 4 spaces
     if (!tabSizeStr.empty()) {
         try {
             int tabSize = std::stoi(tabSizeStr);
             tabStr = std::string(static_cast<size_t>(tabSize), ' ');
-        } catch (...) {}
+        } catch (...) {
+        }
     }
 
     auto edits = computeTextEdits(uri, tabStr);
@@ -570,19 +623,21 @@ std::string LspServer::handleTextDocumentFormatting(const std::string& params) {
     std::ostringstream oss;
     oss << "[";
     for (size_t i = 0; i < edits.size(); ++i) {
-        if (i > 0) oss << ",";
+        if (i > 0)
+            oss << ",";
         oss << "{";
         oss << R"("range":{"start":{"line":)" << edits[i].first.line << ",";
         oss << R"("character":)" << edits[i].first.character << "},";
         oss << R"("end":{"line":)" << edits[i].first.line << ",";
         oss << R"("character":0}},)"
-           << R"("newText":")" << jsonEscape(edits[i].second) << "\"}";
+            << R"("newText":")" << jsonEscape(edits[i].second) << "\"}";
     }
     oss << "]";
     return oss.str();
 }
 
-std::string LspServer::handleTextDocumentSignatureHelp(const std::string& params) {
+std::string LspServer::handleTextDocumentSignatureHelp(const std::string& params)
+{
     std::string uri = jsonGet(params, "textDocument.uri");
     int line = jsonGetInt(params, "position.line");
     int col = jsonGetInt(params, "position.character");
@@ -592,14 +647,16 @@ std::string LspServer::handleTextDocumentSignatureHelp(const std::string& params
     std::ostringstream oss;
     oss << R"({"signatures":[)";
     for (size_t i = 0; i < sigHelp.signatures.size(); ++i) {
-        if (i > 0) oss << ",";
+        if (i > 0)
+            oss << ",";
         auto& sig = sigHelp.signatures[i];
         oss << "{";
         oss << R"("label":")" << jsonEscape(sig.label) << "\",";
         oss << R"("documentation":")" << jsonEscape(sig.documentation) << "\",";
         oss << R"("parameters":[)";
         for (size_t j = 0; j < sig.parameters.size(); ++j) {
-            if (j > 0) oss << ",";
+            if (j > 0)
+                oss << ",";
             oss << R"({"label":")" << jsonEscape(sig.parameters[j].label) << "\"}";
         }
         oss << "]}";
@@ -609,7 +666,8 @@ std::string LspServer::handleTextDocumentSignatureHelp(const std::string& params
     return oss.str();
 }
 
-std::string LspServer::handleTextDocumentDocumentSymbol(const std::string& params) {
+std::string LspServer::handleTextDocumentDocumentSymbol(const std::string& params)
+{
     std::string uri = jsonGet(params, "textDocument.uri");
     auto symbols = m_symbolTables.count(uri) ? m_symbolTables[uri] : buildSymbolTable(uri);
 
@@ -617,8 +675,10 @@ std::string LspServer::handleTextDocumentDocumentSymbol(const std::string& param
     oss << "[";
     bool first = true;
     for (auto& sym : symbols) {
-        if (sym.kind != SymbolEntry::Function && sym.kind != SymbolEntry::Variable) continue;
-        if (!first) oss << ",";
+        if (sym.kind != SymbolEntry::Function && sym.kind != SymbolEntry::Variable)
+            continue;
+        if (!first)
+            oss << ",";
         first = false;
         oss << "{";
         oss << R"("name":")" << jsonEscape(sym.name) << "\",";
@@ -632,7 +692,8 @@ std::string LspServer::handleTextDocumentDocumentSymbol(const std::string& param
     return oss.str();
 }
 
-std::string LspServer::handleWorkspaceSymbol(const std::string& params) {
+std::string LspServer::handleWorkspaceSymbol(const std::string& params)
+{
     std::string query = jsonGet(params, "query");
     std::vector<SymbolEntry> allSymbols;
     for (auto& [uri, symbols] : m_symbolTables) {
@@ -643,8 +704,10 @@ std::string LspServer::handleWorkspaceSymbol(const std::string& params) {
     oss << "[";
     bool first = true;
     for (auto& sym : allSymbols) {
-        if (!query.empty() && sym.name.find(query) == std::string::npos) continue;
-        if (!first) oss << ",";
+        if (!query.empty() && sym.name.find(query) == std::string::npos)
+            continue;
+        if (!first)
+            oss << ",";
         first = false;
         oss << "{";
         oss << R"("name":")" << jsonEscape(sym.name) << "\",";
@@ -659,8 +722,10 @@ std::string LspServer::handleWorkspaceSymbol(const std::string& params) {
 // Completion Engine
 // ============================================================================
 
-void LspServer::buildCompletions() {
-    if (m_completionsBuilt) return;
+void LspServer::buildCompletions()
+{
+    if (m_completionsBuilt)
+        return;
     m_completionsBuilt = true;
 
     auto keywords = getKeywordCompletions();
@@ -674,13 +739,19 @@ void LspServer::buildCompletions() {
     m_allCompletions.insert(m_allCompletions.end(), snippets.begin(), snippets.end());
 }
 
-std::vector<CompletionItem> LspServer::getKeywordCompletions() {
+std::vector<CompletionItem> LspServer::getKeywordCompletions()
+{
     return {
-        {"def", CompletionItem::Keyword, "function definition", "Define a function", "def ${1:name}(${2:args}) ${3:body}", 2},
-        {"extern", CompletionItem::Keyword, "external declaration", "Declare an external function", "extern ${1:name}(${2:args})", 2},
-        {"let", CompletionItem::Keyword, "typed variable", "Declare a typed variable", "let ${1:name} : ${2:type} = ${3:value}", 2},
-        {"var", CompletionItem::Keyword, "type-inferred variable", "Declare a variable with inferred type", "var ${1:name} = ${2:value}", 2},
-        {"if", CompletionItem::Keyword, "conditional", "Conditional expression", "if ${1:cond} then ${2:then} else ${3:else}", 2},
+        {"def", CompletionItem::Keyword, "function definition", "Define a function",
+         "def ${1:name}(${2:args}) ${3:body}", 2},
+        {"extern", CompletionItem::Keyword, "external declaration", "Declare an external function",
+         "extern ${1:name}(${2:args})", 2},
+        {"let", CompletionItem::Keyword, "typed variable", "Declare a typed variable",
+         "let ${1:name} : ${2:type} = ${3:value}", 2},
+        {"var", CompletionItem::Keyword, "type-inferred variable", "Declare a variable with inferred type",
+         "var ${1:name} = ${2:value}", 2},
+        {"if", CompletionItem::Keyword, "conditional", "Conditional expression",
+         "if ${1:cond} then ${2:then} else ${3:else}", 2},
         {"then", CompletionItem::Keyword, "then branch", "", "then", 1},
         {"else", CompletionItem::Keyword, "else branch", "", "else", 1},
         {"in", CompletionItem::Keyword, "binding", "", "in", 1},
@@ -691,12 +762,15 @@ std::vector<CompletionItem> LspServer::getKeywordCompletions() {
         {"continue", CompletionItem::Keyword, "continue loop", "", "continue", 1},
         {"catch", CompletionItem::Keyword, "catch block", "", "catch", 1},
         {"throw", CompletionItem::Keyword, "throw exception", "", "throw", 1},
-        {"match", CompletionItem::Keyword, "pattern match", "Pattern matching", "match ${1:expr} { ${2:pattern} => ${3:result} }", 2},
-        {"parallel", CompletionItem::Keyword, "parallel loop", "Parallel for loop", "parallel for ${1:i} in ${2:start}, ${3:end} do ${4:body}", 2},
+        {"match", CompletionItem::Keyword, "pattern match", "Pattern matching",
+         "match ${1:expr} { ${2:pattern} => ${3:result} }", 2},
+        {"parallel", CompletionItem::Keyword, "parallel loop", "Parallel for loop",
+         "parallel for ${1:i} in ${2:start}, ${3:end} do ${4:body}", 2},
     };
 }
 
-std::vector<CompletionItem> LspServer::getBuiltinFunctionCompletions() {
+std::vector<CompletionItem> LspServer::getBuiltinFunctionCompletions()
+{
     return {
         {"sin", CompletionItem::Function, "(x) -> double", "Sine function", "sin(${1:x})", 2},
         {"cos", CompletionItem::Function, "(x) -> double", "Cosine function", "cos(${1:x})", 2},
@@ -711,22 +785,33 @@ std::vector<CompletionItem> LspServer::getBuiltinFunctionCompletions() {
         {"pow", CompletionItem::Function, "(x, y) -> double", "Power function", "pow(${1:x}, ${2:y})", 2},
         {"atan2", CompletionItem::Function, "(y, x) -> double", "Two-argument arctangent", "atan2(${1:y}, ${2:x})", 2},
         {"pi", CompletionItem::Function, "() -> double", "Pi constant", "pi()", 2},
-        {"cross", CompletionItem::Function, "(expr, [rise_fall]) -> double", "Zero-crossing detection", "cross(${1:expr})", 2},
-        {"above", CompletionItem::Function, "(expr, threshold) -> double", "Threshold detection", "above(${1:expr}, ${2:threshold})", 2},
+        {"cross", CompletionItem::Function, "(expr, [rise_fall]) -> double", "Zero-crossing detection",
+         "cross(${1:expr})", 2},
+        {"above", CompletionItem::Function, "(expr, threshold) -> double", "Threshold detection",
+         "above(${1:expr}, ${2:threshold})", 2},
         {"timer", CompletionItem::Function, "() -> double", "Elapsed simulation time", "timer()", 2},
-        {"posedge", CompletionItem::Function, "(signal) -> double", "Positive edge detection", "posedge(${1:signal})", 2},
-        {"negedge", CompletionItem::Function, "(signal) -> double", "Negative edge detection", "negedge(${1:signal})", 2},
-        {"white_noise", CompletionItem::Function, "(amplitude) -> double", "Gaussian white noise", "white_noise(${1:amp})", 2},
-        {"flicker_noise", CompletionItem::Function, "(amplitude, corner_freq) -> double", "1/f noise", "flicker_noise(${1:amp}, ${2:freq})", 2},
-        {"thermal_noise", CompletionItem::Function, "(resistance, [temperature]) -> double", "Johnson-Nyquist thermal noise", "thermal_noise(${1:R}, ${2:300.15})", 2},
-        {"unit", CompletionItem::Function, "(value, unit_str)", "Annotate value with unit", "unit(${1:val}, \"${2:V}\")", 2},
-        {"convert", CompletionItem::Function, "(value, from, to) -> double", "Unit conversion", "convert(${1:val}, \"${2:V}\", \"${3:mV}\")", 2},
+        {"posedge", CompletionItem::Function, "(signal) -> double", "Positive edge detection", "posedge(${1:signal})",
+         2},
+        {"negedge", CompletionItem::Function, "(signal) -> double", "Negative edge detection", "negedge(${1:signal})",
+         2},
+        {"white_noise", CompletionItem::Function, "(amplitude) -> double", "Gaussian white noise",
+         "white_noise(${1:amp})", 2},
+        {"flicker_noise", CompletionItem::Function, "(amplitude, corner_freq) -> double", "1/f noise",
+         "flicker_noise(${1:amp}, ${2:freq})", 2},
+        {"thermal_noise", CompletionItem::Function, "(resistance, [temperature]) -> double",
+         "Johnson-Nyquist thermal noise", "thermal_noise(${1:R}, ${2:300.15})", 2},
+        {"unit", CompletionItem::Function, "(value, unit_str)", "Annotate value with unit",
+         "unit(${1:val}, \"${2:V}\")", 2},
+        {"convert", CompletionItem::Function, "(value, from, to) -> double", "Unit conversion",
+         "convert(${1:val}, \"${2:V}\", \"${3:mV}\")", 2},
         {"dimension", CompletionItem::Function, "(value) -> string", "Dimensional analysis", "dimension(${1:val})", 2},
-        {"has_unit", CompletionItem::Function, "(value, unit) -> double", "Check unit compatibility", "has_unit(${1:val}, \"${2:V}\")", 2},
+        {"has_unit", CompletionItem::Function, "(value, unit) -> double", "Check unit compatibility",
+         "has_unit(${1:val}, \"${2:V}\")", 2},
     };
 }
 
-std::vector<CompletionItem> LspServer::getTypeCompletions() {
+std::vector<CompletionItem> LspServer::getTypeCompletions()
+{
     return {
         {"double", CompletionItem::Type, "type", "Double precision float", "double", 1},
         {"float", CompletionItem::Type, "type", "Single precision float", "float", 1},
@@ -739,24 +824,34 @@ std::vector<CompletionItem> LspServer::getTypeCompletions() {
     };
 }
 
-std::vector<CompletionItem> LspServer::getSnippetCompletions() {
+std::vector<CompletionItem> LspServer::getSnippetCompletions()
+{
     return {
-        {"func", CompletionItem::Snippet, "Function template", "def name(args) body", "def ${1:name}(${2:args}) ${3:body}", 2},
-        {"forloop", CompletionItem::Snippet, "For loop", "for i in start, end do body", "for ${1:i} in ${2:1}, ${3:10} do ${4:body}", 2},
+        {"func", CompletionItem::Snippet, "Function template", "def name(args) body",
+         "def ${1:name}(${2:args}) ${3:body}", 2},
+        {"forloop", CompletionItem::Snippet, "For loop", "for i in start, end do body",
+         "for ${1:i} in ${2:1}, ${3:10} do ${4:body}", 2},
         {"whileloop", CompletionItem::Snippet, "While loop", "while cond do body", "while ${1:cond} do ${2:body}", 2},
-        {"ifelse", CompletionItem::Snippet, "If-else", "if cond then a else b", "if ${1:cond} then ${2:a} else ${3:b}", 2},
-        {"bsource", CompletionItem::Snippet, "Behavioral source", "bsource B name n+ n- V={expr}", "bsource ${1:B1} ${2:out} ${3:0} V={${4:expression}}", 2},
-        {"montecarlo", CompletionItem::Snippet, "Monte Carlo analysis", "montecarlo output iterations", "montecarlo ${1:output} ${2:1000}", 2},
-        {"piecewise", CompletionItem::Snippet, "Piecewise function", "piecewise(x1,y1, x2,y2, ...)", "piecewise(${1:0.0}, ${2:0.0}, ${3:1.0}, ${4:1.0}, ${5:x})", 2},
-        {"table", CompletionItem::Snippet, "Lookup table", "table(k1,v1, k2,v2, key)", "table(${1:0.0}, ${2:0.0}, ${3:1.0}, ${4:1.0}, ${5:key})", 2},
+        {"ifelse", CompletionItem::Snippet, "If-else", "if cond then a else b", "if ${1:cond} then ${2:a} else ${3:b}",
+         2},
+        {"bsource", CompletionItem::Snippet, "Behavioral source", "bsource B name n+ n- V={expr}",
+         "bsource ${1:B1} ${2:out} ${3:0} V={${4:expression}}", 2},
+        {"montecarlo", CompletionItem::Snippet, "Monte Carlo analysis", "montecarlo output iterations",
+         "montecarlo ${1:output} ${2:1000}", 2},
+        {"piecewise", CompletionItem::Snippet, "Piecewise function", "piecewise(x1,y1, x2,y2, ...)",
+         "piecewise(${1:0.0}, ${2:0.0}, ${3:1.0}, ${4:1.0}, ${5:x})", 2},
+        {"table", CompletionItem::Snippet, "Lookup table", "table(k1,v1, k2,v2, key)",
+         "table(${1:0.0}, ${2:0.0}, ${3:1.0}, ${4:1.0}, ${5:key})", 2},
     };
 }
 
-std::vector<CompletionItem> LspServer::getCompletions(const std::string& uri, Position pos) {
+std::vector<CompletionItem> LspServer::getCompletions(const std::string& uri, Position pos)
+{
     buildCompletions();
 
     auto* doc = getDocument(uri);
-    if (!doc) return m_allCompletions;
+    if (!doc)
+        return m_allCompletions;
 
     std::string prefix = doc->getWordAtPosition(pos);
 
@@ -786,13 +881,16 @@ std::vector<CompletionItem> LspServer::getCompletions(const std::string& uri, Po
 // Hover Engine
 // ============================================================================
 
-HoverContent LspServer::getHover(const std::string& uri, Position pos) {
+HoverContent LspServer::getHover(const std::string& uri, Position pos)
+{
     HoverContent result;
     auto* doc = getDocument(uri);
-    if (!doc) return result;
+    if (!doc)
+        return result;
 
     std::string word = doc->getWordAtPosition(pos);
-    if (word.empty()) return result;
+    if (word.empty())
+        return result;
 
     // Check built-in functions
     auto builtins = getBuiltinFunctionCompletions();
@@ -833,7 +931,8 @@ HoverContent LspServer::getHover(const std::string& uri, Position pos) {
         if (sym.name == word) {
             std::string kindStr = (sym.kind == SymbolEntry::Function) ? "function" : "variable";
             result.contents = "```fluxscript\n" + kindStr + " " + sym.name;
-            if (!sym.typeStr.empty()) result.contents += ": " + sym.typeStr;
+            if (!sym.typeStr.empty())
+                result.contents += ": " + sym.typeStr;
             result.contents += "\n```";
             result.range = sym.range;
             return result;
@@ -847,13 +946,16 @@ HoverContent LspServer::getHover(const std::string& uri, Position pos) {
 // Go-to-Definition
 // ============================================================================
 
-Location LspServer::getDefinition(const std::string& uri, Position pos) {
+Location LspServer::getDefinition(const std::string& uri, Position pos)
+{
     Location loc;
     auto* doc = getDocument(uri);
-    if (!doc) return loc;
+    if (!doc)
+        return loc;
 
     std::string word = doc->getWordAtPosition(pos);
-    if (word.empty()) return loc;
+    if (word.empty())
+        return loc;
 
     auto symbols = m_symbolTables.count(uri) ? m_symbolTables[uri] : buildSymbolTable(uri);
     for (auto& sym : symbols) {
@@ -871,24 +973,30 @@ Location LspServer::getDefinition(const std::string& uri, Position pos) {
 // Signature Help
 // ============================================================================
 
-LspServer::SignatureHelpResult LspServer::getSignatureHelp(const std::string& uri, Position pos) {
+LspServer::SignatureHelpResult LspServer::getSignatureHelp(const std::string& uri, Position pos)
+{
     SignatureHelpResult result;
     auto* doc = getDocument(uri);
-    if (!doc) return result;
+    if (!doc)
+        return result;
 
     // Look backward from cursor to find the function being called
     size_t offset = doc->positionToOffset(pos);
-    if (offset == 0 || offset > doc->text.size()) return result;
+    if (offset == 0 || offset > doc->text.size())
+        return result;
 
     // Scan backward to find function name before '('
     size_t parenPos = doc->text.rfind('(', offset - 1);
-    if (parenPos == std::string::npos || parenPos == 0) return result;
+    if (parenPos == std::string::npos || parenPos == 0)
+        return result;
 
     // Extract function name
     size_t nameEnd = parenPos;
-    while (nameEnd > 0 && (doc->text[nameEnd-1] == ' ' || doc->text[nameEnd-1] == '\t')) nameEnd--;
+    while (nameEnd > 0 && (doc->text[nameEnd - 1] == ' ' || doc->text[nameEnd - 1] == '\t'))
+        nameEnd--;
     size_t nameStart = nameEnd;
-    while (nameStart > 0 && (std::isalnum(doc->text[nameStart-1]) || doc->text[nameStart-1] == '_')) nameStart--;
+    while (nameStart > 0 && (std::isalnum(doc->text[nameStart - 1]) || doc->text[nameStart - 1] == '_'))
+        nameStart--;
 
     std::string funcName = doc->text.substr(nameStart, nameEnd - nameStart);
 
@@ -896,9 +1004,12 @@ LspServer::SignatureHelpResult LspServer::getSignatureHelp(const std::string& ur
     int argCount = 0;
     int parenDepth = 0;
     for (size_t i = nameEnd; i < offset; ++i) {
-        if (doc->text[i] == '(') parenDepth++;
-        else if (doc->text[i] == ')') parenDepth--;
-        else if (doc->text[i] == ',' && parenDepth == 1) argCount++;
+        if (doc->text[i] == '(')
+            parenDepth++;
+        else if (doc->text[i] == ')')
+            parenDepth--;
+        else if (doc->text[i] == ',' && parenDepth == 1)
+            argCount++;
     }
 
     // Look up function signature
@@ -917,11 +1028,14 @@ LspServer::SignatureHelpResult LspServer::getSignatureHelp(const std::string& ur
                 size_t start = 0;
                 while (start < params.size()) {
                     size_t comma = params.find(',', start);
-                    if (comma == std::string::npos) comma = params.size();
+                    if (comma == std::string::npos)
+                        comma = params.size();
                     std::string param = params.substr(start, comma - start);
                     // Trim
-                    while (!param.empty() && param[0] == ' ') param.erase(0, 1);
-                    while (!param.empty() && param.back() == ' ') param.pop_back();
+                    while (!param.empty() && param[0] == ' ')
+                        param.erase(0, 1);
+                    while (!param.empty() && param.back() == ' ')
+                        param.pop_back();
                     if (!param.empty()) {
                         sig.parameters.push_back({param, ""});
                     }
@@ -942,24 +1056,30 @@ LspServer::SignatureHelpResult LspServer::getSignatureHelp(const std::string& ur
 // JSON Helpers
 // ============================================================================
 
-std::string LspServer::jsonGet(const std::string& json, const std::string& key) {
+std::string LspServer::jsonGet(const std::string& json, const std::string& key)
+{
     std::string searchKey = "\"" + key + "\"";
-    size_t keyPos = json.rfind(searchKey);  // Use rfind for nested keys
-    if (keyPos == std::string::npos) return "";
+    size_t keyPos = json.rfind(searchKey); // Use rfind for nested keys
+    if (keyPos == std::string::npos)
+        return "";
 
     size_t colonPos = json.find(':', keyPos + searchKey.size());
-    if (colonPos == std::string::npos) return "";
+    if (colonPos == std::string::npos)
+        return "";
 
     size_t valueStart = colonPos + 1;
-    while (valueStart < json.size() && json[valueStart] == ' ') valueStart++;
+    while (valueStart < json.size() && json[valueStart] == ' ')
+        valueStart++;
 
-    if (valueStart >= json.size()) return "";
+    if (valueStart >= json.size())
+        return "";
 
     if (json[valueStart] == '"') {
         size_t strStart = valueStart + 1;
         std::string result;
         for (size_t i = strStart; i < json.size(); ++i) {
-            if (json[i] == '"' && json[i-1] != '\\') break;
+            if (json[i] == '"' && json[i - 1] != '\\')
+                break;
             result += json[i];
         }
         return result;
@@ -976,25 +1096,34 @@ std::string LspServer::jsonGet(const std::string& json, const std::string& key) 
         int depth = 0;
         size_t objStart = valueStart;
         for (size_t i = valueStart; i < json.size(); ++i) {
-            if (json[i] == '{') depth++;
-            else if (json[i] == '}') { depth--; if (depth == 0) return json.substr(objStart, i - objStart + 1); }
+            if (json[i] == '{')
+                depth++;
+            else if (json[i] == '}') {
+                depth--;
+                if (depth == 0)
+                    return json.substr(objStart, i - objStart + 1);
+            }
         }
     }
 
     return "";
 }
 
-std::string LspServer::jsonGetNested(const std::string& json, const std::string& key1, const std::string& key2) {
+std::string LspServer::jsonGetNested(const std::string& json, const std::string& key1, const std::string& key2)
+{
     // Find key1, then within that object find key2
     std::string searchKey = "\"" + key1 + "\"";
     size_t keyPos = json.find(searchKey);
-    if (keyPos == std::string::npos) return "";
+    if (keyPos == std::string::npos)
+        return "";
 
     size_t colonPos = json.find(':', keyPos + searchKey.size());
-    if (colonPos == std::string::npos) return "";
+    if (colonPos == std::string::npos)
+        return "";
 
     size_t objStart = colonPos + 1;
-    while (objStart < json.size() && json[objStart] == ' ') objStart++;
+    while (objStart < json.size() && json[objStart] == ' ')
+        objStart++;
 
     if (objStart >= json.size() || json[objStart] != '{') {
         // Try direct key2 lookup (flat structure)
@@ -1004,24 +1133,35 @@ std::string LspServer::jsonGetNested(const std::string& json, const std::string&
     int depth = 0;
     size_t objEnd = objStart;
     for (size_t i = objStart; i < json.size(); ++i) {
-        if (json[i] == '{') depth++;
-        else if (json[i] == '}') { depth--; if (depth == 0) { objEnd = i; break; } }
+        if (json[i] == '{')
+            depth++;
+        else if (json[i] == '}') {
+            depth--;
+            if (depth == 0) {
+                objEnd = i;
+                break;
+            }
+        }
     }
 
     std::string inner = json.substr(objStart, objEnd - objStart + 1);
     return jsonGet(inner, key2);
 }
 
-int LspServer::jsonGetInt(const std::string& json, const std::string& key, int defaultVal) {
+int LspServer::jsonGetInt(const std::string& json, const std::string& key, int defaultVal)
+{
     std::string searchKey = "\"" + key + "\"";
     size_t keyPos = json.find(searchKey);
-    if (keyPos == std::string::npos) return defaultVal;
+    if (keyPos == std::string::npos)
+        return defaultVal;
 
     size_t colonPos = json.find(':', keyPos + searchKey.size());
-    if (colonPos == std::string::npos) return defaultVal;
+    if (colonPos == std::string::npos)
+        return defaultVal;
 
     size_t valueStart = colonPos + 1;
-    while (valueStart < json.size() && json[valueStart] == ' ') valueStart++;
+    while (valueStart < json.size() && json[valueStart] == ' ')
+        valueStart++;
 
     try {
         return std::stoi(json.substr(valueStart));
@@ -1030,39 +1170,56 @@ int LspServer::jsonGetInt(const std::string& json, const std::string& key, int d
     }
 }
 
-std::string LspServer::jsonEscape(const std::string& s) {
+std::string LspServer::jsonEscape(const std::string& s)
+{
     std::string result;
     for (char c : s) {
         switch (c) {
-            case '"': result += "\\\""; break;
-            case '\\': result += "\\\\"; break;
-            case '\n': result += "\\n"; break;
-            case '\r': result += "\\r"; break;
-            case '\t': result += "\\t"; break;
-            default: result += c;
+        case '"':
+            result += "\\\"";
+            break;
+        case '\\':
+            result += "\\\\";
+            break;
+        case '\n':
+            result += "\\n";
+            break;
+        case '\r':
+            result += "\\r";
+            break;
+        case '\t':
+            result += "\\t";
+            break;
+        default:
+            result += c;
         }
     }
     return result;
 }
 
-std::string LspServer::makeResponse(int id, const std::string& result) {
+std::string LspServer::makeResponse(int id, const std::string& result)
+{
     return "{\"jsonrpc\":\"2.0\",\"id\":" + std::to_string(id) + ",\"result\":" + result + "}";
 }
 
-std::string LspServer::makeErrorResponse(int id, int code, const std::string& message) {
-    return "{\"jsonrpc\":\"2.0\",\"id\":" + std::to_string(id) + ",\"error\":{\"code\":" +
-           std::to_string(code) + ",\"message\":\"" + jsonEscape(message) + "\"}}";
+std::string LspServer::makeErrorResponse(int id, int code, const std::string& message)
+{
+    return "{\"jsonrpc\":\"2.0\",\"id\":" + std::to_string(id) + ",\"error\":{\"code\":" + std::to_string(code) +
+           ",\"message\":\"" + jsonEscape(message) + "\"}}";
 }
 
-std::string LspServer::makeNotification(const std::string& method, const std::string& params) {
+std::string LspServer::makeNotification(const std::string& method, const std::string& params)
+{
     return "{\"jsonrpc\":\"2.0\",\"method\":\"" + method + "\",\"params\":" + params + "}";
 }
 
-void LspServer::publishDiagnostics(const std::string& uri, const std::vector<Diagnostic>& diagnostics) {
+void LspServer::publishDiagnostics(const std::string& uri, const std::vector<Diagnostic>& diagnostics)
+{
     std::ostringstream oss;
     oss << R"({"uri":")" << jsonEscape(uri) << R"(","diagnostics":[)";
     for (size_t i = 0; i < diagnostics.size(); ++i) {
-        if (i > 0) oss << ",";
+        if (i > 0)
+            oss << ",";
         auto& d = diagnostics[i];
         oss << "{";
         oss << R"("range":{"start":{"line":)" << d.range.start.line << ",";
@@ -1083,13 +1240,16 @@ void LspServer::publishDiagnostics(const std::string& uri, const std::vector<Dia
 // References Provider
 // ============================================================================
 
-std::vector<Location> LspServer::getReferences(const std::string& uri, Position pos) {
+std::vector<Location> LspServer::getReferences(const std::string& uri, Position pos)
+{
     std::vector<Location> refs;
     auto* doc = getDocument(uri);
-    if (!doc) return refs;
+    if (!doc)
+        return refs;
 
     std::string word = doc->getWordAtPosition(pos);
-    if (word.empty()) return refs;
+    if (word.empty())
+        return refs;
 
     auto symbols = m_symbolTables.count(uri) ? m_symbolTables[uri] : buildSymbolTable(uri);
 
@@ -1109,18 +1269,21 @@ std::vector<Location> LspServer::getReferences(const std::string& uri, Position 
 // Code Actions Provider
 // ============================================================================
 
-std::vector<LspServer::CodeAction> LspServer::getCodeActions(const std::string& uri, Position pos, const std::vector<Diagnostic>& diags) {
+std::vector<LspServer::CodeAction> LspServer::getCodeActions(const std::string& uri, Position pos,
+                                                             const std::vector<Diagnostic>& diags)
+{
     std::vector<CodeAction> actions;
     auto* doc = getDocument(uri);
-    if (!doc) return actions;
+    if (!doc)
+        return actions;
 
     for (auto& d : diags) {
         // Only suggest actions for diagnostics at or near the requested position
-        if (d.range.start.line != pos.line) continue;
+        if (d.range.start.line != pos.line)
+            continue;
 
         // Action: add missing semicolon
-        if (d.message.find("expected ';'") != std::string::npos ||
-            d.message.find("expected ;") != std::string::npos) {
+        if (d.message.find("expected ';'") != std::string::npos || d.message.find("expected ;") != std::string::npos) {
             CodeAction action;
             action.title = "Add missing ';'";
             action.kind = "quickfix";
@@ -1158,10 +1321,13 @@ std::vector<LspServer::CodeAction> LspServer::getCodeActions(const std::string& 
 // Document Formatting
 // ============================================================================
 
-std::vector<std::pair<Position, std::string>> LspServer::computeTextEdits(const std::string& uri, const std::string& tabStr) {
+std::vector<std::pair<Position, std::string>> LspServer::computeTextEdits(const std::string& uri,
+                                                                          const std::string& tabStr)
+{
     std::vector<std::pair<Position, std::string>> edits;
     auto* doc = getDocument(uri);
-    if (!doc) return edits;
+    if (!doc)
+        return edits;
 
     size_t lineStart = 0;
     int lineNum = 0;
@@ -1179,18 +1345,22 @@ std::vector<std::pair<Position, std::string>> LspServer::computeTextEdits(const 
             int openBrackets = 0;
             int closeBrackets = 0;
             for (char c : trimmed) {
-                if (c == '{' || c == '(' || c == '[') openBrackets++;
-                if (c == '}' || c == ')' || c == ']') closeBrackets++;
+                if (c == '{' || c == '(' || c == '[')
+                    openBrackets++;
+                if (c == '}' || c == ')' || c == ']')
+                    closeBrackets++;
             }
 
             // The indent level for this line is baseIndent
             int effectiveIndent = baseIndent - closeBrackets;
-            if (effectiveIndent < 0) effectiveIndent = 0;
+            if (effectiveIndent < 0)
+                effectiveIndent = 0;
 
             // Build properly indented line
             std::string newLine;
             if (!trimmed.empty()) {
-                for (int j = 0; j < effectiveIndent; j++) newLine += tabStr;
+                for (int j = 0; j < effectiveIndent; j++)
+                    newLine += tabStr;
                 newLine += trimmed;
             }
 
@@ -1200,7 +1370,8 @@ std::vector<std::pair<Position, std::string>> LspServer::computeTextEdits(const 
 
             // Update baseIndent for next line
             baseIndent = effectiveIndent + openBrackets;
-            if (baseIndent < 0) baseIndent = 0;
+            if (baseIndent < 0)
+                baseIndent = 0;
 
             lineStart = i + 1;
             lineNum++;

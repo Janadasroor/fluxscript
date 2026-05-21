@@ -19,43 +19,46 @@
 #ifndef FLUX_NOTEBOOK_KERNEL_H
 #define FLUX_NOTEBOOK_KERNEL_H
 
-#include <string>
-#include <vector>
+#include <chrono>
+#include <functional>
 #include <map>
 #include <memory>
-#include <functional>
 #include <mutex>
-#include <chrono>
+#include <string>
+#include <vector>
 
 #include "flux/compiler/ast.h"
 
 namespace Flux {
 
 // Output types for notebook cells
-enum class OutputType {
-    Text,           // Plain text output
-    HTML,           // HTML rendering
-    SVG,            // SVG graphics (plots)
-    PNG,            // PNG image data
-    DataFrame,      // Tabular data
-    Error,          // Execution error
-    Latex,          // LaTeX math
-    JSON            // JSON data
+enum class OutputType
+{
+    Text,      // Plain text output
+    HTML,      // HTML rendering
+    SVG,       // SVG graphics (plots)
+    PNG,       // PNG image data
+    DataFrame, // Tabular data
+    Error,     // Execution error
+    Latex,     // LaTeX math
+    JSON       // JSON data
 };
 
 // Single output from cell execution
-struct CellOutput {
+struct CellOutput
+{
     OutputType type;
-    std::string data;           // Content (text, HTML, base64 PNG, etc.)
-    std::string mime_type;      // MIME type for rich display
+    std::string data;      // Content (text, HTML, base64 PNG, etc.)
+    std::string mime_type; // MIME type for rich display
     bool is_error = false;
-    std::string error_name;     // e.g., "SyntaxError", "RuntimeError"
+    std::string error_name; // e.g., "SyntaxError", "RuntimeError"
     std::string error_message;
-    std::vector<std::string> traceback;  // Error traceback
+    std::vector<std::string> traceback; // Error traceback
 };
 
 // Notebook cell
-struct NotebookCell {
+struct NotebookCell
+{
     std::string id;
     std::string source_code;
     std::vector<CellOutput> outputs;
@@ -66,25 +69,28 @@ struct NotebookCell {
 };
 
 // Notebook document
-struct NotebookDocument {
+struct NotebookDocument
+{
     std::string id;
     std::string title;
     std::string language = "fluxscript";
     std::vector<NotebookCell> cells;
-    std::map<std::string, std::string> metadata;  // Author, date, etc.
+    std::map<std::string, std::string> metadata; // Author, date, etc.
 };
 
 // Kernel state
-enum class KernelState {
+enum class KernelState
+{
     Starting,
     Ready,
-    Busy,       // Executing code
+    Busy, // Executing code
     Idle,
     Error
 };
 
 // Notebook Kernel - executes cells and manages state
-class NotebookKernel {
+class NotebookKernel
+{
 public:
     static NotebookKernel& instance();
 
@@ -105,12 +111,11 @@ public:
     bool executeCell(const std::string& notebook_id, const std::string& cell_id);
     bool executeAllCells(const std::string& notebook_id);
     bool deleteCell(const std::string& notebook_id, const std::string& cell_id);
-    bool updateCellSource(const std::string& notebook_id, const std::string& cell_id,
-                         const std::string& source);
+    bool updateCellSource(const std::string& notebook_id, const std::string& cell_id, const std::string& source);
 
     // Cell execution with callbacks
     bool executeCellAsync(const std::string& notebook_id, const std::string& cell_id,
-                         std::function<void(const std::string& cell_id, const CellOutput&)> output_callback);
+                          std::function<void(const std::string& cell_id, const CellOutput&)> output_callback);
 
     // Interrupt execution
     bool interruptExecution();
@@ -137,7 +142,7 @@ private:
     std::vector<CellOutput> executeStatement(const std::string& stmt);
 
     std::map<std::string, NotebookDocument> m_notebooks;
-    std::map<std::string, double> m_variables;  // Shared variable store
+    std::map<std::string, double> m_variables; // Shared variable store
     KernelState m_state = KernelState::Starting;
     mutable std::mutex m_mutex;
     bool m_initialized = false;
@@ -146,11 +151,11 @@ private:
 
 // Notebook file format serializer
 namespace NotebookSerializer {
-    std::string serializeToJSON(const NotebookDocument& notebook);
-    NotebookDocument deserializeFromJSON(const std::string& json);
-    std::string serializeToHTML(const NotebookDocument& notebook);
-    std::string serializeToMarkdown(const NotebookDocument& notebook);
-}
+std::string serializeToJSON(const NotebookDocument& notebook);
+NotebookDocument deserializeFromJSON(const std::string& json);
+std::string serializeToHTML(const NotebookDocument& notebook);
+std::string serializeToMarkdown(const NotebookDocument& notebook);
+} // namespace NotebookSerializer
 
 } // namespace Flux
 

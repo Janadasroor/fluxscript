@@ -14,11 +14,11 @@
 #ifndef FLUX_TOOLING_LSP_SERVER_H
 #define FLUX_TOOLING_LSP_SERVER_H
 
-#include <string>
-#include <map>
-#include <vector>
-#include <memory>
 #include <functional>
+#include <map>
+#include <memory>
+#include <string>
+#include <vector>
 
 namespace Flux {
 
@@ -32,63 +32,100 @@ namespace Tooling {
 // LSP Types (subset of LSP 3.17 spec)
 // ============================================================================
 
-struct Position {
-    int line = 0;       // 0-based
-    int character = 0;  // 0-based UTF-16 code units
+struct Position
+{
+    int line = 0;      // 0-based
+    int character = 0; // 0-based UTF-16 code units
     bool operator==(const Position& other) const { return line == other.line && character == other.character; }
     bool operator!=(const Position& other) const { return !(*this == other); }
-    bool operator<(const Position& other) const { return line < other.line || (line == other.line && character < other.character); }
+    bool operator<(const Position& other) const
+    {
+        return line < other.line || (line == other.line && character < other.character);
+    }
 };
 
-struct Range {
+struct Range
+{
     Position start;
     Position end;
 };
 
-struct Location {
+struct Location
+{
     std::string uri;
     Range range;
 };
 
-struct Diagnostic {
-    enum Severity { Error = 1, Warning = 2, Info = 3, Hint = 4 };
+struct Diagnostic
+{
+    enum Severity
+    {
+        Error = 1,
+        Warning = 2,
+        Info = 3,
+        Hint = 4
+    };
     Range range;
     Severity severity = Error;
     std::string message;
     std::string source = "fluxscript";
 };
 
-struct CompletionItem {
-    enum Kind {
-        Text = 1, Method = 2, Function = 3, Constructor = 4,
-        Field = 5, Variable = 6, Class = 7, Interface = 8,
-        Module = 9, Property = 10, Unit = 12, Value = 13,
-        Enum = 14, Keyword = 15, Snippet = 16, Color = 16,
-        File = 17, Reference = 18, Folder = 19, EnumMember = 20,
-        Constant = 21, Struct = 22, Event = 23, Operator = 24,
-        TypeParameter = 25, Type = 26
+struct CompletionItem
+{
+    enum Kind
+    {
+        Text = 1,
+        Method = 2,
+        Function = 3,
+        Constructor = 4,
+        Field = 5,
+        Variable = 6,
+        Class = 7,
+        Interface = 8,
+        Module = 9,
+        Property = 10,
+        Unit = 12,
+        Value = 13,
+        Enum = 14,
+        Keyword = 15,
+        Snippet = 16,
+        Color = 16,
+        File = 17,
+        Reference = 18,
+        Folder = 19,
+        EnumMember = 20,
+        Constant = 21,
+        Struct = 22,
+        Event = 23,
+        Operator = 24,
+        TypeParameter = 25,
+        Type = 26
     };
     std::string label;
     Kind kind = Text;
-    std::string detail;       // e.g., "(x: double) -> double"
+    std::string detail; // e.g., "(x: double) -> double"
     std::string documentation;
     std::string insertText;
     int insertTextFormat = 1; // 1=plaintext, 2=snippet
 };
 
-struct ParameterInfo {
+struct ParameterInfo
+{
     std::string label;
     std::string documentation;
 };
 
-struct SignatureInfo {
-    std::string label;         // e.g., "sin(x: double)"
+struct SignatureInfo
+{
+    std::string label; // e.g., "sin(x: double)"
     std::string documentation;
     std::vector<ParameterInfo> parameters;
 };
 
-struct HoverContent {
-    std::string contents;      // Markdown
+struct HoverContent
+{
+    std::string contents; // Markdown
     Range range;
 };
 
@@ -96,7 +133,8 @@ struct HoverContent {
 // Document State
 // ============================================================================
 
-struct TextDocument {
+struct TextDocument
+{
     std::string uri;
     std::string languageId;
     int version = 0;
@@ -112,11 +150,20 @@ struct TextDocument {
 // Symbol Table Entry
 // ============================================================================
 
-struct SymbolEntry {
-    enum Kind { Variable, Function, Parameter, Builtin, Keyword, Type };
+struct SymbolEntry
+{
+    enum Kind
+    {
+        Variable,
+        Function,
+        Parameter,
+        Builtin,
+        Keyword,
+        Type
+    };
     std::string name;
     Kind kind = Variable;
-    std::string typeStr;       // e.g., "double", "(double) -> double"
+    std::string typeStr; // e.g., "double", "(double) -> double"
     std::string documentation;
     Range range;
     std::string uri;
@@ -126,7 +173,8 @@ struct SymbolEntry {
 // LSP Server
 // ============================================================================
 
-class LspServer {
+class LspServer
+{
 public:
     LspServer();
     ~LspServer();
@@ -181,10 +229,11 @@ public:
     std::vector<Location> getReferences(const std::string& uri, Position pos);
 
     // Code actions
-    struct CodeAction {
+    struct CodeAction
+    {
         std::string title;
-        std::string kind;  // "quickfix", "refactor", etc.
-        std::string edit;  // WorkspaceEdit JSON
+        std::string kind; // "quickfix", "refactor", etc.
+        std::string edit; // WorkspaceEdit JSON
     };
     std::vector<CodeAction> getCodeActions(const std::string& uri, Position pos, const std::vector<Diagnostic>& diags);
 
@@ -192,7 +241,8 @@ public:
     std::vector<std::pair<Position, std::string>> computeTextEdits(const std::string& uri, const std::string& tabSize);
 
     // Signature help
-    struct SignatureHelpResult {
+    struct SignatureHelpResult
+    {
         std::vector<SignatureInfo> signatures;
         int activeSignature = 0;
         int activeParameter = 0;

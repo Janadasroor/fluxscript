@@ -13,12 +13,12 @@
 
 // FFT Engine Implementation
 #include "flux/analysis/fft_engine.h"
-#include <cmath>
 #include <algorithm>
-#include <numeric>
-#include <sstream>
+#include <cmath>
 #include <iomanip>
 #include <iostream>
+#include <numeric>
+#include <sstream>
 #define _USE_MATH_DEFINES
 
 #ifndef M_PI
@@ -32,21 +32,25 @@ FFTEngine::FFTEngine() : m_sampleRate(1000.0), m_windowType("hanning") {}
 
 FFTEngine::~FFTEngine() = default;
 
-void FFTEngine::setSampleRate(double rate) {
+void FFTEngine::setSampleRate(double rate)
+{
     m_sampleRate = rate;
 }
 
-void FFTEngine::setWindowType(const std::string& type) {
+void FFTEngine::setWindowType(const std::string& type)
+{
     m_windowType = type;
 }
 
-// 
-//  Windowing Functions                                  
-// 
+//
+//  Windowing Functions
+//
 
-void FFTEngine::applyWindow(std::vector<double>& data) {
+void FFTEngine::applyWindow(std::vector<double>& data)
+{
     int N = data.size();
-    if (m_windowType == "none") return;
+    if (m_windowType == "none")
+        return;
 
     for (int i = 0; i < N; ++i) {
         double w = 1.0;
@@ -55,20 +59,21 @@ void FFTEngine::applyWindow(std::vector<double>& data) {
         } else if (m_windowType == "hamming") {
             w = 0.54 - 0.46 * std::cos(2.0 * M_PI * i / (N - 1));
         } else if (m_windowType == "blackman") {
-            w = 0.42 - 0.5 * std::cos(2.0 * M_PI * i / (N - 1)) + 
-                0.08 * std::cos(4.0 * M_PI * i / (N - 1));
+            w = 0.42 - 0.5 * std::cos(2.0 * M_PI * i / (N - 1)) + 0.08 * std::cos(4.0 * M_PI * i / (N - 1));
         }
         data[i] *= w;
     }
 }
 
-// 
-//  FFT Algorithm (Cooley-Tukey)                         
-// 
+//
+//  FFT Algorithm (Cooley-Tukey)
+//
 
-void FFTEngine::fft(std::vector<std::complex<double>>& x) {
+void FFTEngine::fft(std::vector<std::complex<double>>& x)
+{
     int N = x.size();
-    if (N <= 1) return;
+    if (N <= 1)
+        return;
 
     // Divide
     std::vector<std::complex<double>> even(N / 2), odd(N / 2);
@@ -89,18 +94,20 @@ void FFTEngine::fft(std::vector<std::complex<double>>& x) {
     }
 }
 
-// 
-//  Compute FFT                                          
-// 
+//
+//  Compute FFT
+//
 
-FFTReport FFTEngine::compute(const std::vector<double>& signalData) {
+FFTReport FFTEngine::compute(const std::vector<double>& signalData)
+{
     FFTReport report;
     report.sampleRate = m_sampleRate;
     report.numPoints = signalData.size();
 
     // Ensure power of 2 (pad with zeros if needed)
     size_t N = 1;
-    while (N < signalData.size()) N *= 2;
+    while (N < signalData.size())
+        N *= 2;
     N *= 2; // Double it to increase resolution via zero-padding
 
     std::vector<double> paddedData(N, 0.0);
@@ -126,7 +133,7 @@ FFTReport FFTEngine::compute(const std::vector<double>& signalData) {
     for (size_t i = 0; i < N / 2; ++i) {
         double freq = (double)i * m_sampleRate / N;
         double mag = std::abs(x[i]);
-        
+
         // Convert to dB
         double db = 20 * std::log10(mag / N + 1e-12);
 
@@ -139,7 +146,7 @@ FFTReport FFTEngine::compute(const std::vector<double>& signalData) {
         point.frequency = freq;
         point.magnitude = db;
         point.phase = std::arg(x[i]) * 180.0 / M_PI;
-        
+
         report.spectrum.push_back(point);
     }
 
@@ -152,7 +159,7 @@ FFTReport FFTEngine::compute(const std::vector<double>& signalData) {
     for (size_t i = 2; i < N / 2; ++i) {
         double freq = (double)i * m_sampleRate / N;
         double mag = std::abs(x[i]);
-        
+
         // Simple THD approximation: harmonics of fundamental
         bool isHarmonic = false;
         for (int h = 2; h <= 10; ++h) {
@@ -178,11 +185,12 @@ FFTReport FFTEngine::compute(const std::vector<double>& signalData) {
     return report;
 }
 
-// 
-//  Report Output Methods                                
-// 
+//
+//  Report Output Methods
+//
 
-std::string FFTReport::toText() const {
+std::string FFTReport::toText() const
+{
     std::ostringstream oss;
     oss << "\n";
     oss << "              FREQUENCY DOMAIN ANALYSIS               \n";
@@ -192,7 +200,7 @@ std::string FFTReport::toText() const {
     oss << "Fundamental Freq:  " << fundamentalFreq << " Hz\n";
     oss << "THD:               " << std::fixed << std::setprecision(2) << thd << "%\n";
     oss << "SNR:               " << snr << " dB\n\n";
-    
+
     oss << "Spectrum:\n";
     oss << "\n";
     oss << "  Freq (Hz)   |  Mag (dB)  |  Phase (deg)\n";
@@ -201,17 +209,17 @@ std::string FFTReport::toText() const {
     for (const auto& pt : spectrum) {
         // Only print peaks or fundamental
         if (pt.magnitude > -40.0 || std::abs(pt.frequency - fundamentalFreq) < 1.0) {
-            oss << "  " << std::setw(8) << pt.frequency << "    |  "
-                << std::setw(6) << pt.magnitude << "    |  "
+            oss << "  " << std::setw(8) << pt.frequency << "    |  " << std::setw(6) << pt.magnitude << "    |  "
                 << std::setw(6) << pt.phase << "\n";
         }
     }
     oss << "\n";
-    
+
     return oss.str();
 }
 
-std::string FFTReport::toMarkdown() const {
+std::string FFTReport::toMarkdown() const
+{
     std::ostringstream oss;
     oss << "# FFT Analysis Report\n\n";
     oss << "**Fundamental Frequency:** " << fundamentalFreq << " Hz\n";
@@ -219,7 +227,7 @@ std::string FFTReport::toMarkdown() const {
     oss << "**SNR:** " << snr << " dB\n\n";
     oss << "| Frequency (Hz) | Magnitude (dB) |\n";
     oss << "|----------------|----------------|\n";
-    
+
     for (const auto& pt : spectrum) {
         if (pt.magnitude > -40.0) {
             oss << "| " << pt.frequency << " | " << pt.magnitude << " |\n";
@@ -228,29 +236,31 @@ std::string FFTReport::toMarkdown() const {
     return oss.str();
 }
 
-std::string FFTReport::toASCIIPlot(int width, int height) const {
-    if (spectrum.empty()) return "No data to plot";
-    
+std::string FFTReport::toASCIIPlot(int width, int height) const
+{
+    if (spectrum.empty())
+        return "No data to plot";
+
     std::vector<std::vector<char>> plot(height, std::vector<char>(width, ' '));
-    
+
     double minDb = -100.0;
     double maxDb = 0.0;
-    
+
     // Map frequencies to columns
     // We show up to Nyquist (N/2 points) mapped to width
     // For efficiency, we might subsample or use decibels
-    
+
     int numFreqPoints = spectrum.size();
-    
+
     for (const auto& pt : spectrum) {
         // Map frequency to X
         int x = (int)((pt.frequency / (sampleRate / 2.0)) * (width - 1));
         x = std::max(0, std::min(width - 1, x));
-        
+
         // Map dB to Y (0 is top, height-1 is bottom)
         int y = (int)((1.0 - (pt.magnitude - minDb) / (maxDb - minDb)) * (height - 1));
         y = std::max(0, std::min(height - 1, y));
-        
+
         if (pt.magnitude > -120.0) { // Only plot non-noise floor
             plot[y][x] = '|';
         }
@@ -267,11 +277,12 @@ std::string FFTReport::toASCIIPlot(int width, int height) const {
         oss << "\n";
     }
     oss << "       +";
-    for (int c = 0; c < width; ++c) oss << "-";
+    for (int c = 0; c < width; ++c)
+        oss << "-";
     oss << "\n";
     oss << "       0 Hz" << std::setw(width - 10) << "" << sampleRate / 2 << " Hz\n";
     oss << "                         Frequency\n";
-    
+
     return oss.str();
 }
 

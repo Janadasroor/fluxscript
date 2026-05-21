@@ -14,16 +14,17 @@
 // flux-fft: Perform Fast Fourier Transform analysis on signal data
 // Usage: flux-fft <data.csv> [--rate 1000] [--plot ascii]
 
-#include <iostream>
+#include "flux/analysis/fft_engine.h"
 #include <fstream>
+#include <iostream>
+#include <sstream>
 #include <string>
 #include <vector>
-#include <sstream>
-#include "flux/analysis/fft_engine.h"
 
 using namespace Flux::FFT;
 
-int main(int argc, char** argv) {
+int main(int argc, char** argv)
+{
     std::cout << "\n";
     std::cout << "\n";
     std::cout << "          FluxScript FFT Analyzer                        \n";
@@ -76,15 +77,16 @@ int main(int argc, char** argv) {
     }
 
     while (std::getline(file, line)) {
-        if (line.empty()) continue;
-        
+        if (line.empty())
+            continue;
+
         std::istringstream ss(line);
         std::string token;
         // Skip time column
-        std::getline(ss, token, ','); 
+        std::getline(ss, token, ',');
         // Get value column
         std::getline(ss, token, ',');
-        
+
         try {
             signalData.push_back(std::stod(token));
         } catch (...) {

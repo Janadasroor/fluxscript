@@ -18,12 +18,12 @@
 #include <ngspice/sharedspice.h>
 #endif
 
+#include <cstring>
 #include <iostream>
-#include <string>
-#include <vector>
 #include <map>
 #include <mutex>
-#include <cstring>
+#include <string>
+#include <vector>
 
 namespace Flux {
 
@@ -35,7 +35,8 @@ static std::string g_lastError;
 static std::mutex g_ngspiceMutex;
 
 // ngspice output callback
-static int ngspice_printf_cb(char* str, int id, void* user) {
+static int ngspice_printf_cb(char* str, int id, void* user)
+{
     if (str) {
         std::cout << "[ngspice] " << str;
     }
@@ -43,31 +44,36 @@ static int ngspice_printf_cb(char* str, int id, void* user) {
 }
 
 // ngspice status callback
-static int ngspice_stat_cb(char* str, int id, void* user) {
+static int ngspice_stat_cb(char* str, int id, void* user)
+{
     // Status updates (optional)
     return 0;
 }
 
 // ngspice exit callback
-static int ngspice_exit_cb(int status, bool immediate, bool quitexit, int exitstatus, void* user) {
+static int ngspice_exit_cb(int status, bool immediate, bool quitexit, int exitstatus, void* user)
+{
     std::cout << "[ngspice] Simulation exited with status: " << status << std::endl;
     return 0;
 }
 
 // ngspice data callback
-static int ngspice_data_cb(pvecvaluesall data, int numVecs, int id, void* user) {
+static int ngspice_data_cb(pvecvaluesall data, int numVecs, int id, void* user)
+{
     // Simulation data callback (optional)
     return 0;
 }
 
 // ngspice init data callback
-static int ngspice_init_data_cb(pvecinfoall data, int numVecs, void* user) {
+static int ngspice_init_data_cb(pvecinfoall data, int numVecs, void* user)
+{
     // Initialization data callback (optional)
     return 0;
 }
 
 // ngspice Background thread callback (ngspice-42 signature)
-static int ngspice_bg_thread_cb(NG_BOOL isRunning, int id, void* user) {
+static int ngspice_bg_thread_cb(NG_BOOL isRunning, int id, void* user)
+{
     return 0;
 }
 #else
@@ -78,40 +84,40 @@ static std::string g_lastError;
 
 // ============ Initialize ngspice ============
 
-int flux_ngspice_init(const char* netlist) {
+int flux_ngspice_init(const char* netlist)
+{
 #ifdef FLUX_HAS_NGSPICE
     std::lock_guard<std::mutex> lock(g_ngspiceMutex);
-    
+
     if (!netlist) {
         g_lastError = "Netlist is NULL";
         return -1;
     }
-    
+
     // Initialize ngspice shared library
     if (!g_ngspiceInitialized) {
         // Set up callbacks
-        int rc = ngSpice_Init(
-            ngspice_printf_cb,    // printf callback
-            ngspice_stat_cb,      // status callback
-            ngspice_exit_cb,      // exit callback
-            ngspice_data_cb,      // data callback
-            ngspice_init_data_cb, // init data callback
-            ngspice_bg_thread_cb, // background thread callback
-            nullptr               // user data
+        int rc = ngSpice_Init(ngspice_printf_cb,    // printf callback
+                              ngspice_stat_cb,      // status callback
+                              ngspice_exit_cb,      // exit callback
+                              ngspice_data_cb,      // data callback
+                              ngspice_init_data_cb, // init data callback
+                              ngspice_bg_thread_cb, // background thread callback
+                              nullptr               // user data
         );
-        
+
         if (rc != 0) {
             g_lastError = "Failed to initialize ngspice: error " + std::to_string(rc);
             return -1;
         }
-        
+
         g_ngspiceInitialized = true;
     }
-    
+
     // Load netlist
     std::string netlistStr(netlist);
     std::vector<char*> lines;
-    
+
     // Split netlist into lines
     size_t start = 0;
     size_t end = netlistStr.find('\n');
@@ -128,23 +134,24 @@ int flux_ngspice_init(const char* netlist) {
     char* lastLineCopy = new char[lastLine.size() + 1];
     strcpy(lastLineCopy, lastLine.c_str());
     lines.push_back(lastLineCopy);
-    
+
     // Add NULL terminator (required by ngspice)
     lines.push_back(nullptr);
-    
+
     // Load circuit
     int rc = ngSpice_Circ(lines.data());
-    
+
     // Cleanup line copies
     for (auto line : lines) {
-        if (line) delete[] line;
+        if (line)
+            delete[] line;
     }
-    
+
     if (rc != 0) {
         g_lastError = "Failed to load netlist into ngspice (error " + std::to_string(rc) + ")";
         return -1;
     }
-    
+
     g_ngspiceCircLoaded = true;
     std::cout << "[ngspice] Circuit loaded successfully" << std::endl;
     return 0;
@@ -157,29 +164,30 @@ int flux_ngspice_init(const char* netlist) {
 
 // ============ Run Transient Analysis ============
 
-int flux_ngspice_run_transient(double tstart, double tstop, double tstep) {
+int flux_ngspice_run_transient(double tstart, double tstop, double tstep)
+{
 #ifdef FLUX_HAS_NGSPICE
     std::lock_guard<std::mutex> lock(g_ngspiceMutex);
-    
+
     if (!g_ngspiceInitialized || !g_ngspiceCircLoaded) {
         g_lastError = "ngspice not initialized or circuit not loaded";
         return -1;
     }
-    
+
     // Run transient analysis
     std::string cmd = "tran " + std::to_string(tstep) + " " + std::to_string(tstop);
-    
+
     char* cmdCopy = new char[cmd.size() + 1];
     strcpy(cmdCopy, cmd.c_str());
-    
+
     int rc = ngSpice_Command(cmdCopy);
     delete[] cmdCopy;
-    
+
     if (rc != 0) {
         g_lastError = "Transient analysis failed with error " + std::to_string(rc);
         return -1;
     }
-    
+
     std::cout << "[ngspice] Transient analysis completed" << std::endl;
     return 0;
 #else
@@ -190,30 +198,30 @@ int flux_ngspice_run_transient(double tstart, double tstop, double tstep) {
 
 // ============ Run AC Analysis ============
 
-int flux_ngspice_run_ac(int npoints, double fstart, double fstop) {
+int flux_ngspice_run_ac(int npoints, double fstart, double fstop)
+{
 #ifdef FLUX_HAS_NGSPICE
     std::lock_guard<std::mutex> lock(g_ngspiceMutex);
-    
+
     if (!g_ngspiceInitialized || !g_ngspiceCircLoaded) {
         g_lastError = "ngspice not initialized or circuit not loaded";
         return -1;
     }
-    
+
     // Run AC analysis
-    std::string cmd = "ac dec " + std::to_string(npoints) + " " + 
-                      std::to_string(fstart) + " " + std::to_string(fstop);
-    
+    std::string cmd = "ac dec " + std::to_string(npoints) + " " + std::to_string(fstart) + " " + std::to_string(fstop);
+
     char* cmdCopy = new char[cmd.size() + 1];
     strcpy(cmdCopy, cmd.c_str());
-    
+
     int rc = ngSpice_Command(cmdCopy);
     delete[] cmdCopy;
-    
+
     if (rc != 0) {
         g_lastError = "AC analysis failed with error " + std::to_string(rc);
         return -1;
     }
-    
+
     std::cout << "[ngspice] AC analysis completed" << std::endl;
     return 0;
 #else
@@ -224,31 +232,31 @@ int flux_ngspice_run_ac(int npoints, double fstart, double fstop) {
 
 // ============ Run DC Sweep ============
 
-int flux_ngspice_run_dc(const char* source, double vstart, double vstop, double vincr) {
+int flux_ngspice_run_dc(const char* source, double vstart, double vstop, double vincr)
+{
 #ifdef FLUX_HAS_NGSPICE
     std::lock_guard<std::mutex> lock(g_ngspiceMutex);
-    
+
     if (!g_ngspiceInitialized || !g_ngspiceCircLoaded) {
         g_lastError = "ngspice not initialized or circuit not loaded";
         return -1;
     }
-    
+
     // Run DC sweep
-    std::string cmd = std::string("dc ") + source + " " + 
-                      std::to_string(vstart) + " " + std::to_string(vstop) + " " +
+    std::string cmd = std::string("dc ") + source + " " + std::to_string(vstart) + " " + std::to_string(vstop) + " " +
                       std::to_string(vincr);
-    
+
     char* cmdCopy = new char[cmd.size() + 1];
     strcpy(cmdCopy, cmd.c_str());
-    
+
     int rc = ngSpice_Command(cmdCopy);
     delete[] cmdCopy;
-    
+
     if (rc != 0) {
         g_lastError = "DC sweep failed with error " + std::to_string(rc);
         return -1;
     }
-    
+
     std::cout << "[ngspice] DC sweep completed" << std::endl;
     return 0;
 #else
@@ -261,10 +269,12 @@ int flux_ngspice_run_dc(const char* source, double vstart, double vstop, double 
 // Note: ngspice-42 doesn't expose VecInfo directly
 // We use a simplified approach with print commands
 
-double flux_ngspice_get_vector(const char* name, int index) {
+double flux_ngspice_get_vector(const char* name, int index)
+{
 #ifdef FLUX_HAS_NGSPICE
     std::lock_guard<std::mutex> lock(g_ngspiceMutex);
-    if (!g_ngspiceInitialized) return 0.0;
+    if (!g_ngspiceInitialized)
+        return 0.0;
     auto vi = ngGet_Vec_Info(const_cast<char*>(name));
     if (vi && vi->v_realdata && index >= 0 && index < vi->v_length)
         return vi->v_realdata[index];
@@ -276,10 +286,12 @@ double flux_ngspice_get_vector(const char* name, int index) {
 
 // ============ Get Vector Size ============
 
-int flux_ngspice_get_vector_size(const char* name) {
+int flux_ngspice_get_vector_size(const char* name)
+{
 #ifdef FLUX_HAS_NGSPICE
     std::lock_guard<std::mutex> lock(g_ngspiceMutex);
-    if (!g_ngspiceInitialized) return 0;
+    if (!g_ngspiceInitialized)
+        return 0;
     auto vi = ngGet_Vec_Info(const_cast<char*>(name));
     return (vi && vi->v_realdata) ? vi->v_length : 0;
 #else
@@ -289,10 +301,11 @@ int flux_ngspice_get_vector_size(const char* name) {
 
 // ============ Get All Vector Names ============
 
-std::vector<std::string> flux_ngspice_get_vector_names() {
+std::vector<std::string> flux_ngspice_get_vector_names()
+{
 #ifdef FLUX_HAS_NGSPICE
     // Simplified stub
-    return {"time", "v(out)"};  // Return example names
+    return {"time", "v(out)"}; // Return example names
 #else
     return {};
 #endif
@@ -300,21 +313,23 @@ std::vector<std::string> flux_ngspice_get_vector_names() {
 
 // ============ Extract Vector Data ============
 
-std::vector<double> flux_ngspice_extract_vector(const char* name) {
+std::vector<double> flux_ngspice_extract_vector(const char* name)
+{
     std::vector<double> data;
 #ifdef FLUX_HAS_NGSPICE
     std::lock_guard<std::mutex> lock(g_ngspiceMutex);
-    
-    if (!g_ngspiceInitialized) return data;
-    
+
+    if (!g_ngspiceInitialized)
+        return data;
+
     try {
         // Get the vector info (ngspice-45 API)
         pvector_info vi = ngGet_Vec_Info((char*)name);
-        
+
         if (vi && vi->v_length > 0) {
             int numPoints = vi->v_length;
             data.resize(numPoints);
-            
+
             // Check if it's a real vector
             if (vi->v_realdata) {
                 for (int i = 0; i < numPoints; ++i) {
@@ -331,17 +346,18 @@ std::vector<double> flux_ngspice_extract_vector(const char* name) {
 
 // ============ Cleanup ============
 
-void flux_ngspice_cleanup() {
+void flux_ngspice_cleanup()
+{
 #ifdef FLUX_HAS_NGSPICE
     std::lock_guard<std::mutex> lock(g_ngspiceMutex);
-    
+
     if (g_ngspiceInitialized) {
         // Destroy current circuit but keep ngspice initialized (re-init not supported)
         ngSpice_Command((char*)"destroy all");
         ngSpice_Command((char*)"reset");
-        
+
         g_ngspiceCircLoaded = false;
-        
+
         std::cout << "[ngspice] Cleanup completed" << std::endl;
     }
 #else
@@ -351,7 +367,8 @@ void flux_ngspice_cleanup() {
 
 // ============ Final Shutdown ============
 
-void flux_ngspice_shutdown() {
+void flux_ngspice_shutdown()
+{
 #ifdef FLUX_HAS_NGSPICE
     {
         std::lock_guard<std::mutex> lock(g_ngspiceMutex);
@@ -366,32 +383,35 @@ void flux_ngspice_shutdown() {
 
 // ============ Check Initialization ============
 
-bool flux_ngspice_is_initialized() {
+bool flux_ngspice_is_initialized()
+{
     return g_ngspiceInitialized;
 }
 
 // ============ Get Last Error ============
 
-const char* flux_ngspice_get_error() {
+const char* flux_ngspice_get_error()
+{
     return g_lastError.c_str();
 }
 
 // ============ Execute Arbitrary Command ============
 
-int flux_ngspice_cmd(const char* command) {
+int flux_ngspice_cmd(const char* command)
+{
 #ifdef FLUX_HAS_NGSPICE
     std::lock_guard<std::mutex> lock(g_ngspiceMutex);
-    
+
     if (!command || !g_ngspiceInitialized) {
         return -1;
     }
-    
+
     char* cmdCopy = new char[strlen(command) + 1];
     strcpy(cmdCopy, command);
-    
+
     int rc = ngSpice_Command(cmdCopy);
     delete[] cmdCopy;
-    
+
     return rc;
 #else
     return -1;

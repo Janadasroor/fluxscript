@@ -17,11 +17,11 @@
 // ============================================================================
 
 #include "flux/jit/zero_copy_data.h"
-#include <iostream>
-#include <sstream>
 #include <algorithm>
 #include <chrono>
 #include <cstring>
+#include <iostream>
+#include <sstream>
 
 namespace Flux {
 
@@ -29,12 +29,14 @@ namespace Flux {
 // ZeroCopyDataManager Singleton
 // ============================================================================
 
-ZeroCopyDataManager& ZeroCopyDataManager::instance() {
+ZeroCopyDataManager& ZeroCopyDataManager::instance()
+{
     static ZeroCopyDataManager instance;
     return instance;
 }
 
-void ZeroCopyDataManager::initialize() {
+void ZeroCopyDataManager::initialize()
+{
     std::lock_guard<std::mutex> lock(m_mutex);
     if (m_initialized) {
         return;
@@ -51,7 +53,8 @@ void ZeroCopyDataManager::initialize() {
     std::cout << "[ZeroCopyDataManager] Initialized" << std::endl;
 }
 
-void ZeroCopyDataManager::finalize() {
+void ZeroCopyDataManager::finalize()
+{
     std::lock_guard<std::mutex> lock(m_mutex);
     m_buffers.clear();
     m_node_mappings.clear();
@@ -64,23 +67,26 @@ void ZeroCopyDataManager::finalize() {
 // Buffer Management
 // ============================================================================
 
-bool ZeroCopyDataManager::registerBuffer(const std::string& name, void* data_ptr, 
-                                         size_t element_count, bool is_writeable, 
-                                         std::string* error) {
+bool ZeroCopyDataManager::registerBuffer(const std::string& name, void* data_ptr, size_t element_count,
+                                         bool is_writeable, std::string* error)
+{
     std::lock_guard<std::mutex> lock(m_mutex);
 
     if (!m_initialized) {
-        if (error) *error = "ZeroCopyDataManager not initialized";
+        if (error)
+            *error = "ZeroCopyDataManager not initialized";
         return false;
     }
 
     if (m_buffers.count(name)) {
-        if (error) *error = "Buffer already registered: " + name;
+        if (error)
+            *error = "Buffer already registered: " + name;
         return false;
     }
 
     if (!data_ptr) {
-        if (error) *error = "Invalid data pointer for buffer: " + name;
+        if (error)
+            *error = "Invalid data pointer for buffer: " + name;
         return false;
     }
 
@@ -95,14 +101,14 @@ bool ZeroCopyDataManager::registerBuffer(const std::string& name, void* data_ptr
 
     m_buffers[name] = desc;
 
-    std::cout << "[ZeroCopyDataManager] Registered buffer: " << name 
-              << " (" << element_count << " elements, " 
+    std::cout << "[ZeroCopyDataManager] Registered buffer: " << name << " (" << element_count << " elements, "
               << (is_writeable ? "RW" : "RO") << ")" << std::endl;
 
     return true;
 }
 
-bool ZeroCopyDataManager::unregisterBuffer(const std::string& name) {
+bool ZeroCopyDataManager::unregisterBuffer(const std::string& name)
+{
     std::lock_guard<std::mutex> lock(m_mutex);
     auto it = m_buffers.find(name);
     if (it == m_buffers.end()) {
@@ -119,7 +125,8 @@ bool ZeroCopyDataManager::unregisterBuffer(const std::string& name) {
     return true;
 }
 
-BufferDescriptor* ZeroCopyDataManager::getBuffer(const std::string& name) {
+BufferDescriptor* ZeroCopyDataManager::getBuffer(const std::string& name)
+{
     std::lock_guard<std::mutex> lock(m_mutex);
     auto it = m_buffers.find(name);
     if (it == m_buffers.end()) {
@@ -128,7 +135,8 @@ BufferDescriptor* ZeroCopyDataManager::getBuffer(const std::string& name) {
     return &it->second;
 }
 
-const BufferDescriptor* ZeroCopyDataManager::getBuffer(const std::string& name) const {
+const BufferDescriptor* ZeroCopyDataManager::getBuffer(const std::string& name) const
+{
     std::lock_guard<std::mutex> lock(m_mutex);
     auto it = m_buffers.find(name);
     if (it == m_buffers.end()) {
@@ -137,7 +145,8 @@ const BufferDescriptor* ZeroCopyDataManager::getBuffer(const std::string& name) 
     return &it->second;
 }
 
-std::vector<std::string> ZeroCopyDataManager::getBufferNames() const {
+std::vector<std::string> ZeroCopyDataManager::getBufferNames() const
+{
     std::lock_guard<std::mutex> lock(m_mutex);
     std::vector<std::string> names;
     for (const auto& [name, desc] : m_buffers) {
@@ -150,23 +159,27 @@ std::vector<std::string> ZeroCopyDataManager::getBufferNames() const {
 // Node Mapping
 // ============================================================================
 
-bool ZeroCopyDataManager::mapNode(const std::string& node_name, const std::string& buffer_name,
-                                  int vector_index, std::string* error) {
+bool ZeroCopyDataManager::mapNode(const std::string& node_name, const std::string& buffer_name, int vector_index,
+                                  std::string* error)
+{
     std::lock_guard<std::mutex> lock(m_mutex);
 
     if (!m_initialized) {
-        if (error) *error = "ZeroCopyDataManager not initialized";
+        if (error)
+            *error = "ZeroCopyDataManager not initialized";
         return false;
     }
 
     auto buf_it = m_buffers.find(buffer_name);
     if (buf_it == m_buffers.end()) {
-        if (error) *error = "Buffer not found: " + buffer_name;
+        if (error)
+            *error = "Buffer not found: " + buffer_name;
         return false;
     }
 
     if (vector_index < 0 || static_cast<size_t>(vector_index) >= buf_it->second.element_count) {
-        if (error) *error = "Vector index out of range: " + std::to_string(vector_index);
+        if (error)
+            *error = "Vector index out of range: " + std::to_string(vector_index);
         return false;
     }
 
@@ -175,23 +188,25 @@ bool ZeroCopyDataManager::mapNode(const std::string& node_name, const std::strin
     mapping.vector_index = vector_index;
     mapping.buffer = &buf_it->second;
     mapping.direct_ptr = reinterpret_cast<double*>(buf_it->second.data_ptr) + vector_index;
-    mapping.is_voltage = (buffer_name.find("voltage") != std::string::npos || 
-                         buffer_name.find("node") != std::string::npos);
+    mapping.is_voltage =
+        (buffer_name.find("voltage") != std::string::npos || buffer_name.find("node") != std::string::npos);
 
     m_node_mappings[node_name] = mapping;
 
-    std::cout << "[ZeroCopyDataManager] Mapped node: " << node_name 
-              << " -> " << buffer_name << "[" << vector_index << "]" << std::endl;
+    std::cout << "[ZeroCopyDataManager] Mapped node: " << node_name << " -> " << buffer_name << "[" << vector_index
+              << "]" << std::endl;
 
     return true;
 }
 
-bool ZeroCopyDataManager::unmapNode(const std::string& node_name) {
+bool ZeroCopyDataManager::unmapNode(const std::string& node_name)
+{
     std::lock_guard<std::mutex> lock(m_mutex);
     return m_node_mappings.erase(node_name) > 0;
 }
 
-NodeMapping* ZeroCopyDataManager::getNodeMapping(const std::string& node_name) {
+NodeMapping* ZeroCopyDataManager::getNodeMapping(const std::string& node_name)
+{
     std::lock_guard<std::mutex> lock(m_mutex);
     auto it = m_node_mappings.find(node_name);
     if (it == m_node_mappings.end()) {
@@ -200,7 +215,8 @@ NodeMapping* ZeroCopyDataManager::getNodeMapping(const std::string& node_name) {
     return &it->second;
 }
 
-const NodeMapping* ZeroCopyDataManager::getNodeMapping(const std::string& node_name) const {
+const NodeMapping* ZeroCopyDataManager::getNodeMapping(const std::string& node_name) const
+{
     std::lock_guard<std::mutex> lock(m_mutex);
     auto it = m_node_mappings.find(node_name);
     if (it == m_node_mappings.end()) {
@@ -213,7 +229,8 @@ const NodeMapping* ZeroCopyDataManager::getNodeMapping(const std::string& node_n
 // Zero-Copy Read/Write Operations
 // ============================================================================
 
-double ZeroCopyDataManager::readVoltage(const std::string& node_name) {
+double ZeroCopyDataManager::readVoltage(const std::string& node_name)
+{
     auto start_time = std::chrono::high_resolution_clock::now();
 
     std::lock_guard<std::mutex> lock(m_mutex);
@@ -223,7 +240,7 @@ double ZeroCopyDataManager::readVoltage(const std::string& node_name) {
     }
 
     double value = *it->second.direct_ptr;
-    
+
     auto end_time = std::chrono::high_resolution_clock::now();
     double latency = std::chrono::duration<double, std::nano>(end_time - start_time).count();
     {
@@ -235,7 +252,8 @@ double ZeroCopyDataManager::readVoltage(const std::string& node_name) {
     return value;
 }
 
-double ZeroCopyDataManager::readCurrent(const std::string& branch_name) {
+double ZeroCopyDataManager::readCurrent(const std::string& branch_name)
+{
     auto start_time = std::chrono::high_resolution_clock::now();
 
     std::lock_guard<std::mutex> lock(m_mutex);
@@ -245,7 +263,7 @@ double ZeroCopyDataManager::readCurrent(const std::string& branch_name) {
     }
 
     double value = *it->second.direct_ptr;
-    
+
     auto end_time = std::chrono::high_resolution_clock::now();
     double latency = std::chrono::duration<double, std::nano>(end_time - start_time).count();
     {
@@ -257,7 +275,8 @@ double ZeroCopyDataManager::readCurrent(const std::string& branch_name) {
     return value;
 }
 
-void ZeroCopyDataManager::writeVoltage(const std::string& node_name, double value) {
+void ZeroCopyDataManager::writeVoltage(const std::string& node_name, double value)
+{
     auto start_time = std::chrono::high_resolution_clock::now();
 
     std::lock_guard<std::mutex> lock(m_mutex);
@@ -272,7 +291,7 @@ void ZeroCopyDataManager::writeVoltage(const std::string& node_name, double valu
     }
 
     *it->second.direct_ptr = value;
-    
+
     auto end_time = std::chrono::high_resolution_clock::now();
     double latency = std::chrono::duration<double, std::nano>(end_time - start_time).count();
     {
@@ -282,7 +301,8 @@ void ZeroCopyDataManager::writeVoltage(const std::string& node_name, double valu
     m_write_count++;
 }
 
-void ZeroCopyDataManager::writeCurrent(const std::string& branch_name, double value) {
+void ZeroCopyDataManager::writeCurrent(const std::string& branch_name, double value)
+{
     auto start_time = std::chrono::high_resolution_clock::now();
 
     std::lock_guard<std::mutex> lock(m_mutex);
@@ -297,7 +317,7 @@ void ZeroCopyDataManager::writeCurrent(const std::string& branch_name, double va
     }
 
     *it->second.direct_ptr = value;
-    
+
     auto end_time = std::chrono::high_resolution_clock::now();
     double latency = std::chrono::duration<double, std::nano>(end_time - start_time).count();
     {
@@ -311,7 +331,8 @@ void ZeroCopyDataManager::writeCurrent(const std::string& branch_name, double va
 // Bulk Operations
 // ============================================================================
 
-std::vector<double> ZeroCopyDataManager::readAllVoltages() const {
+std::vector<double> ZeroCopyDataManager::readAllVoltages() const
+{
     std::lock_guard<std::mutex> lock(m_mutex);
     std::vector<double> values;
 
@@ -327,7 +348,8 @@ std::vector<double> ZeroCopyDataManager::readAllVoltages() const {
     return values;
 }
 
-void ZeroCopyDataManager::writeAllVoltages(const std::vector<double>& values) {
+void ZeroCopyDataManager::writeAllVoltages(const std::vector<double>& values)
+{
     std::lock_guard<std::mutex> lock(m_mutex);
     auto it = m_buffers.find("node_voltages");
     if (it == m_buffers.end() || !it->second.data_ptr || !it->second.is_writeable) {
@@ -339,7 +361,8 @@ void ZeroCopyDataManager::writeAllVoltages(const std::vector<double>& values) {
     std::memcpy(data, values.data(), count * sizeof(double));
 }
 
-std::vector<double> ZeroCopyDataManager::readAllCurrents() const {
+std::vector<double> ZeroCopyDataManager::readAllCurrents() const
+{
     std::lock_guard<std::mutex> lock(m_mutex);
     std::vector<double> values;
 
@@ -354,7 +377,8 @@ std::vector<double> ZeroCopyDataManager::readAllCurrents() const {
     return values;
 }
 
-void ZeroCopyDataManager::writeAllCurrents(const std::vector<double>& values) {
+void ZeroCopyDataManager::writeAllCurrents(const std::vector<double>& values)
+{
     std::lock_guard<std::mutex> lock(m_mutex);
     auto it = m_buffers.find("branch_currents");
     if (it == m_buffers.end() || !it->second.data_ptr || !it->second.is_writeable) {
@@ -370,7 +394,8 @@ void ZeroCopyDataManager::writeAllCurrents(const std::vector<double>& values) {
 // Direct Pointer Access
 // ============================================================================
 
-double* ZeroCopyDataManager::getDirectPointer(const std::string& node_name) {
+double* ZeroCopyDataManager::getDirectPointer(const std::string& node_name)
+{
     std::lock_guard<std::mutex> lock(m_mutex);
     auto it = m_node_mappings.find(node_name);
     if (it == m_node_mappings.end()) {
@@ -379,7 +404,8 @@ double* ZeroCopyDataManager::getDirectPointer(const std::string& node_name) {
     return it->second.direct_ptr;
 }
 
-BufferDescriptor* ZeroCopyDataManager::getBufferDescriptor(const std::string& buffer_name) {
+BufferDescriptor* ZeroCopyDataManager::getBufferDescriptor(const std::string& buffer_name)
+{
     std::lock_guard<std::mutex> lock(m_mutex);
     auto it = m_buffers.find(buffer_name);
     if (it == m_buffers.end()) {
@@ -392,20 +418,25 @@ BufferDescriptor* ZeroCopyDataManager::getBufferDescriptor(const std::string& bu
 // Statistics
 // ============================================================================
 
-void ZeroCopyDataManager::resetStatistics() {
+void ZeroCopyDataManager::resetStatistics()
+{
     m_read_count = 0;
     m_write_count = 0;
     m_total_read_latency_ns = 0.0;
     m_total_write_latency_ns = 0.0;
 }
 
-double ZeroCopyDataManager::getAverageReadLatencyNs() const {
-    if (m_read_count == 0) return 0.0;
+double ZeroCopyDataManager::getAverageReadLatencyNs() const
+{
+    if (m_read_count == 0)
+        return 0.0;
     return m_total_read_latency_ns / m_read_count;
 }
 
-double ZeroCopyDataManager::getAverageWriteLatencyNs() const {
-    if (m_write_count == 0) return 0.0;
+double ZeroCopyDataManager::getAverageWriteLatencyNs() const
+{
+    if (m_write_count == 0)
+        return 0.0;
     return m_total_write_latency_ns / m_write_count;
 }
 
@@ -413,51 +444,67 @@ double ZeroCopyDataManager::getAverageWriteLatencyNs() const {
 // C Interface - V() and I() Runtime Functions
 // ============================================================================
 
-double flux_V(const char* node_name) {
-    if (!node_name) return 0.0;
+double flux_V(const char* node_name)
+{
+    if (!node_name)
+        return 0.0;
     return ZeroCopyDataManager::instance().readVoltage(node_name);
 }
 
-double flux_I(const char* branch_name) {
-    if (!branch_name) return 0.0;
+double flux_I(const char* branch_name)
+{
+    if (!branch_name)
+        return 0.0;
     return ZeroCopyDataManager::instance().readCurrent(branch_name);
 }
 
-double* flux_V_ptr(const char* node_name) {
-    if (!node_name) return nullptr;
+double* flux_V_ptr(const char* node_name)
+{
+    if (!node_name)
+        return nullptr;
     return ZeroCopyDataManager::instance().getDirectPointer(node_name);
 }
 
-double* flux_I_ptr(const char* branch_name) {
-    if (!branch_name) return nullptr;
+double* flux_I_ptr(const char* branch_name)
+{
+    if (!branch_name)
+        return nullptr;
     return ZeroCopyDataManager::instance().getDirectPointer(branch_name);
 }
 
-int flux_get_all_voltages(double* buffer, int max_count) {
-    if (!buffer || max_count <= 0) return 0;
+int flux_get_all_voltages(double* buffer, int max_count)
+{
+    if (!buffer || max_count <= 0)
+        return 0;
     auto voltages = ZeroCopyDataManager::instance().readAllVoltages();
     int count = std::min(static_cast<int>(voltages.size()), max_count);
     std::memcpy(buffer, voltages.data(), count * sizeof(double));
     return count;
 }
 
-int flux_get_all_currents(double* buffer, int max_count) {
-    if (!buffer || max_count <= 0) return 0;
+int flux_get_all_currents(double* buffer, int max_count)
+{
+    if (!buffer || max_count <= 0)
+        return 0;
     auto currents = ZeroCopyDataManager::instance().readAllCurrents();
     int count = std::min(static_cast<int>(currents.size()), max_count);
     std::memcpy(buffer, currents.data(), count * sizeof(double));
     return count;
 }
 
-int flux_set_all_voltages(const double* buffer, int count) {
-    if (!buffer || count <= 0) return 0;
+int flux_set_all_voltages(const double* buffer, int count)
+{
+    if (!buffer || count <= 0)
+        return 0;
     std::vector<double> values(buffer, buffer + count);
     ZeroCopyDataManager::instance().writeAllVoltages(values);
     return count;
 }
 
-int flux_set_all_currents(const double* buffer, int count) {
-    if (!buffer || count <= 0) return 0;
+int flux_set_all_currents(const double* buffer, int count)
+{
+    if (!buffer || count <= 0)
+        return 0;
     std::vector<double> values(buffer, buffer + count);
     ZeroCopyDataManager::instance().writeAllCurrents(values);
     return count;
@@ -467,31 +514,41 @@ int flux_set_all_currents(const double* buffer, int count) {
 // NodeBinder Implementation
 // ============================================================================
 
-NodeBinder::NodeBinder(const std::string& node_name) : m_node_name(node_name) {
+NodeBinder::NodeBinder(const std::string& node_name) : m_node_name(node_name)
+{
     m_mapping = ZeroCopyDataManager::instance().getNodeMapping(node_name);
 }
 
-NodeBinder::~NodeBinder() {
+NodeBinder::~NodeBinder()
+{
     // Nothing to clean up - mappings are managed by ZeroCopyDataManager
 }
 
-double NodeBinder::read() const {
-    if (!m_mapping || !m_mapping->direct_ptr) return 0.0;
+double NodeBinder::read() const
+{
+    if (!m_mapping || !m_mapping->direct_ptr)
+        return 0.0;
     return *m_mapping->direct_ptr;
 }
 
-void NodeBinder::write(double value) const {
-    if (!m_mapping || !m_mapping->direct_ptr) return;
-    if (!m_mapping->buffer->is_writeable) return;
+void NodeBinder::write(double value) const
+{
+    if (!m_mapping || !m_mapping->direct_ptr)
+        return;
+    if (!m_mapping->buffer->is_writeable)
+        return;
     *m_mapping->direct_ptr = value;
 }
 
-double* NodeBinder::ptr() const {
-    if (!m_mapping) return nullptr;
+double* NodeBinder::ptr() const
+{
+    if (!m_mapping)
+        return nullptr;
     return m_mapping->direct_ptr;
 }
 
-bool NodeBinder::isValid() const {
+bool NodeBinder::isValid() const
+{
     return m_mapping && m_mapping->direct_ptr && m_mapping->buffer && m_mapping->buffer->is_valid;
 }
 

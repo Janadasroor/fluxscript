@@ -27,19 +27,22 @@
 
 namespace {
 
-void printBanner() {
+void printBanner()
+{
     std::cout << "FluxScript REPL\n";
     std::cout << "Commands: :help  :quit  :load <file>  :cache on|off\n\n";
 }
 
-void printHelp() {
+void printHelp()
+{
     std::cout << ":help         Show help\n";
     std::cout << ":quit         Exit\n";
     std::cout << ":load <file>  Load and compile a file\n";
     std::cout << ":cache on|off Toggle JIT cache\n";
 }
 
-void printResult(const Flux::FluxValue& value) {
+void printResult(const Flux::FluxValue& value)
+{
     if (std::holds_alternative<double>(value)) {
         std::cout << std::get<double>(value) << "\n";
         return;
@@ -50,8 +53,7 @@ void printResult(const Flux::FluxValue& value) {
     }
     if (std::holds_alternative<std::complex<double>>(value)) {
         const auto complexValue = std::get<std::complex<double>>(value);
-        std::cout << complexValue.real() << (complexValue.imag() >= 0 ? "+" : "")
-                  << complexValue.imag() << "j\n";
+        std::cout << complexValue.real() << (complexValue.imag() >= 0 ? "+" : "") << complexValue.imag() << "j\n";
         return;
     }
 
@@ -59,7 +61,8 @@ void printResult(const Flux::FluxValue& value) {
     std::cout << "<matrix " << matrix.rows << "x" << matrix.cols << ">\n";
 }
 
-bool loadFile(const std::string& path, std::string& out) {
+bool loadFile(const std::string& path, std::string& out)
+{
     std::ifstream in(path);
     if (!in)
         return false;
@@ -70,7 +73,8 @@ bool loadFile(const std::string& path, std::string& out) {
 
 } // namespace
 
-int main() {
+int main()
+{
     auto& engine = Flux::JITEngine::instance();
     engine.initialize();
 
@@ -117,8 +121,8 @@ int main() {
                 std::cerr << error << "\n";
                 continue;
             }
-            std::cout << "loaded " << filePath
-                      << " (" << (engine.lastCompileUsedCache() ? "cache hit" : "cache miss") << ")\n";
+            std::cout << "loaded " << filePath << " (" << (engine.lastCompileUsedCache() ? "cache hit" : "cache miss")
+                      << ")\n";
             continue;
         }
 

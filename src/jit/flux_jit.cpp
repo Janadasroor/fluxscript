@@ -12,30 +12,30 @@
  limitations under the License. */
 
 #include "flux/jit/flux_jit.h"
-#include "llvm/Support/TargetSelect.h"
-#include "llvm/Support/CodeGen.h"
-#include "llvm/ExecutionEngine/Orc/ThreadSafeModule.h"
-#include "llvm/ExecutionEngine/Orc/RTDyldObjectLinkingLayer.h"
-#include "llvm/ExecutionEngine/SectionMemoryManager.h"
 #include "llvm/ExecutionEngine/Orc/ExecutorProcessControl.h"
+#include "llvm/ExecutionEngine/Orc/RTDyldObjectLinkingLayer.h"
+#include "llvm/ExecutionEngine/Orc/ThreadSafeModule.h"
+#include "llvm/ExecutionEngine/SectionMemoryManager.h"
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Verifier.h"
+#include "llvm/Support/CodeGen.h"
 #include "llvm/Support/DynamicLibrary.h"
 #include "llvm/Support/Error.h"
-#include "llvm/TargetParser/Host.h"
-#include "llvm/Target/TargetMachine.h"
+#include "llvm/Support/TargetSelect.h"
 #include "llvm/Support/raw_ostream.h"
+#include "llvm/Target/TargetMachine.h"
+#include "llvm/TargetParser/Host.h"
 
-#include "llvm/Bitcode/BitcodeWriter.h"
 #include "llvm/Bitcode/BitcodeReader.h"
-#include "llvm/Transforms/Utils/Cloning.h"
+#include "llvm/Bitcode/BitcodeWriter.h"
 #include "llvm/ExecutionEngine/Orc/ExecutionUtils.h"
-#include "llvm/Transforms/Scalar/TailRecursionElimination.h"
 #include "llvm/IR/MDBuilder.h"
 #include "llvm/Support/FileSystem.h"
+#include "llvm/Transforms/Scalar/TailRecursionElimination.h"
+#include "llvm/Transforms/Utils/Cloning.h"
 // raw_fd_ostream is in llvm/Support/raw_ostream.h, included transitively
-#include <iostream>
 #include <cstdio>
+#include <iostream>
 #include <sstream>
 #ifdef _WIN32
 #include <windows.h>
@@ -47,28 +47,34 @@
 
 // Complex number helper functions (C linkage for easy JIT binding)
 extern "C" {
-    double complex_real(double c_real, double c_imag) {
-        return c_real;
-    }
-    double complex_imag(double c_real, double c_imag) {
-        return c_imag;
-    }
-    double complex_make_real(double r, double i) {
-        return r;
-    }
-    double complex_make_imag(double r, double i) {
-        return i;
-    }
-    void println_string(const char* str) {
-        printf("%s\n", str);
-    }
+double complex_real(double c_real, double c_imag)
+{
+    return c_real;
+}
+double complex_imag(double c_real, double c_imag)
+{
+    return c_imag;
+}
+double complex_make_real(double r, double i)
+{
+    return r;
+}
+double complex_make_imag(double r, double i)
+{
+    return i;
+}
+void println_string(const char* str)
+{
+    printf("%s\n", str);
+}
 }
 
 namespace Flux {
 
 namespace {
 
-void logError(llvm::Error Err, llvm::StringRef Prefix) {
+void logError(llvm::Error Err, llvm::StringRef Prefix)
+{
     if (!Err)
         return;
     llvm::errs() << Prefix << "\n";
@@ -77,11 +83,13 @@ void logError(llvm::Error Err, llvm::StringRef Prefix) {
 
 llvm::ExitOnError exitOnErr;
 
-void applyBranchWeights(llvm::Function* F, const FunctionProfile& profile) {
+void applyBranchWeights(llvm::Function* F, const FunctionProfile& profile)
+{
     // Apply edge count metadata as branch weights on terminators
     for (auto& BB : *F) {
         auto* term = BB.getTerminator();
-        if (!term || term->getNumSuccessors() < 2) continue;
+        if (!term || term->getNumSuccessors() < 2)
+            continue;
 
         uint64_t bbHash = BB.isEntryBlock() ? 0 : reinterpret_cast<uint64_t>(&BB);
         std::vector<uint32_t> weights;
@@ -97,14 +105,14 @@ void applyBranchWeights(llvm::Function* F, const FunctionProfile& profile) {
                     break;
                 }
             }
-            if (count > 0) hasWeights = true;
+            if (count > 0)
+                hasWeights = true;
             weights.push_back(static_cast<uint32_t>(std::min<uint64_t>(count, UINT32_MAX)));
         }
 
         if (hasWeights && !weights.empty()) {
             llvm::MDBuilder MDB(F->getContext());
-            term->setMetadata(llvm::LLVMContext::MD_prof,
-                MDB.createBranchWeights(weights));
+            term->setMetadata(llvm::LLVMContext::MD_prof, MDB.createBranchWeights(weights));
         }
     }
 }
@@ -115,7 +123,8 @@ void applyBranchWeights(llvm::Function* F, const FunctionProfile& profile) {
 // PGOProfiler Implementation
 // ============================================================================
 
-void PGOProfiler::recordCall(const std::string& name, double elapsedUs, OptimizationLevel optLevel) {
+void PGOProfiler::recordCall(const std::string& name, double elapsedUs, OptimizationLevel optLevel)
+{
     std::lock_guard<std::mutex> lock(m_mutex);
     auto& profile = m_profiles[name];
     profile.name = name;
@@ -123,61 +132,79 @@ void PGOProfiler::recordCall(const std::string& name, double elapsedUs, Optimiza
     profile.recordCall(elapsedUs);
 }
 
-FunctionProfile* PGOProfiler::getProfile(const std::string& name) {
+FunctionProfile* PGOProfiler::getProfile(const std::string& name)
+{
     std::lock_guard<std::mutex> lock(m_mutex);
     auto it = m_profiles.find(name);
     return it != m_profiles.end() ? &it->second : nullptr;
 }
 
-const FunctionProfile* PGOProfiler::getProfile(const std::string& name) const {
+const FunctionProfile* PGOProfiler::getProfile(const std::string& name) const
+{
     std::lock_guard<std::mutex> lock(m_mutex);
     auto it = m_profiles.find(name);
     return it != m_profiles.end() ? &it->second : nullptr;
 }
 
-std::unordered_map<std::string, FunctionProfile> PGOProfiler::getAllProfiles() const {
+std::unordered_map<std::string, FunctionProfile> PGOProfiler::getAllProfiles() const
+{
     std::lock_guard<std::mutex> lock(m_mutex);
     return m_profiles;
 }
 
-PGOProfiler::Hotness PGOProfiler::classifyFunction(const std::string& name) const {
+PGOProfiler::Hotness PGOProfiler::classifyFunction(const std::string& name) const
+{
     std::lock_guard<std::mutex> lock(m_mutex);
     auto it = m_profiles.find(name);
-    if (it == m_profiles.end()) return Hotness::Cold;
+    if (it == m_profiles.end())
+        return Hotness::Cold;
 
     const auto& p = it->second;
-    if (p.totalCalls < 5) return Hotness::Cold;
-    if (p.totalCalls < 50) return Hotness::Warm;
-    if (p.totalCalls < 500) return Hotness::Hot;
+    if (p.totalCalls < 5)
+        return Hotness::Cold;
+    if (p.totalCalls < 50)
+        return Hotness::Warm;
+    if (p.totalCalls < 500)
+        return Hotness::Hot;
     return Hotness::VeryHot;
 }
 
-OptimizationLevel PGOProfiler::suggestOptLevel(const std::string& name) const {
+OptimizationLevel PGOProfiler::suggestOptLevel(const std::string& name) const
+{
     Hotness h = classifyFunction(name);
     switch (h) {
-        case Hotness::Cold:    return OptimizationLevel::O0;
-        case Hotness::Warm:    return OptimizationLevel::O1;
-        case Hotness::Hot:     return OptimizationLevel::O2;
-        case Hotness::VeryHot: return OptimizationLevel::O3;
+    case Hotness::Cold:
+        return OptimizationLevel::O0;
+    case Hotness::Warm:
+        return OptimizationLevel::O1;
+    case Hotness::Hot:
+        return OptimizationLevel::O2;
+    case Hotness::VeryHot:
+        return OptimizationLevel::O3;
     }
     return OptimizationLevel::O2;
 }
 
-void PGOProfiler::annotateFunction(llvm::Function* F, const FunctionProfile& profile) {
-    if (!F) return;
+void PGOProfiler::annotateFunction(llvm::Function* F, const FunctionProfile& profile)
+{
+    if (!F)
+        return;
     applyBranchWeights(F, profile);
 }
 
-void PGOProfiler::reset() {
+void PGOProfiler::reset()
+{
     std::lock_guard<std::mutex> lock(m_mutex);
     m_profiles.clear();
 }
 
-bool PGOProfiler::exportProfiles(const std::string& filepath) const {
+bool PGOProfiler::exportProfiles(const std::string& filepath) const
+{
     std::lock_guard<std::mutex> lock(m_mutex);
     std::error_code EC;
     llvm::raw_fd_ostream OS(filepath, EC);
-    if (EC) return false;
+    if (EC)
+        return false;
 
     for (const auto& [name, profile] : m_profiles) {
         OS << "FUNCTION: " << name << "\n";
@@ -189,11 +216,12 @@ bool PGOProfiler::exportProfiles(const std::string& filepath) const {
     return true;
 }
 
-bool PGOProfiler::importProfiles(const std::string& filepath) {
+bool PGOProfiler::importProfiles(const std::string& filepath)
+{
     std::lock_guard<std::mutex> lock(m_mutex);
-    llvm::ErrorOr<std::unique_ptr<llvm::MemoryBuffer>> buf =
-        llvm::MemoryBuffer::getFile(filepath);
-    if (!buf) return false;
+    llvm::ErrorOr<std::unique_ptr<llvm::MemoryBuffer>> buf = llvm::MemoryBuffer::getFile(filepath);
+    if (!buf)
+        return false;
 
     llvm::StringRef content = buf->get()->getBuffer();
     // Simple line-based parser (extend as needed)
@@ -204,9 +232,8 @@ bool PGOProfiler::importProfiles(const std::string& filepath) {
 // KernelAutoTuner Implementation
 // ============================================================================
 
-BenchmarkResult KernelAutoTuner::benchmarkFunction(
-    const std::string& name, void* funcPtr,
-    OptimizationLevel level, int numSamples)
+BenchmarkResult KernelAutoTuner::benchmarkFunction(const std::string& name, void* funcPtr, OptimizationLevel level,
+                                                   int numSamples)
 {
     BenchmarkResult result;
     result.functionName = name;
@@ -214,14 +241,16 @@ BenchmarkResult KernelAutoTuner::benchmarkFunction(
     result.samples = numSamples;
     result.valid = false;
 
-    if (!funcPtr) return result;
+    if (!funcPtr)
+        return result;
 
-    using Func = double(*)(double);
+    using Func = double (*)(double);
     auto fn = reinterpret_cast<Func>(funcPtr);
 
     // Warmup
     volatile double sink = 0.0;
-    for (int i = 0; i < 10; i++) sink += fn(static_cast<double>(i));
+    for (int i = 0; i < 10; i++)
+        sink += fn(static_cast<double>(i));
 
     double total = 0.0;
     double minVal = 1e18;
@@ -233,8 +262,10 @@ BenchmarkResult KernelAutoTuner::benchmarkFunction(
         auto end = std::chrono::steady_clock::now();
         double us = std::chrono::duration<double, std::micro>(end - start).count();
         total += us;
-        if (us < minVal) minVal = us;
-        if (us > maxVal) maxVal = us;
+        if (us < minVal)
+            minVal = us;
+        if (us > maxVal)
+            maxVal = us;
     }
 
     result.avgTimeUs = total / numSamples;
@@ -246,8 +277,8 @@ BenchmarkResult KernelAutoTuner::benchmarkFunction(
     return result;
 }
 
-OptimizationLevel KernelAutoTuner::findBestOptLevel(
-    const std::string& name, const std::vector<BenchmarkResult>& results)
+OptimizationLevel KernelAutoTuner::findBestOptLevel(const std::string& name,
+                                                    const std::vector<BenchmarkResult>& results)
 {
     OptimizationLevel best = OptimizationLevel::O0;
     double bestTime = 1e18;
@@ -261,21 +292,23 @@ OptimizationLevel KernelAutoTuner::findBestOptLevel(
     return best;
 }
 
-KernelAutoTuner::TuneResult KernelAutoTuner::autoTuneFunction(
-    const std::string& name, const std::vector<void*>& optFuncPtrs)
+KernelAutoTuner::TuneResult KernelAutoTuner::autoTuneFunction(const std::string& name,
+                                                              const std::vector<void*>& optFuncPtrs)
 {
     TuneResult result;
     result.bestLevel = OptimizationLevel::O0;
 
     std::vector<BenchmarkResult> benchmarks;
     for (size_t i = 0; i < optFuncPtrs.size(); i++) {
-        if (!optFuncPtrs[i]) continue;
+        if (!optFuncPtrs[i])
+            continue;
         auto level = static_cast<OptimizationLevel>(i);
         auto br = benchmarkFunction(name, optFuncPtrs[i], level, m_numSamples);
         benchmarks.push_back(br);
     }
 
-    if (benchmarks.empty()) return result;
+    if (benchmarks.empty())
+        return result;
 
     result.bestLevel = findBestOptLevel(name, benchmarks);
     result.benchmarks = benchmarks;
@@ -289,9 +322,8 @@ KernelAutoTuner::TuneResult KernelAutoTuner::autoTuneFunction(
 // FluxJIT Implementation
 // ============================================================================
 
-FluxJIT::FluxJIT(OptimizationLevel optLevel)
-    : m_dataLayout(""),
-      m_optLevel(optLevel) {
+FluxJIT::FluxJIT(OptimizationLevel optLevel) : m_dataLayout(""), m_optLevel(optLevel)
+{
     llvm::InitializeNativeTarget();
     llvm::InitializeNativeTargetAsmPrinter();
     llvm::InitializeNativeTargetAsmParser();
@@ -308,15 +340,17 @@ FluxJIT::FluxJIT(OptimizationLevel optLevel)
 
     // Create a target machine for potential standalone compilation
     auto TM = JTMB->createTargetMachine();
-    if (TM) m_targetMachine = TM->release();
+    if (TM)
+        m_targetMachine = TM->release();
 
     auto JIT = llvm::orc::LLJITBuilder()
-        .setJITTargetMachineBuilder(std::move(*JTMB))
-        .setObjectLinkingLayerCreator([&](llvm::orc::ExecutionSession &ES) {
-            auto Layer = std::make_unique<llvm::orc::ObjectLinkingLayer>(ES, std::make_unique<llvm::jitlink::InProcessMemoryManager>(16384));
-            return Layer;
-        })
-        .create();
+                   .setJITTargetMachineBuilder(std::move(*JTMB))
+                   .setObjectLinkingLayerCreator([&](llvm::orc::ExecutionSession& ES) {
+                       auto Layer = std::make_unique<llvm::orc::ObjectLinkingLayer>(
+                           ES, std::make_unique<llvm::jitlink::InProcessMemoryManager>(16384));
+                       return Layer;
+                   })
+                   .create();
     if (!JIT) {
         logError(JIT.takeError(), "Failed to create LLJIT");
         return;
@@ -327,8 +361,7 @@ FluxJIT::FluxJIT(OptimizationLevel optLevel)
 
     m_passBuilder = std::make_unique<llvm::PassBuilder>();
 
-    llvm::Expected<llvm::orc::JITDylib&> runtimeJDE =
-        m_lljit->createJITDylib("flux_runtime");
+    llvm::Expected<llvm::orc::JITDylib&> runtimeJDE = m_lljit->createJITDylib("flux_runtime");
     if (!runtimeJDE) {
         logError(runtimeJDE.takeError(), "Failed to create runtime JIT dylib");
         return;
@@ -336,11 +369,9 @@ FluxJIT::FluxJIT(OptimizationLevel optLevel)
     m_runtimeDylib = &runtimeJDE.get();
 
     auto ProcessSymbols =
-        llvm::orc::DynamicLibrarySearchGenerator::GetForCurrentProcess(
-            m_lljit->getDataLayout().getGlobalPrefix());
+        llvm::orc::DynamicLibrarySearchGenerator::GetForCurrentProcess(m_lljit->getDataLayout().getGlobalPrefix());
     if (!ProcessSymbols) {
-        logError(ProcessSymbols.takeError(),
-                 "Failed to create current-process symbol generator");
+        logError(ProcessSymbols.takeError(), "Failed to create current-process symbol generator");
         return;
     }
     m_runtimeDylib->addGenerator(std::move(*ProcessSymbols));
@@ -351,13 +382,14 @@ FluxJIT::FluxJIT(OptimizationLevel optLevel)
     registerComplexHelpers();
 }
 
-void FluxJIT::registerComplexHelpers() {
-    if (!m_lljit || !m_runtimeDylib) return;
+void FluxJIT::registerComplexHelpers()
+{
+    if (!m_lljit || !m_runtimeDylib)
+        return;
 
     auto registerSym = [&](const std::string& name, void* ptr) {
         llvm::orc::SymbolMap sym;
-        sym[m_lljit->mangleAndIntern(name)] =
-            { llvm::orc::ExecutorAddr::fromPtr(ptr), llvm::JITSymbolFlags::Exported };
+        sym[m_lljit->mangleAndIntern(name)] = {llvm::orc::ExecutorAddr::fromPtr(ptr), llvm::JITSymbolFlags::Exported};
         (void)m_runtimeDylib->define(llvm::orc::absoluteSymbols(std::move(sym)));
     };
 
@@ -368,41 +400,50 @@ void FluxJIT::registerComplexHelpers() {
 
 FluxJIT::~FluxJIT() = default;
 
-void FluxJIT::setOptimizationLevel(OptimizationLevel level) {
+void FluxJIT::setOptimizationLevel(OptimizationLevel level)
+{
     m_optLevel = level;
 }
 
-void FluxJIT::setSIMDOptions(const SIMDOptions& options) {
+void FluxJIT::setSIMDOptions(const SIMDOptions& options)
+{
     m_simdOptions = options;
 }
 
-SIMDOptions FluxJIT::getSIMDOptions() const {
+SIMDOptions FluxJIT::getSIMDOptions() const
+{
     return m_simdOptions;
 }
 
-void FluxJIT::setTCOOptions(const TCOOptions& options) {
+void FluxJIT::setTCOOptions(const TCOOptions& options)
+{
     m_tcoOptions = options;
 }
 
-TCOOptions FluxJIT::getTCOOptions() const {
+TCOOptions FluxJIT::getTCOOptions() const
+{
     return m_tcoOptions;
 }
 
-void FluxJIT::applySIMDToPassBuilder(llvm::ModulePassManager& MPM, llvm::FunctionPassManager& FPM) {
+void FluxJIT::applySIMDToPassBuilder(llvm::ModulePassManager& MPM, llvm::FunctionPassManager& FPM)
+{
     // No-op in the module/function pass managers — SIMD flags are set globally
     // on the PassBuilder itself via pipeline tuning.
     (void)MPM;
     (void)FPM;
 }
 
-void FluxJIT::optimizeModule(llvm::Module* M, OptimizationLevel level) {
-    if (!M || level == OptimizationLevel::O0) return;
+void FluxJIT::optimizeModule(llvm::Module* M, OptimizationLevel level)
+{
+    if (!M || level == OptimizationLevel::O0)
+        return;
 
     // Bump the instruction limit from 2000 to 50000 — small modules don't need
     // skipping, and real-world engineering functions can easily exceed 2000.
     size_t totalInsts = 0;
     for (auto& F : *M) {
-        for (auto& BB : F) totalInsts += BB.size();
+        for (auto& BB : F)
+            totalInsts += BB.size();
     }
     if (totalInsts > 50000) {
         llvm::errs() << "[FluxJIT] Large module (" << totalInsts
@@ -424,10 +465,17 @@ void FluxJIT::optimizeModule(llvm::Module* M, OptimizationLevel level) {
     // Map our enum to LLVM's optimization level
     llvm::OptimizationLevel LLVMLevel = llvm::OptimizationLevel::O2;
     switch (level) {
-        case OptimizationLevel::O1: LLVMLevel = llvm::OptimizationLevel::O1; break;
-        case OptimizationLevel::O2: LLVMLevel = llvm::OptimizationLevel::O2; break;
-        case OptimizationLevel::O3: LLVMLevel = llvm::OptimizationLevel::O3; break;
-        default: break;
+    case OptimizationLevel::O1:
+        LLVMLevel = llvm::OptimizationLevel::O1;
+        break;
+    case OptimizationLevel::O2:
+        LLVMLevel = llvm::OptimizationLevel::O2;
+        break;
+    case OptimizationLevel::O3:
+        LLVMLevel = llvm::OptimizationLevel::O3;
+        break;
+    default:
+        break;
     }
 
     // In LLVM 21+, SIMD options are handled via target machine features
@@ -446,24 +494,22 @@ void FluxJIT::optimizeModule(llvm::Module* M, OptimizationLevel level) {
     }
 
     // Build the LLVM optimization pipeline
-    llvm::ModulePassManager MPM =
-        m_passBuilder->buildPerModuleDefaultPipeline(LLVMLevel);
+    llvm::ModulePassManager MPM = m_passBuilder->buildPerModuleDefaultPipeline(LLVMLevel);
 
     // If TCO is enabled, add a tail-call-elimination pass explicitly
     if (m_tcoOptions.enableTailCallElimination) {
 #if LLVM_VERSION_MAJOR >= 17
-        MPM.addPass(llvm::createModuleToFunctionPassAdaptor(
-            llvm::TailCallElimPass()));
+        MPM.addPass(llvm::createModuleToFunctionPassAdaptor(llvm::TailCallElimPass()));
 #else
-        MPM.addPass(llvm::createModuleToFunctionPassAdaptor(
-            llvm::createTailCallEliminationPass()));
+        MPM.addPass(llvm::createModuleToFunctionPassAdaptor(llvm::createTailCallEliminationPass()));
 #endif
     }
 
     MPM.run(*M, MAM);
 }
 
-void FluxJIT::prepareModule(llvm::Module& M) {
+void FluxJIT::prepareModule(llvm::Module& M)
+{
     if (!m_lljit)
         return;
     M.setDataLayout(m_dataLayout);
@@ -472,8 +518,8 @@ void FluxJIT::prepareModule(llvm::Module& M) {
     M.setPICLevel(llvm::PICLevel::BigPIC);
 }
 
-void FluxJIT::addModule(std::unique_ptr<llvm::Module> M,
-                        std::unique_ptr<llvm::LLVMContext> Ctx) {
+void FluxJIT::addModule(std::unique_ptr<llvm::Module> M, std::unique_ptr<llvm::LLVMContext> Ctx)
+{
     if (!m_lljit || !M || !Ctx)
         return;
 
@@ -488,10 +534,12 @@ void FluxJIT::addModule(std::unique_ptr<llvm::Module> M,
             continue;
 
         auto PerFnMod = llvm::CloneModule(*M);
-        if (!PerFnMod) continue;
+        if (!PerFnMod)
+            continue;
 
         llvm::Function* Target = PerFnMod->getFunction(F.getName());
-        if (!Target) continue;
+        if (!Target)
+            continue;
 
         for (auto& CF : *PerFnMod) {
             if (&CF != Target && !CF.isDeclaration())
@@ -545,7 +593,8 @@ void FluxJIT::addModule(std::unique_ptr<llvm::Module> M,
     }
 }
 
-void FluxJIT::addObjectFile(std::unique_ptr<llvm::MemoryBuffer> ObjectBuffer) {
+void FluxJIT::addObjectFile(std::unique_ptr<llvm::MemoryBuffer> ObjectBuffer)
+{
     if (!m_lljit || !ObjectBuffer)
         return;
     if (auto Err = m_lljit->addObjectFile(std::move(ObjectBuffer))) {
@@ -553,8 +602,10 @@ void FluxJIT::addObjectFile(std::unique_ptr<llvm::MemoryBuffer> ObjectBuffer) {
     }
 }
 
-bool FluxJIT::redirectFunction(const std::string& Name, void* oldAddr, void* newAddr) {
-    if (!oldAddr || !newAddr) return false;
+bool FluxJIT::redirectFunction(const std::string& Name, void* oldAddr, void* newAddr)
+{
+    if (!oldAddr || !newAddr)
+        return false;
 
     // Relative JMP rel32: E9 <4-byte-little-endian-offset>
     // Offset = destination - (source + instruction_length)
@@ -565,8 +616,7 @@ bool FluxJIT::redirectFunction(const std::string& Name, void* oldAddr, void* new
 
     // Check we can reach with a 32-bit signed offset
     if (delta < INT32_MIN || delta > INT32_MAX) {
-        llvm::errs() << "[FluxJIT] " << Name << " too far (" << delta
-                     << " bytes) for rel32 JMP\n";
+        llvm::errs() << "[FluxJIT] " << Name << " too far (" << delta << " bytes) for rel32 JMP\n";
         return false;
     }
     int32_t offset = static_cast<int32_t>(delta);
@@ -575,8 +625,7 @@ bool FluxJIT::redirectFunction(const std::string& Name, void* oldAddr, void* new
     SYSTEM_INFO sysInfo;
     GetSystemInfo(&sysInfo);
     long pageSize = static_cast<long>(sysInfo.dwPageSize);
-    void* pageStart = reinterpret_cast<void*>(
-        reinterpret_cast<intptr_t>(oldAddr) & ~(pageSize - 1));
+    void* pageStart = reinterpret_cast<void*>(reinterpret_cast<intptr_t>(oldAddr) & ~(pageSize - 1));
     DWORD oldProtect;
     if (!VirtualProtect(pageStart, pageSize, PAGE_EXECUTE_READWRITE, &oldProtect)) {
         llvm::errs() << "[FluxJIT] VirtualProtect failed for " << Name << "\n";
@@ -584,9 +633,9 @@ bool FluxJIT::redirectFunction(const std::string& Name, void* oldAddr, void* new
     }
 #else
     long pageSize = sysconf(_SC_PAGESIZE);
-    if (pageSize <= 0) pageSize = 4096;
-    void* pageStart = reinterpret_cast<void*>(
-        reinterpret_cast<intptr_t>(oldAddr) & ~(pageSize - 1));
+    if (pageSize <= 0)
+        pageSize = 4096;
+    void* pageStart = reinterpret_cast<void*>(reinterpret_cast<intptr_t>(oldAddr) & ~(pageSize - 1));
     if (mprotect(pageStart, pageSize, PROT_READ | PROT_WRITE | PROT_EXEC) != 0) {
         llvm::errs() << "[FluxJIT] mprotect failed for " << Name << "\n";
         return false;
@@ -610,13 +659,14 @@ bool FluxJIT::redirectFunction(const std::string& Name, void* oldAddr, void* new
     mprotect(pageStart, pageSize, PROT_READ | PROT_EXEC);
     // Flush instruction cache to ensure the JMP is visible
     __builtin___clear_cache(reinterpret_cast<char*>(oldAddr),
-        reinterpret_cast<char*>(reinterpret_cast<intptr_t>(oldAddr) + 5));
+                            reinterpret_cast<char*>(reinterpret_cast<intptr_t>(oldAddr) + 5));
 #endif
 
     return true;
 }
 
-void* FluxJIT::promoteFunction(const std::string& Name, OptimizationLevel targetLevel) {
+void* FluxJIT::promoteFunction(const std::string& Name, OptimizationLevel targetLevel)
+{
     {
         std::lock_guard<std::mutex> lock(m_fnMapMutex);
         auto it = m_promotedPtrs.find(Name);
@@ -644,7 +694,8 @@ void* FluxJIT::promoteFunction(const std::string& Name, OptimizationLevel target
                     break;
                 }
             }
-            if (!bitcode.empty()) break;
+            if (!bitcode.empty())
+                break;
         }
     }
 
@@ -694,8 +745,7 @@ void* FluxJIT::promoteFunction(const std::string& Name, OptimizationLevel target
     if (auto Err = m_lljit->addIRModule(m_lljit->getMainJITDylib(), std::move(TSM))) {
         llvm::handleAllErrors(std::move(Err), [](const llvm::ErrorInfoBase& EI) {
             std::string msg = EI.message();
-            if (msg.find("duplicate") == std::string::npos &&
-                msg.find("already") == std::string::npos)
+            if (msg.find("duplicate") == std::string::npos && msg.find("already") == std::string::npos)
                 llvm::errs() << "[FluxJIT] addIRModule error: " << msg << "\n";
         });
     }
@@ -718,14 +768,14 @@ void* FluxJIT::promoteFunction(const std::string& Name, OptimizationLevel target
     // This redirects ALL existing callers (JIT-to-JIT calls that embedded the O0 address).
     if (originalAddr && originalAddr != ptr) {
         if (!redirectFunction(Name, originalAddr, ptr))
-            llvm::errs() << "[FluxJIT] Warning: could not redirect existing callers of "
-                         << Name << "\n";
+            llvm::errs() << "[FluxJIT] Warning: could not redirect existing callers of " << Name << "\n";
     }
 
     return ptr;
 }
 
-void* FluxJIT::getPointerToFunction(const std::string& Name) {
+void* FluxJIT::getPointerToFunction(const std::string& Name)
+{
     // Check caches and count lookups
     bool needsLookup = false;
     void* ptr = nullptr;
@@ -740,14 +790,14 @@ void* FluxJIT::getPointerToFunction(const std::string& Name) {
     }
 
     if (needsLookup) {
-        if (!m_lljit) return nullptr;
+        if (!m_lljit)
+            return nullptr;
         auto ExprSymbol = m_lljit->lookup(Name);
         if (!ExprSymbol) {
             auto Err = ExprSymbol.takeError();
             llvm::errs() << "[FluxJIT] lookup failed: " << Name << "\n";
-            llvm::handleAllErrors(std::move(Err), [](const llvm::ErrorInfoBase& EI) {
-                llvm::errs() << "  " << EI.message() << "\n";
-            });
+            llvm::handleAllErrors(std::move(Err),
+                                  [](const llvm::ErrorInfoBase& EI) { llvm::errs() << "  " << EI.message() << "\n"; });
             return nullptr;
         }
         ptr = reinterpret_cast<void*>(ExprSymbol->getValue());
@@ -777,10 +827,18 @@ void* FluxJIT::getPointerToFunction(const std::string& Name) {
                 if (m_profilingEnabled) {
                     auto hotness = m_pgoProfiler.classifyFunction(Name);
                     switch (hotness) {
-                        case PGOProfiler::Hotness::Cold:    targetLevel = OptimizationLevel::O1; break;
-                        case PGOProfiler::Hotness::Warm:    targetLevel = OptimizationLevel::O2; break;
-                        case PGOProfiler::Hotness::Hot:     targetLevel = OptimizationLevel::O3; break;
-                        case PGOProfiler::Hotness::VeryHot: targetLevel = OptimizationLevel::O3; break;
+                    case PGOProfiler::Hotness::Cold:
+                        targetLevel = OptimizationLevel::O1;
+                        break;
+                    case PGOProfiler::Hotness::Warm:
+                        targetLevel = OptimizationLevel::O2;
+                        break;
+                    case PGOProfiler::Hotness::Hot:
+                        targetLevel = OptimizationLevel::O3;
+                        break;
+                    case PGOProfiler::Hotness::VeryHot:
+                        targetLevel = OptimizationLevel::O3;
+                        break;
                     }
                 }
                 auto* promoted = promoteFunction(Name, targetLevel);
@@ -801,36 +859,40 @@ void* FluxJIT::getPointerToFunction(const std::string& Name) {
     return ptr;
 }
 
-int FluxJIT::getCallCount(const std::string& Name) const {
+int FluxJIT::getCallCount(const std::string& Name) const
+{
     auto it = m_callCounts.find(Name);
     return (it != m_callCounts.end()) ? it->second.load() : 0;
 }
 
-void FluxJIT::resetCallCounts() {
+void FluxJIT::resetCallCounts()
+{
     for (auto& [name, count] : m_callCounts)
         count = 0;
 }
 
-bool FluxJIT::isPromoted(const std::string& Name) const {
+bool FluxJIT::isPromoted(const std::string& Name) const
+{
     std::lock_guard<std::mutex> lock(m_fnMapMutex);
     return m_promotedPtrs.find(Name) != m_promotedPtrs.end();
 }
 
-void FluxJIT::registerFunction(const std::string& Name, void* FuncPtr) {
-    if (!m_lljit || !m_runtimeDylib) return;
+void FluxJIT::registerFunction(const std::string& Name, void* FuncPtr)
+{
+    if (!m_lljit || !m_runtimeDylib)
+        return;
 
     auto& ES = m_lljit->getExecutionSession();
     auto internedName = ES.intern(Name);
     llvm::orc::SymbolMap symMap;
-    symMap[internedName] =
-        { llvm::orc::ExecutorAddr::fromPtr(FuncPtr), llvm::JITSymbolFlags::Exported };
+    symMap[internedName] = {llvm::orc::ExecutorAddr::fromPtr(FuncPtr), llvm::JITSymbolFlags::Exported};
 
-    (void)m_runtimeDylib->define(llvm::orc::absoluteSymbols(
-        llvm::orc::SymbolMap({{internedName, symMap[internedName]}})));
+    (void)m_runtimeDylib->define(
+        llvm::orc::absoluteSymbols(llvm::orc::SymbolMap({{internedName, symMap[internedName]}})));
 
     auto& mainJD = m_lljit->getMainJITDylib();
     if (auto Err = mainJD.define(llvm::orc::absoluteSymbols(std::move(symMap)))) {
-        llvm::handleAllErrors(std::move(Err), [](const llvm::ErrorInfoBase &EI) {
+        llvm::handleAllErrors(std::move(Err), [](const llvm::ErrorInfoBase& EI) {
             std::string msg = EI.message();
             if (msg.find("duplicate definition") == std::string::npos)
                 llvm::errs() << "JIT symbol error: " << msg << "\n";
@@ -838,7 +900,8 @@ void FluxJIT::registerFunction(const std::string& Name, void* FuncPtr) {
     }
 }
 
-int FluxJIT::autoTuneHotFunctions() {
+int FluxJIT::autoTuneHotFunctions()
+{
     if (!m_profilingEnabled) {
         llvm::errs() << "[FluxJIT] Cannot auto-tune: profiling is disabled. "
                      << "Call setProfilingEnabled(true) first.\n";
@@ -855,19 +918,21 @@ int FluxJIT::autoTuneHotFunctions() {
             std::lock_guard<std::mutex> lock(m_fnMapMutex);
             isPromoted = m_promotedPtrs.find(name) != m_promotedPtrs.end();
         }
-        if (!isPromoted) continue;
+        if (!isPromoted)
+            continue;
 
         void* originalPtr = nullptr;
         {
             std::lock_guard<std::mutex> lock(m_fnMapMutex);
             auto it = m_functionPtrs.find(name);
-            if (it != m_functionPtrs.end()) originalPtr = it->second;
+            if (it != m_functionPtrs.end())
+                originalPtr = it->second;
         }
-        if (!originalPtr) continue;
+        if (!originalPtr)
+            continue;
 
         // Benchmark the current (promoted) version
-        auto benchResult = m_autoTuner.benchmarkFunction(
-            name, originalPtr, profile.currentOptLevel, 50);
+        auto benchResult = m_autoTuner.benchmarkFunction(name, originalPtr, profile.currentOptLevel, 50);
 
         // Gather available opt-level pointers
         std::vector<void*> optPtrs(4, nullptr);
@@ -894,9 +959,8 @@ int FluxJIT::autoTuneHotFunctions() {
             }
             tuned++;
 
-            llvm::outs() << "[FluxJIT] Auto-tuned '" << name << "' from "
-                         << static_cast<int>(profile.currentOptLevel) << " -> "
-                         << static_cast<int>(tuneResult.bestLevel) << "\n";
+            llvm::outs() << "[FluxJIT] Auto-tuned '" << name << "' from " << static_cast<int>(profile.currentOptLevel)
+                         << " -> " << static_cast<int>(tuneResult.bestLevel) << "\n";
         }
     }
 

@@ -20,17 +20,19 @@
 namespace Flux {
 namespace Sweep {
 
-// 
-//  Sweep Result Structure                               
-// 
+//
+//  Sweep Result Structure
+//
 
-struct SweepPoint {
+struct SweepPoint
+{
     double componentValue;
     double outputValue;
     bool simulationSuccess;
 };
 
-struct SweepReport {
+struct SweepReport
+{
     std::string circuitFile;
     std::string componentName;
     double startValue;
@@ -38,34 +40,35 @@ struct SweepReport {
     int points;
     std::string measureExpression;
     std::vector<SweepPoint> data;
-    
+
     double getMinOutput() const;
     double getMaxOutput() const;
     double getMinValuePoint() const;
     double getMaxValuePoint() const;
-    
+
     std::string toText() const;
     std::string toMarkdown() const;
 };
 
-// 
-//  Sweep Engine                                         
-// 
+//
+//  Sweep Engine
+//
 
-class SweepEngine {
+class SweepEngine
+{
 public:
     SweepEngine();
     ~SweepEngine();
-    
+
     // Configuration
     void setCircuitFile(const std::string& file);
     void setComponent(const std::string& name);
     void setRange(double start, double stop, int points);
     void setMeasure(const std::string& expression);
-    
+
     // Execution
     SweepReport run();
-    
+
 private:
     std::string m_circuitFile;
     std::string m_componentName;
@@ -73,7 +76,7 @@ private:
     double m_stopValue;
     int m_numPoints;
     std::string m_measureExpression;
-    
+
     // Helper: Run simulation for specific value
     double runSingleSimulation(const std::string& netlist, double value);
     std::string modifyNetlist(const std::string& original, double value);

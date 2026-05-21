@@ -13,10 +13,10 @@
 
 #include "flux/package/package_manager.h"
 #include "flux/package/toml_parser.h"
-#include <sstream>
 #include <algorithm>
 #include <fstream>
 #include <iostream>
+#include <sstream>
 
 namespace Flux {
 namespace PackageManager {
@@ -25,22 +25,25 @@ namespace PackageManager {
 // PackageVersion Implementation
 // ============================================================================
 
-std::string PackageVersion::toString() const {
+std::string PackageVersion::toString() const
+{
     std::ostringstream oss;
     oss << major << "." << minor << "." << patch;
-    if (!prerelease.empty()) oss << "-" << prerelease;
+    if (!prerelease.empty())
+        oss << "-" << prerelease;
     return oss.str();
 }
 
-PackageVersion PackageVersion::parse(const std::string& str) {
+PackageVersion PackageVersion::parse(const std::string& str)
+{
     PackageVersion version;
     std::istringstream stream(str);
     char dot;
 
     stream >> version.major;
-    stream >> dot;  // consume '.'
+    stream >> dot; // consume '.'
     stream >> version.minor;
-    stream >> dot;  // consume '.'
+    stream >> dot; // consume '.'
     stream >> version.patch;
 
     // Check for prerelease
@@ -52,22 +55,29 @@ PackageVersion PackageVersion::parse(const std::string& str) {
     return version;
 }
 
-bool PackageVersion::operator<(const PackageVersion& other) const {
-    if (major != other.major) return major < other.major;
-    if (minor != other.minor) return minor < other.minor;
-    if (patch != other.patch) return patch < other.patch;
+bool PackageVersion::operator<(const PackageVersion& other) const
+{
+    if (major != other.major)
+        return major < other.major;
+    if (minor != other.minor)
+        return minor < other.minor;
+    if (patch != other.patch)
+        return patch < other.patch;
     // Prerelease versions are less than release versions
-    if (!prerelease.empty() && other.prerelease.empty()) return true;
-    if (prerelease.empty() && !other.prerelease.empty()) return false;
+    if (!prerelease.empty() && other.prerelease.empty())
+        return true;
+    if (prerelease.empty() && !other.prerelease.empty())
+        return false;
     return prerelease < other.prerelease;
 }
 
-bool PackageVersion::operator==(const PackageVersion& other) const {
-    return major == other.major && minor == other.minor &&
-           patch == other.patch && prerelease == other.prerelease;
+bool PackageVersion::operator==(const PackageVersion& other) const
+{
+    return major == other.major && minor == other.minor && patch == other.patch && prerelease == other.prerelease;
 }
 
-bool PackageVersion::operator>=(const PackageVersion& other) const {
+bool PackageVersion::operator>=(const PackageVersion& other) const
+{
     return !(*this < other);
 }
 
@@ -75,7 +85,8 @@ bool PackageVersion::operator>=(const PackageVersion& other) const {
 // PackageManifest Implementation
 // ============================================================================
 
-std::string PackageManifest::toString() const {
+std::string PackageManifest::toString() const
+{
     std::ostringstream oss;
     oss << "[package]\n";
     oss << "name = \"" << name << "\"\n";
@@ -83,7 +94,8 @@ std::string PackageManifest::toString() const {
     oss << "description = \"" << description << "\"\n";
     oss << "author = \"" << author << "\"\n";
     oss << "license = \"" << license << "\"\n";
-    if (!repository.empty()) oss << "repository = \"" << repository << "\"\n";
+    if (!repository.empty())
+        oss << "repository = \"" << repository << "\"\n";
 
     if (!dependencies.empty()) {
         oss << "\n[dependencies]\n";
@@ -95,7 +107,8 @@ std::string PackageManifest::toString() const {
     return oss.str();
 }
 
-PackageManifest PackageManifest::parse(const std::string& toml) {
+PackageManifest PackageManifest::parse(const std::string& toml)
+{
     PackageManifest manifest;
 
     // Simple TOML parsing for package manifests
@@ -106,9 +119,11 @@ PackageManifest PackageManifest::parse(const std::string& toml) {
     while (std::getline(stream, line)) {
         // Trim
         size_t start = line.find_first_not_of(" \t\r\n");
-        if (start == std::string::npos) continue;
+        if (start == std::string::npos)
+            continue;
         line = line.substr(start);
-        if (line[0] == '#') continue;
+        if (line[0] == '#')
+            continue;
 
         // Section header
         if (line[0] == '[') {
@@ -121,7 +136,8 @@ PackageManifest PackageManifest::parse(const std::string& toml) {
 
         // Key = value
         size_t eqPos = line.find('=');
-        if (eqPos == std::string::npos) continue;
+        if (eqPos == std::string::npos)
+            continue;
 
         std::string key = line.substr(0, eqPos);
         std::string value = line.substr(eqPos + 1);
@@ -134,12 +150,18 @@ PackageManifest PackageManifest::parse(const std::string& toml) {
         }
 
         if (currentSection == "package" || currentSection.empty()) {
-            if (key == "name") manifest.name = value;
-            else if (key == "version") manifest.version = PackageVersion::parse(value);
-            else if (key == "description") manifest.description = value;
-            else if (key == "author") manifest.author = value;
-            else if (key == "license") manifest.license = value;
-            else if (key == "repository") manifest.repository = value;
+            if (key == "name")
+                manifest.name = value;
+            else if (key == "version")
+                manifest.version = PackageVersion::parse(value);
+            else if (key == "description")
+                manifest.description = value;
+            else if (key == "author")
+                manifest.author = value;
+            else if (key == "license")
+                manifest.license = value;
+            else if (key == "repository")
+                manifest.repository = value;
         } else if (currentSection == "dependencies") {
             PackageDependency dep;
             dep.name = key;
@@ -155,24 +177,26 @@ PackageManifest PackageManifest::parse(const std::string& toml) {
 // PackageRegistry Implementation
 // ============================================================================
 
-PackageRegistry& PackageRegistry::instance() {
+PackageRegistry& PackageRegistry::instance()
+{
     static PackageRegistry registry;
     return registry;
 }
 
-PackageRegistry::PackageRegistry() {
+PackageRegistry::PackageRegistry()
+{
     // Default to official Flux registry
     m_registries.push_back("https://packages.fluxscript.org");
 }
 
-std::vector<PackageInfo> PackageRegistry::search(const std::string& query) {
+std::vector<PackageInfo> PackageRegistry::search(const std::string& query)
+{
     std::vector<PackageInfo> results;
 
     // In production, this queries the registry API
     // For now, return cached results
     for (auto& [name, info] : m_cache) {
-        if (name.find(query) != std::string::npos ||
-            info.description.find(query) != std::string::npos) {
+        if (name.find(query) != std::string::npos || info.description.find(query) != std::string::npos) {
             results.push_back(info);
         }
     }
@@ -180,7 +204,8 @@ std::vector<PackageInfo> PackageRegistry::search(const std::string& query) {
     return results;
 }
 
-std::vector<PackageInfo> PackageRegistry::searchByKeyword(const std::string& keyword) {
+std::vector<PackageInfo> PackageRegistry::searchByKeyword(const std::string& keyword)
+{
     std::vector<PackageInfo> results;
     for (auto& [name, info] : m_cache) {
         for (auto& kw : info.keywords) {
@@ -193,9 +218,11 @@ std::vector<PackageInfo> PackageRegistry::searchByKeyword(const std::string& key
     return results;
 }
 
-PackageInfo PackageRegistry::getPackageInfo(const std::string& name) {
+PackageInfo PackageRegistry::getPackageInfo(const std::string& name)
+{
     auto it = m_cache.find(name);
-    if (it != m_cache.end()) return it->second;
+    if (it != m_cache.end())
+        return it->second;
 
     // In production, fetch from registry API
     PackageInfo info;
@@ -203,28 +230,34 @@ PackageInfo PackageRegistry::getPackageInfo(const std::string& name) {
     return info;
 }
 
-std::vector<PackageVersion> PackageRegistry::getVersions(const std::string& name) {
+std::vector<PackageVersion> PackageRegistry::getVersions(const std::string& name)
+{
     auto it = m_cache.find(name);
-    if (it != m_cache.end()) return it->second.versions;
+    if (it != m_cache.end())
+        return it->second.versions;
     return {};
 }
 
-bool PackageRegistry::publish(const PackageManifest& manifest, const std::string& authToken) {
+bool PackageRegistry::publish(const PackageManifest& manifest, const std::string& authToken)
+{
     // In production, POST to registry API
     std::cout << "Publishing " << manifest.name << " " << manifest.version.toString() << "...\n";
     return true;
 }
 
-void PackageRegistry::addRegistry(const std::string& url) {
+void PackageRegistry::addRegistry(const std::string& url)
+{
     m_registries.push_back(url);
 }
 
-void PackageRegistry::setDefaultRegistry(const std::string& url) {
+void PackageRegistry::setDefaultRegistry(const std::string& url)
+{
     m_registries.clear();
     m_registries.push_back(url);
 }
 
-std::vector<std::string> PackageRegistry::getRegistries() const {
+std::vector<std::string> PackageRegistry::getRegistries() const
+{
     return m_registries;
 }
 
@@ -235,7 +268,8 @@ std::vector<std::string> PackageRegistry::getRegistries() const {
 PackageManager::PackageManager() = default;
 PackageManager::~PackageManager() = default;
 
-void PackageManager::initialize(const std::string& projectPath) {
+void PackageManager::initialize(const std::string& projectPath)
+{
     m_projectPath = projectPath;
     m_installDir = projectPath + "/packages";
     m_cacheDir = projectPath + "/.pkgcache";
@@ -244,8 +278,7 @@ void PackageManager::initialize(const std::string& projectPath) {
     std::string fluxfilePath = projectPath + "/Fluxfile.toml";
     std::ifstream file(fluxfilePath);
     if (file.is_open()) {
-        std::string content((std::istreambuf_iterator<char>(file)),
-                            std::istreambuf_iterator<char>());
+        std::string content((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
         m_projectManifest = PackageManifest::parse(content);
     }
 
@@ -253,15 +286,16 @@ void PackageManager::initialize(const std::string& projectPath) {
     loadInstalled();
 }
 
-bool PackageManager::install(const std::string& packageName, const std::string& version) {
+bool PackageManager::install(const std::string& packageName, const std::string& version)
+{
     std::cout << "Installing " << packageName;
-    if (!version.empty()) std::cout << " (" << version << ")";
+    if (!version.empty())
+        std::cout << " (" << version << ")";
     std::cout << "...\n";
 
     // Check if already installed
     if (isInstalled(packageName)) {
-        std::cout << "  Already installed: "
-                  << getInstalledVersion(packageName).toString() << "\n";
+        std::cout << "  Already installed: " << getInstalledVersion(packageName).toString() << "\n";
         return true;
     }
 
@@ -304,19 +338,22 @@ bool PackageManager::install(const std::string& packageName, const std::string& 
     return true;
 }
 
-bool PackageManager::installFromGit(const std::string& gitUrl, const std::string& branch) {
+bool PackageManager::installFromGit(const std::string& gitUrl, const std::string& branch)
+{
     std::cout << "Installing from Git: " << gitUrl << " (" << branch << ")\n";
     // In production, clone repo and build
     return true;
 }
 
-bool PackageManager::installLocal(const std::string& path) {
+bool PackageManager::installLocal(const std::string& path)
+{
     std::cout << "Installing local package: " << path << "\n";
     // Copy to packages directory
     return true;
 }
 
-bool PackageManager::update(const std::string& packageName) {
+bool PackageManager::update(const std::string& packageName)
+{
     auto* pkg = findInstalled(packageName);
     if (!pkg) {
         std::cerr << "  Error: " << packageName << " is not installed\n";
@@ -326,8 +363,7 @@ bool PackageManager::update(const std::string& packageName) {
     // Check for newer version
     auto info = PackageRegistry::instance().getPackageInfo(packageName);
     if (info.latestVersion > pkg->version) {
-        std::cout << "  Updating " << packageName << ": "
-                  << pkg->version.toString() << " -> "
+        std::cout << "  Updating " << packageName << ": " << pkg->version.toString() << " -> "
                   << info.latestVersion.toString() << "\n";
         pkg->version = info.latestVersion;
         saveInstalled();
@@ -338,15 +374,18 @@ bool PackageManager::update(const std::string& packageName) {
     return true;
 }
 
-bool PackageManager::updateAll() {
+bool PackageManager::updateAll()
+{
     bool updated = false;
     for (auto& pkg : m_installed) {
-        if (update(pkg.name)) updated = true;
+        if (update(pkg.name))
+            updated = true;
     }
     return updated;
 }
 
-std::vector<std::string> PackageManager::getOutdatedPackages() {
+std::vector<std::string> PackageManager::getOutdatedPackages()
+{
     std::vector<std::string> outdated;
     for (auto& pkg : m_installed) {
         auto info = PackageRegistry::instance().getPackageInfo(pkg.name);
@@ -357,11 +396,11 @@ std::vector<std::string> PackageManager::getOutdatedPackages() {
     return outdated;
 }
 
-bool PackageManager::uninstall(const std::string& packageName) {
+bool PackageManager::uninstall(const std::string& packageName)
+{
     for (auto it = m_installed.begin(); it != m_installed.end(); ++it) {
         if (it->name == packageName) {
-            std::cout << "  Uninstalling " << packageName << " "
-                      << it->version.toString() << "...\n";
+            std::cout << "  Uninstalling " << packageName << " " << it->version.toString() << "...\n";
             m_installed.erase(it);
             saveInstalled();
             return true;
@@ -371,36 +410,45 @@ bool PackageManager::uninstall(const std::string& packageName) {
     return false;
 }
 
-bool PackageManager::clean() {
+bool PackageManager::clean()
+{
     std::cout << "Cleaning unused packages...\n";
     // Remove packages not in dependency tree
     return true;
 }
 
-std::vector<InstalledPackage> PackageManager::getInstalledPackages() const {
+std::vector<InstalledPackage> PackageManager::getInstalledPackages() const
+{
     return m_installed;
 }
 
-bool PackageManager::isInstalled(const std::string& packageName) const {
+bool PackageManager::isInstalled(const std::string& packageName) const
+{
     return findInstalled(packageName) != nullptr;
 }
 
-PackageVersion PackageManager::getInstalledVersion(const std::string& packageName) const {
+PackageVersion PackageManager::getInstalledVersion(const std::string& packageName) const
+{
     auto* pkg = findInstalled(packageName);
-    if (pkg) return pkg->version;
+    if (pkg)
+        return pkg->version;
     return PackageVersion();
 }
 
-InstalledPackage* PackageManager::findInstalled(const std::string& name) {
+InstalledPackage* PackageManager::findInstalled(const std::string& name)
+{
     for (auto& pkg : m_installed) {
-        if (pkg.name == name) return &pkg;
+        if (pkg.name == name)
+            return &pkg;
     }
     return nullptr;
 }
 
-const InstalledPackage* PackageManager::findInstalled(const std::string& name) const {
+const InstalledPackage* PackageManager::findInstalled(const std::string& name) const
+{
     for (auto& pkg : m_installed) {
-        if (pkg.name == name) return &pkg;
+        if (pkg.name == name)
+            return &pkg;
     }
     return nullptr;
 }
@@ -409,7 +457,8 @@ const InstalledPackage* PackageManager::findInstalled(const std::string& name) c
 // Dependency Resolution
 // ============================================================================
 
-bool PackageManager::resolveDependencies() {
+bool PackageManager::resolveDependencies()
+{
     std::cout << "Resolving dependencies...\n";
     for (auto& dep : m_projectManifest.dependencies) {
         if (!isInstalled(dep.name)) {
@@ -422,54 +471,66 @@ bool PackageManager::resolveDependencies() {
 }
 
 bool PackageManager::resolveDependency(const PackageDependency& dep,
-                                        std::map<std::string, std::vector<PackageDependency>>& depGraph) {
+                                       std::map<std::string, std::vector<PackageDependency>>& depGraph)
+{
     auto info = PackageRegistry::instance().getPackageInfo(dep.name);
-    if (info.versions.empty()) return false;
+    if (info.versions.empty())
+        return false;
 
     PackageVersion bestVersion;
     for (auto& v : info.versions) {
         if (satisfiesConstraint(v, dep.versionConstraint)) {
-            if (v > bestVersion) bestVersion = v;
+            if (v > bestVersion)
+                bestVersion = v;
         }
     }
 
-    if (bestVersion == PackageVersion()) return false;
+    if (bestVersion == PackageVersion())
+        return false;
     std::cout << "  Resolved " << dep.name << " -> " << bestVersion.toString() << "\n";
     return true;
 }
 
-void PackageManager::buildDependencyTree(const std::string& packageName,
-                                          const std::string& prefix,
-                                          std::vector<std::string>& tree) {
+void PackageManager::buildDependencyTree(const std::string& packageName, const std::string& prefix,
+                                         std::vector<std::string>& tree)
+{
     tree.push_back(prefix + packageName);
 }
 
-bool PackageManager::satisfiesConstraint(const PackageVersion& version, const std::string& constraint) {
+bool PackageManager::satisfiesConstraint(const PackageVersion& version, const std::string& constraint)
+{
     std::istringstream stream(constraint);
     std::string part;
 
     while (stream >> part) {
         if (part.substr(0, 2) == ">=") {
             auto req = PackageVersion::parse(part.substr(2));
-            if (!(version >= req)) return false;
+            if (!(version >= req))
+                return false;
         } else if (part.substr(0, 1) == ">") {
             auto req = PackageVersion::parse(part.substr(1));
-            if (!(version > req)) return false;
+            if (!(version > req))
+                return false;
         } else if (part.substr(0, 1) == "<") {
             auto req = PackageVersion::parse(part.substr(1));
-            if (!(version < req)) return false;
+            if (!(version < req))
+                return false;
         } else if (part.substr(0, 2) == "<=") {
             auto req = PackageVersion::parse(part.substr(2));
-            if (version > req && !(version == req)) return false;
+            if (version > req && !(version == req))
+                return false;
         } else if (part.substr(0, 1) == "^") {
             auto req = PackageVersion::parse(part.substr(1));
-            if (version.major != req.major || version < req) return false;
+            if (version.major != req.major || version < req)
+                return false;
         } else if (part.substr(0, 1) == "~") {
             auto req = PackageVersion::parse(part.substr(1));
-            if (version.major != req.major || version.minor != req.minor || version < req) return false;
+            if (version.major != req.major || version.minor != req.minor || version < req)
+                return false;
         } else {
             auto req = PackageVersion::parse(part);
-            if (!(version == req)) return false;
+            if (!(version == req))
+                return false;
         }
     }
 
@@ -480,30 +541,36 @@ bool PackageManager::satisfiesConstraint(const PackageVersion& version, const st
 // Internal Methods (stubs for future implementation)
 // ============================================================================
 
-bool PackageManager::downloadPackage(const std::string& name, const PackageVersion& version) {
+bool PackageManager::downloadPackage(const std::string& name, const PackageVersion& version)
+{
     std::cout << "  Downloading " << name << " " << version.toString() << "...\n";
     return true;
 }
 
-bool PackageManager::extractPackage(const std::string& archive, const std::string& dest) {
+bool PackageManager::extractPackage(const std::string& archive, const std::string& dest)
+{
     // In production, extract tarball/zip
     return true;
 }
 
-bool PackageManager::runInstallScript(const std::string& packagePath) {
+bool PackageManager::runInstallScript(const std::string& packagePath)
+{
     std::string scriptPath = packagePath + "/install.flux";
     std::ifstream file(scriptPath);
-    if (!file.is_open()) return true;  // No script is OK
+    if (!file.is_open())
+        return true; // No script is OK
 
     // Execute install script via JIT
     return true;
 }
 
-void PackageManager::updateLockFile() {
+void PackageManager::updateLockFile()
+{
     // Write Fluxfile.lock with resolved dependency versions
     std::string lockPath = m_projectPath + "/Fluxfile.lock";
     std::ofstream file(lockPath);
-    if (!file.is_open()) return;
+    if (!file.is_open())
+        return;
 
     file << "# Auto-generated dependency lock file\n";
     file << "# Do not edit manually\n\n";
@@ -512,13 +579,14 @@ void PackageManager::updateLockFile() {
     }
 }
 
-void PackageManager::loadInstalled() {
+void PackageManager::loadInstalled()
+{
     std::string metadataPath = m_installDir + "/installed.json";
     std::ifstream file(metadataPath);
-    if (!file.is_open()) return;
+    if (!file.is_open())
+        return;
 
-    std::string content((std::istreambuf_iterator<char>(file)),
-                        std::istreambuf_iterator<char>());
+    std::string content((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
 
     // Simple JSON parsing
     size_t namePos = content.find("\"name\"");
@@ -540,28 +608,34 @@ void PackageManager::loadInstalled() {
     }
 }
 
-void PackageManager::saveInstalled() {
+void PackageManager::saveInstalled()
+{
     // Ensure directory exists
     // In production, write metadata file
 }
 
-void PackageManager::clearCache() {
+void PackageManager::clearCache()
+{
     std::cout << "Clearing package cache...\n";
 }
 
-void PackageManager::setRegistry(const std::string& url) {
+void PackageManager::setRegistry(const std::string& url)
+{
     m_registryUrl = url;
 }
 
-void PackageManager::setCacheDir(const std::string& path) {
+void PackageManager::setCacheDir(const std::string& path)
+{
     m_cacheDir = path;
 }
 
-void PackageManager::setInstallDir(const std::string& path) {
+void PackageManager::setInstallDir(const std::string& path)
+{
     m_installDir = path;
 }
 
-PackageManager::AuditResult PackageManager::audit() {
+PackageManager::AuditResult PackageManager::audit()
+{
     AuditResult result;
     result.hasIssues = false;
     result.outdatedPackages = getOutdatedPackages();
@@ -572,44 +646,53 @@ PackageManager::AuditResult PackageManager::audit() {
 // Dependency Resolution
 // ============================================================================
 
-bool VersionConstraint::satisfies(const PackageVersion& version, const std::string& constraint) {
+bool VersionConstraint::satisfies(const PackageVersion& version, const std::string& constraint)
+{
     std::istringstream stream(constraint);
     std::string part;
 
     while (stream >> part) {
         if (part.substr(0, 2) == ">=") {
             auto req = PackageVersion::parse(part.substr(2));
-            if (!(version >= req)) return false;
+            if (!(version >= req))
+                return false;
         } else if (part.substr(0, 1) == ">") {
             auto req = PackageVersion::parse(part.substr(1));
-            if (!(version > req)) return false;
+            if (!(version > req))
+                return false;
         } else if (part.substr(0, 1) == "<") {
             auto req = PackageVersion::parse(part.substr(1));
-            if (!(version < req)) return false;
+            if (!(version < req))
+                return false;
         } else if (part.substr(0, 2) == "<=") {
             auto req = PackageVersion::parse(part.substr(2));
-            if (version > req && !(version == req)) return false;
+            if (version > req && !(version == req))
+                return false;
         } else if (part.substr(0, 1) == "^") {
             auto req = PackageVersion::parse(part.substr(1));
-            if (version.major != req.major || version < req) return false;
+            if (version.major != req.major || version < req)
+                return false;
         } else if (part.substr(0, 1) == "~") {
             auto req = PackageVersion::parse(part.substr(1));
-            if (version.major != req.major || version.minor != req.minor || version < req) return false;
+            if (version.major != req.major || version.minor != req.minor || version < req)
+                return false;
         } else {
             auto req = PackageVersion::parse(part);
-            if (!(version == req)) return false;
+            if (!(version == req))
+                return false;
         }
     }
 
     return true;
 }
 
-bool VersionConstraint::isCompatible(const PackageVersion& v1, const PackageVersion& v2) {
+bool VersionConstraint::isCompatible(const PackageVersion& v1, const PackageVersion& v2)
+{
     return v1.major == v2.major;
 }
 
-bool VersionConstraint::matchRange(const PackageVersion& version,
-                                    const PackageVersion& min, const PackageVersion& max) {
+bool VersionConstraint::matchRange(const PackageVersion& version, const PackageVersion& min, const PackageVersion& max)
+{
     return version >= min && version <= max;
 }
 

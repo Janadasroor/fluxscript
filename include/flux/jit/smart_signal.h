@@ -19,16 +19,16 @@
 #ifndef FLUX_SMART_SIGNAL_H
 #define FLUX_SMART_SIGNAL_H
 
+#include <chrono>
+#include <functional>
+#include <map>
+#include <memory>
+#include <mutex>
 #include <string>
 #include <vector>
-#include <memory>
-#include <functional>
-#include <mutex>
-#include <chrono>
-#include <map>
 
 // Include Qt headers if available, otherwise use stub types
-#ifdef Q_SIGNALS  
+#ifdef Q_SIGNALS
 #undef Q_SIGNALS
 #endif
 #endif
@@ -38,15 +38,17 @@
 namespace Flux {
 
 // Signal source types
-enum class SignalSourceType {
-    JITCompiled,        // JIT-compiled FluxScript expression
-    Parametric,         // Parameterized waveform (sine, pulse, etc.)
-    Imported,           // Imported from CSV/file
-    Behavioral          // Behavioral (driven by JIT update function)
+enum class SignalSourceType
+{
+    JITCompiled, // JIT-compiled FluxScript expression
+    Parametric,  // Parameterized waveform (sine, pulse, etc.)
+    Imported,    // Imported from CSV/file
+    Behavioral   // Behavioral (driven by JIT update function)
 };
 
 // Parametric waveform types (for non-JIT signals)
-enum class ParametricWaveformType {
+enum class ParametricWaveformType
+{
     DC,
     Sine,
     Square,
@@ -58,40 +60,42 @@ enum class ParametricWaveformType {
 };
 
 // Signal generation parameters
-struct SignalParams {
+struct SignalParams
+{
     // DC parameters
     double dc_offset = 0.0;
-    
+
     // AC parameters
     double amplitude = 1.0;
-    double frequency = 1e3;      // 1 kHz default
+    double frequency = 1e3; // 1 kHz default
     double phase = 0.0;
-    
+
     // Pulse parameters
     double rise_time = 1e-9;
     double fall_time = 1e-9;
     double pulse_width = 500e-6;
     double period = 1e-3;
     double delay = 0.0;
-    
+
     // Exponential parameters
     double tau_rise = 1e-6;
     double tau_fall = 1e-6;
-    
+
     // Piecewise linear points
     std::vector<std::pair<double, double>> pwl_points;
-    
+
     // JIT expression
     std::string jit_expression;
-    
+
     // Common
     double t_start = 0.0;
     double t_stop = 1e-3;
-    double sample_rate = 1e6;    // 1 MHz default
+    double sample_rate = 1e6; // 1 MHz default
 };
 
 // Signal generation result
-struct SignalGenerationResult {
+struct SignalGenerationResult
+{
     std::vector<double> time_points;
     std::vector<double> values;
     bool success;
@@ -101,7 +105,8 @@ struct SignalGenerationResult {
 };
 
 // Smart Signal Item - extends basic waveform with JIT capabilities
-class SmartSignalItem {
+class SmartSignalItem
+{
 public:
     SmartSignalItem();
     SmartSignalItem(const std::string& name, SignalSourceType source_type);
@@ -127,8 +132,9 @@ public:
 
     // Signal generation
     SignalGenerationResult generateSignal(double t_start, double t_stop, double sample_rate);
-    SignalGenerationResult generateSignal() { 
-        return generateSignal(m_params.t_start, m_params.t_stop, m_params.sample_rate); 
+    SignalGenerationResult generateSignal()
+    {
+        return generateSignal(m_params.t_start, m_params.t_stop, m_params.sample_rate);
     }
 
     // Real-time evaluation (for JIT-compiled signals)
@@ -181,37 +187,39 @@ private:
     SignalSourceType m_source_type = SignalSourceType::Parametric;
     ParametricWaveformType m_waveform_type = ParametricWaveformType::Sine;
     SignalParams m_params;
-    
+
     // JIT state
     bool m_jit_compiled = false;
-    void* m_jit_update_func = nullptr;    // double (*)(double time, void* state)
+    void* m_jit_update_func = nullptr; // double (*)(double time, void* state)
     void* m_jit_state = nullptr;
-    
+
     // Generated data
     std::vector<double> m_time_points;
     std::vector<double> m_values;
-    
+
     // Display
     bool m_visible = true;
-    
+
     // Thread safety
     mutable std::mutex m_mutex;
 };
 
 // Signal group - manages related signals
-struct SignalGroup {
+struct SignalGroup
+{
     std::string name;
     std::vector<std::shared_ptr<SmartSignalItem>> signals;
-    
+
     void addSignal(std::shared_ptr<SmartSignalItem> signal);
     void removeSignal(const std::string& name);
     std::shared_ptr<SmartSignalItem> getSignal(const std::string& name) const;
-    
+
     SignalGenerationResult generateAll();
 };
 
 // Smart Signal Manager - manages all signal items
-class SmartSignalManager {
+class SmartSignalManager
+{
 public:
     static SmartSignalManager& instance();
 
@@ -254,4 +262,3 @@ private:
 };
 
 } // namespace Flux
-

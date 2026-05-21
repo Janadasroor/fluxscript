@@ -14,15 +14,15 @@
 // Temporary file to reconstruct src/compiler/codegen.cpp
 // This is a partial reconstruct focusing on the critical sections
 #include "flux/compiler/ast.h"
-#include "flux/compiler/parser.h"
 #include "flux/compiler/lexer.h"
-#include <llvm/IR/Verifier.h>
-#include <llvm/IR/DerivedTypes.h>
-#include <llvm/IR/Constants.h>
-#include <llvm/IR/Instructions.h>
-#include <llvm/ADT/STLExtras.h>
-#include <iostream>
+#include "flux/compiler/parser.h"
 #include <cmath>
+#include <iostream>
+#include <llvm/ADT/STLExtras.h>
+#include <llvm/IR/Constants.h>
+#include <llvm/IR/DerivedTypes.h>
+#include <llvm/IR/Instructions.h>
+#include <llvm/IR/Verifier.h>
 
 namespace Flux {
 

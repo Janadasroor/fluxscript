@@ -16,29 +16,33 @@
 
 #include "flux/compiler/ast.h"
 #include <map>
-#include <vector>
 #include <string>
+#include <vector>
 
 namespace Flux {
 
 // Schematic AST nodes for code-to-hardware pipeline
 
 // Component in schematic
-class SchematicComponent {
+class SchematicComponent
+{
 public:
-    std::string Name;        // R1, C1, U1, etc.
-    std::string Type;        // R, C, L, D, Q, U, etc.
-    std::string Value;       // 1k, 100n, etc.
-    std::string Footprint;   // 0402, SOT-23, etc.
-    double X, Y;            // Position on schematic
+    std::string Name;      // R1, C1, U1, etc.
+    std::string Type;      // R, C, L, D, Q, U, etc.
+    std::string Value;     // 1k, 100n, etc.
+    std::string Footprint; // 0402, SOT-23, etc.
+    double X, Y;           // Position on schematic
     std::map<std::string, std::string> Properties;
 
     SchematicComponent(const std::string& name, const std::string& type, const std::string& value)
-        : Name(name), Type(type), Value(value), X(0), Y(0) {}
+        : Name(name), Type(type), Value(value), X(0), Y(0)
+    {
+    }
 };
 
 // Connection between pins
-class SchematicConnection {
+class SchematicConnection
+{
 public:
     std::string FromComponent;
     std::string FromPin;
@@ -46,14 +50,16 @@ public:
     std::string ToPin;
     std::string NetName;
 
-    SchematicConnection(const std::string& from_comp, const std::string& from_pin,
-                       const std::string& to_comp, const std::string& to_pin)
-        : FromComponent(from_comp), FromPin(from_pin),
-          ToComponent(to_comp), ToPin(to_pin) {}
+    SchematicConnection(const std::string& from_comp, const std::string& from_pin, const std::string& to_comp,
+                        const std::string& to_pin)
+        : FromComponent(from_comp), FromPin(from_pin), ToComponent(to_comp), ToPin(to_pin)
+    {
+    }
 };
 
 // Net (named connection)
-class SchematicNet {
+class SchematicNet
+{
 public:
     std::string Name;
     std::vector<std::pair<std::string, std::string>> Connections; // (component, pin)
@@ -62,18 +68,19 @@ public:
 };
 
 // Port (I/O point)
-class SchematicPort {
+class SchematicPort
+{
 public:
     std::string Name;
-    std::string Type;  // input, output, bidirectional, power
+    std::string Type; // input, output, bidirectional, power
     std::string NetName;
 
-    SchematicPort(const std::string& name, const std::string& type)
-        : Name(name), Type(type) {}
+    SchematicPort(const std::string& name, const std::string& type) : Name(name), Type(type) {}
 };
 
 // Schematic block
-class SchematicExprAST : public ExprAST {
+class SchematicExprAST : public ExprAST
+{
     std::string Name;
     std::vector<SchematicComponent> Components;
     std::vector<SchematicConnection> Connections;
@@ -97,14 +104,17 @@ public:
 };
 
 // Export schematic to KiCad
-class ExportSchematicExprAST : public ExprAST {
+class ExportSchematicExprAST : public ExprAST
+{
     std::string SchematicName;
     std::string OutputFile;
-    std::string Format;  // kicad, spice, pdf
+    std::string Format; // kicad, spice, pdf
 
 public:
     ExportSchematicExprAST(const std::string& name, const std::string& output, const std::string& fmt)
-        : SchematicName(name), OutputFile(output), Format(fmt) {}
+        : SchematicName(name), OutputFile(output), Format(fmt)
+    {
+    }
     TypedValue codegen(CodegenContext& context) override;
 };
 

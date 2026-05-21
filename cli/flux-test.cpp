@@ -22,33 +22,37 @@
 
 namespace {
 llvm::cl::OptionCategory FluxTestCategory("flux-test options");
-llvm::cl::opt<std::string> InputFilename(
-    llvm::cl::Positional, llvm::cl::desc("<script.flux>"), llvm::cl::Required,
-    llvm::cl::cat(FluxTestCategory));
-llvm::cl::opt<unsigned> OptLevel(
-    llvm::cl::Prefix, llvm::cl::desc("Optimization level"), llvm::cl::init(2),
-    llvm::cl::cat(FluxTestCategory));
+llvm::cl::opt<std::string> InputFilename(llvm::cl::Positional, llvm::cl::desc("<script.flux>"), llvm::cl::Required,
+                                         llvm::cl::cat(FluxTestCategory));
+llvm::cl::opt<unsigned> OptLevel(llvm::cl::Prefix, llvm::cl::desc("Optimization level"), llvm::cl::init(2),
+                                 llvm::cl::cat(FluxTestCategory));
 
-Flux::OptimizationLevel toOptimizationLevel(unsigned level) {
+Flux::OptimizationLevel toOptimizationLevel(unsigned level)
+{
     switch (level) {
-        case 0: return Flux::OptimizationLevel::O0;
-        case 1: return Flux::OptimizationLevel::O1;
-        case 2: return Flux::OptimizationLevel::O2;
-        case 3: return Flux::OptimizationLevel::O3;
-        default: return Flux::OptimizationLevel::O2;
+    case 0:
+        return Flux::OptimizationLevel::O0;
+    case 1:
+        return Flux::OptimizationLevel::O1;
+    case 2:
+        return Flux::OptimizationLevel::O2;
+    case 3:
+        return Flux::OptimizationLevel::O3;
+    default:
+        return Flux::OptimizationLevel::O2;
     }
 }
-}
+} // namespace
 
-int main(int argc, char** argv) {
+int main(int argc, char** argv)
+{
     llvm::InitLLVM initLLVM(argc, argv);
     llvm::cl::HideUnrelatedOptions(FluxTestCategory);
     llvm::cl::ParseCommandLineOptions(argc, argv, "FluxScript test runner\n");
 
     auto input = llvm::MemoryBuffer::getFile(InputFilename);
     if (!input) {
-        llvm::errs() << "Could not read " << InputFilename << ": "
-                     << input.getError().message() << "\n";
+        llvm::errs() << "Could not read " << InputFilename << ": " << input.getError().message() << "\n";
         return 1;
     }
 

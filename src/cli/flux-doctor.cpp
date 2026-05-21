@@ -14,13 +14,14 @@
 // flux-doctor: AI Circuit Doctor - Automatic diagnostic analysis
 // Usage: flux-doctor <circuit.flux> [--severity warning|error] [--format text|json|markdown]
 
+#include "flux/doctor/circuit_doctor.h"
 #include <iostream>
 #include <string>
-#include "flux/doctor/circuit_doctor.h"
 
 using namespace Flux::Doctor;
 
-int main(int argc, char** argv) {
+int main(int argc, char** argv)
+{
     std::cout << "\n";
     std::cout << "\n";
     std::cout << "          FluxScript AI Circuit Doctor                   \n";
@@ -46,9 +47,12 @@ int main(int argc, char** argv) {
         std::string arg = argv[i];
         if (arg == "--severity" && i + 1 < argc) {
             std::string sev = argv[++i];
-            if (sev == "error") minSeverity = Severity::Error;
-            else if (sev == "warning") minSeverity = Severity::Warning;
-            else if (sev == "info") minSeverity = Severity::Info;
+            if (sev == "error")
+                minSeverity = Severity::Error;
+            else if (sev == "warning")
+                minSeverity = Severity::Warning;
+            else if (sev == "info")
+                minSeverity = Severity::Info;
         } else if (arg == "--format" && i + 1 < argc) {
             format = argv[++i];
         }

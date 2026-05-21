@@ -22,14 +22,15 @@
 #include <llvm/ADT/StringRef.h>
 
 #include "flux/compiler/ast.h"
-#include "flux/jit/flux_jit.h"
 #include "flux/compiler/module_loader.h"
+#include "flux/jit/flux_jit.h"
 
 namespace Flux {
 
 class Parser;
 
-struct TokenInfo {
+struct TokenInfo
+{
     int token = 0;
     std::string spelling;
     int line = 0;
@@ -39,7 +40,8 @@ struct TokenInfo {
     std::string rawText;
 };
 
-struct CompilerOptions {
+struct CompilerOptions
+{
     std::string inputName = "<stdin>";
     std::string moduleName = "Flux Module";
     OptimizationLevel optimizationLevel = OptimizationLevel::O2;
@@ -47,12 +49,14 @@ struct CompilerOptions {
     bool debugInfo = false;
 };
 
-struct CompileArtifacts {
+struct CompileArtifacts
+{
     std::unique_ptr<CodegenContext> codegenContext;
     std::map<std::string, FluxType> functionReturnTypes;
 };
 
-struct ParsedAST {
+struct ParsedAST
+{
     std::vector<std::unique_ptr<FunctionAST>> functions;
     std::vector<std::unique_ptr<SubcktAST>> subckts;
     std::vector<std::unique_ptr<ModelAST>> models;
@@ -69,7 +73,8 @@ struct ParsedAST {
     std::vector<std::unique_ptr<ExprAST>> hsources;
 };
 
-class CompilerInstance {
+class CompilerInstance
+{
 public:
     explicit CompilerInstance(CompilerOptions options = {});
 
@@ -81,16 +86,12 @@ public:
 private:
     std::unique_ptr<CodegenContext> createCodegenContext() const;
     void injectStandardLibrary(CodegenContext& context, std::map<std::string, FluxType>& returnTypes) const;
-    bool compileParser(Parser& parser, CodegenContext& context,
-                       std::map<std::string, FluxType>& returnTypes,
-                       std::string& error,
-                       std::map<std::string, bool>& importedModules,
+    bool compileParser(Parser& parser, CodegenContext& context, std::map<std::string, FluxType>& returnTypes,
+                       std::string& error, std::map<std::string, bool>& importedModules,
                        const std::vector<std::string>& symbols = {}) const;
     bool importModule(const std::string& moduleName, CodegenContext& context,
-                      std::map<std::string, FluxType>& returnTypes,
-                      std::string* error,
-                      std::map<std::string, bool>& importedModules,
-                      const std::vector<std::string>& symbols = {}) const;
+                      std::map<std::string, FluxType>& returnTypes, std::string* error,
+                      std::map<std::string, bool>& importedModules, const std::vector<std::string>& symbols = {}) const;
     std::string resolveImportPath(const std::string& moduleName) const;
 
     CompilerOptions m_options;

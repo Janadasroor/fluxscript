@@ -18,9 +18,9 @@
 
 #include "flux/compiler/parser.h"
 
+#include <algorithm>
 #include <iostream>
 #include <sstream>
-#include <algorithm>
 
 namespace Flux {
 

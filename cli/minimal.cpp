@@ -30,7 +30,8 @@
 
 namespace {
 
-enum class EmitMode {
+enum class EmitMode
+{
     Tokens,
     Check,
     LLVM,
@@ -40,71 +41,54 @@ enum class EmitMode {
 
 llvm::cl::OptionCategory FluxCategory("FluxScript options");
 
-llvm::cl::opt<std::string> InputFilename(
-    llvm::cl::Positional,
-    llvm::cl::desc("<script.flux>"),
-    llvm::cl::init("-"),
-    llvm::cl::cat(FluxCategory));
+llvm::cl::opt<std::string> InputFilename(llvm::cl::Positional, llvm::cl::desc("<script.flux>"), llvm::cl::init("-"),
+                                         llvm::cl::cat(FluxCategory));
 
 llvm::cl::opt<EmitMode> EmitAction(
-    "emit",
-    llvm::cl::desc("Select the compiler output mode"),
-    llvm::cl::values(
-        clEnumValN(EmitMode::Tokens, "tokens", "Lex and dump tokens"),
-        clEnumValN(EmitMode::Check, "check", "Parse and type/codegen-check without running"),
-        clEnumValN(EmitMode::LLVM, "llvm", "Emit generated LLVM IR"),
-        clEnumValN(EmitMode::JIT, "jit", "Compile and run with the LLVM JIT"),
-        clEnumValN(EmitMode::MLIR, "mlir", "Emit MLIR from the optional MLIR integration path")),
-    llvm::cl::init(EmitMode::JIT),
-    llvm::cl::cat(FluxCategory));
+    "emit", llvm::cl::desc("Select the compiler output mode"),
+    llvm::cl::values(clEnumValN(EmitMode::Tokens, "tokens", "Lex and dump tokens"),
+                     clEnumValN(EmitMode::Check, "check", "Parse and type/codegen-check without running"),
+                     clEnumValN(EmitMode::LLVM, "llvm", "Emit generated LLVM IR"),
+                     clEnumValN(EmitMode::JIT, "jit", "Compile and run with the LLVM JIT"),
+                     clEnumValN(EmitMode::MLIR, "mlir", "Emit MLIR from the optional MLIR integration path")),
+    llvm::cl::init(EmitMode::JIT), llvm::cl::cat(FluxCategory));
 
-llvm::cl::opt<unsigned> OptLevel(
-    llvm::cl::Prefix,
-    llvm::cl::desc("Optimization level"),
-    llvm::cl::init(2),
-    llvm::cl::cat(FluxCategory));
+llvm::cl::opt<unsigned> OptLevel(llvm::cl::Prefix, llvm::cl::desc("Optimization level"), llvm::cl::init(2),
+                                 llvm::cl::cat(FluxCategory));
 
-llvm::cl::opt<std::string> EntryPoint(
-    "entry",
-    llvm::cl::desc("Function to invoke in JIT mode"),
-    llvm::cl::init("__anon_expr"),
-    llvm::cl::cat(FluxCategory));
+llvm::cl::opt<std::string> EntryPoint("entry", llvm::cl::desc("Function to invoke in JIT mode"),
+                                      llvm::cl::init("__anon_expr"), llvm::cl::cat(FluxCategory));
 
-llvm::cl::opt<bool> NoRun(
-    "no-run",
-    llvm::cl::desc("Compile in JIT mode without invoking the entry point"),
-    llvm::cl::init(false),
-    llvm::cl::cat(FluxCategory));
+llvm::cl::opt<bool> NoRun("no-run", llvm::cl::desc("Compile in JIT mode without invoking the entry point"),
+                          llvm::cl::init(false), llvm::cl::cat(FluxCategory));
 
-llvm::cl::opt<bool> ProfileMode(
-    "profile",
-    llvm::cl::desc("Measure JIT compile and run time"),
-    llvm::cl::init(false),
-    llvm::cl::cat(FluxCategory));
+llvm::cl::opt<bool> ProfileMode("profile", llvm::cl::desc("Measure JIT compile and run time"), llvm::cl::init(false),
+                                llvm::cl::cat(FluxCategory));
 
-llvm::cl::opt<int> Iterations(
-    "iterations",
-    llvm::cl::desc("Number of entry-point invocations for profiling"),
-    llvm::cl::init(1),
-    llvm::cl::cat(FluxCategory));
+llvm::cl::opt<int> Iterations("iterations", llvm::cl::desc("Number of entry-point invocations for profiling"),
+                              llvm::cl::init(1), llvm::cl::cat(FluxCategory));
 
-llvm::cl::opt<bool> EnableCache(
-    "cache",
-    llvm::cl::desc("Enable the on-disk JIT cache"),
-    llvm::cl::init(true),
-    llvm::cl::cat(FluxCategory));
+llvm::cl::opt<bool> EnableCache("cache", llvm::cl::desc("Enable the on-disk JIT cache"), llvm::cl::init(true),
+                                llvm::cl::cat(FluxCategory));
 
-Flux::OptimizationLevel toOptimizationLevel(unsigned level) {
+Flux::OptimizationLevel toOptimizationLevel(unsigned level)
+{
     switch (level) {
-        case 0: return Flux::OptimizationLevel::O0;
-        case 1: return Flux::OptimizationLevel::O1;
-        case 2: return Flux::OptimizationLevel::O2;
-        case 3: return Flux::OptimizationLevel::O3;
-        default: return Flux::OptimizationLevel::O2;
+    case 0:
+        return Flux::OptimizationLevel::O0;
+    case 1:
+        return Flux::OptimizationLevel::O1;
+    case 2:
+        return Flux::OptimizationLevel::O2;
+    case 3:
+        return Flux::OptimizationLevel::O3;
+    default:
+        return Flux::OptimizationLevel::O2;
     }
 }
 
-bool readInput(std::string& code, std::string& error) {
+bool readInput(std::string& code, std::string& error)
+{
     auto bufferOrErr = llvm::MemoryBuffer::getFileOrSTDIN(InputFilename);
     if (!bufferOrErr) {
         error = bufferOrErr.getError().message();
@@ -115,7 +99,8 @@ bool readInput(std::string& code, std::string& error) {
     return true;
 }
 
-void printResult(const Flux::FluxValue& result) {
+void printResult(const Flux::FluxValue& result)
+{
     if (std::holds_alternative<double>(result)) {
         llvm::outs() << "Result: " << std::get<double>(result) << "\n";
         return;
@@ -128,9 +113,8 @@ void printResult(const Flux::FluxValue& result) {
         } else if (value.real() == 0.0) {
             llvm::outs() << "Result: " << value.imag() << "j\n";
         } else {
-            llvm::outs() << "Result: " << value.real()
-                         << (value.imag() >= 0 ? " + " : " - ")
-                         << std::abs(value.imag()) << "j\n";
+            llvm::outs() << "Result: " << value.real() << (value.imag() >= 0 ? " + " : " - ") << std::abs(value.imag())
+                         << "j\n";
         }
         return;
     }
@@ -143,8 +127,8 @@ void printResult(const Flux::FluxValue& result) {
     if (std::holds_alternative<Flux::MatrixResult>(result)) {
         const auto value = std::get<Flux::MatrixResult>(result);
         if (value.ptr) {
-            llvm::outs() << "Matrix Result (" << flux_matrix_rows(value.ptr)
-                         << "x" << flux_matrix_cols(value.ptr) << "):\n";
+            llvm::outs() << "Matrix Result (" << flux_matrix_rows(value.ptr) << "x" << flux_matrix_cols(value.ptr)
+                         << "):\n";
             flux_print_matrix(value.ptr);
         } else {
             llvm::outs() << "Matrix Result (Empty)\n";
@@ -152,7 +136,8 @@ void printResult(const Flux::FluxValue& result) {
     }
 }
 
-int runJIT(const std::string& code) {
+int runJIT(const std::string& code)
+{
     auto& engine = Flux::JITEngine::instance();
     engine.initialize();
     engine.setOptimizationLevel(toOptimizationLevel(OptLevel));
@@ -160,8 +145,7 @@ int runJIT(const std::string& code) {
 
     if (ProfileMode) {
         std::string error;
-        const auto profile = Flux::Tooling::profileScript(
-            engine, code, EntryPoint, Iterations, &error);
+        const auto profile = Flux::Tooling::profileScript(engine, code, EntryPoint, Iterations, &error);
         if (!error.empty()) {
             llvm::errs() << "Profile Error: " << error << "\n";
             return 1;
@@ -187,9 +171,7 @@ int runJIT(const std::string& code) {
     std::string actualEntryPoint = EntryPoint;
     if (actualEntryPoint == "__anon_expr") {
         actualEntryPoint = "__anon_expr";
-
     }
-
 
     const auto result = engine.callFunction(actualEntryPoint, {}, &error);
     if (!error.empty()) {
@@ -201,7 +183,8 @@ int runJIT(const std::string& code) {
     return 0;
 }
 
-int dumpTokens(const std::string& code) {
+int dumpTokens(const std::string& code)
+{
     Flux::CompilerOptions options;
     options.inputName = InputFilename;
     Flux::CompilerInstance compiler(options);
@@ -213,14 +196,13 @@ int dumpTokens(const std::string& code) {
     }
 
     for (const auto& token : tokens) {
-        llvm::outs() << token.line << ":" << token.column
-                     << "  " << token.token
-                     << "  " << token.spelling << "\n";
+        llvm::outs() << token.line << ":" << token.column << "  " << token.token << "  " << token.spelling << "\n";
     }
     return 0;
 }
 
-int checkOnly(const std::string& code) {
+int checkOnly(const std::string& code)
+{
     Flux::CompilerOptions options;
     options.inputName = InputFilename;
     options.moduleName = InputFilename == "-" ? std::string("stdin") : std::string(InputFilename);
@@ -237,7 +219,8 @@ int checkOnly(const std::string& code) {
     return 0;
 }
 
-int emitLLVM(const std::string& code) {
+int emitLLVM(const std::string& code)
+{
     Flux::CompilerOptions options;
     options.inputName = InputFilename;
     options.moduleName = InputFilename == "-" ? std::string("stdin") : std::string(InputFilename);
@@ -254,7 +237,8 @@ int emitLLVM(const std::string& code) {
     return 0;
 }
 
-int emitMLIR(const std::string& code) {
+int emitMLIR(const std::string& code)
+{
     const auto result = Flux::MLIR::emitModule(code);
     if (!result.ok) {
         llvm::errs() << "MLIR Error: " << result.error << "\n";
@@ -267,7 +251,8 @@ int emitMLIR(const std::string& code) {
 
 } // namespace
 
-int main(int argc, char** argv) {
+int main(int argc, char** argv)
+{
     llvm::InitLLVM initLLVM(argc, argv);
     llvm::cl::HideUnrelatedOptions(FluxCategory);
     llvm::cl::ParseCommandLineOptions(argc, argv, "FluxScript LLVM driver\n");
@@ -280,22 +265,21 @@ int main(int argc, char** argv) {
     std::string code;
     std::string error;
     if (!readInput(code, error)) {
-        llvm::errs() << "Error: Could not read input '" << InputFilename
-                     << "': " << error << "\n";
+        llvm::errs() << "Error: Could not read input '" << InputFilename << "': " << error << "\n";
         return 1;
     }
 
     switch (EmitAction) {
-        case EmitMode::Tokens:
-            return dumpTokens(code);
-        case EmitMode::Check:
-            return checkOnly(code);
-        case EmitMode::LLVM:
-            return emitLLVM(code);
-        case EmitMode::JIT:
-            return runJIT(code);
-        case EmitMode::MLIR:
-            return emitMLIR(code);
+    case EmitMode::Tokens:
+        return dumpTokens(code);
+    case EmitMode::Check:
+        return checkOnly(code);
+    case EmitMode::LLVM:
+        return emitLLVM(code);
+    case EmitMode::JIT:
+        return runJIT(code);
+    case EmitMode::MLIR:
+        return emitMLIR(code);
     }
 
     llvm::errs() << "Unknown emit mode\n";

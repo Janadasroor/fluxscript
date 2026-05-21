@@ -54,14 +54,14 @@ void flux_update_state(double time, double dt, const char** node_names, double* 
 // ============================================================================
 
 double flux_register_bsource(const char* name, const char* pos_node, const char* neg_node, const char* type);
-double flux_register_esource(const char* name, const char* pos_node, const char* neg_node,
-                             const char* ctrl_pos, const char* ctrl_neg, double gain);
-double flux_register_fsource(const char* name, const char* pos_node, const char* neg_node,
-                             const char* vsense, double gain);
-double flux_register_gsource(const char* name, const char* pos_node, const char* neg_node,
-                             const char* ctrl_pos, const char* ctrl_neg, double transcond);
-double flux_register_hsource(const char* name, const char* pos_node, const char* neg_node,
-                             const char* vsense, double transres);
+double flux_register_esource(const char* name, const char* pos_node, const char* neg_node, const char* ctrl_pos,
+                             const char* ctrl_neg, double gain);
+double flux_register_fsource(const char* name, const char* pos_node, const char* neg_node, const char* vsense,
+                             double gain);
+double flux_register_gsource(const char* name, const char* pos_node, const char* neg_node, const char* ctrl_pos,
+                             const char* ctrl_neg, double transcond);
+double flux_register_hsource(const char* name, const char* pos_node, const char* neg_node, const char* vsense,
+                             double transres);
 
 // ============================================================================
 // Analysis Control
@@ -86,8 +86,8 @@ double flux_register_ic(const char* node_name, double value);
 // ============================================================================
 
 // This function is called by ngspice during transient analysis
-double flux_evaluate_bsource(const char* bsource_name, double time, double dt,
-                             const char** node_names, double* node_values, int num_nodes);
+double flux_evaluate_bsource(const char* bsource_name, double time, double dt, const char** node_names,
+                             double* node_values, int num_nodes);
 
 // Print simulation summary
 void flux_print_summary(void);

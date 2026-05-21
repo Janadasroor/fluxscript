@@ -18,7 +18,8 @@
 
 namespace Flux::MLIR {
 
-struct EmitResult {
+struct EmitResult
+{
     bool ok = false;
     std::string output;
     std::string error;

@@ -19,7 +19,8 @@
 
 #include "flux/tooling/package_manager.h"
 
-void printHelp() {
+void printHelp()
+{
     std::cout << "\n";
     std::cout << "\n";
     std::cout << "       FLUXSCRIPT PACKAGE MANAGER                       \n";
@@ -51,20 +52,22 @@ void printHelp() {
     std::cout << "\n";
 }
 
-void printVersion() {
+void printVersion()
+{
     std::cout << "FluxScript Package Manager v1.0.0\n";
     std::cout << "Copyright  2026 FluxScript Project\n";
 }
 
-int main(int argc, char** argv) {
+int main(int argc, char** argv)
+{
     if (argc < 2) {
         printHelp();
         return 0;
     }
-    
+
     std::string command = argv[1];
     std::string registryUrl = "https://packages.fluxscript.org";
-    
+
     // Parse global options
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
@@ -78,15 +81,15 @@ int main(int argc, char** argv) {
             return 0;
         }
     }
-    
+
     // Initialize package manager
     Flux::PackageManager::instance().initialize(registryUrl);
-    
+
     // Execute command
     if (command == "search") {
         std::string query = (argc > 2) ? argv[2] : "*";
         auto results = Flux::PackageManager::instance().search(query);
-        
+
     } else if (command == "install") {
         if (argc < 3) {
             std::cerr << "Error: Package name required\n";
@@ -95,9 +98,9 @@ int main(int argc, char** argv) {
         }
         std::string packageName = argv[2];
         std::string version = (argc > 3) ? argv[3] : "";
-        
+
         auto status = Flux::PackageManager::instance().install(packageName, version);
-        
+
         if (status == Flux::InstallStatus::InstallSuccess) {
             std::cout << "\n Package installed successfully!\n";
         } else if (status == Flux::InstallStatus::InstallAlreadyInstalled) {
@@ -106,7 +109,7 @@ int main(int argc, char** argv) {
             std::cerr << "\n Failed to install package.\n";
             return 1;
         }
-        
+
     } else if (command == "uninstall") {
         if (argc < 3) {
             std::cerr << "Error: Package name required\n";
@@ -114,18 +117,18 @@ int main(int argc, char** argv) {
         }
         std::string packageName = argv[2];
         Flux::PackageManager::instance().uninstall(packageName);
-        
+
     } else if (command == "update") {
         std::string packageName = (argc > 2) ? argv[2] : "";
         Flux::PackageManager::instance().update(packageName);
-        
+
     } else if (command == "list") {
         std::cout << "\n\n";
         std::cout << "          INSTALLED PACKAGES                            \n";
         std::cout << "\n";
-        
+
         auto packages = Flux::PackageManager::instance().listInstalled();
-        
+
         if (packages.empty()) {
             std::cout << "   No packages installed.                              \n";
         } else {
@@ -134,9 +137,9 @@ int main(int argc, char** argv) {
                 std::cout << "    " << std::left << std::setw(48) << line << "\n";
             }
         }
-        
+
         std::cout << "\n";
-        
+
     } else if (command == "info") {
         if (argc < 3) {
             std::cerr << "Error: Package name required\n";
@@ -144,7 +147,7 @@ int main(int argc, char** argv) {
         }
         std::string packageName = argv[2];
         auto info = Flux::PackageManager::instance().getPackageInfo(packageName);
-        
+
         std::cout << "\n\n";
         std::cout << "          PACKAGE INFORMATION                           \n";
         std::cout << "\n";
@@ -154,16 +157,16 @@ int main(int argc, char** argv) {
         std::cout << " Author: " << std::left << std::setw(48) << info.author << "\n";
         std::cout << " License: " << std::left << std::setw(47) << info.license << "\n";
         std::cout << "\n";
-        
+
     } else if (command == "repo") {
         if (argc < 3) {
             std::cerr << "Error: Repository command required\n";
             std::cerr << "Usage: flux-pkg repo <add|remove|list> [args]\n";
             return 1;
         }
-        
+
         std::string repoCommand = argv[2];
-        
+
         if (repoCommand == "add") {
             if (argc < 5) {
                 std::cerr << "Error: Name and URL required\n";
@@ -173,7 +176,7 @@ int main(int argc, char** argv) {
             std::string name = argv[3];
             std::string url = argv[4];
             Flux::PackageManager::instance().addRepository(name, url);
-            
+
         } else if (repoCommand == "remove") {
             if (argc < 3) {
                 std::cerr << "Error: Repository name required\n";
@@ -181,29 +184,28 @@ int main(int argc, char** argv) {
             }
             std::string name = argv[3];
             Flux::PackageManager::instance().removeRepository(name);
-            
+
         } else if (repoCommand == "list") {
             std::cout << "\n\n";
             std::cout << "          REPOSITORIES                                  \n";
             std::cout << "\n";
-            
+
             auto repos = Flux::PackageManager::instance().listRepositories();
             for (const auto& [name, url] : repos) {
-                std::cout << "    " << std::left << std::setw(20) << name 
-                          << std::setw(30) << url << "\n";
+                std::cout << "    " << std::left << std::setw(20) << name << std::setw(30) << url << "\n";
             }
-            
+
             std::cout << "\n";
         }
-        
+
     } else {
         std::cerr << "Unknown command: " << command << "\n";
         printHelp();
         return 1;
     }
-    
+
     // Cleanup
     Flux::PackageManager::instance().finalize();
-    
+
     return 0;
 }

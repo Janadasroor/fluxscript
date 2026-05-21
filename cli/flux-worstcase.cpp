@@ -14,22 +14,24 @@
 // flux-worstcase: Automated worst-case corner analysis
 // Usage: flux-worstcase <circuit.flux> [--param Name:Nominal:Tolerance] [--spec Min:Max]
 
-#include <iostream>
-#include <vector>
-#include <string>
-#include <algorithm>
-#include <sstream>
 #include "flux/analysis/advanced_analysis.h"
+#include <algorithm>
+#include <iostream>
+#include <sstream>
+#include <string>
+#include <vector>
 
 using namespace Flux::AdvancedAnalysis;
 
-struct ParamDef {
+struct ParamDef
+{
     std::string name;
     double nominal;
     double tolerance;
 };
 
-int main(int argc, char** argv) {
+int main(int argc, char** argv)
+{
     std::cout << "\n";
     std::cout << "\n";
     std::cout << "          FluxScript Worst-Case Analyzer                 \n";
@@ -72,8 +74,8 @@ int main(int argc, char** argv) {
     // Default demo if no params provided
     if (params.empty()) {
         std::cout << "  No parameters specified. Running demo with R1 and R2...\n";
-        params.push_back({"R1", 10000.0, 100.0});   // 10k +/- 1%
-        params.push_back({"R2", 20000.0, 200.0});   // 20k +/- 1%
+        params.push_back({"R1", 10000.0, 100.0}); // 10k +/- 1%
+        params.push_back({"R2", 20000.0, 200.0}); // 20k +/- 1%
     }
 
     std::cout << " Analyzing: " << filename << "\n";

@@ -17,90 +17,119 @@
 
 #include "flux/tooling/example_gallery.h"
 #include "flux/jit_engine.h"
-#include <iostream>
-#include <fstream>
-#include <sstream>
 #include <algorithm>
 #include <filesystem>
+#include <fstream>
+#include <iostream>
 #include <mutex>
+#include <sstream>
 
 namespace fs = std::filesystem;
 
 namespace Flux {
 
-ExampleGallery& ExampleGallery::instance() {
+ExampleGallery& ExampleGallery::instance()
+{
     static ExampleGallery instance;
     return instance;
 }
 
-void ExampleGallery::initialize(const std::string& examples_dir) {
+void ExampleGallery::initialize(const std::string& examples_dir)
+{
     std::lock_guard<std::mutex> lock(m_mutex);
-    if (m_initialized) return;
+    if (m_initialized)
+        return;
 
     // Define categories
     {
         CategorySummary& c = m_categories["math"];
-        c.name = "Math & Arithmetic"; c.description = "Basic math operations, functions, and computations"; c.icon = "";
+        c.name = "Math & Arithmetic";
+        c.description = "Basic math operations, functions, and computations";
+        c.icon = "";
     }
     {
         CategorySummary& c = m_categories["control_flow"];
-        c.name = "Control Flow"; c.description = "If/else, loops, lambda expressions"; c.icon = "";
+        c.name = "Control Flow";
+        c.description = "If/else, loops, lambda expressions";
+        c.icon = "";
     }
     {
         CategorySummary& c = m_categories["types"];
-        c.name = "Type System"; c.description = "Type checking, complex numbers, integers"; c.icon = "";
+        c.name = "Type System";
+        c.description = "Type checking, complex numbers, integers";
+        c.icon = "";
     }
     {
         CategorySummary& c = m_categories["matrix"];
-        c.name = "Matrix & Vector"; c.description = "Linear algebra, SIMD operations"; c.icon = "";
+        c.name = "Matrix & Vector";
+        c.description = "Linear algebra, SIMD operations";
+        c.icon = "";
     }
     {
         CategorySummary& c = m_categories["spice"];
-        c.name = "SPICE & Circuits"; c.description = "Circuit simulation, netlists, analysis"; c.icon = "";
+        c.name = "SPICE & Circuits";
+        c.description = "Circuit simulation, netlists, analysis";
+        c.icon = "";
     }
     {
         CategorySummary& c = m_categories["signal"];
-        c.name = "Signal Processing"; c.description = "Waveforms, modulation, FFT"; c.icon = "";
+        c.name = "Signal Processing";
+        c.description = "Waveforms, modulation, FFT";
+        c.icon = "";
     }
     {
         CategorySummary& c = m_categories["analysis"];
-        c.name = "Advanced Analysis"; c.description = "Monte Carlo, optimization, stability"; c.icon = "";
+        c.name = "Advanced Analysis";
+        c.description = "Monte Carlo, optimization, stability";
+        c.icon = "";
     }
     {
         CategorySummary& c = m_categories["string"];
-        c.name = "String Operations"; c.description = "String manipulation and text processing"; c.icon = "";
+        c.name = "String Operations";
+        c.description = "String manipulation and text processing";
+        c.icon = "";
     }
     {
         CategorySummary& c = m_categories["bitwise"];
-        c.name = "Bitwise & Logical"; c.description = "Bit operations, boolean logic"; c.icon = "";
+        c.name = "Bitwise & Logical";
+        c.description = "Bit operations, boolean logic";
+        c.icon = "";
     }
     {
         CategorySummary& c = m_categories["stdlib"];
-        c.name = "Standard Library"; c.description = "Built-in functions and utilities"; c.icon = "";
+        c.name = "Standard Library";
+        c.description = "Built-in functions and utilities";
+        c.icon = "";
     }
     {
         CategorySummary& c = m_categories["compiler"];
-        c.name = "Compiler Tests"; c.description = "Phase tests and compiler features"; c.icon = "";
+        c.name = "Compiler Tests";
+        c.description = "Phase tests and compiler features";
+        c.icon = "";
     }
     {
         CategorySummary& c = m_categories["demo"];
-        c.name = "Demos"; c.description = "Showcase examples and tutorials"; c.icon = "";
+        c.name = "Demos";
+        c.description = "Showcase examples and tutorials";
+        c.icon = "";
     }
 
     scanDirectory(examples_dir);
     m_initialized = true;
 
-    std::cout << "[ExampleGallery] Initialized with " << m_examples.size() << " examples in "
-              << m_categories.size() << " categories" << std::endl;
+    std::cout << "[ExampleGallery] Initialized with " << m_examples.size() << " examples in " << m_categories.size()
+              << " categories" << std::endl;
 }
 
-void ExampleGallery::finalize() {
+void ExampleGallery::finalize()
+{
     std::lock_guard<std::mutex> lock(m_mutex);
     m_examples.clear();
     m_initialized = false;
 }
 
-void ExampleGallery::scanDirectory(const std::string& dir) {
+void ExampleGallery::scanDirectory(const std::string& dir)
+{
     try {
         for (const auto& entry : fs::directory_iterator(dir)) {
             if (entry.is_regular_file() && entry.path().extension() == ".flux") {
@@ -128,7 +157,8 @@ void ExampleGallery::scanDirectory(const std::string& dir) {
     }
 }
 
-void ExampleGallery::categorizeExample(ExampleEntry& entry) {
+void ExampleGallery::categorizeExample(ExampleEntry& entry)
+{
     // Generate tags from content
     std::istringstream stream(entry.source_preview);
     std::string line;
@@ -136,9 +166,12 @@ void ExampleGallery::categorizeExample(ExampleEntry& entry) {
         if (line.find("monte_carlo") != std::string::npos || line.find("monte carlo") != std::string::npos) {
             entry.tags.push_back("monte-carlo");
         }
-        if (line.find("fft") != std::string::npos) entry.tags.push_back("fft");
-        if (line.find("matrix") != std::string::npos) entry.tags.push_back("matrix");
-        if (line.find("plot") != std::string::npos) entry.tags.push_back("plotting");
+        if (line.find("fft") != std::string::npos)
+            entry.tags.push_back("fft");
+        if (line.find("matrix") != std::string::npos)
+            entry.tags.push_back("matrix");
+        if (line.find("plot") != std::string::npos)
+            entry.tags.push_back("plotting");
         if (line.find("sine") != std::string::npos || line.find("sin(") != std::string::npos) {
             entry.tags.push_back("trigonometry");
         }
@@ -149,19 +182,20 @@ void ExampleGallery::categorizeExample(ExampleEntry& entry) {
     entry.tags.erase(std::unique(entry.tags.begin(), entry.tags.end()), entry.tags.end());
 }
 
-std::vector<ExampleEntry> ExampleGallery::getAllExamples() const {
+std::vector<ExampleEntry> ExampleGallery::getAllExamples() const
+{
     std::lock_guard<std::mutex> lock(m_mutex);
     std::vector<ExampleEntry> result;
     for (const auto& [name, entry] : m_examples) {
         result.push_back(entry);
     }
-    std::sort(result.begin(), result.end(), [](const ExampleEntry& a, const ExampleEntry& b) {
-        return a.name < b.name;
-    });
+    std::sort(result.begin(), result.end(),
+              [](const ExampleEntry& a, const ExampleEntry& b) { return a.name < b.name; });
     return result;
 }
 
-std::vector<ExampleEntry> ExampleGallery::getExamplesByCategory(const std::string& category) const {
+std::vector<ExampleEntry> ExampleGallery::getExamplesByCategory(const std::string& category) const
+{
     std::lock_guard<std::mutex> lock(m_mutex);
     std::vector<ExampleEntry> result;
     for (const auto& [name, entry] : m_examples) {
@@ -172,7 +206,8 @@ std::vector<ExampleEntry> ExampleGallery::getExamplesByCategory(const std::strin
     return result;
 }
 
-std::vector<std::string> ExampleGallery::getCategories() const {
+std::vector<std::string> ExampleGallery::getCategories() const
+{
     std::lock_guard<std::mutex> lock(m_mutex);
     std::vector<std::string> cats;
     for (const auto& [name, cat] : m_categories) {
@@ -184,12 +219,14 @@ std::vector<std::string> ExampleGallery::getCategories() const {
     return cats;
 }
 
-std::map<std::string, CategorySummary> ExampleGallery::getCategorySummaries() const {
+std::map<std::string, CategorySummary> ExampleGallery::getCategorySummaries() const
+{
     std::lock_guard<std::mutex> lock(m_mutex);
     return m_categories;
 }
 
-std::vector<ExampleEntry> ExampleGallery::search(const std::string& query) const {
+std::vector<ExampleEntry> ExampleGallery::search(const std::string& query) const
+{
     std::lock_guard<std::mutex> lock(m_mutex);
     std::vector<ExampleEntry> results;
     std::string q_lower = query;
@@ -212,63 +249,79 @@ std::vector<ExampleEntry> ExampleGallery::search(const std::string& query) const
             }
         }
 
-        if (match) results.push_back(entry);
+        if (match)
+            results.push_back(entry);
     }
 
     return results;
 }
 
-std::vector<ExampleEntry> ExampleGallery::filter(const GalleryFilter& filter) const {
+std::vector<ExampleEntry> ExampleGallery::filter(const GalleryFilter& filter) const
+{
     std::lock_guard<std::mutex> lock(m_mutex);
     std::vector<ExampleEntry> results;
 
     for (const auto& [name, entry] : m_examples) {
         bool match = true;
 
-        if (!filter.category.empty() && entry.category != filter.category) match = false;
-        if (!filter.difficulty.empty() && entry.difficulty != filter.difficulty) match = false;
-        if (filter.runnable_only && !entry.runnable) match = false;
+        if (!filter.category.empty() && entry.category != filter.category)
+            match = false;
+        if (!filter.difficulty.empty() && entry.difficulty != filter.difficulty)
+            match = false;
+        if (filter.runnable_only && !entry.runnable)
+            match = false;
 
         if (!filter.search_query.empty()) {
             std::string q = filter.search_query;
             std::transform(q.begin(), q.end(), q.begin(), ::tolower);
             std::string n = entry.name;
             std::transform(n.begin(), n.end(), n.begin(), ::tolower);
-            if (n.find(q) == std::string::npos) match = false;
+            if (n.find(q) == std::string::npos)
+                match = false;
         }
 
         if (!filter.tag.empty()) {
             bool has_tag = false;
             for (const auto& t : entry.tags) {
-                if (t == filter.tag) { has_tag = true; break; }
+                if (t == filter.tag) {
+                    has_tag = true;
+                    break;
+                }
             }
-            if (!has_tag) match = false;
+            if (!has_tag)
+                match = false;
         }
 
-        if (match) results.push_back(entry);
+        if (match)
+            results.push_back(entry);
     }
 
     return results;
 }
 
-const ExampleEntry* ExampleGallery::getExample(const std::string& name) const {
+const ExampleEntry* ExampleGallery::getExample(const std::string& name) const
+{
     std::lock_guard<std::mutex> lock(m_mutex);
     auto it = m_examples.find(name);
-    if (it == m_examples.end()) return nullptr;
+    if (it == m_examples.end())
+        return nullptr;
     return &it->second;
 }
 
-bool ExampleGallery::runExample(const std::string& name, std::string* output, std::string* error) {
+bool ExampleGallery::runExample(const std::string& name, std::string* output, std::string* error)
+{
     auto* entry = getExample(name);
     if (!entry) {
-        if (error) *error = "Example not found: " + name;
+        if (error)
+            *error = "Example not found: " + name;
         return false;
     }
 
     try {
         std::ifstream file(entry->path);
         if (!file.is_open()) {
-            if (error) *error = "Cannot open file: " + entry->path;
+            if (error)
+                *error = "Cannot open file: " + entry->path;
             return false;
         }
         std::string source((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
@@ -276,19 +329,23 @@ bool ExampleGallery::runExample(const std::string& name, std::string* output, st
         auto& jit = JITEngine::instance();
         std::string compile_error;
         if (!jit.compileScript(source, &compile_error)) {
-            if (error) *error = compile_error;
+            if (error)
+                *error = compile_error;
             return false;
         }
 
-        if (output) *output = "Compiled successfully";
+        if (output)
+            *output = "Compiled successfully";
         return true;
     } catch (const std::exception& e) {
-        if (error) *error = e.what();
+        if (error)
+            *error = e.what();
         return false;
     }
 }
 
-std::string ExampleGallery::generateCatalogMarkdown() const {
+std::string ExampleGallery::generateCatalogMarkdown() const
+{
     std::lock_guard<std::mutex> lock(m_mutex);
     std::ostringstream oss;
 
@@ -298,22 +355,26 @@ std::string ExampleGallery::generateCatalogMarkdown() const {
     int runnable = 0;
     std::map<std::string, int> by_cat;
     for (const auto& [name, entry] : m_examples) {
-        if (entry.runnable) runnable++;
+        if (entry.runnable)
+            runnable++;
         by_cat[entry.category]++;
     }
 
     oss << "**Runnable:** " << runnable << "/" << m_examples.size() << "\n\n";
 
     for (const auto& [cat_key, cat] : m_categories) {
-        if (cat.example_count == 0) continue;
+        if (cat.example_count == 0)
+            continue;
 
         oss << "\n## " << cat.icon << " " << cat.name << "\n\n";
         oss << cat.description << "\n\n";
 
         for (const auto& [name, entry] : m_examples) {
-            if (entry.category != cat_key) continue;
+            if (entry.category != cat_key)
+                continue;
             oss << "- `" << entry.name << "` (" << entry.difficulty << ")";
-            if (entry.runnable) oss << " ";
+            if (entry.runnable)
+                oss << " ";
             oss << "\n";
         }
         oss << "\n";
@@ -322,19 +383,23 @@ std::string ExampleGallery::generateCatalogMarkdown() const {
     return oss.str();
 }
 
-std::string ExampleGallery::generateCatalogHTML() const {
+std::string ExampleGallery::generateCatalogHTML() const
+{
     std::ostringstream oss;
     oss << "<!DOCTYPE html>\n<html><head><title>FluxScript Examples</title></head>\n<body>\n";
     oss << "<h1>FluxScript Example Gallery</h1>\n";
     oss << "<p>Total: " << m_examples.size() << " examples</p>\n";
 
     for (const auto& [cat_key, cat] : m_categories) {
-        if (cat.example_count == 0) continue;
+        if (cat.example_count == 0)
+            continue;
         oss << "<h2>" << cat.icon << " " << cat.name << "</h2>\n<ul>\n";
         for (const auto& [name, entry] : m_examples) {
-            if (entry.category != cat_key) continue;
+            if (entry.category != cat_key)
+                continue;
             oss << "<li><code>" << entry.name << "</code> (" << entry.difficulty << ")";
-            if (entry.runnable) oss << " ";
+            if (entry.runnable)
+                oss << " ";
             oss << "</li>\n";
         }
         oss << "</ul>\n";
@@ -344,16 +409,17 @@ std::string ExampleGallery::generateCatalogHTML() const {
     return oss.str();
 }
 
-std::string ExampleGallery::generateCatalogJSON() const {
+std::string ExampleGallery::generateCatalogJSON() const
+{
     std::ostringstream oss;
     oss << "{\n  \"total\": " << m_examples.size() << ",\n  \"examples\": [\n";
 
     bool first = true;
     for (const auto& [name, entry] : m_examples) {
-        if (!first) oss << ",\n";
-        oss << "    {\"name\": \"" << entry.name << "\", \"category\": \"" << entry.category
-            << "\", \"difficulty\": \"" << entry.difficulty << "\", \"runnable\": "
-            << (entry.runnable ? "true" : "false") << "}";
+        if (!first)
+            oss << ",\n";
+        oss << "    {\"name\": \"" << entry.name << "\", \"category\": \"" << entry.category << "\", \"difficulty\": \""
+            << entry.difficulty << "\", \"runnable\": " << (entry.runnable ? "true" : "false") << "}";
         first = false;
     }
 
@@ -361,30 +427,36 @@ std::string ExampleGallery::generateCatalogJSON() const {
     return oss.str();
 }
 
-int ExampleGallery::totalExamples() const {
+int ExampleGallery::totalExamples() const
+{
     std::lock_guard<std::mutex> lock(m_mutex);
     return m_examples.size();
 }
 
-int ExampleGallery::runnableExamples() const {
+int ExampleGallery::runnableExamples() const
+{
     std::lock_guard<std::mutex> lock(m_mutex);
     int count = 0;
     for (const auto& [name, entry] : m_examples) {
-        if (entry.runnable) count++;
+        if (entry.runnable)
+            count++;
     }
     return count;
 }
 
-int ExampleGallery::categories() const {
+int ExampleGallery::categories() const
+{
     std::lock_guard<std::mutex> lock(m_mutex);
     int count = 0;
     for (const auto& [name, cat] : m_categories) {
-        if (cat.example_count > 0) count++;
+        if (cat.example_count > 0)
+            count++;
     }
     return count;
 }
 
-std::map<std::string, int> ExampleGallery::examplesByCategory() const {
+std::map<std::string, int> ExampleGallery::examplesByCategory() const
+{
     std::lock_guard<std::mutex> lock(m_mutex);
     std::map<std::string, int> result;
     for (const auto& [name, entry] : m_examples) {
@@ -393,7 +465,8 @@ std::map<std::string, int> ExampleGallery::examplesByCategory() const {
     return result;
 }
 
-std::map<std::string, int> ExampleGallery::examplesByDifficulty() const {
+std::map<std::string, int> ExampleGallery::examplesByDifficulty() const
+{
     std::lock_guard<std::mutex> lock(m_mutex);
     std::map<std::string, int> result;
     for (const auto& [name, entry] : m_examples) {
@@ -406,9 +479,11 @@ std::map<std::string, int> ExampleGallery::examplesByDifficulty() const {
 // Private Helpers
 // ============================================================================
 
-std::string ExampleGallery::readFilePreview(const std::string& path, int max_lines) {
+std::string ExampleGallery::readFilePreview(const std::string& path, int max_lines)
+{
     std::ifstream file(path);
-    if (!file.is_open()) return "";
+    if (!file.is_open())
+        return "";
 
     std::ostringstream oss;
     std::string line;
@@ -428,7 +503,8 @@ std::string ExampleGallery::readFilePreview(const std::string& path, int max_lin
     return oss.str();
 }
 
-std::string ExampleGallery::inferCategoryFromName(const std::string& filename) {
+std::string ExampleGallery::inferCategoryFromName(const std::string& filename)
+{
     if (filename.find("monte_carlo") != std::string::npos || filename.find("worst_case") != std::string::npos ||
         filename.find("stability") != std::string::npos || filename.find("optimiz") != std::string::npos) {
         return "analysis";
@@ -456,15 +532,18 @@ std::string ExampleGallery::inferCategoryFromName(const std::string& filename) {
         filename.find("int_") != std::string::npos) {
         return "types";
     }
-    if (filename.find("string") != std::string::npos) return "string";
+    if (filename.find("string") != std::string::npos)
+        return "string";
     if (filename.find("bitwise") != std::string::npos || filename.find("logical") != std::string::npos) {
         return "bitwise";
     }
-    if (filename.find("stdlib") != std::string::npos) return "stdlib";
+    if (filename.find("stdlib") != std::string::npos)
+        return "stdlib";
     if (filename.find("phase") != std::string::npos || filename.find("tco") != std::string::npos) {
         return "compiler";
     }
-    if (filename.find("demo") != std::string::npos) return "demo";
+    if (filename.find("demo") != std::string::npos)
+        return "demo";
     if (filename.find("math") != std::string::npos || filename.find("trig") != std::string::npos ||
         filename.find("power") != std::string::npos || filename.find("statistics") != std::string::npos) {
         return "math";
@@ -473,7 +552,8 @@ std::string ExampleGallery::inferCategoryFromName(const std::string& filename) {
     return "demo"; // Default
 }
 
-std::string ExampleGallery::inferDifficulty(const std::string& filename) {
+std::string ExampleGallery::inferDifficulty(const std::string& filename)
+{
     if (filename.find("advanced") != std::string::npos || filename.find("monte_carlo") != std::string::npos ||
         filename.find("optimiz") != std::string::npos || filename.find("stability") != std::string::npos) {
         return "advanced";
@@ -485,16 +565,19 @@ std::string ExampleGallery::inferDifficulty(const std::string& filename) {
     return "intermediate";
 }
 
-bool ExampleGallery::testRunnable(const std::string& path) {
+bool ExampleGallery::testRunnable(const std::string& path)
+{
     // Simple heuristic: files that don't start with "test_" and don't have obvious syntax errors
     std::ifstream file(path);
-    if (!file.is_open()) return false;
+    if (!file.is_open())
+        return false;
 
     std::string first_line;
     std::getline(file, first_line);
 
     // Skip files that are clearly just test stubs
-    if (first_line.find("// TODO") != std::string::npos) return false;
+    if (first_line.find("// TODO") != std::string::npos)
+        return false;
 
     return true;
 }

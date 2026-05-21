@@ -12,20 +12,22 @@
  limitations under the License. */
 
 #include "flux/tooling/source_docs.h"
-#include <sstream>
 #include <algorithm>
 #include <fstream>
 #include <regex>
+#include <sstream>
 
 namespace Flux {
 namespace Tooling {
 
-SourceDocGenerator::SourceDocGenerator() {
+SourceDocGenerator::SourceDocGenerator()
+{
     m_apiDoc.projectName = "FluxScript";
     m_apiDoc.version = "1.0.0";
 }
 
-bool SourceDocGenerator::parseSource(const std::string& sourceCode, const std::string& filename) {
+bool SourceDocGenerator::parseSource(const std::string& sourceCode, const std::string& filename)
+{
     m_currentFile = filename;
     m_pendingDocComments.clear();
 
@@ -37,12 +39,13 @@ bool SourceDocGenerator::parseSource(const std::string& sourceCode, const std::s
     return true;
 }
 
-bool SourceDocGenerator::parseFile(const std::string& filename) {
+bool SourceDocGenerator::parseFile(const std::string& filename)
+{
     std::ifstream file(filename);
-    if (!file.is_open()) return false;
+    if (!file.is_open())
+        return false;
 
-    std::string content((std::istreambuf_iterator<char>(file)),
-                        std::istreambuf_iterator<char>());
+    std::string content((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
 
     return parseSource(content, filename);
 }
@@ -51,7 +54,8 @@ bool SourceDocGenerator::parseFile(const std::string& filename) {
 // Doc Comment Extraction
 // ============================================================================
 
-void SourceDocGenerator::extractDocComments(const std::string& source) {
+void SourceDocGenerator::extractDocComments(const std::string& source)
+{
     std::istringstream stream(source);
     std::string line;
     int lineNum = 0;
@@ -81,7 +85,8 @@ void SourceDocGenerator::extractDocComments(const std::string& source) {
             if (start != std::string::npos) {
                 text = text.substr(start);
                 size_t end = text.find_last_not_of(" \t\r\n");
-                if (end != std::string::npos) text = text.substr(0, end + 1);
+                if (end != std::string::npos)
+                    text = text.substr(0, end + 1);
             }
 
             comment.text = text;
@@ -94,7 +99,8 @@ void SourceDocGenerator::extractDocComments(const std::string& source) {
 // Function Extraction
 // ============================================================================
 
-void SourceDocGenerator::extractFunctions(const std::string& source) {
+void SourceDocGenerator::extractFunctions(const std::string& source)
+{
     std::istringstream stream(source);
     std::string line;
     int lineNum = 0;
@@ -107,19 +113,22 @@ void SourceDocGenerator::extractFunctions(const std::string& source) {
         size_t defPos = line.find("def ");
         size_t externPos = line.find("extern ");
 
-        size_t keywordPos = (defPos != std::string::npos) ? defPos :
-                           ((externPos != std::string::npos) ? externPos : std::string::npos);
+        size_t keywordPos =
+            (defPos != std::string::npos) ? defPos : ((externPos != std::string::npos) ? externPos : std::string::npos);
 
-        if (keywordPos == std::string::npos) continue;
+        if (keywordPos == std::string::npos)
+            continue;
 
         std::string keyword = (defPos != std::string::npos) ? "def" : "extern";
 
         // Extract function name
         size_t nameStart = keywordPos + keyword.size() + 1;
-        while (nameStart < line.size() && (line[nameStart] == ' ' || line[nameStart] == '\t')) nameStart++;
+        while (nameStart < line.size() && (line[nameStart] == ' ' || line[nameStart] == '\t'))
+            nameStart++;
 
         size_t nameEnd = line.find('(', nameStart);
-        if (nameEnd == std::string::npos) continue;
+        if (nameEnd == std::string::npos)
+            continue;
 
         std::string funcName = line.substr(nameStart, nameEnd - nameStart);
 
@@ -149,17 +158,20 @@ void SourceDocGenerator::extractFunctions(const std::string& source) {
         if (arrowPos != std::string::npos) {
             returnType = line.substr(arrowPos + 2);
             size_t end = returnType.find_first_of(" \t{;");
-            if (end != std::string::npos) returnType = returnType.substr(0, end);
+            if (end != std::string::npos)
+                returnType = returnType.substr(0, end);
             // Trim
             size_t start = returnType.find_first_not_of(" \t");
-            if (start != std::string::npos) returnType = returnType.substr(start);
+            if (start != std::string::npos)
+                returnType = returnType.substr(start);
         } else {
-            returnType = "double";  // Default
+            returnType = "double"; // Default
         }
 
         // Build signature
         std::string signature = keyword + " " + funcName + "(" + paramStr + ")";
-        if (!returnType.empty()) signature += " -> " + returnType;
+        if (!returnType.empty())
+            signature += " -> " + returnType;
 
         // Build function doc
         FunctionDoc funcDoc;
@@ -178,7 +190,7 @@ void SourceDocGenerator::extractFunctions(const std::string& source) {
                     funcDoc.docComment.text = it->second.text + "\n" + funcDoc.docComment.text;
                 }
             } else {
-                break;  // Stop at first non-doc line
+                break; // Stop at first non-doc line
             }
         }
 
@@ -201,7 +213,8 @@ void SourceDocGenerator::extractFunctions(const std::string& source) {
 // Type Extraction
 // ============================================================================
 
-void SourceDocGenerator::extractTypes(const std::string& source) {
+void SourceDocGenerator::extractTypes(const std::string& source)
+{
     std::istringstream stream(source);
     std::string line;
     int lineNum = 0;
@@ -241,14 +254,16 @@ void SourceDocGenerator::extractTypes(const std::string& source) {
 // Example Extraction
 // ============================================================================
 
-void SourceDocGenerator::extractExamples(const std::string& source) {
+void SourceDocGenerator::extractExamples(const std::string& source)
+{
     // Extract @example blocks from doc comments
     std::istringstream stream(source);
     std::string line;
 
     while (std::getline(stream, line)) {
         size_t examplePos = line.find("@example");
-        if (examplePos == std::string::npos) continue;
+        if (examplePos == std::string::npos)
+            continue;
 
         // This is handled in function extraction
     }
@@ -258,24 +273,30 @@ void SourceDocGenerator::extractExamples(const std::string& source) {
 // Query Functions
 // ============================================================================
 
-std::vector<FunctionDoc> SourceDocGenerator::getFunctions() const {
+std::vector<FunctionDoc> SourceDocGenerator::getFunctions() const
+{
     return m_apiDoc.topLevelFunctions;
 }
 
-std::vector<TypeDoc> SourceDocGenerator::getTypes() const {
+std::vector<TypeDoc> SourceDocGenerator::getTypes() const
+{
     return m_apiDoc.topLevelTypes;
 }
 
-const FunctionDoc* SourceDocGenerator::findFunction(const std::string& name) const {
+const FunctionDoc* SourceDocGenerator::findFunction(const std::string& name) const
+{
     for (auto& func : m_apiDoc.topLevelFunctions) {
-        if (func.name == name) return &func;
+        if (func.name == name)
+            return &func;
     }
     return nullptr;
 }
 
-const TypeDoc* SourceDocGenerator::findType(const std::string& name) const {
+const TypeDoc* SourceDocGenerator::findType(const std::string& name) const
+{
     for (auto& type : m_apiDoc.topLevelTypes) {
-        if (type.name == name) return &type;
+        if (type.name == name)
+            return &type;
     }
     return nullptr;
 }
@@ -284,7 +305,8 @@ const TypeDoc* SourceDocGenerator::findType(const std::string& name) const {
 // Output Generation
 // ============================================================================
 
-std::string SourceDocGenerator::generateMarkdown() const {
+std::string SourceDocGenerator::generateMarkdown() const
+{
     std::ostringstream oss;
 
     oss << "# " << m_apiDoc.projectName << " API Reference\n\n";
@@ -310,7 +332,8 @@ std::string SourceDocGenerator::generateMarkdown() const {
     return oss.str();
 }
 
-std::string SourceDocGenerator::generateHtml() const {
+std::string SourceDocGenerator::generateHtml() const
+{
     std::ostringstream oss;
 
     oss << "<!DOCTYPE html>\n<html>\n<head>\n";
@@ -368,7 +391,8 @@ std::string SourceDocGenerator::generateHtml() const {
     return oss.str();
 }
 
-std::string SourceDocGenerator::generateRst() const {
+std::string SourceDocGenerator::generateRst() const
+{
     std::ostringstream oss;
 
     oss << m_apiDoc.projectName << " API Reference\n";
@@ -402,7 +426,8 @@ std::string SourceDocGenerator::generateRst() const {
     return oss.str();
 }
 
-std::string SourceDocGenerator::generatePlainText() const {
+std::string SourceDocGenerator::generatePlainText() const
+{
     std::ostringstream oss;
 
     oss << m_apiDoc.projectName << " API Reference (v" << m_apiDoc.version << ")\n";
@@ -420,7 +445,8 @@ std::string SourceDocGenerator::generatePlainText() const {
         if (!func.parameters.empty()) {
             oss << "  Parameters: ";
             for (size_t i = 0; i < func.parameters.size(); ++i) {
-                if (i > 0) oss << ", ";
+                if (i > 0)
+                    oss << ", ";
                 oss << func.parameters[i];
             }
             oss << "\n";
@@ -446,7 +472,8 @@ std::string SourceDocGenerator::generatePlainText() const {
     return oss.str();
 }
 
-std::string SourceDocGenerator::generateJson() const {
+std::string SourceDocGenerator::generateJson() const
+{
     std::ostringstream oss;
 
     oss << "{\n";
@@ -456,14 +483,16 @@ std::string SourceDocGenerator::generateJson() const {
 
     for (size_t i = 0; i < m_apiDoc.topLevelFunctions.size(); ++i) {
         auto& func = m_apiDoc.topLevelFunctions[i];
-        if (i > 0) oss << ",\n";
+        if (i > 0)
+            oss << ",\n";
         oss << "    {\n";
         oss << "      \"name\": \"" << func.name << "\",\n";
         oss << "      \"signature\": \"" << func.signature << "\",\n";
         oss << "      \"description\": \"" << func.docComment.text << "\",\n";
         oss << "      \"parameters\": [";
         for (size_t j = 0; j < func.parameters.size(); ++j) {
-            if (j > 0) oss << ", ";
+            if (j > 0)
+                oss << ", ";
             oss << "\"" << func.parameters[j] << "\"";
         }
         oss << "],\n";
@@ -477,7 +506,8 @@ std::string SourceDocGenerator::generateJson() const {
     return oss.str();
 }
 
-std::string SourceDocGenerator::generateFunctionDoc(const FunctionDoc& func, const std::string& format) const {
+std::string SourceDocGenerator::generateFunctionDoc(const FunctionDoc& func, const std::string& format) const
+{
     if (format == "md") {
         std::ostringstream oss;
         oss << "### `" << func.name << "`\n\n";
@@ -501,7 +531,8 @@ std::string SourceDocGenerator::generateFunctionDoc(const FunctionDoc& func, con
     return func.signature;
 }
 
-std::string SourceDocGenerator::generateTypeDoc(const TypeDoc& type, const std::string& format) const {
+std::string SourceDocGenerator::generateTypeDoc(const TypeDoc& type, const std::string& format) const
+{
     if (format == "md") {
         std::ostringstream oss;
         oss << "### `" << type.name << "`\n\n";

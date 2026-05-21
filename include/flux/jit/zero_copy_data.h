@@ -19,37 +19,40 @@
 #ifndef FLUX_ZERO_COPY_DATA_H
 #define FLUX_ZERO_COPY_DATA_H
 
-#include <string>
-#include <vector>
+#include <atomic>
 #include <map>
 #include <memory>
 #include <mutex>
-#include <atomic>
+#include <string>
+#include <vector>
 
 namespace Flux {
 
 // Memory buffer descriptor for zero-copy access
-struct BufferDescriptor {
-    std::string name;           // Buffer name (e.g., "node_voltages", "branch_currents")
-    void* data_ptr = nullptr;   // Direct pointer to ngspice memory
-    size_t size_bytes = 0;      // Buffer size in bytes
-    size_t element_count = 0;   // Number of elements
-    size_t element_size = 0;    // Size of each element (typically 8 for double)
-    bool is_writeable = false;  // Can we write to this buffer?
-    bool is_valid = false;      // Is the buffer currently valid?
+struct BufferDescriptor
+{
+    std::string name;          // Buffer name (e.g., "node_voltages", "branch_currents")
+    void* data_ptr = nullptr;  // Direct pointer to ngspice memory
+    size_t size_bytes = 0;     // Buffer size in bytes
+    size_t element_count = 0;  // Number of elements
+    size_t element_size = 0;   // Size of each element (typically 8 for double)
+    bool is_writeable = false; // Can we write to this buffer?
+    bool is_valid = false;     // Is the buffer currently valid?
 };
 
 // Node mapping for direct access
-struct NodeMapping {
-    std::string node_name;      // SPICE node name (e.g., "V(out)", "I(V1)")
-    int vector_index = -1;      // Index in ngspice vector
-    double* direct_ptr = nullptr; // Direct pointer to memory location
+struct NodeMapping
+{
+    std::string node_name;              // SPICE node name (e.g., "V(out)", "I(V1)")
+    int vector_index = -1;              // Index in ngspice vector
+    double* direct_ptr = nullptr;       // Direct pointer to memory location
     BufferDescriptor* buffer = nullptr; // Which buffer this belongs to
-    bool is_voltage = true;     // true for voltage, false for current
+    bool is_voltage = true;             // true for voltage, false for current
 };
 
 // Zero-copy data manager
-class ZeroCopyDataManager {
+class ZeroCopyDataManager
+{
 public:
     static ZeroCopyDataManager& instance();
 
@@ -59,16 +62,16 @@ public:
     bool isInitialized() const { return m_initialized; }
 
     // Buffer management
-    bool registerBuffer(const std::string& name, void* data_ptr, size_t element_count, 
-                       bool is_writeable, std::string* error = nullptr);
+    bool registerBuffer(const std::string& name, void* data_ptr, size_t element_count, bool is_writeable,
+                        std::string* error = nullptr);
     bool unregisterBuffer(const std::string& name);
     BufferDescriptor* getBuffer(const std::string& name);
     const BufferDescriptor* getBuffer(const std::string& name) const;
     std::vector<std::string> getBufferNames() const;
 
     // Node mapping (high-level API)
-    bool mapNode(const std::string& node_name, const std::string& buffer_name, 
-                int vector_index, std::string* error = nullptr);
+    bool mapNode(const std::string& node_name, const std::string& buffer_name, int vector_index,
+                 std::string* error = nullptr);
     bool unmapNode(const std::string& node_name);
     NodeMapping* getNodeMapping(const std::string& node_name);
     const NodeMapping* getNodeMapping(const std::string& node_name) const;
@@ -107,7 +110,7 @@ private:
     std::map<std::string, NodeMapping> m_node_mappings;
     mutable std::mutex m_mutex;
     bool m_initialized = false;
-    
+
     // Statistics
     std::atomic<size_t> m_read_count{0};
     std::atomic<size_t> m_write_count{0};
@@ -118,25 +121,26 @@ private:
 
 // V() and I() runtime functions (called by JIT-compiled code)
 extern "C" {
-    // Voltage access - zero-copy read from ngspice memory
-    double flux_V(const char* node_name);
-    
-    // Current access - zero-copy read from ngspice memory
-    double flux_I(const char* branch_name);
-    
-    // Direct pointer access (for advanced usage)
-    double* flux_V_ptr(const char* node_name);
-    double* flux_I_ptr(const char* branch_name);
-    
-    // Bulk operations
-    int flux_get_all_voltages(double* buffer, int max_count);
-    int flux_get_all_currents(double* buffer, int max_count);
-    int flux_set_all_voltages(const double* buffer, int count);
-    int flux_set_all_currents(const double* buffer, int count);
+// Voltage access - zero-copy read from ngspice memory
+double flux_V(const char* node_name);
+
+// Current access - zero-copy read from ngspice memory
+double flux_I(const char* branch_name);
+
+// Direct pointer access (for advanced usage)
+double* flux_V_ptr(const char* node_name);
+double* flux_I_ptr(const char* branch_name);
+
+// Bulk operations
+int flux_get_all_voltages(double* buffer, int max_count);
+int flux_get_all_currents(double* buffer, int max_count);
+int flux_set_all_voltages(const double* buffer, int count);
+int flux_set_all_currents(const double* buffer, int count);
 }
 
 // Helper class for automatic node binding
-class NodeBinder {
+class NodeBinder
+{
 public:
     NodeBinder(const std::string& node_name);
     ~NodeBinder();

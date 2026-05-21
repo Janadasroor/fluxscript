@@ -13,13 +13,14 @@
 
 // FluxScript Language Server Protocol (LSP) Server
 // Provides IDE features: completions, diagnostics, hover, go-to-definition, signature help
+#include <cstdlib>
 #include <iostream>
 #include <string>
-#include <cstdlib>
 
 #include "flux/tooling/lsp_server.h"
 
-static void printUsage() {
+static void printUsage()
+{
     std::cerr << "Usage: flux-lsp [--stdio]\n";
     std::cerr << "\nFluxScript Language Server\n";
     std::cerr << "\nOptions:\n";
@@ -34,7 +35,8 @@ static void printUsage() {
     std::cerr << "  - workspace/symbol              Workspace-wide symbol search\n";
 }
 
-int main(int argc, char** argv) {
+int main(int argc, char** argv)
+{
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
         if (arg == "--help" || arg == "-h") {

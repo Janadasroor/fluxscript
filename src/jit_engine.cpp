@@ -12,46 +12,54 @@
  limitations under the License. */
 
 #include "flux/jit/flux_jit.h"
-#include <llvm/Support/Error.h>
 #include <llvm/Bitcode/BitcodeReader.h>
+#include <llvm/Support/Error.h>
 
 #ifdef emit
 #undef emit
 #endif
 
-#include "flux/jit_engine.h"
+#include "flux/compiler/module_loader.h"
 #include "flux/flux_eigen.h"
+#include "flux/jit_engine.h"
 #include "flux/runtime/flux_runtime.h"
 #include "flux/tooling/tooling.h"
-#include "flux/compiler/module_loader.h"
 
-#include <iostream>
 #include <filesystem>
+#include <iostream>
 
 namespace Flux {
 
-JITEngine& JITEngine::instance() {
+JITEngine& JITEngine::instance()
+{
     static JITEngine engine;
     return engine;
 }
 
 JITEngine::JITEngine() = default;
 
-JITEngine::~JITEngine() {
+JITEngine::~JITEngine()
+{
     finalize();
 }
 
-void JITEngine::setOptimizationLevel(OptimizationLevel level) {
-    if (m_jit) m_jit->setOptimizationLevel(level);
+void JITEngine::setOptimizationLevel(OptimizationLevel level)
+{
+    if (m_jit)
+        m_jit->setOptimizationLevel(level);
 }
 
-OptimizationLevel JITEngine::getOptimizationLevel() const {
-    if (m_jit) return m_jit->getOptimizationLevel();
+OptimizationLevel JITEngine::getOptimizationLevel() const
+{
+    if (m_jit)
+        return m_jit->getOptimizationLevel();
     return OptimizationLevel::O2;
 }
 
-void JITEngine::initialize() {
-    if (m_initialized) return;
+void JITEngine::initialize()
+{
+    if (m_initialized)
+        return;
     m_jit = std::make_unique<FluxJIT>(OptimizationLevel::O2);
     m_compilerOptions.moduleName = "FluxJITCore";
     m_compilerOptions.injectStdlib = true;
@@ -65,29 +73,36 @@ void JITEngine::initialize() {
     std::cout << "FluxScript C++ LLVM JIT Engine Initialized." << std::endl;
 }
 
-void JITEngine::registerFunction(const std::string& name, void* funcPtr) {
-    if (m_jit) m_jit->registerFunction(name, funcPtr);
+void JITEngine::registerFunction(const std::string& name, void* funcPtr)
+{
+    if (m_jit)
+        m_jit->registerFunction(name, funcPtr);
 }
 
-void JITEngine::registerEigenFunctions() {
-    if (!m_jit) return;
+void JITEngine::registerEigenFunctions()
+{
+    if (!m_jit)
+        return;
 
     registerRuntimeFunctions(*m_jit);
 }
 
-void JITEngine::finalize() {
+void JITEngine::finalize()
+{
     m_initialized = false;
     m_jit.reset();
     m_codegenCtx.reset();
 }
 
-bool JITEngine::isInitialized() const {
+bool JITEngine::isInitialized() const
+{
     return m_initialized;
 }
 
-
-bool JITEngine::compileScript(const std::string& code, std::string* error) {
-    if (!m_initialized) initialize();
+bool JITEngine::compileScript(const std::string& code, std::string* error)
+{
+    if (!m_initialized)
+        initialize();
     m_overloadedFunctions.clear();
     m_lastCompileUsedCache = false;
 
@@ -107,7 +122,8 @@ bool JITEngine::compileScript(const std::string& code, std::string* error) {
             return true;
         }
         // If load failed (e.g. corrupted file), fall through and recompile
-        if (error) error->clear();
+        if (error)
+            error->clear();
         std::filesystem::remove(bcPath);
         std::filesystem::remove(metaPath);
     }
@@ -115,7 +131,8 @@ bool JITEngine::compileScript(const std::string& code, std::string* error) {
     // --- Cache miss: compile from source ---
     CompilerInstance compiler(m_compilerOptions);
     auto artifacts = compiler.compileToIR(code, error);
-    if (!artifacts) return false;
+    if (!artifacts)
+        return false;
     m_functionReturnTypes = artifacts->functionReturnTypes;
 
     m_codegenCtx = std::move(artifacts->codegenContext);
@@ -131,19 +148,27 @@ bool JITEngine::compileScript(const std::string& code, std::string* error) {
     return true;
 }
 
-bool JITEngine::executeString(const std::string& code, std::string* error) {
-    if (!compileScript(code, error)) return false;
+bool JITEngine::executeString(const std::string& code, std::string* error)
+{
+    if (!compileScript(code, error))
+        return false;
     return true;
 }
 
-
-void* JITEngine::getFunctionPointer(const std::string& name) {
-    if (!m_initialized) return nullptr;
+void* JITEngine::getFunctionPointer(const std::string& name)
+{
+    if (!m_initialized)
+        return nullptr;
     return m_jit->getPointerToFunction(name);
 }
 
-FluxValue JITEngine::callFunction(const std::string& name, const std::vector<double>& args, std::string* error) {
-    if (!m_initialized) { if (error) *error = "JIT not initialized"; return 0.0; }
+FluxValue JITEngine::callFunction(const std::string& name, const std::vector<double>& args, std::string* error)
+{
+    if (!m_initialized) {
+        if (error)
+            *error = "JIT not initialized";
+        return 0.0;
+    }
     void* fnPtr = m_jit->getPointerToFunction(name);
     if (!fnPtr && name == "__anon_expr") {
         std::string base = m_compilerOptions.moduleName + "_anon_expr";
@@ -151,68 +176,126 @@ FluxValue JITEngine::callFunction(const std::string& name, const std::vector<dou
         for (int i = 0; !fnPtr && i < 100; i++)
             fnPtr = m_jit->getPointerToFunction(base + "_" + std::to_string(i));
     }
-    if (!fnPtr) { if (error) *error = "Function not found: " + name; return 0.0; }
+    if (!fnPtr) {
+        if (error)
+            *error = "Function not found: " + name;
+        return 0.0;
+    }
     FluxType retType = m_functionReturnTypes[name];
 
     if (retType.Kind == TypeKind::Matrix) {
-        struct MatrixRet { void* ptr; int rows; int cols; };
+        struct MatrixRet
+        {
+            void* ptr;
+            int rows;
+            int cols;
+        };
         auto* r = new MatrixRet{nullptr, 0, 0};
 
         switch (args.size()) {
-            case 0:  reinterpret_cast<void(*)(MatrixRet*)>(fnPtr)(r); break;
-            case 1:  reinterpret_cast<void(*)(MatrixRet*, double)>(fnPtr)(r, args[0]); break;
-            case 2:  reinterpret_cast<void(*)(MatrixRet*, double, double)>(fnPtr)(r, args[0], args[1]); break;
-            case 3:  reinterpret_cast<void(*)(MatrixRet*, double, double, double)>(fnPtr)(r, args[0], args[1], args[2]); break;
-            case 4:  reinterpret_cast<void(*)(MatrixRet*, double, double, double, double)>(fnPtr)(r, args[0], args[1], args[2], args[3]); break;
-            case 5:  reinterpret_cast<void(*)(MatrixRet*, double, double, double, double, double)>(fnPtr)(r, args[0], args[1], args[2], args[3], args[4]); break;
-            default: delete r; if (error) *error = "Unsupported argument count for matrix function"; return 0.0;
+        case 0:
+            reinterpret_cast<void (*)(MatrixRet*)>(fnPtr)(r);
+            break;
+        case 1:
+            reinterpret_cast<void (*)(MatrixRet*, double)>(fnPtr)(r, args[0]);
+            break;
+        case 2:
+            reinterpret_cast<void (*)(MatrixRet*, double, double)>(fnPtr)(r, args[0], args[1]);
+            break;
+        case 3:
+            reinterpret_cast<void (*)(MatrixRet*, double, double, double)>(fnPtr)(r, args[0], args[1], args[2]);
+            break;
+        case 4:
+            reinterpret_cast<void (*)(MatrixRet*, double, double, double, double)>(fnPtr)(r, args[0], args[1], args[2],
+                                                                                          args[3]);
+            break;
+        case 5:
+            reinterpret_cast<void (*)(MatrixRet*, double, double, double, double, double)>(fnPtr)(
+                r, args[0], args[1], args[2], args[3], args[4]);
+            break;
+        default:
+            delete r;
+            if (error)
+                *error = "Unsupported argument count for matrix function";
+            return 0.0;
         }
 
         MatrixResult result{r->ptr, r->rows, r->cols};
         delete r;
         return result;
     } else if (retType.Kind == TypeKind::Complex) {
-        struct ComplexRet { double real; double imag; };
+        struct ComplexRet
+        {
+            double real;
+            double imag;
+        };
         ComplexRet r;
         switch (args.size()) {
-            case 0: r = reinterpret_cast<ComplexRet(*)()>(fnPtr)(); break;
-            case 1: r = reinterpret_cast<ComplexRet(*)(double)>(fnPtr)(args[0]); break;
-            case 2: r = reinterpret_cast<ComplexRet(*)(double, double)>(fnPtr)(args[0], args[1]); break;
-            default: r = ComplexRet{0, 0}; break;
+        case 0:
+            r = reinterpret_cast<ComplexRet (*)()>(fnPtr)();
+            break;
+        case 1:
+            r = reinterpret_cast<ComplexRet (*)(double)>(fnPtr)(args[0]);
+            break;
+        case 2:
+            r = reinterpret_cast<ComplexRet (*)(double, double)>(fnPtr)(args[0], args[1]);
+            break;
+        default:
+            r = ComplexRet{0, 0};
+            break;
         }
         return std::complex<double>(r.real, r.imag);
     } else {
         double result;
         switch (args.size()) {
-            case 0: result = reinterpret_cast<double(*)()>(fnPtr)(); break;
-            case 1: result = reinterpret_cast<double(*)(double)>(fnPtr)(args[0]); break;
-            case 2: result = reinterpret_cast<double(*)(double, double)>(fnPtr)(args[0], args[1]); break;
-            case 3: result = reinterpret_cast<double(*)(double, double, double)>(fnPtr)(args[0], args[1], args[2]); break;
-            case 4: result = reinterpret_cast<double(*)(double, double, double, double)>(fnPtr)(args[0], args[1], args[2], args[3]); break;
-            case 5: result = reinterpret_cast<double(*)(double, double, double, double, double)>(fnPtr)(args[0], args[1], args[2], args[3], args[4]); break;
-            default: result = 0.0; break;
+        case 0:
+            result = reinterpret_cast<double (*)()>(fnPtr)();
+            break;
+        case 1:
+            result = reinterpret_cast<double (*)(double)>(fnPtr)(args[0]);
+            break;
+        case 2:
+            result = reinterpret_cast<double (*)(double, double)>(fnPtr)(args[0], args[1]);
+            break;
+        case 3:
+            result = reinterpret_cast<double (*)(double, double, double)>(fnPtr)(args[0], args[1], args[2]);
+            break;
+        case 4:
+            result =
+                reinterpret_cast<double (*)(double, double, double, double)>(fnPtr)(args[0], args[1], args[2], args[3]);
+            break;
+        case 5:
+            result = reinterpret_cast<double (*)(double, double, double, double, double)>(fnPtr)(
+                args[0], args[1], args[2], args[3], args[4]);
+            break;
+        default:
+            result = 0.0;
+            break;
         }
         return result;
     }
-    if (error) *error = "Unsupported arguments or return type";
+    if (error)
+        *error = "Unsupported arguments or return type";
     return 0.0;
 }
 
 // ============ Module System Integration ============
 
-bool JITEngine::importModule(const std::string& moduleName, std::string* error) {
+bool JITEngine::importModule(const std::string& moduleName, std::string* error)
+{
     if (!m_initialized) {
-        if (error) *error = "JIT Engine not initialized";
+        if (error)
+            *error = "JIT Engine not initialized";
         return false;
     }
 
     // Delegate to ModuleLoader
     bool success = m_moduleLoader.loadModule(moduleName, error);
-    if (!success) return false;
+    if (!success)
+        return false;
 
     // Add search path for the module's location so imports resolve correctly
-    m_moduleLoader.addSearchPath(
-        std::filesystem::path("modules") / moduleName);
+    m_moduleLoader.addSearchPath(std::filesystem::path("modules") / moduleName);
 
     // If the JIT engine has a running context, compile and add the module IR
     if (m_codegenCtx) {
@@ -221,12 +304,10 @@ bool JITEngine::importModule(const std::string& moduleName, std::string* error) 
             CompilerInstance compiler(m_compilerOptions);
             auto content = llvm::MemoryBuffer::getFile(info.sourcePath.string());
             if (content) {
-                auto artifacts = compiler.compileToIR(
-                    content->get()->getBuffer().str(), error);
+                auto artifacts = compiler.compileToIR(content->get()->getBuffer().str(), error);
                 if (artifacts && m_jit) {
-                    m_jit->addModule(
-                        std::move(artifacts->codegenContext->OwnedModule),
-                        std::move(artifacts->codegenContext->OwnedContext));
+                    m_jit->addModule(std::move(artifacts->codegenContext->OwnedModule),
+                                     std::move(artifacts->codegenContext->OwnedContext));
                 }
             }
         }
@@ -236,22 +317,28 @@ bool JITEngine::importModule(const std::string& moduleName, std::string* error) 
     return true;
 }
 
-bool JITEngine::loadPlugin(const std::string& pluginPath, std::string* error) {
+bool JITEngine::loadPlugin(const std::string& pluginPath, std::string* error)
+{
     if (!m_initialized) {
-        if (error) *error = "JIT Engine not initialized";
+        if (error)
+            *error = "JIT Engine not initialized";
         return false;
     }
 
     return m_moduleLoader.loadPlugin(std::filesystem::path(pluginPath), error);
 }
 
-std::vector<std::string> JITEngine::getLoadedModules() const {
-    if (!m_initialized) return {};
+std::vector<std::string> JITEngine::getLoadedModules() const
+{
+    if (!m_initialized)
+        return {};
     return m_moduleLoader.getLoadedModules();
 }
 
-std::vector<std::string> JITEngine::getModuleExports(const std::string& moduleName) const {
-    if (!m_initialized) return {};
+std::vector<std::string> JITEngine::getModuleExports(const std::string& moduleName) const
+{
+    if (!m_initialized)
+        return {};
     try {
         auto info = m_moduleLoader.getModuleInfo(moduleName);
         return info.exports;
@@ -260,13 +347,16 @@ std::vector<std::string> JITEngine::getModuleExports(const std::string& moduleNa
     }
 }
 
-std::string JITEngine::getFunctionSignature(const std::string& functionName) const {
-    if (!m_initialized) return "";
+std::string JITEngine::getFunctionSignature(const std::string& functionName) const
+{
+    if (!m_initialized)
+        return "";
     try {
         auto reflection = m_moduleLoader.getFunctionReflection(functionName);
         std::string sig = reflection.returnType + " " + reflection.name + "(";
         for (size_t i = 0; i < reflection.parameters.size(); i++) {
-            if (i > 0) sig += ", ";
+            if (i > 0)
+                sig += ", ";
             sig += reflection.parameters[i].second + " " + reflection.parameters[i].first;
         }
         sig += ")";
@@ -276,27 +366,34 @@ std::string JITEngine::getFunctionSignature(const std::string& functionName) con
     }
 }
 
-void JITEngine::setDefine(const std::string& name, bool value) {
-    if (!m_initialized) return;
+void JITEngine::setDefine(const std::string& name, bool value)
+{
+    if (!m_initialized)
+        return;
     auto config = m_moduleLoader.getCompileConfig();
     config.features[name] = value;
     m_moduleLoader.setCompileConfig(config);
 }
 
-bool JITEngine::getDefine(const std::string& name) const {
-    if (!m_initialized) return false;
+bool JITEngine::getDefine(const std::string& name) const
+{
+    if (!m_initialized)
+        return false;
     return m_moduleLoader.checkFeature(name);
 }
 
-void JITEngine::setOptimizationLevelForModules(OptimizationLevel level) {
-    if (!m_initialized) return;
+void JITEngine::setOptimizationLevelForModules(OptimizationLevel level)
+{
+    if (!m_initialized)
+        return;
     auto config = m_moduleLoader.getCompileConfig();
     config.features["opt_level"] = (level >= OptimizationLevel::O2);
     config.constants["FLUX_OPT_LEVEL"] = std::to_string(static_cast<int>(level));
     m_moduleLoader.setCompileConfig(config);
 }
 
-void JITEngine::clearJITCache() {
+void JITEngine::clearJITCache()
+{
     if (!m_cacheDirectory.empty()) {
         std::error_code ec;
         for (auto& entry : std::filesystem::directory_iterator(m_cacheDirectory, ec)) {
@@ -307,31 +404,43 @@ void JITEngine::clearJITCache() {
 
 // --- Tiered JIT ---
 
-void* JITEngine::promoteFunction(const std::string& name, OptimizationLevel targetLevel) {
-    if (!m_jit) return nullptr;
+void* JITEngine::promoteFunction(const std::string& name, OptimizationLevel targetLevel)
+{
+    if (!m_jit)
+        return nullptr;
     return m_jit->promoteFunction(name, targetLevel);
 }
 
-void JITEngine::setTieredJITThreshold(int n) {
-    if (m_jit) m_jit->setAutoPromoteThreshold(n);
+void JITEngine::setTieredJITThreshold(int n)
+{
+    if (m_jit)
+        m_jit->setAutoPromoteThreshold(n);
 }
 
-int JITEngine::getTieredJITThreshold() const {
-    if (m_jit) return m_jit->getAutoPromoteThreshold();
+int JITEngine::getTieredJITThreshold() const
+{
+    if (m_jit)
+        return m_jit->getAutoPromoteThreshold();
     return 0;
 }
 
-int JITEngine::getFunctionCallCount(const std::string& name) const {
-    if (m_jit) return m_jit->getCallCount(name);
+int JITEngine::getFunctionCallCount(const std::string& name) const
+{
+    if (m_jit)
+        return m_jit->getCallCount(name);
     return 0;
 }
 
-void JITEngine::resetCallCounts() {
-    if (m_jit) m_jit->resetCallCounts();
+void JITEngine::resetCallCounts()
+{
+    if (m_jit)
+        m_jit->resetCallCounts();
 }
 
-bool JITEngine::isFunctionPromoted(const std::string& name) const {
-    if (m_jit) return m_jit->isPromoted(name);
+bool JITEngine::isFunctionPromoted(const std::string& name) const
+{
+    if (m_jit)
+        return m_jit->isPromoted(name);
     return false;
 }
 

@@ -22,24 +22,22 @@
 
 namespace {
 llvm::cl::OptionCategory FluxDocCategory("flux-doc options");
-llvm::cl::opt<std::string> InputFilename(
-    llvm::cl::Positional, llvm::cl::desc("<script.flux>"), llvm::cl::Required,
-    llvm::cl::cat(FluxDocCategory));
-}
+llvm::cl::opt<std::string> InputFilename(llvm::cl::Positional, llvm::cl::desc("<script.flux>"), llvm::cl::Required,
+                                         llvm::cl::cat(FluxDocCategory));
+} // namespace
 
-int main(int argc, char** argv) {
+int main(int argc, char** argv)
+{
     llvm::InitLLVM initLLVM(argc, argv);
     llvm::cl::HideUnrelatedOptions(FluxDocCategory);
     llvm::cl::ParseCommandLineOptions(argc, argv, "FluxScript documentation generator\n");
 
     auto input = llvm::MemoryBuffer::getFile(InputFilename);
     if (!input) {
-        llvm::errs() << "Could not read " << InputFilename << ": "
-                     << input.getError().message() << "\n";
+        llvm::errs() << "Could not read " << InputFilename << ": " << input.getError().message() << "\n";
         return 1;
     }
 
-    llvm::outs() << Flux::Tooling::generateDocsMarkdown(
-        std::string(input.get()->getBuffer()), InputFilename);
+    llvm::outs() << Flux::Tooling::generateDocsMarkdown(std::string(input.get()->getBuffer()), InputFilename);
     return 0;
 }

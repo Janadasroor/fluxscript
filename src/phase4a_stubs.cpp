@@ -14,34 +14,35 @@
 // Phase 4A Stub Implementations
 // Package Manager, Debugger, Sensitivity Analysis, Natural Language
 
-#include "flux/package/package_manager.h"
-#include "flux/debug/debugger.h"
 #include "flux/analysis/sensitivity.h"
+#include "flux/debug/debugger.h"
 #include "flux/nlp/natural_language.h"
-#include <sstream>
-#include <fstream>
-#include <cmath>
-#include <random>
-#include <iostream>
-#include <complex>
+#include "flux/package/package_manager.h"
 #include <cctype>
+#include <cmath>
+#include <complex>
+#include <fstream>
+#include <iostream>
+#include <random>
+#include <sstream>
 
 namespace Flux {
 namespace PackageManager {
 
 // PackageCLI (see src/package/package_manager.cpp for all other implementations)
-int PackageCLI::run(int argc, char** argv) {
+int PackageCLI::run(int argc, char** argv)
+{
     std::cout << "FluxScript Package Manager v1.0\n\n";
-    
+
     if (argc < 2) {
         printHelp();
         return 0;
     }
-    
+
     std::string cmd = argv[1];
     PackageManager pkg;
     pkg.initialize(".");
-    
+
     if (cmd == "install" || cmd == "i") {
         if (argc < 3) {
             std::cerr << "Error: Package name required\n";
@@ -52,8 +53,7 @@ int PackageCLI::run(int argc, char** argv) {
         auto results = PackageRegistry::instance().search(argc > 2 ? argv[2] : "");
         std::cout << "Search results:\n";
         for (const auto& pkg : results) {
-            std::cout << "  " << pkg.name << " - " << pkg.description 
-                      << " (v" << pkg.latestVersion.toString() << ")\n";
+            std::cout << "  " << pkg.name << " - " << pkg.description << " (v" << pkg.latestVersion.toString() << ")\n";
         }
     } else if (cmd == "list" || cmd == "l") {
         auto installed = pkg.getInstalledPackages();
@@ -73,11 +73,12 @@ int PackageCLI::run(int argc, char** argv) {
         printHelp();
         return 1;
     }
-    
+
     return 0;
 }
 
-void PackageCLI::printHelp() {
+void PackageCLI::printHelp()
+{
     std::cout << "Usage: flux-pkg <command> [options]\n\n";
     std::cout << "Commands:\n";
     std::cout << "  install <package> [version]  Install a package\n";
@@ -91,41 +92,48 @@ void PackageCLI::printHelp() {
 // C Interface
 extern "C" {
 
-void* flux_pkg_create(const char* projectPath) {
+void* flux_pkg_create(const char* projectPath)
+{
     auto* pkg = new PackageManager();
     pkg->initialize(projectPath ? projectPath : ".");
     return pkg;
 }
 
-void flux_pkg_destroy(void* pkg) {
+void flux_pkg_destroy(void* pkg)
+{
     delete static_cast<PackageManager*>(pkg);
 }
 
-int flux_pkg_install(void* pkg, const char* packageName, const char* version) {
-    return static_cast<PackageManager*>(pkg)->install(
-        packageName, version ? version : "") ? 1 : 0;
+int flux_pkg_install(void* pkg, const char* packageName, const char* version)
+{
+    return static_cast<PackageManager*>(pkg)->install(packageName, version ? version : "") ? 1 : 0;
 }
 
-int flux_pkg_uninstall(void* pkg, const char* packageName) {
+int flux_pkg_uninstall(void* pkg, const char* packageName)
+{
     return static_cast<PackageManager*>(pkg)->uninstall(packageName) ? 1 : 0;
 }
 
-int flux_pkg_update(void* pkg, const char* packageName) {
+int flux_pkg_update(void* pkg, const char* packageName)
+{
     return static_cast<PackageManager*>(pkg)->update(packageName) ? 1 : 0;
 }
 
-int flux_pkg_is_installed(void* pkg, const char* packageName) {
+int flux_pkg_is_installed(void* pkg, const char* packageName)
+{
     return static_cast<PackageManager*>(pkg)->isInstalled(packageName) ? 1 : 0;
 }
 
-const char* flux_pkg_search(void* pkg, const char* query) {
+const char* flux_pkg_search(void* pkg, const char* query)
+{
     static std::string result;
     auto results = PackageRegistry::instance().search(query ? query : "");
     result = "Found " + std::to_string(results.size()) + " packages";
     return result.c_str();
 }
 
-const char* flux_pkg_audit(void* pkg) {
+const char* flux_pkg_audit(void* pkg)
+{
     static std::string result = "No issues found";
     auto auditResult = static_cast<PackageManager*>(pkg)->audit();
     if (auditResult.hasIssues) {
@@ -133,7 +141,6 @@ const char* flux_pkg_audit(void* pkg) {
     }
     return result.c_str();
 }
-
 }
 
 } // namespace PackageManager
@@ -146,23 +153,27 @@ namespace Debugger {
 CircuitDebugger::CircuitDebugger() = default;
 CircuitDebugger::~CircuitDebugger() = default;
 
-void CircuitDebugger::loadCircuit(const std::string& circuitFile) {
+void CircuitDebugger::loadCircuit(const std::string& circuitFile)
+{
     m_circuitFile = circuitFile;
 }
 
-void CircuitDebugger::loadCircuitFromNetlist(const std::string& netlist) {
+void CircuitDebugger::loadCircuitFromNetlist(const std::string& netlist)
+{
     m_netlist = netlist;
 }
 
-void CircuitDebugger::addSymptom(const CircuitSymptom& symptom) {
+void CircuitDebugger::addSymptom(const CircuitSymptom& symptom)
+{
     m_symptoms.push_back(symptom);
 }
 
-DebugReport CircuitDebugger::diagnose() {
+DebugReport CircuitDebugger::diagnose()
+{
     DebugReport report;
     report.circuitName = m_circuitFile;
     report.healthScore = 85;
-    
+
     // Stub analysis
     if (!m_symptoms.empty() && m_symptoms[0].type == "clipping") {
         DebugIssue issue;
@@ -172,26 +183,30 @@ DebugReport CircuitDebugger::diagnose() {
         issue.confidence = 0.8;
         report.issues.push_back(issue);
     }
-    
+
     report.recommendations.push_back("Run DC operating point analysis");
     report.recommendations.push_back("Check component stress levels");
-    
+
     return report;
 }
 
-DebugReport CircuitDebugger::analyze() {
+DebugReport CircuitDebugger::analyze()
+{
     return diagnose();
 }
 
-std::vector<DebugIssue> CircuitDebugger::checkBiasPoints() {
+std::vector<DebugIssue> CircuitDebugger::checkBiasPoints()
+{
     return {};
 }
 
-std::vector<DebugIssue> CircuitDebugger::checkStability() {
+std::vector<DebugIssue> CircuitDebugger::checkStability()
+{
     return {};
 }
 
-std::string DebugReport::toString() const {
+std::string DebugReport::toString() const
+{
     std::ostringstream oss;
     oss << "Debug Report for " << circuitName << "\n";
     oss << "Health Score: " << healthScore << "/100\n";
@@ -210,11 +225,13 @@ void DesignRuleChecker::enableVoltageStressRules() {}
 void DesignRuleChecker::enablePowerDissipationRules() {}
 void DesignRuleChecker::enableThermalRules() {}
 
-std::vector<DebugIssue> DesignRuleChecker::runChecks() {
+std::vector<DebugIssue> DesignRuleChecker::runChecks()
+{
     return {};
 }
 
-bool DesignRuleChecker::hasViolations() const {
+bool DesignRuleChecker::hasViolations() const
+{
     return false;
 }
 
@@ -222,11 +239,13 @@ bool DesignRuleChecker::hasViolations() const {
 RootCauseAnalyzer::RootCauseAnalyzer() = default;
 RootCauseAnalyzer::~RootCauseAnalyzer() = default;
 
-void RootCauseAnalyzer::addEvidence(const std::string& evidence, double weight) {
+void RootCauseAnalyzer::addEvidence(const std::string& evidence, double weight)
+{
     m_evidence[evidence] = weight;
 }
 
-std::vector<DebugIssue> RootCauseAnalyzer::findRootCauses() {
+std::vector<DebugIssue> RootCauseAnalyzer::findRootCauses()
+{
     return {};
 }
 
@@ -234,14 +253,15 @@ std::vector<DebugIssue> RootCauseAnalyzer::findRootCauses() {
 FixSuggester::FixSuggester() = default;
 FixSuggester::~FixSuggester() = default;
 
-std::vector<FixSuggester::FixSuggestion> FixSuggester::suggestFixes(const DebugIssue& issue) {
+std::vector<FixSuggester::FixSuggestion> FixSuggester::suggestFixes(const DebugIssue& issue)
+{
     std::vector<FixSuggestion> suggestions;
-    
+
     FixSuggestion sug;
     sug.description = "Suggested fix";
     sug.expectedImprovement = 0.5;
     suggestions.push_back(sug);
-    
+
     return suggestions;
 }
 
@@ -249,85 +269,104 @@ std::vector<FixSuggester::FixSuggestion> FixSuggester::suggestFixes(const DebugI
 DebugSession::DebugSession() : m_active(false) {}
 DebugSession::~DebugSession() = default;
 
-void DebugSession::start(const std::string& circuitFile) {
+void DebugSession::start(const std::string& circuitFile)
+{
     m_active = true;
     m_circuitFile = circuitFile;
     m_debugger.loadCircuit(circuitFile);
 }
 
-void DebugSession::end() {
+void DebugSession::end()
+{
     m_active = false;
 }
 
-bool DebugSession::isActive() const {
+bool DebugSession::isActive() const
+{
     return m_active;
 }
 
-std::string DebugSession::executeCommand(const std::string& command) {
+std::string DebugSession::executeCommand(const std::string& command)
+{
     return "Command executed: " + command;
 }
 
-std::string DebugSession::ask(const std::string& question) {
+std::string DebugSession::ask(const std::string& question)
+{
     return "Analysis: " + question;
 }
 
 // C Interface
 extern "C" {
 
-void* flux_debug_create() {
+void* flux_debug_create()
+{
     return new CircuitDebugger();
 }
 
-void flux_debug_destroy(void* debug) {
+void flux_debug_destroy(void* debug)
+{
     delete static_cast<CircuitDebugger*>(debug);
 }
 
-void flux_debug_load(void* debug, const char* circuitFile) {
+void flux_debug_load(void* debug, const char* circuitFile)
+{
     static_cast<CircuitDebugger*>(debug)->loadCircuit(circuitFile ? circuitFile : "");
 }
 
-void flux_debug_add_symptom(void* debug, const char* type, const char* description) {
+void flux_debug_add_symptom(void* debug, const char* type, const char* description)
+{
     CircuitSymptom symptom;
     symptom.type = type ? type : "";
     symptom.description = description ? description : "";
     static_cast<CircuitDebugger*>(debug)->addSymptom(symptom);
 }
 
-const char* flux_debug_diagnose(void* debug) {
+const char* flux_debug_diagnose(void* debug)
+{
     static std::string result;
     auto report = static_cast<CircuitDebugger*>(debug)->diagnose();
     result = report.toString();
     return result.c_str();
 }
 
-const char* flux_debug_get_recommendations(void* debug) {
+const char* flux_debug_get_recommendations(void* debug)
+{
     static std::string result = "Run DC analysis\nCheck component stress";
     return result.c_str();
 }
 
-const char* flux_debug_ask(void* debug, const char* question) {
+const char* flux_debug_ask(void* debug, const char* question)
+{
     static std::string result = "Analysis of: ";
     result += question ? question : "";
     return result.c_str();
 }
 
-void* flux_drc_create() {
+void* flux_drc_create()
+{
     return new DesignRuleChecker();
 }
 
-void flux_drc_destroy(void* drc) {
+void flux_drc_destroy(void* drc)
+{
     delete static_cast<DesignRuleChecker*>(drc);
 }
 
-void flux_drc_enable_rules(void* drc, const char* rules) {
+void flux_drc_enable_rules(void* drc, const char* rules)
+{
     auto* checker = static_cast<DesignRuleChecker*>(drc);
     std::string r = rules ? rules : "";
-    if (r.find("voltage") != std::string::npos) checker->enableVoltageStressRules();
-    if (r.find("power") != std::string::npos) checker->enablePowerDissipationRules();
-    if (r.find("thermal") != std::string::npos) checker->enableThermalRules();
+    if (r.find("voltage") != std::string::npos)
+        checker->enableVoltageStressRules();
+    if (r.find("power") != std::string::npos)
+        checker->enablePowerDissipationRules();
+    if (r.find("thermal") != std::string::npos)
+        checker->enableThermalRules();
 }
 
-const char* flux_drc_run(void* drc) {
+const char* flux_drc_run(void* drc)
+{
     static std::string result = "No violations found";
     auto* checker = static_cast<DesignRuleChecker*>(drc);
     if (checker->hasViolations()) {
@@ -335,7 +374,6 @@ const char* flux_drc_run(void* drc) {
     }
     return result.c_str();
 }
-
 }
 
 } // namespace Debugger
@@ -348,25 +386,29 @@ namespace Sensitivity {
 SensitivityAnalyzer::SensitivityAnalyzer() : m_method(Method::FiniteDifference) {}
 SensitivityAnalyzer::~SensitivityAnalyzer() = default;
 
-void SensitivityAnalyzer::loadCircuit(const std::string& circuitFile) {
+void SensitivityAnalyzer::loadCircuit(const std::string& circuitFile)
+{
     m_circuitFile = circuitFile;
 }
 
-void SensitivityAnalyzer::setOutputVariable(const std::string& var) {
+void SensitivityAnalyzer::setOutputVariable(const std::string& var)
+{
     m_outputVariable = var;
 }
 
-void SensitivityAnalyzer::setParameter(const std::string& param, double nominal, double tolerance) {
+void SensitivityAnalyzer::setParameter(const std::string& param, double nominal, double tolerance)
+{
     m_parameters.push_back(param);
     m_nominalValues[param] = nominal;
     m_tolerances[param] = tolerance;
 }
 
-SensitivityReport SensitivityAnalyzer::analyze() {
+SensitivityReport SensitivityAnalyzer::analyze()
+{
     SensitivityReport report;
     report.circuitName = m_circuitFile;
     report.outputVariable = m_outputVariable;
-    
+
     // Generate stub results
     for (const auto& param : m_parameters) {
         SensitivityResult result;
@@ -377,15 +419,16 @@ SensitivityReport SensitivityAnalyzer::analyze() {
         result.normalized = 1.0;
         report.results.push_back(result);
     }
-    
+
     report.meanSensitivity = 0.01;
     report.maxSensitivity = 0.02;
     report.minSensitivity = 0.005;
-    
+
     return report;
 }
 
-std::string SensitivityReport::toString() const {
+std::string SensitivityReport::toString() const
+{
     std::ostringstream oss;
     oss << "Sensitivity Report: " << outputVariable << "\n";
     oss << "Parameters: " << results.size() << "\n";
@@ -399,15 +442,18 @@ std::string SensitivityReport::toString() const {
 ToleranceAnalyzer::ToleranceAnalyzer() : m_method(ToleranceMethod::RSS), m_numSamples(1000) {}
 ToleranceAnalyzer::~ToleranceAnalyzer() = default;
 
-void ToleranceAnalyzer::loadCircuit(const std::string& circuitFile) {
+void ToleranceAnalyzer::loadCircuit(const std::string& circuitFile)
+{
     m_circuitFile = circuitFile;
 }
 
-void ToleranceAnalyzer::setTolerance(const std::string& component, double tolerance) {
+void ToleranceAnalyzer::setTolerance(const std::string& component, double tolerance)
+{
     m_tolerances[component] = tolerance;
 }
 
-ToleranceAnalysisResult ToleranceAnalyzer::analyze() {
+ToleranceAnalysisResult ToleranceAnalyzer::analyze()
+{
     ToleranceAnalysisResult result;
     result.nominal = 5.0;
     result.min = 4.75;
@@ -416,29 +462,36 @@ ToleranceAnalysisResult ToleranceAnalyzer::analyze() {
     return result;
 }
 
-double ToleranceAnalyzer::estimateYield(double specLower, double specUpper) {
-    return 0.95;  // 95% yield
+double ToleranceAnalyzer::estimateYield(double specLower, double specUpper)
+{
+    return 0.95; // 95% yield
 }
 
 // ParameterOptimizer
-ParameterOptimizer::ParameterOptimizer() : m_goal(Goal::Maximize), m_method(Method::BFGS),
-                                            m_maxIterations(100), m_tolerance(1e-6) {}
+ParameterOptimizer::ParameterOptimizer()
+    : m_goal(Goal::Maximize), m_method(Method::BFGS), m_maxIterations(100), m_tolerance(1e-6)
+{
+}
 ParameterOptimizer::~ParameterOptimizer() = default;
 
-void ParameterOptimizer::loadCircuit(const std::string& circuitFile) {
+void ParameterOptimizer::loadCircuit(const std::string& circuitFile)
+{
     m_circuitFile = circuitFile;
 }
 
-void ParameterOptimizer::setObjective(const std::string& expression, Goal goal) {
+void ParameterOptimizer::setObjective(const std::string& expression, Goal goal)
+{
     m_objective = expression;
     m_goal = goal;
 }
 
-void ParameterOptimizer::setParameterBounds(const std::string& param, double lower, double upper) {
+void ParameterOptimizer::setParameterBounds(const std::string& param, double lower, double upper)
+{
     m_bounds[param] = {lower, upper};
 }
 
-ParameterOptimizer::OptimizationResult ParameterOptimizer::optimize() {
+ParameterOptimizer::OptimizationResult ParameterOptimizer::optimize()
+{
     OptimizationResult result;
     result.success = true;
     result.iterations = 15;
@@ -451,11 +504,13 @@ ParameterOptimizer::OptimizationResult ParameterOptimizer::optimize() {
 CornerAnalyzer::CornerAnalyzer() = default;
 CornerAnalyzer::~CornerAnalyzer() = default;
 
-void CornerAnalyzer::loadCircuit(const std::string& circuitFile) {
+void CornerAnalyzer::loadCircuit(const std::string& circuitFile)
+{
     m_circuitFile = circuitFile;
 }
 
-void CornerAnalyzer::useStandardCorners(const std::string& type) {
+void CornerAnalyzer::useStandardCorners(const std::string& type)
+{
     if (type == "process" || type == "all") {
         std::map<std::string, double> tt_params = {{"temp", 25}, {"vcc", 5.0}};
         std::map<std::string, double> ff_params = {{"temp", -40}, {"vcc", 5.5}};
@@ -466,12 +521,13 @@ void CornerAnalyzer::useStandardCorners(const std::string& type) {
     }
 }
 
-void CornerAnalyzer::addCorner(const std::string& name, const std::map<std::string, double>& parameters) {
+void CornerAnalyzer::addCorner(const std::string& name, const std::map<std::string, double>& parameters)
+{
     m_corners.push_back({name, parameters});
 }
 
-std::vector<CornerAnalyzer::CornerResult> CornerAnalyzer::analyze(
-    const std::vector<std::string>& outputs) {
+std::vector<CornerAnalyzer::CornerResult> CornerAnalyzer::analyze(const std::vector<std::string>& outputs)
+{
     std::vector<CornerResult> results;
     for (const auto& corner : m_corners) {
         CornerResult r;
@@ -485,123 +541,151 @@ std::vector<CornerAnalyzer::CornerResult> CornerAnalyzer::analyze(
 // C Interface
 extern "C" {
 
-void* flux_sens_create() {
+void* flux_sens_create()
+{
     return new SensitivityAnalyzer();
 }
 
-void flux_sens_destroy(void* sens) {
+void flux_sens_destroy(void* sens)
+{
     delete static_cast<SensitivityAnalyzer*>(sens);
 }
 
-void flux_sens_load(void* sens, const char* circuitFile) {
+void flux_sens_load(void* sens, const char* circuitFile)
+{
     static_cast<SensitivityAnalyzer*>(sens)->loadCircuit(circuitFile ? circuitFile : "");
 }
 
-void flux_sens_set_output(void* sens, const char* output) {
+void flux_sens_set_output(void* sens, const char* output)
+{
     static_cast<SensitivityAnalyzer*>(sens)->setOutputVariable(output ? output : "");
 }
 
-void flux_sens_set_parameter(void* sens, const char* param, double nominal, double tol) {
+void flux_sens_set_parameter(void* sens, const char* param, double nominal, double tol)
+{
     static_cast<SensitivityAnalyzer*>(sens)->setParameter(param ? param : "", nominal, tol);
 }
 
-void flux_sens_analyze(void* sens) {
+void flux_sens_analyze(void* sens)
+{
     static_cast<SensitivityAnalyzer*>(sens)->analyze();
 }
 
-const char* flux_sens_get_results(void* sens) {
+const char* flux_sens_get_results(void* sens)
+{
     static std::string result;
     auto report = static_cast<SensitivityAnalyzer*>(sens)->analyze();
     result = report.toString();
     return result.c_str();
 }
 
-double flux_sens_get_value(void* sens, const char* param) {
+double flux_sens_get_value(void* sens, const char* param)
+{
     return 0.01;
 }
 
-void* flux_tol_create() {
+void* flux_tol_create()
+{
     return new ToleranceAnalyzer();
 }
 
-void flux_tol_destroy(void* tol) {
+void flux_tol_destroy(void* tol)
+{
     delete static_cast<ToleranceAnalyzer*>(tol);
 }
 
-void flux_tol_load(void* tol, const char* circuitFile) {
+void flux_tol_load(void* tol, const char* circuitFile)
+{
     static_cast<ToleranceAnalyzer*>(tol)->loadCircuit(circuitFile ? circuitFile : "");
 }
 
-void flux_tol_set_tolerance(void* tol, const char* component, double tol_value) {
+void flux_tol_set_tolerance(void* tol, const char* component, double tol_value)
+{
     static_cast<ToleranceAnalyzer*>(tol)->setTolerance(component ? component : "", tol_value);
 }
 
-void flux_tol_analyze(void* tol) {
+void flux_tol_analyze(void* tol)
+{
     static_cast<ToleranceAnalyzer*>(tol)->analyze();
 }
 
-double flux_tol_get_yield(void* tol, double spec_low, double spec_high) {
+double flux_tol_get_yield(void* tol, double spec_low, double spec_high)
+{
     return static_cast<ToleranceAnalyzer*>(tol)->estimateYield(spec_low, spec_high);
 }
 
-void* flux_opt_create() {
+void* flux_opt_create()
+{
     return new ParameterOptimizer();
 }
 
-void flux_opt_destroy(void* opt) {
+void flux_opt_destroy(void* opt)
+{
     delete static_cast<ParameterOptimizer*>(opt);
 }
 
-void flux_opt_load(void* opt, const char* circuitFile) {
+void flux_opt_load(void* opt, const char* circuitFile)
+{
     static_cast<ParameterOptimizer*>(opt)->loadCircuit(circuitFile ? circuitFile : "");
 }
 
-void flux_opt_set_objective(void* opt, const char* expr, const char* goal) {
+void flux_opt_set_objective(void* opt, const char* expr, const char* goal)
+{
     std::string g = goal ? goal : "";
     ParameterOptimizer::Goal gval = ParameterOptimizer::Goal::Maximize;
-    if (g == "minimize") gval = ParameterOptimizer::Goal::Minimize;
-    if (g == "target") gval = ParameterOptimizer::Goal::Target;
+    if (g == "minimize")
+        gval = ParameterOptimizer::Goal::Minimize;
+    if (g == "target")
+        gval = ParameterOptimizer::Goal::Target;
     static_cast<ParameterOptimizer*>(opt)->setObjective(expr ? expr : "", gval);
 }
 
-void flux_opt_set_bounds(void* opt, const char* param, double lower, double upper) {
+void flux_opt_set_bounds(void* opt, const char* param, double lower, double upper)
+{
     static_cast<ParameterOptimizer*>(opt)->setParameterBounds(param ? param : "", lower, upper);
 }
 
-int flux_opt_optimize(void* opt) {
+int flux_opt_optimize(void* opt)
+{
     return static_cast<ParameterOptimizer*>(opt)->optimize().success ? 1 : 0;
 }
 
-double flux_opt_get_value(void* opt, const char* param) {
+double flux_opt_get_value(void* opt, const char* param)
+{
     return 1.0;
 }
 
-void* flux_corner_create() {
+void* flux_corner_create()
+{
     return new CornerAnalyzer();
 }
 
-void flux_corner_destroy(void* corner) {
+void flux_corner_destroy(void* corner)
+{
     delete static_cast<CornerAnalyzer*>(corner);
 }
 
-void flux_corner_load(void* corner, const char* circuitFile) {
+void flux_corner_load(void* corner, const char* circuitFile)
+{
     static_cast<CornerAnalyzer*>(corner)->loadCircuit(circuitFile ? circuitFile : "");
 }
 
-void flux_corner_use_standard(void* corner, const char* type) {
+void flux_corner_use_standard(void* corner, const char* type)
+{
     static_cast<CornerAnalyzer*>(corner)->useStandardCorners(type ? type : "");
 }
 
-const char* flux_corner_analyze(void* corner) {
+const char* flux_corner_analyze(void* corner)
+{
     static std::string result = "Corner analysis complete";
     return result.c_str();
 }
 
-const char* flux_corner_get_worst(void* corner, const char* output) {
+const char* flux_corner_get_worst(void* corner, const char* output)
+{
     static std::string result = "ss corner";
     return result.c_str();
 }
-
 }
 
 } // namespace Sensitivity
@@ -611,7 +695,8 @@ namespace Flux {
 namespace NaturalLanguage {
 
 // NLPProcessor
-NLPProcessor::NLPProcessor() {
+NLPProcessor::NLPProcessor()
+{
     // Initialize intent patterns
     m_intentPatterns["what"] = Intent::Query;
     m_intentPatterns["show"] = Intent::Query;
@@ -623,17 +708,20 @@ NLPProcessor::NLPProcessor() {
 
 NLPProcessor::~NLPProcessor() = default;
 
-void NLPProcessor::initialize(const std::string& domain) {
+void NLPProcessor::initialize(const std::string& domain)
+{
     // Domain-specific initialization
 }
 
-ParsedQuery NLPProcessor::parse(const std::string& query) {
+ParsedQuery NLPProcessor::parse(const std::string& query)
+{
     ParsedQuery parsed;
-    
+
     // Simple keyword-based parsing
     std::string lower = query;
-    for (auto& c : lower) c = tolower(c);
-    
+    for (auto& c : lower)
+        c = tolower(c);
+
     if (lower.find("what") != std::string::npos || lower.find("show") != std::string::npos) {
         parsed.intent = Intent::Query;
         parsed.confidence = 0.9;
@@ -653,36 +741,38 @@ ParsedQuery NLPProcessor::parse(const std::string& query) {
         parsed.intent = Intent::Unknown;
         parsed.confidence = 0.5;
     }
-    
+
     return parsed;
 }
 
-QueryResponse NLPProcessor::execute(const ParsedQuery& query) {
+QueryResponse NLPProcessor::execute(const ParsedQuery& query)
+{
     QueryResponse response;
     response.success = true;
-    
+
     switch (query.intent) {
-        case Intent::Query:
-            response.text = "Query result";
-            response.type = "value";
-            break;
-        case Intent::Command:
-            response.text = "Command executed";
-            response.type = "status";
-            break;
-        case Intent::Debug:
-            response.text = "Debug analysis complete";
-            response.type = "explanation";
-            break;
-        default:
-            response.text = "Response";
-            response.type = "text";
+    case Intent::Query:
+        response.text = "Query result";
+        response.type = "value";
+        break;
+    case Intent::Command:
+        response.text = "Command executed";
+        response.type = "status";
+        break;
+    case Intent::Debug:
+        response.text = "Debug analysis complete";
+        response.type = "explanation";
+        break;
+    default:
+        response.text = "Response";
+        response.type = "text";
     }
-    
+
     return response;
 }
 
-QueryResponse NLPProcessor::query(const std::string& text) {
+QueryResponse NLPProcessor::query(const std::string& text)
+{
     ParsedQuery parsed = parse(text);
     return execute(parsed);
 }
@@ -691,36 +781,44 @@ QueryResponse NLPProcessor::query(const std::string& text) {
 CircuitExplainer::CircuitExplainer() = default;
 CircuitExplainer::~CircuitExplainer() = default;
 
-void CircuitExplainer::loadCircuit(const std::string& circuitFile) {
+void CircuitExplainer::loadCircuit(const std::string& circuitFile)
+{
     m_circuitFile = circuitFile;
 }
 
-std::string CircuitExplainer::explainFunction() {
+std::string CircuitExplainer::explainFunction()
+{
     return "This circuit performs signal amplification with filtering.";
 }
 
-std::string CircuitExplainer::explainOperation() {
+std::string CircuitExplainer::explainOperation()
+{
     return "The input signal is amplified by Q1, then filtered by R2-C1.";
 }
 
-std::string CircuitExplainer::explainComponent(const std::string& component) {
+std::string CircuitExplainer::explainComponent(const std::string& component)
+{
     return component + " provides bias current for the amplifier stage.";
 }
 
-std::string CircuitExplainer::answerWhy(const std::string& question) {
+std::string CircuitExplainer::answerWhy(const std::string& question)
+{
     return "This is because of the circuit topology and component values.";
 }
 
-std::string CircuitExplainer::answerHow(const std::string& question) {
+std::string CircuitExplainer::answerHow(const std::string& question)
+{
     return "The circuit works by amplifying the input signal through multiple stages.";
 }
 
-std::string CircuitExplainer::generateDocumentation() {
+std::string CircuitExplainer::generateDocumentation()
+{
     return "# Circuit Documentation\n\n## Overview\n\nThis circuit...";
 }
 
 // VoiceInterface
-VoiceInterface& VoiceInterface::instance() {
+VoiceInterface& VoiceInterface::instance()
+{
     static VoiceInterface instance;
     return instance;
 }
@@ -729,7 +827,8 @@ VoiceInterface::VoiceInterface() : m_language("en-US") {}
 
 void VoiceInterface::initialize() {}
 
-std::string VoiceInterface::recognize(const std::vector<double>& audioData) {
+std::string VoiceInterface::recognize(const std::vector<double>& audioData)
+{
     return "recognized command";
 }
 
@@ -737,59 +836,71 @@ std::string VoiceInterface::recognize(const std::vector<double>& audioData) {
 ConversationalAssistant::ConversationalAssistant() : m_sessionActive(false), m_personality("professional") {}
 ConversationalAssistant::~ConversationalAssistant() = default;
 
-void ConversationalAssistant::startSession() {
+void ConversationalAssistant::startSession()
+{
     m_sessionActive = true;
 }
 
-std::string ConversationalAssistant::processMessage(const std::string& message) {
+std::string ConversationalAssistant::processMessage(const std::string& message)
+{
     return "I understand. Let me help you with: " + message;
 }
 
-void ConversationalAssistant::endSession() {
+void ConversationalAssistant::endSession()
+{
     m_sessionActive = false;
 }
 
 // C Interface
 extern "C" {
 
-void* flux_nlp_create() {
+void* flux_nlp_create()
+{
     return new NLPProcessor();
 }
 
-void flux_nlp_destroy(void* nlp) {
+void flux_nlp_destroy(void* nlp)
+{
     delete static_cast<NLPProcessor*>(nlp);
 }
 
-void flux_nlp_initialize(void* nlp, const char* domain) {
+void flux_nlp_initialize(void* nlp, const char* domain)
+{
     static_cast<NLPProcessor*>(nlp)->initialize(domain ? domain : "electronics");
 }
 
-const char* flux_nlp_query(void* nlp, const char* query) {
+const char* flux_nlp_query(void* nlp, const char* query)
+{
     static std::string result;
     auto response = static_cast<NLPProcessor*>(nlp)->query(query ? query : "");
     result = response.text;
     return result.c_str();
 }
 
-void* flux_explainer_create() {
+void* flux_explainer_create()
+{
     return new CircuitExplainer();
 }
 
-void flux_explainer_destroy(void* explainer) {
+void flux_explainer_destroy(void* explainer)
+{
     delete static_cast<CircuitExplainer*>(explainer);
 }
 
-void flux_explainer_load(void* explainer, const char* circuitFile) {
+void flux_explainer_load(void* explainer, const char* circuitFile)
+{
     static_cast<CircuitExplainer*>(explainer)->loadCircuit(circuitFile ? circuitFile : "");
 }
 
-const char* flux_explainer_explain(void* explainer) {
+const char* flux_explainer_explain(void* explainer)
+{
     static std::string result;
     result = static_cast<CircuitExplainer*>(explainer)->explainFunction();
     return result.c_str();
 }
 
-const char* flux_explainer_answer(void* explainer, const char* question) {
+const char* flux_explainer_answer(void* explainer, const char* question)
+{
     static std::string result;
     std::string q = question ? question : "";
     if (q.find("why") != std::string::npos) {
@@ -802,35 +913,41 @@ const char* flux_explainer_answer(void* explainer, const char* question) {
     return result.c_str();
 }
 
-void* flux_voice_create() {
+void* flux_voice_create()
+{
     return &VoiceInterface::instance();
 }
 
-void flux_voice_destroy(void* voice) {
+void flux_voice_destroy(void* voice)
+{
     // Singleton - don't delete
 }
 
-void flux_voice_initialize(void* voice) {
+void flux_voice_initialize(void* voice)
+{
     VoiceInterface::instance().initialize();
 }
 
-void* flux_assistant_create() {
+void* flux_assistant_create()
+{
     return new ConversationalAssistant();
 }
 
-void flux_assistant_destroy(void* assistant) {
+void flux_assistant_destroy(void* assistant)
+{
     delete static_cast<ConversationalAssistant*>(assistant);
 }
 
-const char* flux_assistant_message(void* assistant, const char* message) {
+const char* flux_assistant_message(void* assistant, const char* message)
+{
     static std::string result;
     auto* asst = static_cast<ConversationalAssistant*>(assistant);
-    asst->startSession();  // Always ensure session is active
+    asst->startSession(); // Always ensure session is active
     result = asst->processMessage(message ? message : "");
     return result.c_str();
 }
 
-}  // extern "C"
+} // extern "C"
 
 } // namespace NaturalLanguage
 } // namespace Flux

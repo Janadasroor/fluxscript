@@ -14,11 +14,11 @@
 #ifndef FLUX_PYTHON_BRIDGE_H
 #define FLUX_PYTHON_BRIDGE_H
 
-#include <string>
-#include <vector>
+#include <functional>
 #include <map>
 #include <memory>
-#include <functional>
+#include <string>
+#include <vector>
 
 // Forward declare Python objects
 struct _object;
@@ -31,7 +31,8 @@ namespace Flux {
 namespace Python {
 
 // Python value wrapper
-class PyValue {
+class PyValue
+{
 public:
     PyValue();
     PyValue(PyObject* ptr);
@@ -40,7 +41,7 @@ public:
     PyValue(const std::string& value);
     PyValue(const std::vector<double>& values);
     ~PyValue();
-    
+
     // Type conversion
     bool isNone() const;
     bool isNumber() const;
@@ -48,49 +49,50 @@ public:
     bool isList() const;
     bool isDict() const;
     bool isCallable() const;
-    
+
     // Get as C++ types
     double asDouble() const;
     int asInt() const;
     std::string asString() const;
     std::vector<double> asVector() const;
-    
+
     // Get item/attribute
     PyValue getItem(int index) const;
     PyValue getItem(const std::string& key) const;
     PyValue getAttr(const std::string& name) const;
-    
+
     // Call
     PyValue call() const;
     PyValue call(const PyValue& arg) const;
     PyValue call(const std::vector<PyValue>& args) const;
-    
+
     // Raw pointer (use with caution)
     PyObject* ptr() const { return m_ptr; }
-    
+
 private:
     PyObject* m_ptr;
 };
 
 // Python module
-class PyModule {
+class PyModule
+{
 public:
     PyModule(const std::string& name);
     ~PyModule();
-    
+
     bool isValid() const { return m_valid; }
-    
+
     // Get attribute
     PyValue getAttr(const std::string& name) const;
-    
+
     // Call function
     PyValue call(const std::string& func) const;
     PyValue call(const std::string& func, const PyValue& arg) const;
     PyValue call(const std::string& func, const std::vector<PyValue>& args) const;
-    
+
     // Set attribute
     void setAttr(const std::string& name, const PyValue& value);
-    
+
 private:
     std::string m_name;
     PyObject* m_module;
@@ -98,75 +100,79 @@ private:
 };
 
 // Python interpreter manager
-class PythonBridge {
+class PythonBridge
+{
 public:
     static PythonBridge& instance();
-    
+
     // Initialize/finalize
     void initialize();
     void finalize();
     bool isInitialized() const { return m_initialized; }
-    
+
     // Import module
     PyModule import(const std::string& name);
-    
+
     // Execute code
     PyValue eval(const std::string& code);
     void exec(const std::string& code);
-    
+
     // Set path
     void addPath(const std::string& path);
-    
+
     // Get sys.modules
     std::vector<std::string> getLoadedModules() const;
-    
+
     // Error handling
     std::string getLastError() const;
     void clearError();
     bool hasError() const;
-    
+
     // GIL management
-    class GILState {
+    class GILState
+    {
     public:
         GILState();
         ~GILState();
+
     private:
         void* m_state;
     };
-    
+
 private:
     PythonBridge();
     ~PythonBridge();
     PythonBridge(const PythonBridge&) = delete;
     PythonBridge& operator=(const PythonBridge&) = delete;
-    
+
     bool m_initialized;
     bool m_mainThread;
 };
 
 // Convenience functions
 namespace Py {
-    inline PyValue eval(const std::string& code) {
-        return PythonBridge::instance().eval(code);
-    }
-    
-    inline void exec(const std::string& code) {
-        PythonBridge::instance().exec(code);
-    }
-    
-    inline PyModule import(const std::string& name) {
-        return PythonBridge::instance().import(name);
-    }
+inline PyValue eval(const std::string& code)
+{
+    return PythonBridge::instance().eval(code);
 }
+
+inline void exec(const std::string& code)
+{
+    PythonBridge::instance().exec(code);
+}
+
+inline PyModule import(const std::string& name)
+{
+    return PythonBridge::instance().import(name);
+}
+} // namespace Py
 
 // C interface for FluxScript JIT
 extern "C" {
-    void flux_py_init();
-    void flux_py_import(const char* module_name, const char* alias);
-    double flux_py_call(const char* module, const char* func, double* args, int nargs);
-    void flux_py_call_array(const char* module, const char* func, 
-                            double* in_args, int nin, 
-                            double* out_args, int nout);
+void flux_py_init();
+void flux_py_import(const char* module_name, const char* alias);
+double flux_py_call(const char* module, const char* func, double* args, int nargs);
+void flux_py_call_array(const char* module, const char* func, double* in_args, int nin, double* out_args, int nout);
 }
 
 } // namespace Python

@@ -14,44 +14,48 @@
 #ifndef FLUX_COMPILER_MODULE_LOADER_H
 #define FLUX_COMPILER_MODULE_LOADER_H
 
-#include <string>
-#include <vector>
+#include <filesystem>
+#include <llvm/IR/LLVMContext.h>
+#include <llvm/IR/Module.h>
 #include <map>
 #include <memory>
-#include <filesystem>
-#include <llvm/IR/Module.h>
-#include <llvm/IR/LLVMContext.h>
+#include <string>
+#include <vector>
 
 namespace Flux {
 
 // Version representation for versioned imports
-struct Version {
+struct Version
+{
     int major;
     int minor;
     int patch;
-    
-    Version(int maj = 0, int min = 0, int pat = 0) 
-        : major(maj), minor(min), patch(pat) {}
-    
-    std::string toString() const {
-        return std::to_string(major) + "." + 
-               std::to_string(minor) + "." + 
-               std::to_string(patch);
+
+    Version(int maj = 0, int min = 0, int pat = 0) : major(maj), minor(min), patch(pat) {}
+
+    std::string toString() const
+    {
+        return std::to_string(major) + "." + std::to_string(minor) + "." + std::to_string(patch);
     }
-    
-    bool operator<(const Version& other) const {
-        if (major != other.major) return major < other.major;
-        if (minor != other.minor) return minor < other.minor;
+
+    bool operator<(const Version& other) const
+    {
+        if (major != other.major)
+            return major < other.major;
+        if (minor != other.minor)
+            return minor < other.minor;
         return patch < other.patch;
     }
-    
-    bool operator==(const Version& other) const {
+
+    bool operator==(const Version& other) const
+    {
         return major == other.major && minor == other.minor && patch == other.patch;
     }
 };
 
 // Module metadata
-struct ModuleInfo {
+struct ModuleInfo
+{
     std::string name;
     Version version;
     std::string description;
@@ -62,7 +66,8 @@ struct ModuleInfo {
 };
 
 // Import specification
-struct ImportSpec {
+struct ImportSpec
+{
     std::string moduleName;
     Version minVersion;
     Version maxVersion;
@@ -72,35 +77,37 @@ struct ImportSpec {
 };
 
 // Conditional compilation configuration
-struct CompileConfig {
+struct CompileConfig
+{
     std::map<std::string, bool> features;
     std::map<std::string, std::string> constants;
     std::string targetPlatform;
-    
-    CompileConfig() {
+
+    CompileConfig()
+    {
         features["FLUX_HAS_QT"] = false;
         features["FLUX_HAS_MLIR"] = false;
         features["FLUX_HAS_EIGEN"] = true;
         features["FLUX_DEBUG"] = false;
-        
+
         constants["FLUX_VERSION"] = "1.0.0";
         constants["FLUX_PLATFORM"] = "linux";
-        
+
         targetPlatform = "linux";
     }
-    
-    void setFeature(const std::string& name, bool value) {
-        features[name] = value;
-    }
-    
-    bool hasFeature(const std::string& name) const {
+
+    void setFeature(const std::string& name, bool value) { features[name] = value; }
+
+    bool hasFeature(const std::string& name) const
+    {
         auto it = features.find(name);
         return it != features.end() && it->second;
     }
 };
 
 // Reflection information for a function
-struct FunctionReflection {
+struct FunctionReflection
+{
     std::string name;
     std::string moduleName;
     std::vector<std::pair<std::string, std::string>> parameters;
@@ -111,45 +118,47 @@ struct FunctionReflection {
 };
 
 // Module loader class
-class ModuleLoader {
+class ModuleLoader
+{
 public:
     ModuleLoader();
     ~ModuleLoader();
-    
+
     bool loadModule(const std::string& moduleName, std::string* error = nullptr);
     bool loadModuleFromFile(const std::filesystem::path& path, std::string* error = nullptr);
     bool loadPlugin(const std::filesystem::path& pluginPath, std::string* error = nullptr);
     bool loadImport(const ImportSpec& spec, std::string* error = nullptr);
-    
+
     std::filesystem::path findModule(const std::string& moduleName) const;
     std::filesystem::path findModule(const std::string& moduleName, const Version& version) const;
-    
+
     void addSearchPath(const std::filesystem::path& path);
     void clearSearchPaths();
     std::vector<std::string> getLoadedModules() const;
     bool isModuleLoaded(const std::string& moduleName) const;
-    
+
     ModuleInfo getModuleInfo(const std::string& moduleName) const;
     std::vector<ModuleInfo> getAllModuleInfo() const;
-    
+
     void registerNamespace(const std::string& moduleName, const std::string& alias);
     std::string resolveNamespace(const std::string& qualifiedName) const;
-    
+
     std::vector<FunctionReflection> getModuleFunctions(const std::string& moduleName) const;
     FunctionReflection getFunctionReflection(const std::string& functionName) const;
     std::vector<std::string> listAllSymbols() const;
-    
+
     void setCompileConfig(const CompileConfig& config);
     CompileConfig getCompileConfig() const;
     bool checkFeature(const std::string& feature) const;
-    
+
     void loadStandardLibrary(std::string* error = nullptr);
-    
+
     void setCacheDirectory(const std::filesystem::path& path);
     void clearCache();
-    
+
 private:
-    struct ModuleData {
+    struct ModuleData
+    {
         ModuleInfo info;
         std::unique_ptr<llvm::Module> module;
         std::map<std::string, FunctionReflection> functions;
@@ -158,50 +167,52 @@ private:
         bool isPlugin = false;
         void* pluginHandle = nullptr;
     };
-    
+
     std::map<std::string, ModuleData> m_loadedModules;
     std::vector<std::filesystem::path> m_searchPaths;
     std::map<std::string, std::string> m_namespaceAliases;
     CompileConfig m_compileConfig;
     std::filesystem::path m_cacheDirectory;
-    
+
     bool parseModuleFile(const std::filesystem::path& path, ModuleInfo& info, std::string* error);
-    bool compileModule(const std::filesystem::path& sourcePath, const std::filesystem::path& outputPath, std::string* error);
+    bool compileModule(const std::filesystem::path& sourcePath, const std::filesystem::path& outputPath,
+                       std::string* error);
     bool loadCompiledModule(const std::filesystem::path& path, ModuleData& data, std::string* error);
 };
 
 // Global configuration
-class GlobalConfig {
+class GlobalConfig
+{
 public:
     static GlobalConfig& instance();
-    
+
     void setOptimizationLevel(int level);
     int getOptimizationLevel() const { return m_optimizationLevel; }
-    
+
     void setDefaultPrecision(int bits);
     int getDefaultPrecision() const { return m_defaultPrecision; }
-    
+
     void setJITCacheEnabled(bool enabled);
     bool isJITCacheEnabled() const { return m_jitCacheEnabled; }
-    
+
     void setJITCacheDirectory(const std::string& path);
     std::string getJITCacheDirectory() const { return m_jitCacheDirectory; }
-    
+
     void addModuleSearchPath(const std::string& path);
     std::vector<std::string> getModuleSearchPaths() const { return m_moduleSearchPaths; }
-    
+
     void setDebugEnabled(bool enabled);
     bool isDebugEnabled() const { return m_debugEnabled; }
-    
+
     void setVerboseOutput(bool verbose);
     bool isVerboseOutput() const { return m_verboseOutput; }
-    
+
 private:
     GlobalConfig();
     ~GlobalConfig();
     GlobalConfig(const GlobalConfig&) = delete;
     GlobalConfig& operator=(const GlobalConfig&) = delete;
-    
+
     int m_optimizationLevel = 2;
     int m_defaultPrecision = 64;
     bool m_jitCacheEnabled = true;

@@ -14,16 +14,17 @@
 #ifndef FLUX_ADVANCED_RUNTIME_H
 #define FLUX_ADVANCED_RUNTIME_H
 
+#include <functional>
+#include <map>
 #include <string>
 #include <vector>
-#include <map>
-#include <functional>
 
 namespace Flux {
 
 // ============ Plotting Runtime ============
 
-struct PlotConfig {
+struct PlotConfig
+{
     std::string title;
     std::vector<std::string> signals;
     std::vector<std::string> colors;
@@ -34,8 +35,7 @@ struct PlotConfig {
 };
 
 // Plot waveform data
-int flux_plot_waveforms(const PlotConfig& config,
-                        const std::vector<double>& xData,
+int flux_plot_waveforms(const PlotConfig& config, const std::vector<double>& xData,
                         const std::vector<std::vector<double>>& yData);
 
 // Save plot to file
@@ -46,26 +46,29 @@ void flux_plot_clear();
 
 // ============ Optimization Runtime ============
 
-struct OptimizationGoal {
+struct OptimizationGoal
+{
     std::string name;
-    std::string target;      // e.g., "2.4G", "<1dB", "5%"
+    std::string target; // e.g., "2.4G", "<1dB", "5%"
     double targetValue;
     double tolerance;
-    std::string constraint;  // "min", "max", "exact"
+    std::string constraint; // "min", "max", "exact"
 };
 
-struct OptimizationConfig {
+struct OptimizationConfig
+{
     std::string circuit;
     std::vector<OptimizationGoal> goals;
     std::vector<std::string> tuneParams;
-    std::string algorithm;   // "genetic", "pso", "bayesian", "gradient"
+    std::string algorithm; // "genetic", "pso", "bayesian", "gradient"
     int maxIterations;
     bool gpuAccelerated;
     int populationSize;
     double mutationRate;
 };
 
-struct OptimizationResult {
+struct OptimizationResult
+{
     bool success;
     std::map<std::string, double> bestParams;
     std::map<std::string, double> achievedGoals;
@@ -85,13 +88,15 @@ void flux_optimization_cancel();
 
 // ============ Benchmark Runtime ============
 
-struct BenchmarkConfig {
+struct BenchmarkConfig
+{
     std::string circuit;
-    std::vector<std::string> comparators;  // "fluxscript", "python", "matlab", "ngspice"
-    std::vector<std::string> metrics;      // "time", "memory", "accuracy"
+    std::vector<std::string> comparators; // "fluxscript", "python", "matlab", "ngspice"
+    std::vector<std::string> metrics;     // "time", "memory", "accuracy"
 };
 
-struct BenchmarkResult {
+struct BenchmarkResult
+{
     std::string tool;
     double simulationTimeMs;
     double memoryUsageMB;
@@ -106,23 +111,24 @@ std::vector<BenchmarkResult> flux_run_benchmark(const BenchmarkConfig& config);
 void flux_benchmark_print_results(const std::vector<BenchmarkResult>& results);
 
 // Export benchmark to CSV
-int flux_benchmark_export_csv(const std::vector<BenchmarkResult>& results,
-                              const std::string& filename);
+int flux_benchmark_export_csv(const std::vector<BenchmarkResult>& results, const std::string& filename);
 
 // ============ Interactive Sweep Runtime ============
 
-struct SweepControl {
+struct SweepControl
+{
     std::string name;
-    std::string type;      // "slider", "knob", "dropdown", "checkbox"
+    std::string type; // "slider", "knob", "dropdown", "checkbox"
     double minValue;
     double maxValue;
     double step;
     double currentValue;
-    std::vector<std::string> options;  // for dropdown
+    std::vector<std::string> options; // for dropdown
     bool enabled;
 };
 
-struct SweepConfig {
+struct SweepConfig
+{
     std::string signal;
     std::vector<SweepControl> controls;
     int updateRateFPS;
@@ -143,14 +149,16 @@ void flux_sweep_close();
 
 // ============ Report Generation Runtime ============
 
-struct ReportSection {
+struct ReportSection
+{
     std::string name;
-    std::string content;  // HTML/Markdown content
+    std::string content; // HTML/Markdown content
     std::vector<std::string> images;
     std::vector<std::string> dataFiles;
 };
 
-struct ReportConfig {
+struct ReportConfig
+{
     std::string filename;
     std::string title;
     std::string author;
@@ -159,7 +167,7 @@ struct ReportConfig {
     bool includeCSV;
     bool includeNetlist;
     bool includeBOM;
-    std::string format;    // "html", "pdf", "latex", "markdown"
+    std::string format; // "html", "pdf", "latex", "markdown"
 };
 
 // Generate report
@@ -172,8 +180,7 @@ int flux_report_add_section(const std::string& name, const std::string& content)
 int flux_report_add_image(const std::string& section, const std::string& imagePath);
 
 // Add data table to report
-int flux_report_add_table(const std::string& section,
-                          const std::vector<std::string>& headers,
+int flux_report_add_table(const std::string& section, const std::vector<std::string>& headers,
                           const std::vector<std::vector<std::string>>& data);
 
 // ============ Utility Functions ============

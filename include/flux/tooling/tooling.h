@@ -30,7 +30,8 @@ class JITEngine;
 
 namespace Tooling {
 
-struct AOTOptions {
+struct AOTOptions
+{
     std::string inputName = "<stdin>";
     std::string moduleName = "flux_module";
     std::string outputPath;
@@ -39,21 +40,24 @@ struct AOTOptions {
     bool sharedLibrary = false;
 };
 
-struct ProfileResult {
+struct ProfileResult
+{
     double compileMs = 0.0;
     double runMs = 0.0;
     int iterations = 1;
     bool cacheHit = false;
 };
 
-struct TestCase {
+struct TestCase
+{
     int line = 0;
     std::string expression;
     double expected = 0.0;
     double tolerance = 1e-9;
 };
 
-struct TestSuiteResult {
+struct TestSuiteResult
+{
     int passed = 0;
     int failed = 0;
     std::vector<std::string> failures;
@@ -62,41 +66,28 @@ struct TestSuiteResult {
 std::string defaultCacheDirectory();
 std::string computeCacheKey(const std::string& code, const CompilerOptions& options);
 
-bool emitObjectBuffer(CompileArtifacts& artifacts,
-                      OptimizationLevel optimizationLevel,
-                      std::unique_ptr<llvm::MemoryBuffer>& output,
-                      std::string* error = nullptr);
-bool emitObjectFile(CompileArtifacts& artifacts,
-                    const std::string& outputPath,
-                    std::string* error = nullptr);
-bool emitArtifact(const std::string& code,
-                  const AOTOptions& options,
-                  std::string* error = nullptr);
+bool emitObjectBuffer(CompileArtifacts& artifacts, OptimizationLevel optimizationLevel,
+                      std::unique_ptr<llvm::MemoryBuffer>& output, std::string* error = nullptr);
+bool emitObjectFile(CompileArtifacts& artifacts, const std::string& outputPath, std::string* error = nullptr);
+bool emitArtifact(const std::string& code, const AOTOptions& options, std::string* error = nullptr);
 
-bool saveReturnTypes(const std::string& path,
-                     const std::map<std::string, FluxType>& returnTypes,
+bool saveReturnTypes(const std::string& path, const std::map<std::string, FluxType>& returnTypes,
                      std::string* error = nullptr);
-bool loadReturnTypes(const std::string& path,
-                     std::map<std::string, FluxType>& returnTypes,
+bool loadReturnTypes(const std::string& path, std::map<std::string, FluxType>& returnTypes,
                      std::string* error = nullptr);
 
 std::string formatCode(const std::string& code);
 std::string generateDocsMarkdown(const std::string& code, const std::string& moduleName);
 std::vector<TestCase> discoverTests(const std::string& code);
-TestSuiteResult runTests(const std::string& code,
-                         const std::vector<TestCase>& tests,
+TestSuiteResult runTests(const std::string& code, const std::vector<TestCase>& tests,
                          OptimizationLevel optLevel = OptimizationLevel::O2);
-ProfileResult profileScript(JITEngine& engine,
-                            const std::string& code,
-                            const std::string& entryPoint,
-                            int iterations,
+ProfileResult profileScript(JITEngine& engine, const std::string& code, const std::string& entryPoint, int iterations,
                             std::string* error = nullptr);
 
 // Persistent JIT cache: bitcode save/load
 bool saveBitcodeToFile(llvm::Module& M, const std::string& path, std::string* error = nullptr);
-std::unique_ptr<llvm::Module> loadBitcodeFromFile(const std::string& path,
-                                                   llvm::LLVMContext& Ctx,
-                                                   std::string* error = nullptr);
+std::unique_ptr<llvm::Module> loadBitcodeFromFile(const std::string& path, llvm::LLVMContext& Ctx,
+                                                  std::string* error = nullptr);
 
 } // namespace Tooling
 } // namespace Flux

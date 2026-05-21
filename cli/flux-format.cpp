@@ -22,20 +22,19 @@
 
 namespace {
 llvm::cl::OptionCategory FluxFormatCategory("flux-format options");
-llvm::cl::opt<std::string> InputFilename(
-    llvm::cl::Positional, llvm::cl::desc("<script.flux>"), llvm::cl::init("-"),
-    llvm::cl::cat(FluxFormatCategory));
-}
+llvm::cl::opt<std::string> InputFilename(llvm::cl::Positional, llvm::cl::desc("<script.flux>"), llvm::cl::init("-"),
+                                         llvm::cl::cat(FluxFormatCategory));
+} // namespace
 
-int main(int argc, char** argv) {
+int main(int argc, char** argv)
+{
     llvm::InitLLVM initLLVM(argc, argv);
     llvm::cl::HideUnrelatedOptions(FluxFormatCategory);
     llvm::cl::ParseCommandLineOptions(argc, argv, "FluxScript formatter\n");
 
     auto input = llvm::MemoryBuffer::getFileOrSTDIN(InputFilename);
     if (!input) {
-        llvm::errs() << "Could not read " << InputFilename << ": "
-                     << input.getError().message() << "\n";
+        llvm::errs() << "Could not read " << InputFilename << ": " << input.getError().message() << "\n";
         return 1;
     }
 
