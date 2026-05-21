@@ -1,6 +1,6 @@
 # FluxScript
 
-LLVM-based JIT-compiled scripting language for mixed-signal circuit simulation with compile-time dimensional analysis.
+A JIT-compiled scripting language for circuit simulation with compile-time unit analysis — write SPICE netlists, solve MNA matrices, and catch volt/amp mismatches before they crash your simulation.
 
 [![CI](https://github.com/Janadasroor/fluxscript/actions/workflows/ci.yml/badge.svg)](https://github.com/Janadasroor/fluxscript/actions/workflows/ci.yml)
 [![Lint](https://github.com/Janadasroor/fluxscript/actions/workflows/lint.yml/badge.svg)](https://github.com/Janadasroor/fluxscript/actions/workflows/lint.yml)

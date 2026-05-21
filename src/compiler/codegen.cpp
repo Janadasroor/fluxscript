@@ -795,6 +795,7 @@ TypedValue BinaryExprAST::codegen(CodegenContext& context)
         llvm::Type* VoidPtrTy = llvm::PointerType::get(context.TheContext, 0);
 
         FluxType resType = resultComplex ? FluxType(TypeKind::ComplexMatrix) : FluxType(TypeKind::Matrix);
+        resType.Dimensions = ResDims;
         llvm::StructType* MatStructTy = llvm::cast<llvm::StructType>(resType.getLLVMType(context.TheContext));
 
         bool isMatMat = (L.Type.Kind == TypeKind::Matrix || L.Type.Kind == TypeKind::ComplexMatrix) &&
@@ -1356,7 +1357,9 @@ TypedValue TransposeExprAST::codegen(CodegenContext& context)
         MatVal = context.Builder.CreateInsertValue(MatVal, Cols, 1); // Swapped rows/cols
         MatVal = context.Builder.CreateInsertValue(MatVal, Rows, 2);
 
-        return TypedValue(MatVal, TypeKind::Matrix);
+        FluxType matType(TypeKind::Matrix);
+        matType.Dimensions = V.Type.Dimensions;
+        return TypedValue(MatVal, matType);
     }
 
     // For scalars, transpose is just identity (or conjugate transpose for complex, but leaving it as is for now)
@@ -1538,13 +1541,15 @@ TypedValue CallExprAST::codegen(CodegenContext& context)
                 llvm::Value* ResRows = context.Builder.CreateCall(RowsF, {ResPtr}, "res_rows");
                 llvm::Value* ResCols = context.Builder.CreateCall(ColsF, {ResPtr}, "res_cols");
 
+                FluxType matTy(TypeKind::Matrix);
+                matTy.Dimensions = Arg.Type.Dimensions;
                 llvm::StructType* MatStructTy =
-                    llvm::cast<llvm::StructType>(FluxType(TypeKind::Matrix).getLLVMType(context.TheContext));
+                    llvm::cast<llvm::StructType>(matTy.getLLVMType(context.TheContext));
                 llvm::Value* MatVal = llvm::UndefValue::get(MatStructTy);
                 MatVal = context.Builder.CreateInsertValue(MatVal, ResPtr, 0);
                 MatVal = context.Builder.CreateInsertValue(MatVal, ResRows, 1);
                 MatVal = context.Builder.CreateInsertValue(MatVal, ResCols, 2);
-                return TypedValue(MatVal, TypeKind::Matrix);
+                return TypedValue(MatVal, matTy);
             }
         } else if (Arg.Type.Kind == TypeKind::Double) {
             if (Name == "abs") {
@@ -1697,8 +1702,10 @@ TypedValue CallExprAST::codegen(CodegenContext& context)
                         llvm::Function::Create(llvm::FunctionType::get(DoubleTy, {VoidPtrTy, Int32Ty, Int32Ty}, false),
                                                llvm::Function::ExternalLinkage, "flux_matrix_get", context.TheModule);
 
+                FluxType getRetType(TypeKind::Double);
+                getRetType.Dimensions = FTy.Dimensions;
                 return TypedValue(context.Builder.CreateCall(GetElemF, {MatPtr, RowV, ColV}, "elem_val"),
-                                  TypeKind::Double);
+                                  getRetType);
             }
         }
 
@@ -1841,7 +1848,17 @@ TypedValue CallExprAST::codegen(CodegenContext& context)
         MatVal = context.Builder.CreateInsertValue(MatVal, RetPtr, 0);
         MatVal = context.Builder.CreateInsertValue(MatVal, RetRows, 1);
         MatVal = context.Builder.CreateInsertValue(MatVal, RetCols, 2);
-        return TypedValue(MatVal, TypeKind::Matrix);
+        FluxType extMatType(TypeKind::Matrix);
+        // Propagate element dims from first matrix argument
+        if (!ArgDims.empty()) {
+            auto extIt3 = context.ExternFuncTypes.find(Callee);
+            if (extIt3 != context.ExternFuncTypes.end() && !extIt3->second.second.empty() &&
+                (extIt3->second.second[0].Kind == TypeKind::Matrix ||
+                 extIt3->second.second[0].Kind == TypeKind::ComplexMatrix)) {
+                extMatType.Dimensions = ArgDims[0];
+            }
+        }
+        return TypedValue(MatVal, extMatType);
     }
 
     // User-defined function returning matrix via sret convention
@@ -1851,7 +1868,16 @@ TypedValue CallExprAST::codegen(CodegenContext& context)
         // ArgsV already has the sret pointer from arg_size mismatch handling
         context.Builder.CreateCall(CalleeF, ArgsV);
         llvm::Value* MatVal = context.Builder.CreateLoad(MatSTy, ArgsV[0], "mat_val");
-        return TypedValue(MatVal, TypeKind::Matrix);
+        FluxType sretMatType(TypeKind::Matrix);
+        if (!ArgDims.empty()) {
+            auto extIt3 = context.ExternFuncTypes.find(Callee);
+            if (extIt3 != context.ExternFuncTypes.end() && !extIt3->second.second.empty() &&
+                (extIt3->second.second[0].Kind == TypeKind::Matrix ||
+                 extIt3->second.second[0].Kind == TypeKind::ComplexMatrix)) {
+                sretMatType.Dimensions = ArgDims[0];
+            }
+        }
+        return TypedValue(MatVal, sretMatType);
     }
 
     if (extRetIt != context.ExternFuncTypes.end() && extRetIt->second.first.Kind == TypeKind::Void) {
@@ -1913,6 +1939,19 @@ TypedValue CallExprAST::codegen(CodegenContext& context)
             retType.Dimensions = ArgDims[0];
         } else if (kDimless.count(Name)) {
             retType.Dimensions = UnitDimensions();
+        }
+    }
+    // Infer return dimensions for matrix-to-scalar reductions
+    if (retType.Kind == TypeKind::Double && !ArgDims.empty() && !Args.empty()) {
+        static const std::set<std::string> kMatToScalar = {
+            "matrix_get", "matrix_sum", "matrix_mean", "matrix_trace"};
+        if (kMatToScalar.count(Callee)) {
+            auto extIt3 = context.ExternFuncTypes.find(Callee);
+            if (extIt3 != context.ExternFuncTypes.end() && !extIt3->second.second.empty() &&
+                (extIt3->second.second[0].Kind == TypeKind::Matrix ||
+                 extIt3->second.second[0].Kind == TypeKind::ComplexMatrix)) {
+                retType.Dimensions = ArgDims[0];
+            }
         }
     }
     return TypedValue(context.Builder.CreateCall(CalleeF, ArgsV, "calltmp"), retType);
@@ -2247,10 +2286,13 @@ TypedValue MatrixExprAST::codegen(CodegenContext& context)
     DataPtr = context.Builder.CreateBitCast(DataPtr, llvm::PointerType::get(ElemTy->getContext(), 0));
 
     // Write elements directly into Eigen's internal data buffer
+    UnitDimensions elemDims;
     for (int r = 0; r < NumRows; ++r) {
         for (int c = 0; c < NumCols; ++c) {
             TypedValue ElemTV = Rows[r][c]->codegen(context);
             if (ElemTV.Val) {
+                if (r == 0 && c == 0)
+                    elemDims = ElemTV.Type.Dimensions;
                 if (isComplex && ElemTV.Type.Kind != TypeKind::Complex) {
                     ElemTV = promoteToComplex(ElemTV, context);
                 }
@@ -2263,6 +2305,7 @@ TypedValue MatrixExprAST::codegen(CodegenContext& context)
     }
 
     FluxType resType = isComplex ? FluxType(TypeKind::ComplexMatrix) : FluxType(TypeKind::Matrix);
+    resType.Dimensions = elemDims;
     llvm::StructType* MatStructTy = llvm::cast<llvm::StructType>(resType.getLLVMType(context.TheContext));
     llvm::Value* MatVal = llvm::UndefValue::get(MatStructTy);
     MatVal = context.Builder.CreateInsertValue(MatVal, DataPtr, 0);
@@ -2343,13 +2386,15 @@ TypedValue IndexExprAST::codegen(CodegenContext& context)
                                                llvm::Function::ExternalLinkage, "flux_matrix_cols", context.TheModule);
             llvm::Value* SR = context.Builder.CreateCall(RowsF, {SlicePtr}, "sli_rows");
             llvm::Value* SC = context.Builder.CreateCall(ColsF, {SlicePtr}, "sli_cols");
+            FluxType sliceMatType(TypeKind::Matrix);
+            sliceMatType.Dimensions = ArrayTV.Type.Dimensions;
             llvm::StructType* MatSTy =
-                llvm::cast<llvm::StructType>(FluxType(TypeKind::Matrix).getLLVMType(context.TheContext));
+                llvm::cast<llvm::StructType>(sliceMatType.getLLVMType(context.TheContext));
             llvm::Value* MV = llvm::PoisonValue::get(MatSTy);
             MV = context.Builder.CreateInsertValue(MV, SlicePtr, 0);
             MV = context.Builder.CreateInsertValue(MV, SR, 1);
             MV = context.Builder.CreateInsertValue(MV, SC, 2);
-            return TypedValue(MV, TypeKind::Matrix);
+            return TypedValue(MV, sliceMatType);
         }
 
         // Scalar element access: A[row, col]
@@ -2376,7 +2421,9 @@ TypedValue IndexExprAST::codegen(CodegenContext& context)
             GetElemF = llvm::Function::Create(llvm::FunctionType::get(DoubleTy, {VoidPtrTy, Int32Ty, Int32Ty}, false),
                                               llvm::Function::ExternalLinkage, "flux_matrix_get", context.TheModule);
 
-        return TypedValue(context.Builder.CreateCall(GetElemF, {MatPtr, RowV, ColV}, "elem_val"), TypeKind::Double);
+        FluxType idxRetType(TypeKind::Double);
+        idxRetType.Dimensions = ArrayTV.Type.Dimensions;
+        return TypedValue(context.Builder.CreateCall(GetElemF, {MatPtr, RowV, ColV}, "elem_val"), idxRetType);
     }
 
     return TypedValue(llvm::ConstantFP::get(context.TheContext, llvm::APFloat(0.0)), TypeKind::Double);
