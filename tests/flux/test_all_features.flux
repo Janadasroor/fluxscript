@@ -156,3 +156,11 @@ def test_typed_param_propagation() {
 def test_voltage_divider_typed() {
     var vin = 10V; var r1 = 1k; var r2 = 2k; vin * r2 / (r1 + r2) == 6.666666666666667
 }
+
+def test_pow_one() {
+    var x = 5V; pow(x, 1) + 3V == 8.0
+}
+
+def test_pow_sq() {
+    var x = 5V; pow(x, 2) / 5V == 5.0
+}

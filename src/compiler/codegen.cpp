@@ -1648,6 +1648,28 @@ TypedValue CallExprAST::codegen(CodegenContext& context) {
             retType.Dimensions.temperature = ArgDims[0].temperature / div;
             retType.Dimensions.amount = ArgDims[0].amount / div;
             retType.Dimensions.luminous = ArgDims[0].luminous / div;
+        } else if (Name == "pow" && ArgDims.size() >= 2) {
+            if (auto* C = llvm::dyn_cast<llvm::ConstantFP>(ArgsV[1])) {
+                double exp = C->getValueAPF().convertToDouble();
+                if (std::abs(exp - std::round(exp)) < 1e-10) {
+                    int e = static_cast<int>(std::round(exp));
+                    retType.Dimensions.mass = ArgDims[0].mass * e;
+                    retType.Dimensions.length = ArgDims[0].length * e;
+                    retType.Dimensions.time = ArgDims[0].time * e;
+                    retType.Dimensions.current = ArgDims[0].current * e;
+                    retType.Dimensions.temperature = ArgDims[0].temperature * e;
+                    retType.Dimensions.amount = ArgDims[0].amount * e;
+                    retType.Dimensions.luminous = ArgDims[0].luminous * e;
+                } else if (std::abs(exp - 0.5) < 1e-10) {
+                    retType.Dimensions.mass = ArgDims[0].mass / 2;
+                    retType.Dimensions.length = ArgDims[0].length / 2;
+                    retType.Dimensions.time = ArgDims[0].time / 2;
+                    retType.Dimensions.current = ArgDims[0].current / 2;
+                    retType.Dimensions.temperature = ArgDims[0].temperature / 2;
+                    retType.Dimensions.amount = ArgDims[0].amount / 2;
+                    retType.Dimensions.luminous = ArgDims[0].luminous / 2;
+                }
+            }
         } else if (Name == "hypot" && ArgDims.size() >= 2) {
             if (ArgDims[0] == ArgDims[1]) retType.Dimensions = ArgDims[0];
         } else if (kDimPreserve2.count(Name) && ArgDims.size() >= 2) {

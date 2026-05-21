@@ -148,3 +148,21 @@ def test_sqrt_power_expression() {
 def test_unary_minus_dims() {
     var x = 5V; -x + 10V == 5.0
 }
+
+# --- pow() dimension inference ---
+
+def test_pow_preserves_dims() {
+    var x = 5V; pow(x, 1) + 3V == 8.0
+}
+
+def test_pow_zero_dims() {
+    var x = 5V; pow(x, 0) == 1.0
+}
+
+def test_pow_doubles_dims() {
+    var x = 5V; pow(x, 2) / 5V == 5.0
+}
+
+def test_pow_negate_dims() {
+    var x = 5V; pow(x, -1) * 25.0 == 5.0
+}
