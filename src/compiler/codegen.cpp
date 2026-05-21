@@ -767,24 +767,6 @@ TypedValue BinaryExprAST::codegen(CodegenContext& context)
     } else if (Op == '<' || Op == '>' || Op == static_cast<int>(TokenType::tok_less_equal) ||
                Op == static_cast<int>(TokenType::tok_greater_equal) || Op == static_cast<int>(TokenType::tok_equal) ||
                Op == static_cast<int>(TokenType::tok_not_equal)) {
-        auto getTypeStr = [](TypedValue tv) -> std::string {
-            if (tv.Type.Kind == TypeKind::Double)
-                return "Double";
-            if (tv.Type.Kind == TypeKind::Int)
-                return "Int";
-            if (tv.Type.Kind == TypeKind::Bool)
-                return "Bool";
-            return std::to_string(static_cast<int>(tv.Type.Kind));
-        };
-        std::string Lname = LHS->getNodeName();
-        if (Lname.empty())
-            Lname = "?";
-        std::string Rname = RHS->getNodeName();
-        if (Rname.empty())
-            Rname = "?";
-        std::cerr << "[DEBUG] CMP: op=" << Op << " Lname=" << Lname << " Rname=" << Rname << " Ltype=" << getTypeStr(L)
-                  << " Rtype=" << getTypeStr(R) << " Ldims=" << L.Type.Dimensions.toString()
-                  << " Rdims=" << R.Type.Dimensions.toString() << std::endl;
         if (L.Type.Dimensions != R.Type.Dimensions && !L.Type.Dimensions.isDimensionless() &&
             !R.Type.Dimensions.isDimensionless()) {
             std::cerr << "Unit mismatch error: " << L.Type.Dimensions.toString() << " and "
@@ -955,10 +937,6 @@ TypedValue BinaryExprAST::codegen(CodegenContext& context)
             llvm::Value* a = context.Builder.CreateExtractElement(L.Val, (uint64_t)0, "ca");
             llvm::Value* b = context.Builder.CreateExtractElement(L.Val, (uint64_t)1, "cb");
             llvm::Value* c = context.Builder.CreateExtractElement(R.Val, (uint64_t)0, "cc");
-            llvm::Value* d = context.Builder.CreateExtractElement(R.Val, (uint64_t)1, "cd");
-
-            llvm::Value* ac = context.Builder.CreateFMul(a, c, "cac");
-            ExtractElement(R.Val, (uint64_t)0, "cc");
             llvm::Value* d = context.Builder.CreateExtractElement(R.Val, (uint64_t)1, "cd");
 
             llvm::Value* ac = context.Builder.CreateFMul(a, c, "cac");

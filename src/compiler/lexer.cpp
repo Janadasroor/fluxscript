@@ -798,6 +798,9 @@ int Lexer::gettok()
         // If the number contains a decimal point, parse as float
         bool hasDot = NumStr.find('.') != std::string::npos;
 
+        // Clear any leftover unit string from previous tokens
+        StringVal = "";
+
         // Alphabetic suffix (SPICE multiplier or unit identifier)
         if (isalpha(m_lastChar)) {
             hasDot = true; // any number with a suffix is a float
