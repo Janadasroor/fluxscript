@@ -92,6 +92,11 @@ void* flux_fsm_create(int initial_state, double output_fn)
     return static_cast<void*>(fsm);
 }
 
+void flux_fsm_destroy(void* fsm)
+{
+    delete static_cast<FSMObject*>(fsm);
+}
+
 void flux_fsm_add_transition(void* fsm, int cur, int next, double (*cond)(void*), double (*out)(void*))
 {
     if (!fsm)
@@ -192,6 +197,11 @@ void* flux_piecewise_create(double interpolation)
     const char* interp_ptr = reinterpret_cast<const char*>(bit_cast<uint64_t>(interpolation));
     pw->Interpolation = interp_ptr ? interp_ptr : "linear";
     return static_cast<void*>(pw);
+}
+
+void flux_piecewise_destroy(void* pw)
+{
+    delete static_cast<PiecewiseContext*>(pw);
 }
 
 void flux_piecewise_add_point(void* pw, double x, double y)
@@ -303,6 +313,11 @@ double flux_piecewise_eval(void* pw, double x)
 void* flux_table_create()
 {
     return static_cast<void*>(new TableObject());
+}
+
+void flux_table_destroy(void* table)
+{
+    delete static_cast<TableObject*>(table);
 }
 
 void flux_table_add_entry(void* table, double key, double value)

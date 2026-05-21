@@ -341,7 +341,7 @@ FluxJIT::FluxJIT(OptimizationLevel optLevel) : m_dataLayout(""), m_optLevel(optL
     // Create a target machine for potential standalone compilation
     auto TM = JTMB->createTargetMachine();
     if (TM)
-        m_targetMachine = TM->release();
+        m_targetMachine = std::move(*TM);
 
     auto JIT = llvm::orc::LLJITBuilder()
                    .setJITTargetMachineBuilder(std::move(*JTMB))

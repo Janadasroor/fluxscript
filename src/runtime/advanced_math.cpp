@@ -704,9 +704,10 @@ void* flux_matrix_lu(void* m)
     auto* M = mat(m);
     if (!M)
         return nullptr;
-    auto* result = new Eigen::MatrixXd(M->partialPivLu().matrixLU());
-    return new_mat(result->rows(), result->cols());
-    (void)result;
+    auto result = M->partialPivLu().matrixLU();
+    void* ret = new_mat(result.rows(), result.cols());
+    flux_matrix_set_data(ret, result.data(), result.rows(), result.cols());
+    return ret;
 }
 
 void* flux_matrix_qr(void* m)
@@ -714,10 +715,11 @@ void* flux_matrix_qr(void* m)
     auto* M = mat(m);
     if (!M)
         return nullptr;
-    auto* result =
-        new Eigen::MatrixXd(M->householderQr().householderQ() * Eigen::MatrixXd::Identity(M->rows(), M->cols()));
-    return new_mat(result->rows(), result->cols());
-    (void)result;
+    auto result =
+        M->householderQr().householderQ() * Eigen::MatrixXd::Identity(M->rows(), M->cols());
+    void* ret = new_mat(result.rows(), result.cols());
+    flux_matrix_set_data(ret, result.data(), result.rows(), result.cols());
+    return ret;
 }
 
 void* flux_matrix_cholesky(void* m)
@@ -725,9 +727,10 @@ void* flux_matrix_cholesky(void* m)
     auto* M = mat(m);
     if (!M)
         return nullptr;
-    auto* L = new Eigen::MatrixXd(M->llt().matrixL());
-    return new_mat(L->rows(), L->cols());
-    (void)L;
+    Eigen::MatrixXd L = M->llt().matrixL();
+    void* ret = new_mat(L.rows(), L.cols());
+    flux_matrix_set_data(ret, L.data(), L.rows(), L.cols());
+    return ret;
 }
 
 void* flux_matrix_eigenvalues(void* m)

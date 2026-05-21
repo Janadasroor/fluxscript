@@ -759,18 +759,31 @@ TypedValue BinaryExprAST::codegen(CodegenContext& context)
             return TypedValue();
         }
         ResDims = L.Type.Dimensions;
-    } else if (Op == '*' || Op == '/' || Op == '%') {
-        if (Op == '*')
-            ResDims = L.Type.Dimensions * R.Type.Dimensions;
-        else
-            ResDims = L.Type.Dimensions / R.Type.Dimensions;
+    } else if (Op == '*') {
+        ResDims = L.Type.Dimensions * R.Type.Dimensions;
+    } else if (Op == '/') {
+        ResDims = L.Type.Dimensions / R.Type.Dimensions;
+    } else if (Op == '%') {
+        if (L.Type.Dimensions != R.Type.Dimensions) {
+            std::cerr << "Unit mismatch error: " << L.Type.Dimensions.toString() << " and "
+                      << R.Type.Dimensions.toString() << " in modulo" << std::endl;
+            return TypedValue();
+        }
+        ResDims = L.Type.Dimensions;
     } else if (Op == '<' || Op == '>' || Op == static_cast<int>(TokenType::tok_less_equal) ||
-               Op == static_cast<int>(TokenType::tok_greater_equal) || Op == static_cast<int>(TokenType::tok_equal) ||
+               Op == static_cast<int>(TokenType::tok_greater_equal)) {
+        if (L.Type.Dimensions != R.Type.Dimensions) {
+            std::cerr << "Unit mismatch error: " << L.Type.Dimensions.toString() << " and "
+                      << R.Type.Dimensions.toString() << " in ordered comparison" << std::endl;
+            return TypedValue();
+        }
+        ResDims = {};
+    } else if (Op == static_cast<int>(TokenType::tok_equal) ||
                Op == static_cast<int>(TokenType::tok_not_equal)) {
         if (L.Type.Dimensions != R.Type.Dimensions && !L.Type.Dimensions.isDimensionless() &&
             !R.Type.Dimensions.isDimensionless()) {
             std::cerr << "Unit mismatch error: " << L.Type.Dimensions.toString() << " and "
-                      << R.Type.Dimensions.toString() << " in comparison" << std::endl;
+                      << R.Type.Dimensions.toString() << " in equality comparison" << std::endl;
             return TypedValue();
         }
         ResDims = {};
@@ -1139,6 +1152,19 @@ TypedValue BinaryExprAST::codegen(CodegenContext& context)
         promoteIntToFP(LV);
         promoteIntToFP(RV);
         return TypedValue(context.Builder.CreateFDiv(LV, RV, "divtmp"), FluxType(TypeKind::Double, ResDims));
+    case '%': {
+        if (isIntOp)
+            return TypedValue(context.Builder.CreateSRem(LV, RV, "modtmp"), FluxType(TypeKind::Int, ResDims));
+        promoteIntToFP(LV);
+        promoteIntToFP(RV);
+        llvm::Function* FmodF = context.TheModule->getFunction("fmod");
+        if (!FmodF)
+            FmodF = llvm::Function::Create(
+                llvm::FunctionType::get(llvm::Type::getDoubleTy(context.TheContext),
+                                        {llvm::Type::getDoubleTy(context.TheContext), llvm::Type::getDoubleTy(context.TheContext)}, false),
+                llvm::Function::ExternalLinkage, "fmod", context.TheModule);
+        return TypedValue(context.Builder.CreateCall(FmodF, {LV, RV}, "modtmp"), FluxType(TypeKind::Double, ResDims));
+    }
     case static_cast<int>(TokenType::tok_bitwise_and): {
         llvm::Value* LInt = context.Builder.CreateFPToSI(LV, llvm::Type::getInt64Ty(context.TheContext), "andlhsint");
         llvm::Value* RInt = context.Builder.CreateFPToSI(RV, llvm::Type::getInt64Ty(context.TheContext), "andrhsint");
@@ -1189,14 +1215,18 @@ TypedValue BinaryExprAST::codegen(CodegenContext& context)
             double exp = C->getValueAPF().convertToDouble();
             if (std::abs(exp - std::round(exp)) < 1e-10) {
                 int e = static_cast<int>(std::round(exp));
-                dims.mass *= e;
-                dims.length *= e;
-                dims.time *= e;
-                dims.current *= e;
-                dims.temperature *= e;
-                dims.amount *= e;
-                dims.luminous *= e;
+                dims.mass = static_cast<int8_t>(dims.mass * e);
+                dims.length = static_cast<int8_t>(dims.length * e);
+                dims.time = static_cast<int8_t>(dims.time * e);
+                dims.current = static_cast<int8_t>(dims.current * e);
+                dims.temperature = static_cast<int8_t>(dims.temperature * e);
+                dims.amount = static_cast<int8_t>(dims.amount * e);
+                dims.luminous = static_cast<int8_t>(dims.luminous * e);
+            } else {
+                dims = {};
             }
+        } else {
+            dims = {};
         }
         return TypedValue(context.Builder.CreateCall(PowF, {LV, RV}, "powtmp"), FluxType(TypeKind::Double, dims));
     }
@@ -1270,8 +1300,22 @@ TypedValue BinaryExprAST::codegen(CodegenContext& context)
                 {llvm::Type::getDoubleTy(context.TheContext), llvm::Type::getDoubleTy(context.TheContext)}, false);
             PowF = llvm::Function::Create(PowFTy, llvm::Function::ExternalLinkage, "llvm.pow.f64", context.TheModule);
         }
+        UnitDimensions ewDims;
+        if (auto* C = llvm::dyn_cast<llvm::ConstantFP>(RV)) {
+            double exp = C->getValueAPF().convertToDouble();
+            if (std::abs(exp - std::round(exp)) < 1e-10) {
+                int e = static_cast<int>(std::round(exp));
+                ewDims.mass = static_cast<int8_t>(L.Type.Dimensions.mass * e);
+                ewDims.length = static_cast<int8_t>(L.Type.Dimensions.length * e);
+                ewDims.time = static_cast<int8_t>(L.Type.Dimensions.time * e);
+                ewDims.current = static_cast<int8_t>(L.Type.Dimensions.current * e);
+                ewDims.temperature = static_cast<int8_t>(L.Type.Dimensions.temperature * e);
+                ewDims.amount = static_cast<int8_t>(L.Type.Dimensions.amount * e);
+                ewDims.luminous = static_cast<int8_t>(L.Type.Dimensions.luminous * e);
+            }
+        }
         return TypedValue(context.Builder.CreateCall(PowF, {LV, RV}, "ewpowtmp"),
-                          FluxType(TypeKind::Double, L.Type.Dimensions));
+                          FluxType(TypeKind::Double, ewDims));
     }
     default:
         std::cerr << "Invalid binary operator: " << Op << std::endl;
@@ -1740,7 +1784,7 @@ TypedValue CallExprAST::codegen(CodegenContext& context)
 
     std::vector<llvm::Value*> ArgsV;
     bool isSretCall = CalleeF->getReturnType()->isVoidTy() && CalleeF->arg_size() > 0 &&
-                      CalleeF->getAttributes().hasParamAttr(0, llvm::Attribute::StructRet);
+                      CalleeF->hasParamAttribute(0, llvm::Attribute::StructRet);
 
     if (CalleeF->arg_size() != Args.size()) {
         // Check if it's a generator (expects one extra hidden argument)
@@ -2228,9 +2272,9 @@ TypedValue VectorExprAST::codegen(CodegenContext& context)
     llvm::Type* VoidPtrTy = llvm::PointerType::get(context.TheContext, 0);
     llvm::Function* MallocF = context.TheModule->getFunction("malloc");
     if (!MallocF)
-        MallocF = llvm::Function::Create(llvm::FunctionType::get(VoidPtrTy, {Int32Ty}, false),
+        MallocF = llvm::Function::Create(llvm::FunctionType::get(VoidPtrTy, {Int64Ty}, false),
                                          llvm::Function::ExternalLinkage, "malloc", context.TheModule);
-    llvm::Value* DataSize = llvm::ConstantInt::get(Int32Ty, Elements.size() * 8);
+    llvm::Value* DataSize = llvm::ConstantInt::get(Int64Ty, Elements.size() * 8);
     llvm::Value* DataPtr = context.Builder.CreateCall(MallocF, {DataSize}, "vec_data");
     for (size_t i = 0; i < Elements.size(); ++i) {
         TypedValue ElemTV = Elements[i]->codegen(context);

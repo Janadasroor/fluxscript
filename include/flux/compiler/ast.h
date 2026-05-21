@@ -158,7 +158,7 @@ public:
         // Complex is now <2 x double> (vector, not struct)
         if (T->isVectorTy()) {
             auto* VT = llvm::cast<llvm::VectorType>(T);
-            if (VT->getElementCount().isScalar() && VT->getElementCount().getKnownMinValue() == 2 &&
+            if (!VT->getElementCount().isScalable() && VT->getElementCount().getKnownMinValue() == 2 &&
                 VT->getElementType()->isDoubleTy())
                 return FluxType(TypeKind::Complex);
         }

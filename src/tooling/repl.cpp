@@ -71,14 +71,11 @@ void REPL::run()
     while (m_running) {
         std::string prompt = continuing ? m_config.continuationPrompt : m_config.prompt;
 
-        char* line = nullptr;
-        if (!line) {
+        std::string input;
+        if (!std::getline(std::cin, input)) {
             std::cout << "\n";
             break;
         }
-
-        std::string input(line);
-        free(line);
 
         if (input.empty())
             continue;
