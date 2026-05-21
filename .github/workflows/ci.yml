@@ -45,9 +45,8 @@ jobs:
             ubuntu:20.04 \
             bash -xe -c "
               apt-get update -qq &&
-              apt-get install -y -qq wget gnupg patchelf &&
-              wget -q https://apt.llvm.org/llvm.sh && chmod +x llvm.sh && ./llvm.sh 21 all &&
-              apt-get install -y -qq libclang-21-dev &&
+              apt-get install -y -qq wget gnupg lsb-release software-properties-common patchelf &&
+              wget -q https://apt.llvm.org/llvm.sh && chmod +x llvm.sh && ./llvm.sh 21 &&
               mkdir -p install/include install/lib &&
               cp -r include/flux install/include/ &&
               cp build/libFluxScript.so install/lib/ &&
