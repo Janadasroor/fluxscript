@@ -7,6 +7,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # MSVC needs this to expose M_PI, M_SQRT2 etc. from <cmath>
 if(MSVC)
     add_compile_definitions(_USE_MATH_DEFINES)
+    add_compile_definitions(WIN32_LEAN_AND_MEAN NOMINMAX)
 endif()
 
 # Suppress LLVM narrowing conversion warnings in codegen
