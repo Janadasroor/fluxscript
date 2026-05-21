@@ -1,0 +1,51 @@
+name: Lint
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  clang-format:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install clang-format-21
+        run: |
+          wget -q https://apt.llvm.org/llvm.sh && chmod +x llvm.sh
+          sudo ./llvm.sh 21
+          sudo apt-get install -y -qq clang-format-21
+      - name: Check formatting
+        run: |
+          failed=0
+          while IFS= read -r f; do
+            if ! clang-format-21 "$f" | diff -q "$f" - > /dev/null 2>&1; then
+              echo "::error file=$f::needs formatting"
+              failed=1
+            fi
+          done < <(find src include cli -name "*.cpp" -o -name "*.h" -o -name "*.hpp")
+          exit $failed
+
+  compile-warnings:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install LLVM + deps
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq wget lsb-release software-properties-common gnupg
+          wget -q https://apt.llvm.org/llvm.sh && chmod +x llvm.sh && sudo ./llvm.sh 21 all
+          sudo apt-get install -y -qq libclang-21-dev liblld-21-dev cmake g++
+      - name: Build with -Werror
+        run: |
+          cmake -B build \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DLLVM_DIR=/usr/lib/llvm-21/lib/cmake/llvm \
+            -DClang_DIR=/usr/lib/llvm-21/lib/cmake/clang \
+            -DLLD_DIR=/usr/lib/llvm-21/lib/cmake/lld \
+            -DCMAKE_CXX_FLAGS="-Werror"
+          cmake --build build -j$(nproc) 2>&1
