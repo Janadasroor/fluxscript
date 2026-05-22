@@ -277,8 +277,7 @@ enum class TokenType
     tok_analog = -200,      // analog block
     tok_contributor = -194, // <+ operator
     tok_branch = -195,      // branch declaration
-    tok_V = -196,           // V() voltage access (deprecated — use tok_identifier + "V")
-    tok_I = -197,           // I() current access (deprecated — use tok_identifier + "I")
+    // (tok_V and tok_I were removed — "V" and "I" are lexed as tok_identifier)
     tok_ddt = -198,         // ddt() time derivative
     tok_idt = -199,         // idt() time integral
     tok_abstol = -201,      // absolute tolerance
