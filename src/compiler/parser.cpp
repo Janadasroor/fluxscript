@@ -427,11 +427,9 @@ std::unique_ptr<ExprAST> Parser::ParseIdentifierExpr()
     if (IdName == "subckt")
         return ParseSubckt();
     if (IdName == "state") {
-        if (m_lexer.peekToken() == static_cast<int>(TokenType::tok_V))
-            return ParseStateDecl();
+        return ParseStateDecl();
     } else if (IdName == "ic") {
-        if (m_lexer.peekToken() == static_cast<int>(TokenType::tok_V))
-            return ParseIC();
+        return ParseIC();
     } else if (IdName == "dt") {
         return ParseBuiltinVar();
     }

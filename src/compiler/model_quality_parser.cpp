@@ -111,7 +111,7 @@ std::unique_ptr<ExprAST> Parser::ParseSettleDecl()
     getNextToken(); // eat settle
 
     // Parse V(node)
-    if (CurTok != static_cast<int>(TokenType::tok_V)) {
+    if (CurTok != static_cast<int>(TokenType::tok_identifier) || m_lexer.IdentifierStr != "V") {
         ReportError("expected V() after settle");
         return nullptr;
     }
@@ -204,7 +204,7 @@ std::unique_ptr<ExprAST> Parser::ParseCompareDecl()
     getNextToken(); // eat compare
 
     // Parse V(node)
-    if (CurTok != static_cast<int>(TokenType::tok_V)) {
+    if (CurTok != static_cast<int>(TokenType::tok_identifier) || m_lexer.IdentifierStr != "V") {
         ReportError("expected V() after compare");
         return nullptr;
     }
@@ -277,7 +277,7 @@ std::unique_ptr<ExprAST> Parser::ParseConvergeDecl()
     getNextToken(); // eat converge
 
     // Parse V(node)
-    if (CurTok != static_cast<int>(TokenType::tok_V)) {
+    if (CurTok != static_cast<int>(TokenType::tok_identifier) || m_lexer.IdentifierStr != "V") {
         ReportError("expected V() after converge");
         return nullptr;
     }
@@ -334,7 +334,7 @@ std::unique_ptr<ExprAST> Parser::ParseDiscontinuityDecl()
 {
     getNextToken(); // eat discontinuity
 
-    if (CurTok != static_cast<int>(TokenType::tok_V)) {
+    if (CurTok != static_cast<int>(TokenType::tok_identifier) || m_lexer.IdentifierStr != "V") {
         ReportError("expected V() after discontinuity");
         return nullptr;
     }
@@ -373,7 +373,7 @@ std::unique_ptr<ExprAST> Parser::ParseStateDecl()
 {
     getNextToken(); // eat state
 
-    if (CurTok != static_cast<int>(TokenType::tok_V)) {
+    if (CurTok != static_cast<int>(TokenType::tok_identifier) || m_lexer.IdentifierStr != "V") {
         ReportError("expected V() after state");
         return nullptr;
     }

@@ -116,8 +116,9 @@ std::unique_ptr<ExprAST> Parser::ParseAnalogBlock()
         while (CurTok != static_cast<int>(TokenType::tok_rbrace) && CurTok != static_cast<int>(TokenType::tok_eof)) {
 
             // Parse contributor: V(node1, node2) <+ expression
-            if (CurTok == static_cast<int>(TokenType::tok_V) || CurTok == static_cast<int>(TokenType::tok_I)) {
-                std::string quantity = (CurTok == static_cast<int>(TokenType::tok_V)) ? "V" : "I";
+            if (CurTok == static_cast<int>(TokenType::tok_identifier) &&
+                (m_lexer.IdentifierStr == "V" || m_lexer.IdentifierStr == "I")) {
+                std::string quantity = m_lexer.IdentifierStr;
                 getNextToken(); // eat V or I
 
                 if (CurTok != '(') {
