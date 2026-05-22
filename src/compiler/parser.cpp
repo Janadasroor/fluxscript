@@ -368,10 +368,10 @@ std::unique_ptr<ExprAST> Parser::ParseIdentifierExpr()
             peek == static_cast<int>(TokenType::tok_ac) ||
             peek == static_cast<int>(TokenType::tok_noise) ||
             peek == static_cast<int>(TokenType::tok_op) ||
-            peek == static_cast<int>(TokenType::tok_tf) ||
             peek == static_cast<int>(TokenType::tok_sens) ||
             peek == static_cast<int>(TokenType::tok_fourier) ||
-            peek == static_cast<int>(TokenType::tok_lbrace))
+            peek == static_cast<int>(TokenType::tok_lbrace) ||
+            (peek == static_cast<int>(TokenType::tok_identifier) && m_lexer.IdentifierStr == "tf"))
             return ParseAnalysis();
     }
     if (IdName == "measure")
@@ -1169,6 +1169,9 @@ std::unique_ptr<ExprAST> Parser::ParsePrimary()
     case static_cast<int>(TokenType::tok_repeat):
         Res = ParseRepeatUntil();
         break;
+    case static_cast<int>(TokenType::tok_do):
+        Res = ParseDoWhile();
+        break;
     case static_cast<int>(TokenType::tok_parallel):
         Res = ParseParallelForExpr();
         break;
@@ -1319,18 +1322,34 @@ std::unique_ptr<ExprAST> Parser::ParseBinOpRHS(int ExprPrec, std::unique_ptr<Exp
         }
         if (BinOp == '=') {
             LHS = std::make_unique<AssignExprAST>(std::move(LHS), std::move(RHS));
+        } else if (BinOp == static_cast<int>(TokenType::tok_plus_equal)) {
+            LHS = std::make_unique<AssignExprAST>(std::move(LHS), std::move(RHS), '+');
+        } else if (BinOp == static_cast<int>(TokenType::tok_minus_equal)) {
+            LHS = std::make_unique<AssignExprAST>(std::move(LHS), std::move(RHS), '-');
+        } else if (BinOp == static_cast<int>(TokenType::tok_star_equal)) {
+            LHS = std::make_unique<AssignExprAST>(std::move(LHS), std::move(RHS), '*');
+        } else if (BinOp == static_cast<int>(TokenType::tok_slash_equal)) {
+            LHS = std::make_unique<AssignExprAST>(std::move(LHS), std::move(RHS), '/');
         } else if (BinOp == static_cast<int>(TokenType::tok_colon)) {
-            // start:end range expression
-            auto endExpr = ParseUnaryExpr();
-            if (!endExpr)
-                return nullptr;
-            int NextPrec2 = GetTokPrecedence();
-            if (TokPrec < NextPrec2) {
-                endExpr = ParseBinOpRHS(TokPrec + 1, std::move(endExpr));
-                if (!endExpr)
+            // start:end or start:step:end range expression
+            // RHS holds the value after the first colon
+            if (CurTok == static_cast<int>(TokenType::tok_colon)) {
+                // start:step:end form
+                getNextToken();
+                auto thirdExpr = ParseUnaryExpr();
+                if (!thirdExpr)
                     return nullptr;
+                int NextPrec3 = GetTokPrecedence();
+                if (TokPrec < NextPrec3) {
+                    thirdExpr = ParseBinOpRHS(TokPrec + 1, std::move(thirdExpr));
+                    if (!thirdExpr)
+                        return nullptr;
+                }
+                LHS = std::make_unique<RangeExprAST>(std::move(LHS), std::move(RHS), std::move(thirdExpr));
+            } else {
+                // start:end form — RHS is already the end value
+                LHS = std::make_unique<RangeExprAST>(std::move(LHS), std::move(RHS));
             }
-            LHS = std::make_unique<RangeExprAST>(std::move(LHS), std::move(endExpr));
         } else if (BinOp == '[') {
             // A[i, j] — matrix indexing; A[i:j, k:l] — slicing
             auto rowIdx = std::move(RHS);
@@ -2089,7 +2108,9 @@ std::unique_ptr<AnalysisExprAST> Parser::ParseAnalysis()
 {
     getNextToken(); // eat analysis
 
-    std::string typeStr = Lexer::tokenSpelling(CurTok);
+    std::string typeStr = (CurTok == static_cast<int>(TokenType::tok_identifier))
+                              ? m_lexer.IdentifierStr
+                              : Lexer::tokenSpelling(CurTok);
     AnalysisType AType;
 
     if (typeStr == "tran")

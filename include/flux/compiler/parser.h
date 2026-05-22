@@ -99,6 +99,7 @@ private:
     std::unique_ptr<ExprAST> ParseMatchExpr();
     std::unique_ptr<ExprAST> ParseForeachExpr();
     std::unique_ptr<ExprAST> ParseRepeatUntil();
+    std::unique_ptr<ExprAST> ParseDoWhile();
     std::unique_ptr<ExprAST> ParseParallelForExpr();
 
     // Schematic generation

@@ -123,8 +123,6 @@ std::string Lexer::tokenSpelling(int token)
         return "noise";
     case TokenType::tok_op:
         return "op";
-    case TokenType::tok_tf:
-        return "tf";
     case TokenType::tok_sens:
         return "sens";
     case TokenType::tok_fourier:
@@ -660,8 +658,6 @@ int Lexer::gettok()
             return static_cast<int>(TokenType::tok_noise);
         if (IdentifierStr == "op")
             return static_cast<int>(TokenType::tok_op);
-        if (IdentifierStr == "tf")
-            return static_cast<int>(TokenType::tok_tf);
         if (IdentifierStr == "sens")
             return static_cast<int>(TokenType::tok_sens);
         if (IdentifierStr == "fourier")

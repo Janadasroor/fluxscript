@@ -24,6 +24,7 @@
 
 #include "flux/compiler/lexer.h"
 #include "flux/compiler/parser.h"
+#include "flux/compiler/preprocessor.h"
 
 #include <iostream>
 #include <sstream>
@@ -145,6 +146,9 @@ void CompilerInstance::injectStandardLibrary(CodegenContext& context,
     regExtern("fft", MatTy(), {MatTy(), DblTy()});
     regExtern("fft_thd", DblTy(), {MatTy(), DblTy()});
     regExtern("fft_snr", DblTy(), {MatTy(), DblTy()});
+
+    // Range expression
+    regExtern("flux_create_range_sum", MatTy(), {DblTy(), DblTy(), DblTy()});
 
     // SPICE simulation API
     regExtern("register_analysis", DblTy(), {DblTy()});
@@ -410,10 +414,113 @@ std::unique_ptr<ParsedAST> CompilerInstance::parse(const std::string& code, std:
 // Walks the body AST to determine the return type (Matrix, Double, etc.)
 // based on called extern functions, last expression in blocks, etc.
 // ---------------------------------------------------------------------------
+// Forward declarations
 static FluxType inferReturnType(
     const ExprAST* expr,
     const std::map<std::string, std::pair<FluxType, std::vector<FluxType>>>& externTypes,
-    const std::map<std::string, FluxType>* userReturnTypes = nullptr)
+    const std::map<std::string, FluxType>* userReturnTypes,
+    const std::map<std::string, FluxType>* paramTypes,
+    const std::vector<std::unique_ptr<ExprAST>>* parentStmts);
+
+// Helper: search backward through a statement list for a variable's init
+static const ExprAST* findVarInitInStmts(
+    const std::string& varName,
+    const std::vector<std::unique_ptr<ExprAST>>& stmts)
+{
+    for (auto it = stmts.rbegin(); it != stmts.rend(); ++it) {
+        if (auto* let = dynamic_cast<const LetExprAST*>(it->get())) {
+            if (let->getVarName() == varName && let->getInit())
+                return let->getInit();
+        }
+        if (auto* assign = dynamic_cast<const AssignExprAST*>(it->get())) {
+            if (auto* lhs = dynamic_cast<const VariableExprAST*>(assign->getLHS())) {
+                if (lhs->getName() == varName)
+                    return assign->getValueExpr();
+            }
+        }
+    }
+    return nullptr;
+}
+
+// Find variable init searching local stmts then parent stmts
+static const ExprAST* findVarInitInScope(
+    const std::string& varName,
+    const std::vector<std::unique_ptr<ExprAST>>& localStmts,
+    const std::vector<std::unique_ptr<ExprAST>>* parentStmts)
+{
+    const ExprAST* init = findVarInitInStmts(varName, localStmts);
+    if (init) return init;
+    if (parentStmts) {
+        init = findVarInitInStmts(varName, *parentStmts);
+        if (init) return init;
+    }
+    return nullptr;
+}
+
+// Get parameter type, defaulting to Double
+static FluxType paramTypeOf(
+    const std::string& name,
+    const std::map<std::string, FluxType>* paramTypes)
+{
+    if (paramTypes) {
+        auto it = paramTypes->find(name);
+        if (it != paramTypes->end())
+            return it->second;
+    }
+    return TypeKind::Double;
+}
+
+static FluxType inferIfExprReturnType(
+    const IfExprAST* ife,
+    const std::map<std::string, std::pair<FluxType, std::vector<FluxType>>>& externTypes,
+    const std::map<std::string, FluxType>* userReturnTypes,
+    const std::map<std::string, FluxType>* paramTypes,
+    const std::vector<std::unique_ptr<ExprAST>>* parentStmts)
+{
+    auto infer = [&](const ExprAST* e) {
+        return inferReturnType(e, externTypes, userReturnTypes, paramTypes, parentStmts);
+    };
+    FluxType thenRet = infer(ife->getThen());
+    const ExprAST* elseExpr = ife->getElse();
+    if (elseExpr) {
+        FluxType elseRet = infer(elseExpr);
+        if (thenRet.Kind == TypeKind::Double && elseRet.Kind != TypeKind::Double)
+            return elseRet;
+        if (elseRet.Kind == TypeKind::Double && thenRet.Kind != TypeKind::Double)
+            return thenRet;
+    }
+    return thenRet;
+}
+
+static FluxType inferIfStmtReturnType(
+    const IfStmtAST* ifStmt,
+    const std::map<std::string, std::pair<FluxType, std::vector<FluxType>>>& externTypes,
+    const std::map<std::string, FluxType>* userReturnTypes,
+    const std::map<std::string, FluxType>* paramTypes,
+    const std::vector<std::unique_ptr<ExprAST>>* parentStmts)
+{
+    auto infer = [&](const ExprAST* e) {
+        return inferReturnType(e, externTypes, userReturnTypes, paramTypes, parentStmts);
+    };
+    const auto& thenBody = ifStmt->getThenBody();
+    if (thenBody.empty())
+        return TypeKind::Double;
+    const ExprAST* last = thenBody.back().get();
+    if (auto* var = dynamic_cast<const VariableExprAST*>(last)) {
+        const ExprAST* init = findVarInitInScope(var->getName(), thenBody, parentStmts);
+        if (init) return infer(init);
+        FluxType pt = paramTypeOf(var->getName(), paramTypes);
+        if (pt.Kind != TypeKind::Double) return pt;
+    }
+    return infer(last);
+}
+
+static FluxType inferReturnType(
+    const ExprAST* expr,
+    const std::map<std::string, std::pair<FluxType, std::vector<FluxType>>>& externTypes,
+    const std::map<std::string, FluxType>* userReturnTypes,
+    const std::map<std::string, FluxType>* paramTypes,
+    const std::vector<std::unique_ptr<ExprAST>>* parentStmts)
 {
     if (!expr)
         return TypeKind::Double;
@@ -437,25 +544,7 @@ static FluxType inferReturnType(
     }
 
     auto withUser = [&](const ExprAST* e) {
-        return inferReturnType(e, externTypes, userReturnTypes);
-    };
-
-    // Helper: search backward through a statement list for a variable's init
-    auto findVarInit = [&](const std::string& varName,
-                           const std::vector<std::unique_ptr<ExprAST>>& stmts) -> const ExprAST* {
-        for (auto it = stmts.rbegin(); it != stmts.rend(); ++it) {
-            if (auto* let = dynamic_cast<const LetExprAST*>(it->get())) {
-                if (let->getVarName() == varName && let->getInit())
-                    return let->getInit();
-            }
-            if (auto* assign = dynamic_cast<const AssignExprAST*>(it->get())) {
-                if (auto* lhs = dynamic_cast<const VariableExprAST*>(assign->getLHS())) {
-                    if (lhs->getName() == varName)
-                        return assign->getValueExpr();
-                }
-            }
-        }
-        return nullptr;
+        return inferReturnType(e, externTypes, userReturnTypes, paramTypes, parentStmts);
     };
 
     // BlockExprAST: use the type of the last statement
@@ -464,43 +553,56 @@ static FluxType inferReturnType(
         if (stmts.empty())
             return TypeKind::Double;
 
+        // When descending into sub-expressions of this block,
+        // pass its stmts as parentStmts for findVarInit.
+        auto withBlockStmts = [&](const ExprAST* e) {
+            return inferReturnType(e, externTypes, userReturnTypes, paramTypes, &stmts);
+        };
+
         auto inferLast = [&](const ExprAST* last) -> FluxType {
             if (auto* ret = dynamic_cast<const ReturnExprAST*>(last)) {
                 const ExprAST* retVal = ret->getVal();
                 if (auto* var = dynamic_cast<const VariableExprAST*>(retVal)) {
-                    const ExprAST* init = findVarInit(var->getName(), stmts);
-                    if (init) return withUser(init);
+                    const ExprAST* init = findVarInitInScope(var->getName(), stmts, parentStmts);
+                    if (init) return withBlockStmts(init);
+                    FluxType pt = paramTypeOf(var->getName(), paramTypes);
+                    if (pt.Kind != TypeKind::Double) return pt;
                 }
-                return withUser(retVal);
+                return withBlockStmts(retVal);
             }
             if (auto* var = dynamic_cast<const VariableExprAST*>(last)) {
-                const ExprAST* init = findVarInit(var->getName(), stmts);
-                if (init) return withUser(init);
+                const ExprAST* init = findVarInitInScope(var->getName(), stmts, parentStmts);
+                if (init) return withBlockStmts(init);
+                FluxType pt = paramTypeOf(var->getName(), paramTypes);
+                if (pt.Kind != TypeKind::Double) return pt;
             }
-            return withUser(last);
+            // For IfExprAST/IfStmtAST as the last statement, we need to descend with
+            // the outer block's stmts for findVarInit to work in then/else branches.
+            if (auto* ife = dynamic_cast<const IfExprAST*>(last))
+                return inferIfExprReturnType(ife, externTypes, userReturnTypes, paramTypes, &stmts);
+            if (auto* ifStmt = dynamic_cast<const IfStmtAST*>(last))
+                return inferIfStmtReturnType(ifStmt, externTypes, userReturnTypes, paramTypes, &stmts);
+            return withBlockStmts(last);
         };
         return inferLast(stmts.back().get());
     }
 
-    // Handle bare VariableExprAST (reached from nested contexts like IfStmt thenBody)
-    if (auto* var = dynamic_cast<const VariableExprAST*>(expr))
-        return TypeKind::Double; // Without enclosing block, can't trace back
-
-    if (auto* ife = dynamic_cast<const IfExprAST*>(expr))
-        return withUser(ife->getThen());
-
-    if (auto* ifStmt = dynamic_cast<const IfStmtAST*>(expr)) {
-        const auto& thenBody = ifStmt->getThenBody();
-        if (thenBody.empty())
-            return TypeKind::Double;
-        // Try to resolve the last expression — if it's a variable, search in thenBody stmts
-        const ExprAST* last = thenBody.back().get();
-        if (auto* var = dynamic_cast<const VariableExprAST*>(last)) {
-            const ExprAST* init = findVarInit(var->getName(), thenBody);
+    // Handle bare VariableExprAST (reached from nested contexts)
+    if (auto* var = dynamic_cast<const VariableExprAST*>(expr)) {
+        if (parentStmts) {
+            const ExprAST* init = findVarInitInStmts(var->getName(), *parentStmts);
             if (init) return withUser(init);
         }
-        return withUser(last);
+        FluxType pt = paramTypeOf(var->getName(), paramTypes);
+        if (pt.Kind != TypeKind::Double) return pt;
+        return TypeKind::Double;
     }
+
+    if (auto* ife = dynamic_cast<const IfExprAST*>(expr))
+        return inferIfExprReturnType(ife, externTypes, userReturnTypes, paramTypes, parentStmts);
+
+    if (auto* ifStmt = dynamic_cast<const IfStmtAST*>(expr))
+        return inferIfStmtReturnType(ifStmt, externTypes, userReturnTypes, paramTypes, parentStmts);
 
     if (auto* ret = dynamic_cast<const ReturnExprAST*>(expr))
         return withUser(ret->getVal());
@@ -806,7 +908,12 @@ bool CompilerInstance::compileParser(Parser& parser, CodegenContext& context,
     // Walk each function body to determine the actual return type
     // (Matrix, Double, etc.) before declaring the LLVM prototype.
     for (auto& func : functions) {
-        FluxType inferred = inferReturnType(func->getBody(), context.ExternFuncTypes, &context.FuncReturnTypes);
+        // Build parameter name -> type map from the prototype
+        std::map<std::string, FluxType> paramTypeMap;
+        for (auto& arg : func->getProto()->getArgs())
+            paramTypeMap[arg.first] = arg.second;
+        FluxType inferred = inferReturnType(func->getBody(), context.ExternFuncTypes, &context.FuncReturnTypes,
+                                            &paramTypeMap, nullptr);
         if (inferred.Kind == TypeKind::Matrix || inferred.Kind == TypeKind::ComplexMatrix ||
             inferred.Kind == TypeKind::Vector) {
             func->getProto()->setReturnType(inferred);
@@ -904,7 +1011,7 @@ std::unique_ptr<CompileArtifacts> CompilerInstance::compileToIR(const std::strin
         injectStandardLibrary(*artifacts->codegenContext, artifacts->functionReturnTypes);
         // Auto-import standard library modules so they're available without
         // explicit import. If a module is not found, it's silently skipped.
-        std::vector<std::string> stdlibModules = {"math", "trig", "array", "stats", "string"};
+        std::vector<std::string> stdlibModules = {"math", "trig", "array", "stats", "signal"};
         for (const auto& mod : stdlibModules) {
             std::string importError;
             importModule(mod, *artifacts->codegenContext, artifacts->functionReturnTypes, &importError,
@@ -912,7 +1019,23 @@ std::unique_ptr<CompileArtifacts> CompilerInstance::compileToIR(const std::strin
         }
     }
 
-    Parser parser(code); // Constructor primes the lexer with getNextToken()
+    // Run preprocessor on source code
+    Preprocessor pp;
+    PreprocessResult ppResult = pp.process(code, m_options.inputName);
+    if (!ppResult.success) {
+        for (const auto& err : ppResult.errors) {
+            std::cerr << "[Preprocessor Error] " << err << "\n";
+        }
+        if (error)
+            *error = "Preprocessor failed";
+        return nullptr;
+    }
+    for (const auto& warn : ppResult.warnings) {
+        std::cerr << "[Preprocessor Warning] " << warn << "\n";
+    }
+    std::string processedCode = ppResult.output;
+
+    Parser parser(processedCode); // Constructor primes the lexer with getNextToken()
     std::string compileError;
     if (!compileParser(parser, *artifacts->codegenContext, artifacts->functionReturnTypes, compileError,
                        importedModules)) {

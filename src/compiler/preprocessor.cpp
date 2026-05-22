@@ -278,13 +278,13 @@ void Preprocessor::handleElif(const std::string& args)
 
     // Can only evaluate elif if no previous branch was true
     if (top.hasBeenTrue) {
-        top.inActiveBranch = false;
         m_skipMode = true;
+        top.inActiveBranch = false;
     } else {
         bool conditionTrue = evaluateCondition(args);
         top.conditionMet = conditionTrue;
+        top.inActiveBranch = conditionTrue;
         top.hasBeenTrue = conditionTrue;
-        top.inActiveBranch = conditionTrue && !m_skipMode;
         m_skipMode = !conditionTrue;
     }
 }
@@ -298,9 +298,10 @@ void Preprocessor::handleElse()
     ConditionalState& top = m_conditionalStack.top();
 
     // Else is active if no previous branch was true
-    top.inActiveBranch = !top.hasBeenTrue && !m_skipMode;
-    top.hasBeenTrue = true;
+    // must compute skipMode BEFORE setting hasBeenTrue
     m_skipMode = top.hasBeenTrue;
+    top.inActiveBranch = !top.hasBeenTrue;
+    top.hasBeenTrue = true;
 }
 
 void Preprocessor::handleEndif()

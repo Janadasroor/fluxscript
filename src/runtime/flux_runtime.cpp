@@ -460,7 +460,24 @@ extern "C" void flux_matrix_set(void* m_ptr, int row, int col, double val)
 
 extern "C" void* flux_matrix_zeros(int rows, int cols)
 {
-    return flux_create_matrix(nullptr, rows, cols);
+    auto mat = std::make_unique<Eigen::MatrixXd>(rows, cols);
+    mat->setZero();
+    return g_matrix_tracker.register_matrix(std::move(mat));
+}
+
+extern "C" void* flux_create_range_sum(double start, double step, double end)
+{
+    if (step == 0.0) {
+        auto mat = std::make_unique<Eigen::MatrixXd>(1, 1);
+        mat->setZero();
+        return g_matrix_tracker.register_matrix(std::move(mat));
+    }
+    int n = (int)std::floor((end - start) / step) + 1;
+    if (n < 1) n = 1;
+    auto mat = std::make_unique<Eigen::MatrixXd>(n, 1);
+    for (int i = 0; i < n; ++i)
+        (*mat)(i, 0) = start + i * step;
+    return g_matrix_tracker.register_matrix(std::move(mat));
 }
 
 extern "C" void* flux_matrix_ones(int rows, int cols)
@@ -837,6 +854,7 @@ void registerRuntimeFunctions(FluxJIT& jit)
     jit.registerFunction("flux_promote_matrix_to_complex", (void*)&flux_promote_matrix_to_complex);
 
     // Clean user-facing matrix API
+    jit.registerFunction("flux_create_range_sum", (void*)&flux_create_range_sum);
     jit.registerFunction("matrix_create", (void*)&flux_matrix_zeros);
     jit.registerFunction("matrix_zeros", (void*)&flux_matrix_zeros);
     jit.registerFunction("matrix_ones", (void*)&flux_matrix_ones);

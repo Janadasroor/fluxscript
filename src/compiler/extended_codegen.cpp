@@ -182,8 +182,13 @@ TypedValue AssertExprAST::codegen(CodegenContext& context)
     llvm::BasicBlock* ContinueBB = llvm::BasicBlock::Create(context.TheContext, "assert_continue", TheFunction);
     llvm::BasicBlock* FailBB = llvm::BasicBlock::Create(context.TheContext, "assert_fail", TheFunction);
 
-    llvm::Value* IsTrue = context.Builder.CreateFCmpONE(
-        CondTV.Val, llvm::ConstantFP::get(context.TheContext, llvm::APFloat(0.0)), "assert_check");
+    llvm::Value* IsTrue;
+    if (CondTV.Val->getType()->isIntegerTy(1)) {
+        IsTrue = CondTV.Val;
+    } else {
+        IsTrue = context.Builder.CreateFCmpONE(
+            CondTV.Val, llvm::ConstantFP::get(context.TheContext, llvm::APFloat(0.0)), "assert_check");
+    }
 
     context.Builder.CreateCondBr(IsTrue, ContinueBB, FailBB);
 
@@ -557,10 +562,67 @@ TypedValue RepeatUntilExprAST::codegen(CodegenContext& context)
     if (!CondTV.Val)
         return TypedValue();
 
-    llvm::Value* IsDone = context.Builder.CreateFCmpONE(
-        CondTV.Val, llvm::ConstantFP::get(context.TheContext, llvm::APFloat(0.0)), "until_check");
+    llvm::Value* IsDone;
+    if (CondTV.Val->getType()->isIntegerTy(1)) {
+        IsDone = CondTV.Val;
+    } else {
+        IsDone = context.Builder.CreateFCmpONE(
+            CondTV.Val, llvm::ConstantFP::get(context.TheContext, llvm::APFloat(0.0)), "until_check");
+    }
 
     context.Builder.CreateCondBr(IsDone, AfterBB, BodyBB);
+
+    // After
+    TheFunction->insert(TheFunction->end(), AfterBB);
+    context.Builder.SetInsertPoint(AfterBB);
+
+    // Restore break/continue targets
+    context.CurrentLoopEnd = OldLoopEnd;
+    context.CurrentLoopCont = OldLoopCont;
+
+    return BodyTV;
+}
+
+// ============ Do-While Codegen ============
+
+TypedValue DoWhileExprAST::codegen(CodegenContext& context)
+{
+    llvm::LLVMContext& Ctx = context.TheContext;
+    llvm::Function* TheFunction = context.Builder.GetInsertBlock()->getParent();
+    llvm::BasicBlock* BodyBB = llvm::BasicBlock::Create(Ctx, "dowhile_body", TheFunction);
+    llvm::BasicBlock* CondBB = llvm::BasicBlock::Create(Ctx, "dowhile_cond");
+    llvm::BasicBlock* AfterBB = llvm::BasicBlock::Create(Ctx, "after_dowhile");
+
+    // Set up break/continue targets
+    llvm::BasicBlock* OldLoopEnd = context.CurrentLoopEnd;
+    llvm::BasicBlock* OldLoopCont = context.CurrentLoopCont;
+    context.CurrentLoopEnd = AfterBB;
+    context.CurrentLoopCont = CondBB;
+
+    context.Builder.CreateBr(BodyBB);
+
+    // Body
+    context.Builder.SetInsertPoint(BodyBB);
+    TypedValue BodyTV = Body->codegen(context);
+    if (!BodyTV.Val)
+        return TypedValue();
+    context.Builder.CreateBr(CondBB);
+
+    // Condition
+    TheFunction->insert(TheFunction->end(), CondBB);
+    context.Builder.SetInsertPoint(CondBB);
+    TypedValue CondTV = Cond->codegen(context);
+    if (!CondTV.Val)
+        return TypedValue();
+
+    llvm::Value* CondBool;
+    if (CondTV.Val->getType()->isIntegerTy(1)) {
+        CondBool = CondTV.Val;
+    } else {
+        CondBool = context.Builder.CreateFCmpONE(
+            CondTV.Val, llvm::ConstantFP::get(Ctx, llvm::APFloat(0.0)), "dowhile_check");
+    }
+    context.Builder.CreateCondBr(CondBool, BodyBB, AfterBB);
 
     // After
     TheFunction->insert(TheFunction->end(), AfterBB);

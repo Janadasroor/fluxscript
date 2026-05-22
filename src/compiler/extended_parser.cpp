@@ -337,4 +337,27 @@ std::unique_ptr<ExprAST> Parser::ParseRepeatUntil()
     return std::make_unique<RepeatUntilExprAST>(std::move(body), std::move(condition));
 }
 
+// ============ Do-While Parser ============
+
+std::unique_ptr<ExprAST> Parser::ParseDoWhile()
+{
+    getNextToken(); // eat do
+
+    auto body = ParseExpression();
+    if (!body)
+        return nullptr;
+
+    if (CurTok != static_cast<int>(TokenType::tok_while)) {
+        ReportError("expected 'while' after do body");
+        return nullptr;
+    }
+    getNextToken(); // eat while
+
+    auto condition = ParseExpression();
+    if (!condition)
+        return nullptr;
+
+    return std::make_unique<DoWhileExprAST>(std::move(body), std::move(condition));
+}
+
 } // namespace Flux

@@ -456,19 +456,47 @@ TypedValue AssignExprAST::codegen(CodegenContext& context)
             RowV = context.Builder.CreateFPToSI(RowV, Int32Ty, "row_int");
         if (ColV->getType()->isFloatingPointTy())
             ColV = context.Builder.CreateFPToSI(ColV, Int32Ty, "col_int");
-        TypedValue NewValTV = Val->codegen(context);
-        if (!NewValTV.Val)
-            return TypedValue();
-        llvm::Value* NewValV = NewValTV.Val;
-        if (NewValV->getType()->isIntegerTy() && !NewValV->getType()->isIntegerTy(1))
-            NewValV = context.Builder.CreateSIToFP(NewValV, DoubleTy, "val_double");
-        llvm::Function* SetF = context.TheModule->getFunction("flux_matrix_set");
-        if (!SetF)
-            SetF = llvm::Function::Create(llvm::FunctionType::get(llvm::Type::getVoidTy(context.TheContext),
-                                                                  {VoidPtrTy, Int32Ty, Int32Ty, DoubleTy}, false),
-                                          llvm::Function::ExternalLinkage, "flux_matrix_set", context.TheModule);
-        context.Builder.CreateCall(SetF, {MatPtr, RowV, ColV, NewValV});
-        return NewValTV;
+        if (Op != 0) {
+            llvm::Function* GetF = context.TheModule->getFunction("flux_matrix_get");
+            if (!GetF)
+                GetF = llvm::Function::Create(llvm::FunctionType::get(DoubleTy, {VoidPtrTy, Int32Ty, Int32Ty}, false),
+                                               llvm::Function::ExternalLinkage, "flux_matrix_get", context.TheModule);
+            llvm::Value* CurV = context.Builder.CreateCall(GetF, {MatPtr, RowV, ColV}, "curval");
+            TypedValue RHSVal = Val->codegen(context);
+            if (!RHSVal.Val)
+                return TypedValue();
+            llvm::Value* RHSV = RHSVal.Val;
+            if (RHSV->getType()->isIntegerTy() && !RHSV->getType()->isIntegerTy(1))
+                RHSV = context.Builder.CreateSIToFP(RHSV, DoubleTy, "rhs_double");
+            switch (Op) {
+            case '+': CurV = context.Builder.CreateFAdd(CurV, RHSV, "addtmp"); break;
+            case '-': CurV = context.Builder.CreateFSub(CurV, RHSV, "subtmp"); break;
+            case '*': CurV = context.Builder.CreateFMul(CurV, RHSV, "multmp"); break;
+            case '/': CurV = context.Builder.CreateFDiv(CurV, RHSV, "divtmp"); break;
+            }
+            TypedValue NewValTV(CurV, TypeKind::Double);
+            llvm::Function* SetF = context.TheModule->getFunction("flux_matrix_set");
+            if (!SetF)
+                SetF = llvm::Function::Create(llvm::FunctionType::get(llvm::Type::getVoidTy(context.TheContext),
+                                                                       {VoidPtrTy, Int32Ty, Int32Ty, DoubleTy}, false),
+                                               llvm::Function::ExternalLinkage, "flux_matrix_set", context.TheModule);
+            context.Builder.CreateCall(SetF, {MatPtr, RowV, ColV, CurV});
+            return NewValTV;
+        } else {
+            TypedValue NewValTV = Val->codegen(context);
+            if (!NewValTV.Val)
+                return TypedValue();
+            llvm::Value* NewValV = NewValTV.Val;
+            if (NewValV->getType()->isIntegerTy() && !NewValV->getType()->isIntegerTy(1))
+                NewValV = context.Builder.CreateSIToFP(NewValV, DoubleTy, "val_double");
+            llvm::Function* SetF = context.TheModule->getFunction("flux_matrix_set");
+            if (!SetF)
+                SetF = llvm::Function::Create(llvm::FunctionType::get(llvm::Type::getVoidTy(context.TheContext),
+                                                                       {VoidPtrTy, Int32Ty, Int32Ty, DoubleTy}, false),
+                                               llvm::Function::ExternalLinkage, "flux_matrix_set", context.TheModule);
+            context.Builder.CreateCall(SetF, {MatPtr, RowV, ColV, NewValV});
+            return NewValTV;
+        }
     }
 
     if (auto* VAR = dynamic_cast<VariableExprAST*>(LHS.get())) {
@@ -509,11 +537,16 @@ TypedValue AssignExprAST::codegen(CodegenContext& context)
         if (EntryBB) {
             llvm::Function* TheFunction = EntryBB->getParent();
             if (TheFunction) {
+                // Codegen the value first to know its type
+                TypedValue ValTV = Val->codegen(context);
+                if (!ValTV.Val)
+                    return TypedValue();
+                llvm::Type* AllocaTy = ValTV.Val->getType();
                 llvm::IRBuilder<> TmpB(&TheFunction->getEntryBlock(), TheFunction->getEntryBlock().begin());
-                Variable = TmpB.CreateAlloca(llvm::Type::getDoubleTy(context.TheContext), nullptr, TargetName);
+                Variable = TmpB.CreateAlloca(AllocaTy, nullptr, TargetName);
                 context.NamedValues[TargetName] = Variable;
-                // Store initial zero value
-                context.Builder.CreateStore(llvm::ConstantFP::get(context.TheContext, llvm::APFloat(0.0)), Variable);
+                context.Builder.CreateStore(ValTV.Val, Variable);
+                return ValTV;
             }
         }
     }
@@ -2343,7 +2376,7 @@ TypedValue MatrixExprAST::codegen(CodegenContext& context)
                 }
                 llvm::Value* ElemPtr = context.Builder.CreateInBoundsGEP(
                     ElemTy, DataPtr,
-                    {llvm::ConstantInt::get(llvm::Type::getInt64Ty(context.TheContext), r * NumCols + c)}, "elem_ptr");
+                    {llvm::ConstantInt::get(llvm::Type::getInt64Ty(context.TheContext), c * NumRows + r)}, "elem_ptr");
                 context.Builder.CreateStore(ElemTV.Val, ElemPtr);
             }
         }
@@ -2481,16 +2514,82 @@ TypedValue RangeExprAST::codegen(CodegenContext& context)
     TypedValue StepTV =
         Step ? Step->codegen(context)
              : TypedValue(llvm::ConstantFP::get(context.TheContext, llvm::APFloat(1.0)), TypeKind::Double);
-    llvm::Function* RangeF = context.TheModule->getFunction("flux_create_range_sum");
-    if (!RangeF)
-        RangeF = llvm::Function::Create(llvm::FunctionType::get(llvm::Type::getDoubleTy(context.TheContext),
-                                                                {llvm::Type::getDoubleTy(context.TheContext),
-                                                                 llvm::Type::getDoubleTy(context.TheContext),
-                                                                 llvm::Type::getDoubleTy(context.TheContext)},
-                                                                false),
-                                        llvm::Function::ExternalLinkage, "flux_create_range_sum", context.TheModule);
-    return TypedValue(context.Builder.CreateCall(RangeF, {StartTV.Val, StepTV.Val, EndTV.Val}, "range_sum"),
-                      TypeKind::Double);
+
+    auto ensureFP = [&](TypedValue& tv) {
+        if (!tv.Val) {
+            tv.Val = llvm::ConstantFP::get(context.TheContext, llvm::APFloat(0.0));
+        } else if (tv.Val->getType()->isIntegerTy()) {
+            tv.Val = context.Builder.CreateSIToFP(tv.Val, llvm::Type::getDoubleTy(context.TheContext), "range_cast");
+        } else if (tv.Val->getType()->isIntegerTy(1)) {
+            tv.Val = context.Builder.CreateUIToFP(tv.Val, llvm::Type::getDoubleTy(context.TheContext), "range_cast");
+        }
+    };
+    ensureFP(StartTV);
+    ensureFP(EndTV);
+    ensureFP(StepTV);
+
+    // Look up the extern function type entry for proper arg decomposition
+    auto it = context.ExternFuncTypes.find("flux_create_range_sum");
+    if (it == context.ExternFuncTypes.end()) {
+        std::cerr << "RangeExprAST: flux_create_range_sum not registered with ExternFuncTypes\n";
+        return TypedValue(nullptr, TypeKind::Void);
+    }
+
+    auto& retType = it->second.first;
+    auto& argTypes = it->second.second;
+    llvm::Type* RetLTy = (retType.Kind == TypeKind::Matrix)
+                             ? llvm::PointerType::get(context.TheContext, 0)
+                             : retType.getLLVMType(context.TheContext);
+
+    std::vector<llvm::Type*> ArgLTys;
+    for (auto& at : argTypes) {
+        if (at.Kind == TypeKind::Matrix || at.Kind == TypeKind::ComplexMatrix)
+            ArgLTys.push_back(llvm::PointerType::get(context.TheContext, 0));
+        else if (at.Kind == TypeKind::Int)
+            ArgLTys.push_back(llvm::Type::getInt32Ty(context.TheContext));
+        else
+            ArgLTys.push_back(at.getLLVMType(context.TheContext));
+    }
+
+    std::string fnName = "flux_create_range_sum";
+    llvm::Function* F = context.TheModule->getFunction(fnName);
+    if (!F) {
+        llvm::FunctionType* FT = llvm::FunctionType::get(RetLTy, ArgLTys, false);
+        F = llvm::Function::Create(FT, llvm::Function::ExternalLinkage, fnName, context.TheModule);
+    }
+
+    std::vector<llvm::Value*> CallArgs;
+    CallArgs.push_back(StartTV.Val);
+    CallArgs.push_back(StepTV.Val);
+    CallArgs.push_back(EndTV.Val);
+
+    llvm::Value* ResPtr = context.Builder.CreateCall(F, CallArgs, "range_res");
+
+    if (retType.Kind == TypeKind::Matrix) {
+        // Wrap void* into {ptr, i32, i32}
+        llvm::StructType* MatStructTy = llvm::cast<llvm::StructType>(retType.getLLVMType(context.TheContext));
+        llvm::Function* RowsF = context.TheModule->getFunction("flux_matrix_rows");
+        if (!RowsF)
+            RowsF = llvm::Function::Create(llvm::FunctionType::get(llvm::Type::getInt32Ty(context.TheContext),
+                                                                     {llvm::PointerType::get(context.TheContext, 0)},
+                                                                     false),
+                                           llvm::Function::ExternalLinkage, "flux_matrix_rows", context.TheModule);
+        llvm::Function* ColsF = context.TheModule->getFunction("flux_matrix_cols");
+        if (!ColsF)
+            ColsF = llvm::Function::Create(llvm::FunctionType::get(llvm::Type::getInt32Ty(context.TheContext),
+                                                                     {llvm::PointerType::get(context.TheContext, 0)},
+                                                                     false),
+                                           llvm::Function::ExternalLinkage, "flux_matrix_cols", context.TheModule);
+        llvm::Value* ResRows = context.Builder.CreateCall(RowsF, {ResPtr}, "res_rows");
+        llvm::Value* ResCols = context.Builder.CreateCall(ColsF, {ResPtr}, "res_cols");
+        llvm::Value* MatVal = llvm::UndefValue::get(MatStructTy);
+        MatVal = context.Builder.CreateInsertValue(MatVal, ResPtr, 0);
+        MatVal = context.Builder.CreateInsertValue(MatVal, ResRows, 1);
+        MatVal = context.Builder.CreateInsertValue(MatVal, ResCols, 2);
+        return TypedValue(MatVal, retType);
+    }
+
+    return TypedValue(ResPtr, retType);
 }
 
 llvm::Function* PrototypeAST::codegen(CodegenContext& context)
