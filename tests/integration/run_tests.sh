@@ -124,6 +124,12 @@ def test() outputs[\"Vout\"] = 2.5; 1.0
 test()
 "
 
+# Test 11: Analog Block (Verilog-A Lite)
+run_check_test "Analog" "
+def test() analog { V(out) <+ sin(time) }; 1.0
+test()
+"
+
 echo ""
 echo "========================================"  
 echo "  Results: $PASSED/$TOTAL passed"

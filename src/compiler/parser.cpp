@@ -1107,6 +1107,9 @@ std::unique_ptr<ExprAST> Parser::ParsePrimary()
     case static_cast<int>(TokenType::tok_assert):
         Res = ParseAssertExpr();
         break;
+    case static_cast<int>(TokenType::tok_analog):
+        Res = ParseAnalogBlock();
+        break;
 
     // Symbolic math
     case static_cast<int>(TokenType::tok_sym):

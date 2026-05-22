@@ -148,7 +148,7 @@ std::unique_ptr<ExprAST> Parser::ParseAnalogBlock()
                 getNextToken(); // eat )
 
                 // Parse <+ contributor operator
-                if (CurTok != static_cast<int>(TokenType::tok_contributor)) {
+                if (CurTok != static_cast<int>(TokenType::tok_contributor_op)) {
                     ReportError("expected <+ contributor operator");
                     return nullptr;
                 }

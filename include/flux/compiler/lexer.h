@@ -274,7 +274,7 @@ enum class TokenType
     tok_hier = -192,     // hierarchical separator
 
     /* Verilog-A Lite */
-    tok_analog = -193,      // analog block
+    tok_analog = -200,      // analog block
     tok_contributor = -194, // <+ operator
     tok_branch = -195,      // branch declaration
     tok_V = -196,           // V() voltage access (deprecated — use tok_identifier + "V")

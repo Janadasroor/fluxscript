@@ -1075,27 +1075,14 @@ int Lexer::gettok()
             return static_cast<int>(TokenType::tok_not_equal);
         }
         return static_cast<int>(TokenType::tok_logical_not);
-        if (m_lastChar == '<') {
-            advance();
-            if (m_lastChar == '+') {
-                advance();
-                return static_cast<int>(TokenType::tok_contributor_op);
-            }
-            return '<';
-        }
-    }
-
-    if (m_lastChar == '=') {
-        advance();
-        if (m_lastChar == '=') {
-            advance();
-            return static_cast<int>(TokenType::tok_equal);
-        }
-        return '='; // Assignment (not used in expressions currently)
     }
 
     if (m_lastChar == '<') {
         advance();
+        if (m_lastChar == '+') {
+            advance();
+            return static_cast<int>(TokenType::tok_contributor_op);
+        }
         if (m_lastChar == '=') {
             advance();
             return static_cast<int>(TokenType::tok_less_equal);
@@ -1105,6 +1092,15 @@ int Lexer::gettok()
             return static_cast<int>(TokenType::tok_bitwise_shl);
         }
         return '<';
+    }
+
+    if (m_lastChar == '=') {
+        advance();
+        if (m_lastChar == '=') {
+            advance();
+            return static_cast<int>(TokenType::tok_equal);
+        }
+        return '='; // Assignment (not used in expressions currently)
     }
 
     if (m_lastChar == '>') {
