@@ -535,6 +535,8 @@ int Lexer::gettok()
             return static_cast<int>(TokenType::tok_abstol);
         if (IdentifierStr == "reltol")
             return static_cast<int>(TokenType::tok_reltol);
+        if (IdentifierStr == "cross")
+            return static_cast<int>(TokenType::tok_cross);
 
         /* Section 7.1: Model Quality & Verification */
         if (IdentifierStr == "settle")

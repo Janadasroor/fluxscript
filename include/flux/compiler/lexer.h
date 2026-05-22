@@ -209,7 +209,7 @@ enum class TokenType
     tok_update = -183,          // update function
     tok_bsource = -184,         // B-source declaration
     tok_montecarlo = -194,      // Monte Carlo analysis
-    tok_worstcase = -195,       // Worst-case analysis
+    tok_worstcase = -113,       // Worst-case analysis
     tok_stability = -302,       // Stability analysis
     // tok_sensitivity already defined at -137
     tok_optimize = -303, // Optimization
@@ -278,8 +278,8 @@ enum class TokenType
     tok_contributor = -194, // <+ operator
     tok_branch = -195,      // branch declaration
     // (tok_V and tok_I were removed — "V" and "I" are lexed as tok_identifier)
-    tok_ddt = -198,         // ddt() time derivative
-    tok_idt = -199,         // idt() time integral
+    tok_ddt = -115,         // ddt() time derivative
+    tok_idt = -114,         // idt() time integral
     tok_abstol = -201,      // absolute tolerance
     tok_reltol = -202,      // relative tolerance
 

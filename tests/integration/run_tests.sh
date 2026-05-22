@@ -130,6 +130,24 @@ def test() analog { V(out) <+ sin(time) }; 1.0
 test()
 "
 
+# Test 12: ddt() time derivative
+run_check_test "ddt" "
+def test() ddt(sin(time)); 1.0
+test()
+"
+
+# Test 13: idt() time integral
+run_check_test "idt" "
+def test() idt(sin(time)); 1.0
+test()
+"
+
+# Test 14: cross() zero-crossing detection
+run_check_test "Cross" "
+def test() cross(sin(time), 1); 1.0
+test()
+"
+
 echo ""
 echo "========================================"  
 echo "  Results: $PASSED/$TOTAL passed"

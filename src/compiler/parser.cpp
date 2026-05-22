@@ -1110,6 +1110,15 @@ std::unique_ptr<ExprAST> Parser::ParsePrimary()
     case static_cast<int>(TokenType::tok_analog):
         Res = ParseAnalogBlock();
         break;
+    case static_cast<int>(TokenType::tok_ddt):
+        Res = ParseDdtExpr();
+        break;
+    case static_cast<int>(TokenType::tok_idt):
+        Res = ParseIdtExpr();
+        break;
+    case static_cast<int>(TokenType::tok_cross):
+        Res = ParseCrossExpr();
+        break;
 
     // Symbolic math
     case static_cast<int>(TokenType::tok_sym):

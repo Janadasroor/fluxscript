@@ -360,4 +360,42 @@ std::unique_ptr<ExprAST> Parser::ParseDoWhile()
     return std::make_unique<DoWhileExprAST>(std::move(body), std::move(condition));
 }
 
+std::unique_ptr<ExprAST> Parser::ParseCrossExpr()
+{
+    getNextToken(); // eat cross
+
+    if (CurTok != '(') {
+        ReportError("expected '(' after cross");
+        return nullptr;
+    }
+    getNextToken(); // eat (
+
+    auto expr = ParseExpression();
+    if (!expr)
+        return nullptr;
+
+    int risefall = 0;
+    if (CurTok == ',') {
+        getNextToken(); // eat ,
+        if (CurTok == static_cast<int>(TokenType::tok_number)) {
+            risefall = static_cast<int>(m_lexer.NumVal);
+            getNextToken();
+        } else if (CurTok == static_cast<int>(TokenType::tok_integer)) {
+            risefall = static_cast<int>(m_lexer.IntVal);
+            getNextToken();
+        } else {
+            ReportError("expected edge specifier (1=rising, -1=falling, 0=any)");
+            return nullptr;
+        }
+    }
+
+    if (CurTok != ')') {
+        ReportError("expected ')'");
+        return nullptr;
+    }
+    getNextToken(); // eat )
+
+    return std::make_unique<CrossExprAST>(std::move(expr), risefall);
+}
+
 } // namespace Flux
