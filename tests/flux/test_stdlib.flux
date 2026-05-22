@@ -637,3 +637,24 @@ def test_stats_moment() {
     v[0,0]=1.0; v[1,0]=2.0; v[2,0]=3.0; v[3,0]=4.0
     is_close(moment(v, 2.0), 1.25)
 }
+
+from "trig" import hypot, log2
+
+def test_from_import_string_literal() {
+    is_close(hypot(3.0, 4.0), 5.0) && is_close(log2(8.0), 3.0)
+}
+
+from trig import degrees, radians
+
+def test_from_import_identifier() {
+    is_close(degrees(pi()), 180.0) && is_close(radians(180.0), pi())
+}
+
+from "array" import flip, sort, repmat
+
+def test_from_import_multi() {
+    var v = matrix_zeros(3, 1)
+    v[0,0]=3.0; v[1,0]=1.0; v[2,0]=2.0
+    var s = sort(v)
+    matrix_get(s, 0, 0) == 1.0 && matrix_get(s, 2, 0) == 3.0
+}

@@ -31,6 +31,7 @@ public:
     std::unique_ptr<FunctionAST> ParseDefinition();
     std::unique_ptr<FunctionAST> ParseTopLevelExpr();
     std::unique_ptr<ExprAST> ParseImport();
+    std::unique_ptr<ExprAST> ParseFromImport();
     std::unique_ptr<DebugStmtAST> ParseDebugStmt();
     std::unique_ptr<SensitivityStmtAST> ParseSensitivityStmt();
     std::unique_ptr<AskExprAST> ParseAskExpr();

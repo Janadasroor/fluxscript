@@ -363,6 +363,8 @@ std::unique_ptr<ParsedAST> CompilerInstance::parse(const std::string& code, std:
             }
         } else if (parser.CurTok == static_cast<int>(TokenType::tok_import)) {
             parser.ParseImport(); // Just consume for now
+        } else if (parser.CurTok == static_cast<int>(TokenType::tok_from)) {
+            parser.ParseFromImport(); // Just consume for now
         } else if (parser.CurTok == static_cast<int>(TokenType::tok_extern)) {
             parser.ParseExtern(); // Just consume
         } else if (parser.CurTok == static_cast<int>(TokenType::tok_semicolon)) {
@@ -816,8 +818,11 @@ bool CompilerInstance::compileParser(Parser& parser, CodegenContext& context,
                 hasUpdateFunc = true;
                 updateFunc = std::move(func);
             }
-        } else if (parser.CurTok == static_cast<int>(TokenType::tok_import)) {
-            auto importAst = parser.ParseImport();
+        } else if (parser.CurTok == static_cast<int>(TokenType::tok_import) ||
+                   parser.CurTok == static_cast<int>(TokenType::tok_from)) {
+            auto importAst = (parser.CurTok == static_cast<int>(TokenType::tok_from))
+                             ? parser.ParseFromImport()
+                             : parser.ParseImport();
             if (!importAst) {
                 error = "Failed to parse import statement";
                 return false;
@@ -853,6 +858,7 @@ bool CompilerInstance::compileParser(Parser& parser, CodegenContext& context,
                    parser.CurTok != static_cast<int>(TokenType::tok_def) &&
                    parser.CurTok != static_cast<int>(TokenType::tok_extern) &&
                    parser.CurTok != static_cast<int>(TokenType::tok_import) &&
+                   parser.CurTok != static_cast<int>(TokenType::tok_from) &&
                    parser.CurTok != static_cast<int>(TokenType::tok_update) &&
                    parser.CurTok != static_cast<int>(TokenType::tok_rbrace)) {
 

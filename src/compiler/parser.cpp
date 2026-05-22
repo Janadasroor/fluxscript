@@ -340,6 +340,52 @@ std::unique_ptr<ExprAST> Parser::ParseImport()
     return std::make_unique<ImportExprAST>(moduleName, versionSpec, alias, symbols);
 }
 
+// Parse: from <module> import <symbol1>, <symbol2>, ...
+std::unique_ptr<ExprAST> Parser::ParseFromImport()
+{
+    getNextToken(); // eat from
+
+    std::string moduleName;
+
+    // Module name can be a string literal or an identifier
+    if (CurTok == static_cast<int>(TokenType::tok_string)) {
+        moduleName = m_lexer.StringVal;
+        getNextToken();
+    } else if (CurTok == static_cast<int>(TokenType::tok_identifier)) {
+        moduleName = m_lexer.IdentifierStr;
+        getNextToken();
+    } else {
+        ReportError("expected module name after 'from'");
+        return nullptr;
+    }
+
+    // Expect 'import' keyword
+    if (CurTok != static_cast<int>(TokenType::tok_import)) {
+        ReportError("expected 'import' after module name in from-import");
+        return nullptr;
+    }
+    getNextToken(); // eat import
+
+    // Parse comma-separated symbol list (no braces)
+    std::vector<std::string> symbols;
+    while (CurTok == static_cast<int>(TokenType::tok_identifier)) {
+        symbols.push_back(m_lexer.IdentifierStr);
+        getNextToken();
+        if (CurTok == ',') {
+            getNextToken();
+        } else {
+            break;
+        }
+    }
+
+    if (symbols.empty()) {
+        ReportError("expected at least one symbol name after 'import'");
+        return nullptr;
+    }
+
+    return std::make_unique<ImportExprAST>(moduleName, "", "", symbols);
+}
+
 std::unique_ptr<ExprAST> Parser::ParseParenExpr()
 {
     getNextToken();
@@ -1015,6 +1061,9 @@ std::unique_ptr<ExprAST> Parser::ParsePrimary()
         break;
     case static_cast<int>(TokenType::tok_import):
         Res = ParseImport();
+        break;
+    case static_cast<int>(TokenType::tok_from):
+        Res = ParseFromImport();
         break;
     case static_cast<int>(TokenType::tok_debug):
         Res = ParseDebugStmt();

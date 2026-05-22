@@ -133,6 +133,9 @@ enum class TokenType
     tok_star_equal = -147,  // *=
     tok_slash_equal = -148, // /=
 
+    // From-import
+    tok_from = -100,            // from keyword (from module import symbol)
+
     // Control flow
     tok_break = -149,
     tok_continue = -68,

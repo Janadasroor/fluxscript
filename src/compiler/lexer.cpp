@@ -89,6 +89,8 @@ std::string Lexer::tokenSpelling(int token)
         return "let";
     case TokenType::tok_fn:
         return "fn";
+    case TokenType::tok_from:
+        return "from";
     case TokenType::tok_import:
         return "import";
     case TokenType::tok_type_float:
@@ -297,6 +299,8 @@ int Lexer::gettok()
             return static_cast<int>(TokenType::tok_while);
         if (IdentifierStr == "yield")
             return static_cast<int>(TokenType::tok_yield);
+        if (IdentifierStr == "from")
+            return static_cast<int>(TokenType::tok_from);
         if (IdentifierStr == "import")
             return static_cast<int>(TokenType::tok_import);
         if (IdentifierStr == "analysis")
