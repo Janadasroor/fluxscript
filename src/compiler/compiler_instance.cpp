@@ -745,6 +745,89 @@ static void visitExprForParamInference(
         visitExprForParamInference(f->getBody(), externTypes, userFuncParamTypes, paramTypes);
         return;
     }
+
+    // ForStmtAST (C-style for)
+    if (auto* fs = dynamic_cast<const ForStmtAST*>(expr)) {
+        if (fs->getInit())
+            visitExprForParamInference(fs->getInit(), externTypes, userFuncParamTypes, paramTypes);
+        if (fs->getCond())
+            visitExprForParamInference(fs->getCond(), externTypes, userFuncParamTypes, paramTypes);
+        if (fs->getStep())
+            visitExprForParamInference(fs->getStep(), externTypes, userFuncParamTypes, paramTypes);
+        for (const auto& stmt : fs->getBody())
+            visitExprForParamInference(stmt.get(), externTypes, userFuncParamTypes, paramTypes);
+        return;
+    }
+
+    // WhileStmtAST
+    if (auto* ws = dynamic_cast<const WhileStmtAST*>(expr)) {
+        visitExprForParamInference(ws->getCond(), externTypes, userFuncParamTypes, paramTypes);
+        for (const auto& stmt : ws->getBody())
+            visitExprForParamInference(stmt.get(), externTypes, userFuncParamTypes, paramTypes);
+        return;
+    }
+
+    // DoWhileExprAST
+    if (auto* dw = dynamic_cast<const DoWhileExprAST*>(expr)) {
+        visitExprForParamInference(dw->getBody(), externTypes, userFuncParamTypes, paramTypes);
+        visitExprForParamInference(dw->getCond(), externTypes, userFuncParamTypes, paramTypes);
+        return;
+    }
+
+    // RepeatUntilExprAST
+    if (auto* ru = dynamic_cast<const RepeatUntilExprAST*>(expr)) {
+        visitExprForParamInference(ru->getBody(), externTypes, userFuncParamTypes, paramTypes);
+        visitExprForParamInference(ru->getCond(), externTypes, userFuncParamTypes, paramTypes);
+        return;
+    }
+
+    // ForeachExprAST
+    if (auto* fe = dynamic_cast<const ForeachExprAST*>(expr)) {
+        visitExprForParamInference(fe->getIterable(), externTypes, userFuncParamTypes, paramTypes);
+        visitExprForParamInference(fe->getBody(), externTypes, userFuncParamTypes, paramTypes);
+        return;
+    }
+
+    // ParallelForExprAST
+    if (auto* pf = dynamic_cast<const ParallelForExprAST*>(expr)) {
+        visitExprForParamInference(pf->getStart(), externTypes, userFuncParamTypes, paramTypes);
+        visitExprForParamInference(pf->getEnd(), externTypes, userFuncParamTypes, paramTypes);
+        visitExprForParamInference(pf->getBody(), externTypes, userFuncParamTypes, paramTypes);
+        return;
+    }
+
+    // SwitchExprAST
+    if (auto* sw = dynamic_cast<const SwitchExprAST*>(expr)) {
+        visitExprForParamInference(sw->getCondition(), externTypes, userFuncParamTypes, paramTypes);
+        for (const auto& c : sw->getCases()) {
+            visitExprForParamInference(c.getValue(), externTypes, userFuncParamTypes, paramTypes);
+            for (const auto& stmt : c.getBody())
+                visitExprForParamInference(stmt.get(), externTypes, userFuncParamTypes, paramTypes);
+        }
+        for (const auto& stmt : sw->getDefaultBody())
+            visitExprForParamInference(stmt.get(), externTypes, userFuncParamTypes, paramTypes);
+        return;
+    }
+
+    // MatchExprAST
+    if (auto* ma = dynamic_cast<const MatchExprAST*>(expr)) {
+        visitExprForParamInference(ma->getValue(), externTypes, userFuncParamTypes, paramTypes);
+        for (const auto& arm : ma->getArms())
+            visitExprForParamInference(arm.second.get(), externTypes, userFuncParamTypes, paramTypes);
+        if (ma->getDefaultArm())
+            visitExprForParamInference(ma->getDefaultArm(), externTypes, userFuncParamTypes, paramTypes);
+        return;
+    }
+
+    // TryCatchExprAST
+    if (auto* tc = dynamic_cast<const TryCatchExprAST*>(expr)) {
+        visitExprForParamInference(tc->getTryBody(), externTypes, userFuncParamTypes, paramTypes);
+        for (const auto& clause : tc->getCatchClauses())
+            visitExprForParamInference(clause.second.get(), externTypes, userFuncParamTypes, paramTypes);
+        if (tc->getFinallyBody())
+            visitExprForParamInference(tc->getFinallyBody(), externTypes, userFuncParamTypes, paramTypes);
+        return;
+    }
 }
 
 static void inferParamTypes(const std::vector<std::unique_ptr<FunctionAST>>& functions,

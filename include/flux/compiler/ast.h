@@ -1140,6 +1140,9 @@ public:
     TypedValue codegen(CodegenContext& context) override;
     void addCatch(const std::string& var, std::unique_ptr<ExprAST> handler);
     void setFinally(std::unique_ptr<ExprAST> body);
+    const ExprAST* getTryBody() const { return TryBody.get(); }
+    const std::vector<std::pair<std::string, std::unique_ptr<ExprAST>>>& getCatchClauses() const { return CatchClauses; }
+    const ExprAST* getFinallyBody() const { return FinallyBody.get(); }
     bool containsYield() const override
     {
         if (TryBody->containsYield())
@@ -1323,6 +1326,9 @@ public:
     TypedValue codegen(CodegenContext& context) override;
     void addArm(std::unique_ptr<ExprAST> pattern, std::unique_ptr<ExprAST> result);
     void setDefault(std::unique_ptr<ExprAST> arm);
+    const ExprAST* getValue() const { return Value.get(); }
+    const std::vector<std::pair<std::unique_ptr<ExprAST>, std::unique_ptr<ExprAST>>>& getArms() const { return Arms; }
+    const ExprAST* getDefaultArm() const { return DefaultArm.get(); }
     bool containsYield() const override
     {
         if (Value->containsYield())
@@ -1349,6 +1355,8 @@ public:
     {
     }
     TypedValue codegen(CodegenContext& context) override;
+    const ExprAST* getIterable() const { return Iterable.get(); }
+    const ExprAST* getBody() const { return Body.get(); }
     bool containsYield() const override { return Body->containsYield(); }
 };
 
@@ -1364,6 +1372,8 @@ public:
     {
     }
     TypedValue codegen(CodegenContext& context) override;
+    const ExprAST* getBody() const { return Body.get(); }
+    const ExprAST* getCond() const { return Condition.get(); }
     bool containsYield() const override { return Body->containsYield() || Condition->containsYield(); }
 };
 
@@ -1383,6 +1393,9 @@ public:
     {
     }
     TypedValue codegen(CodegenContext& context) override;
+    const ExprAST* getStart() const { return Start.get(); }
+    const ExprAST* getEnd() const { return End.get(); }
+    const ExprAST* getBody() const { return Body.get(); }
     bool containsYield() const override { return Body->containsYield(); }
 };
 
