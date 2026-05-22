@@ -110,13 +110,12 @@ def test_fft() {
 }
 
 def test_spice_api() {
-    register_analysis("tran")
-    register_measure("vout", "MAX")
-    register_probe("V(out)", "vout")
-    register_save("V(out)")
-    register_param("R1", 1000.0)
-    register_ic("V(cap)", 0.0)
-    1.0
+    register_analysis("tran") == 0.0 &&
+    register_measure("vout", "MAX") == 0.0 &&
+    register_probe("V(out)", "vout") == 0.0 &&
+    register_save("V(out)") == 0.0 &&
+    register_param("R1", 1000.0) == 0.0 &&
+    register_ic("V(cap)", 0.0) == 0.0
 }
 
 # --- Compile-time dimensional analysis ---
