@@ -64,7 +64,9 @@ struct TestSuiteResult
 };
 
 std::string defaultCacheDirectory();
-std::string computeCacheKey(const std::string& code, const CompilerOptions& options);
+std::string computeCacheKey(const std::string& code, const CompilerOptions& options,
+                            const std::string& importHashes = "");
+std::string computeImportGraphHash(const std::string& mainCode);
 
 bool emitObjectBuffer(CompileArtifacts& artifacts, OptimizationLevel optimizationLevel,
                       std::unique_ptr<llvm::MemoryBuffer>& output, std::string* error = nullptr);

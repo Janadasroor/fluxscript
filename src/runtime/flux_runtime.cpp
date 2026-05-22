@@ -107,9 +107,10 @@ double jit_register_ic(double name_ptr, double value)
 
 // File I/O and string utilities for FluxScript
 #include <cstdio>
+#include <deque>
 #include <regex>
 static thread_local std::string g_fileio_buffer;
-static thread_local std::vector<std::string> g_fileio_pool;
+static thread_local std::deque<std::string> g_fileio_pool;
 
 // File I/O wrappers (flux_ prefix avoids symbol conflicts with libc)
 extern "C" double flux_fopen(double filename_ptr, double mode_ptr)

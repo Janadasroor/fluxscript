@@ -106,7 +106,8 @@ bool JITEngine::compileScript(const std::string& code, std::string* error)
     m_overloadedFunctions.clear();
     m_lastCompileUsedCache = false;
 
-    const std::string cacheKey = Tooling::computeCacheKey(code, m_compilerOptions);
+    const std::string importHashes = Tooling::computeImportGraphHash(code);
+    const std::string cacheKey = Tooling::computeCacheKey(code, m_compilerOptions, importHashes);
     const std::filesystem::path cacheDir(m_cacheDirectory);
     const std::filesystem::path bcPath = cacheDir / (cacheKey + ".bc");
     const std::filesystem::path metaPath = cacheDir / (cacheKey + ".meta");
@@ -169,19 +170,27 @@ FluxValue JITEngine::callFunction(const std::string& name, const std::vector<dou
             *error = "JIT not initialized";
         return 0.0;
     }
-    void* fnPtr = m_jit->getPointerToFunction(name);
-    if (!fnPtr && name == "__anon_expr") {
+    void* fnPtr = nullptr;
+    std::string resolvedName = name;
+    if (name == "__anon_expr") {
         std::string base = m_compilerOptions.moduleName + "_anon_expr";
-        fnPtr = m_jit->getPointerToFunction(base);
-        for (int i = 0; !fnPtr && i < 100; i++)
-            fnPtr = m_jit->getPointerToFunction(base + "_" + std::to_string(i));
+        for (int i = -1; i < 100; i++) {
+            resolvedName = (i == -1) ? base : (base + "_" + std::to_string(i));
+            fnPtr = m_jit->getPointerToFunction(resolvedName);
+            if (fnPtr)
+                break;
+        }
+        if (!fnPtr)
+            resolvedName = name;
     }
+    if (!fnPtr)
+        fnPtr = m_jit->getPointerToFunction(name);
     if (!fnPtr) {
         if (error)
             *error = "Function not found: " + name;
         return 0.0;
     }
-    FluxType retType = m_functionReturnTypes[name];
+    FluxType retType = m_functionReturnTypes[resolvedName];
 
     if (retType.Kind == TypeKind::Matrix) {
         struct MatrixRet

@@ -1444,15 +1444,11 @@ TypedValue CallExprAST::codegen(CodegenContext& context)
                 if (!PrintFn)
                     PrintFn = llvm::Function::Create(
                         llvm::FunctionType::get(llvm::Type::getDoubleTy(context.TheContext),
-                                                {llvm::PointerType::get(context.TheContext, 0)}, false),
+                                                {llvm::Type::getDoubleTy(context.TheContext)}, false),
                         llvm::Function::ExternalLinkage, "flux_print_string", context.TheModule);
 
-                // Convert double-bitcasted-pointer back to pointer
-                llvm::Value* DoubleVal = Arg.Val;
-                llvm::Type* Int64Ty = llvm::Type::getInt64Ty(context.TheContext);
-                llvm::Value* IntVal = context.Builder.CreateBitCast(DoubleVal, Int64Ty);
-                PrintArgs.push_back(
-                    context.Builder.CreateIntToPtr(IntVal, llvm::PointerType::get(context.TheContext, 0)));
+                // String value is already a double (bitcasted pointer), pass directly
+                PrintArgs.push_back(Arg.Val);
             } else {
                 // Default: Print as double (handles Fixed-point too via previous conversion logic)
                 PrintFn = context.TheModule->getFunction("flux_print_double");
@@ -1469,6 +1465,8 @@ TypedValue CallExprAST::codegen(CodegenContext& context)
                         context.Builder.CreateSIToFP(Val, llvm::Type::getDoubleTy(context.TheContext));
                     Val = context.Builder.CreateFMul(FloatVal,
                                                      llvm::ConstantFP::get(context.TheContext, llvm::APFloat(scale)));
+                } else if (Arg.Type.Kind == TypeKind::Int && !Arg.Val->getType()->isDoubleTy()) {
+                    Val = context.Builder.CreateSIToFP(Val, llvm::Type::getDoubleTy(context.TheContext));
                 }
                 PrintArgs.push_back(Val);
             }
@@ -1480,7 +1478,10 @@ TypedValue CallExprAST::codegen(CodegenContext& context)
             llvm::Function* PrintStr = context.TheModule->getFunction("flux_print_string");
             if (PrintStr) {
                 llvm::Value* NewLine = context.Builder.CreateGlobalString("\n");
-                context.Builder.CreateCall(PrintStr, {NewLine});
+                llvm::Value* NewLineAsDouble = context.Builder.CreateBitCast(
+                    context.Builder.CreatePtrToInt(NewLine, llvm::Type::getInt64Ty(context.TheContext)),
+                    llvm::Type::getDoubleTy(context.TheContext));
+                context.Builder.CreateCall(PrintStr, {NewLineAsDouble});
             }
         }
         return TypedValue(llvm::ConstantFP::get(context.TheContext, llvm::APFloat(0.0)), TypeKind::Double);
@@ -2873,6 +2874,18 @@ TypedValue ParameterExprAST::codegen(CodegenContext& context)
 
 TypedValue BuiltinVarExprAST::codegen(CodegenContext& context)
 {
+    // Check local scope first — user-defined parameter/variable shadows the built-in
+    auto localIt = context.NamedValues.find(Name);
+    if (localIt != context.NamedValues.end()) {
+        llvm::Value* V = localIt->second;
+        if (auto* Alloca = llvm::dyn_cast<llvm::AllocaInst>(V)) {
+            llvm::Type* Ty = Alloca->getAllocatedType();
+            return TypedValue(context.Builder.CreateLoad(Ty, Alloca, Name.c_str()), TypeKind::Double);
+        }
+        FluxType FTy = typeFromLLVM(V->getType());
+        return TypedValue(V, FTy);
+    }
+
     // Generate calls for built-in variables: time, dt, temp
     std::string FuncName;
     if (Name == "time")

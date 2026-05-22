@@ -1,6 +1,7 @@
 *.flux
 !tests/flux/*.flux
 !stdlib/*.flux
+!examples/fullcircuit/**/*.flux
 /build/
 /build_local/
 /build_debug/
@@ -10,6 +11,7 @@
 /gui/
 /scripts/
 *.md
+!examples/fullcircuit/*.md
 tests/integration/results/
 todo/
 TODO.md
@@ -21,3 +23,4 @@ progress.md
 .spiceinit
 .flux_cache/
 llvm.sh
+debug/

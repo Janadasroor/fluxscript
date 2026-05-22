@@ -299,6 +299,11 @@ public:
     // through function calls.
     std::map<std::string, FluxType> FuncReturnTypes;
 
+    // Cross-module parameter types for user-defined functions, keyed by
+    // function name → vector of param types. Populated during compilation
+    // so that inferParamTypes can see callee param types from imported modules.
+    std::map<std::string, std::vector<FluxType>> CrossModuleParamTypes;
+
     CodegenContext()
         : OwnedContext(std::make_unique<llvm::LLVMContext>()), TheContext(*OwnedContext), Builder(TheContext)
     {

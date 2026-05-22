@@ -23,6 +23,7 @@
 #include <iomanip>
 #include <optional>
 #include <regex>
+#include <set>
 #include <sstream>
 
 #include <llvm/ADT/SmallVector.h>
@@ -181,11 +182,85 @@ std::string defaultCacheDirectory()
     return ".fluxcache/jit";
 }
 
-std::string computeCacheKey(const std::string& code, const CompilerOptions& options)
+std::string computeImportGraphHash(const std::string& mainCode)
+{
+    static const std::regex importRe(R"(^\s*import\s+(\w+))");
+    std::set<std::string> visited;
+    std::vector<std::string> toVisit;
+    toVisit.push_back(mainCode);
+
+    llvm::SHA256 hasher;
+    bool hasContent = false;
+
+    while (!toVisit.empty()) {
+        std::string source = std::move(toVisit.back());
+        toVisit.pop_back();
+
+        std::smatch m;
+        std::string::const_iterator it = source.cbegin();
+        while (std::regex_search(it, source.cend(), m, importRe)) {
+            std::string modName = m[1].str();
+            it = m.suffix().first;
+
+            if (visited.find(modName) != visited.end())
+                continue;
+            visited.insert(modName);
+
+            // Try to find the module file using standard search paths
+            std::vector<fs::path> searchPaths = {
+                fs::current_path(),
+                fs::current_path() / "modules",
+                fs::current_path() / "lib",
+                fs::current_path() / "stdlib",
+            };
+            const char* home = std::getenv("HOME");
+            if (home) {
+                searchPaths.push_back(fs::path(home) / ".flux" / "modules");
+                searchPaths.push_back(fs::path(home) / ".flux" / "stdlib");
+            }
+            searchPaths.push_back("/usr/local/share/flux/modules");
+            searchPaths.push_back("/usr/share/flux/modules");
+
+            fs::path modPath;
+            for (const auto& dir : searchPaths) {
+                auto candidate = dir / (modName + ".flux");
+                if (fs::exists(candidate)) {
+                    modPath = candidate;
+                    break;
+                }
+            }
+            if (modPath.empty())
+                continue;
+
+            // Read and hash the module file
+            auto buf = llvm::MemoryBuffer::getFile(modPath.string());
+            if (!buf)
+                continue;
+            llvm::StringRef content = buf.get()->getBuffer();
+            hasher.update(content);
+            hasContent = true;
+
+            // Recursively scan the imported file for its own imports
+            toVisit.push_back(content.str());
+        }
+    }
+
+    if (!hasContent)
+        return "";
+
+    auto hash = hasher.final();
+    std::ostringstream os;
+    for (uint8_t byte : hash)
+        os << std::hex << std::setw(2) << std::setfill('0') << static_cast<int>(byte);
+    return os.str();
+}
+
+std::string computeCacheKey(const std::string& code, const CompilerOptions& options,
+                            const std::string& importHashes)
 {
     const std::string payload = code + "|" + options.inputName + "|" + options.moduleName + "|" +
                                 std::to_string(static_cast<int>(options.optimizationLevel)) + "|" +
-                                (options.debugInfo ? "dbg" : "nodbg");
+                                (options.debugInfo ? "dbg" : "nodbg") + "|" + importHashes;
     llvm::SHA256 hasher;
     hasher.update(payload);
     auto hash = hasher.final();

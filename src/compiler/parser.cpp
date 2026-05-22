@@ -269,7 +269,9 @@ std::unique_ptr<ExprAST> Parser::ParseImport()
     std::string alias;
     std::vector<std::string> symbols;
 
-    if (CurTok != static_cast<int>(TokenType::tok_identifier)) {
+    if (CurTok != static_cast<int>(TokenType::tok_identifier) &&
+        CurTok != static_cast<int>(TokenType::tok_analysis) &&
+        CurTok != static_cast<int>(TokenType::tok_measure)) {
         ReportError("expected module name after import");
         return nullptr;
     }
@@ -359,14 +361,34 @@ std::unique_ptr<ExprAST> Parser::ParseIdentifierExpr()
     std::string IdName = m_lexer.IdentifierStr;
 
     // Explicit check for statement keywords that might be misparsed as identifiers
-    if (IdName == "analysis")
-        return ParseAnalysis();
+    if (IdName == "analysis") {
+        int peek = m_lexer.peekToken();
+        if (peek == static_cast<int>(TokenType::tok_tran) ||
+            peek == static_cast<int>(TokenType::tok_dc) ||
+            peek == static_cast<int>(TokenType::tok_ac) ||
+            peek == static_cast<int>(TokenType::tok_noise) ||
+            peek == static_cast<int>(TokenType::tok_op) ||
+            peek == static_cast<int>(TokenType::tok_tf) ||
+            peek == static_cast<int>(TokenType::tok_sens) ||
+            peek == static_cast<int>(TokenType::tok_fourier) ||
+            peek == static_cast<int>(TokenType::tok_lbrace))
+            return ParseAnalysis();
+    }
     if (IdName == "measure")
         return ParseMeasure();
     if (IdName == "model")
         return ParseModel();
     if (IdName == "subckt")
         return ParseSubckt();
+    if (IdName == "state") {
+        if (m_lexer.peekToken() == static_cast<int>(TokenType::tok_V))
+            return ParseStateDecl();
+    } else if (IdName == "ic") {
+        if (m_lexer.peekToken() == static_cast<int>(TokenType::tok_V))
+            return ParseIC();
+    } else if (IdName == "dt") {
+        return ParseBuiltinVar();
+    }
 
     getNextToken();
 
@@ -621,10 +643,8 @@ std::unique_ptr<ExprAST> Parser::ParseIfStmt()
     }
     getNextToken(); // eat )
 
-    // Then block
+    // Then block — must be a {}-block, but may be empty
     auto ThenBody = ParseStmtBlock();
-    if (ThenBody.empty())
-        return nullptr;
 
     // Optional else block
     std::vector<std::unique_ptr<ExprAST>> ElseBody;
@@ -638,8 +658,6 @@ std::unique_ptr<ExprAST> Parser::ParseIfStmt()
             ElseBody.push_back(std::move(ElseIf));
         } else {
             ElseBody = ParseStmtBlock();
-            if (ElseBody.empty())
-                return nullptr;
         }
     }
 
@@ -739,7 +757,11 @@ std::unique_ptr<ExprAST> Parser::ParseLetExpr()
 {
     bool isLet = (CurTok == static_cast<int>(TokenType::tok_let));
     getNextToken();
-    if (CurTok != static_cast<int>(TokenType::tok_identifier)) {
+    if (CurTok != static_cast<int>(TokenType::tok_identifier) &&
+        CurTok != static_cast<int>(TokenType::tok_state) &&
+        CurTok != static_cast<int>(TokenType::tok_ic) &&
+        CurTok != static_cast<int>(TokenType::tok_dt_var) &&
+        CurTok != static_cast<int>(TokenType::tok_analysis)) {
         ReportError("expected identifier after let/var");
         return nullptr;
     }
@@ -792,7 +814,11 @@ std::unique_ptr<ExprAST> Parser::ParseLambdaExpr()
     std::vector<std::string> Args;
     if (CurTok != ')') {
         while (true) {
-            if (CurTok != static_cast<int>(TokenType::tok_identifier)) {
+            if (CurTok != static_cast<int>(TokenType::tok_identifier) &&
+                CurTok != static_cast<int>(TokenType::tok_state) &&
+                CurTok != static_cast<int>(TokenType::tok_ic) &&
+                CurTok != static_cast<int>(TokenType::tok_dt_var) &&
+                CurTok != static_cast<int>(TokenType::tok_analysis)) {
                 ReportError("expected identifier in lambda args");
                 return nullptr;
             }
@@ -1077,9 +1103,6 @@ std::unique_ptr<ExprAST> Parser::ParsePrimary()
         break;
 
     // Analysis and Measurements
-    case static_cast<int>(TokenType::tok_analysis):
-        Res = ParseAnalysis();
-        break;
     case static_cast<int>(TokenType::tok_measure):
         Res = ParseMeasure();
         break;
@@ -1114,9 +1137,6 @@ std::unique_ptr<ExprAST> Parser::ParsePrimary()
     case static_cast<int>(TokenType::tok_discontinuity):
         Res = ParseDiscontinuityDecl();
         break;
-    case static_cast<int>(TokenType::tok_state):
-        Res = ParseStateDecl();
-        break;
     case static_cast<int>(TokenType::tok_verify):
         Res = ParseVerifyBlock();
         break;
@@ -1133,6 +1153,10 @@ std::unique_ptr<ExprAST> Parser::ParsePrimary()
     case static_cast<int>(TokenType::tok_ac):
     case static_cast<int>(TokenType::tok_max):
     case static_cast<int>(TokenType::tok_min):
+    case static_cast<int>(TokenType::tok_dt_var):
+    case static_cast<int>(TokenType::tok_state):
+    case static_cast<int>(TokenType::tok_ic):
+    case static_cast<int>(TokenType::tok_analysis):
         Res = ParseIdentifierExpr();
         break;
 
@@ -1159,7 +1183,6 @@ std::unique_ptr<ExprAST> Parser::ParsePrimary()
 
     // SPICE Time-Domain Simulation
     case static_cast<int>(TokenType::tok_time):
-    case static_cast<int>(TokenType::tok_dt_var):
     case static_cast<int>(TokenType::tok_temp):
         Res = ParseBuiltinVar();
         break;
@@ -1193,9 +1216,6 @@ std::unique_ptr<ExprAST> Parser::ParsePrimary()
         break;
     case static_cast<int>(TokenType::tok_param):
         Res = ParseParam();
-        break;
-    case static_cast<int>(TokenType::tok_ic):
-        Res = ParseIC();
         break;
 
     /* Section 7.2: Mixed-Signal & Modeling Extensions */
@@ -1362,7 +1382,11 @@ std::unique_ptr<ExprAST> Parser::ParseExpression()
 
 std::unique_ptr<PrototypeAST> Parser::ParsePrototype()
 {
-    if (CurTok != static_cast<int>(TokenType::tok_identifier) && CurTok != static_cast<int>(TokenType::tok_update))
+    if (CurTok != static_cast<int>(TokenType::tok_identifier) &&
+        CurTok != static_cast<int>(TokenType::tok_update) &&
+        CurTok != static_cast<int>(TokenType::tok_state) &&
+        CurTok != static_cast<int>(TokenType::tok_ic) &&
+        CurTok != static_cast<int>(TokenType::tok_dt_var))
         return nullptr;
 
     std::string FnName = (CurTok == static_cast<int>(TokenType::tok_update)) ? "update" : m_lexer.IdentifierStr;
@@ -1372,14 +1396,19 @@ std::unique_ptr<PrototypeAST> Parser::ParsePrototype()
     getNextToken();
     std::vector<std::pair<std::string, FluxType>> Args;
     while (CurTok == static_cast<int>(TokenType::tok_identifier) || CurTok == static_cast<int>(TokenType::tok_inputs) ||
-           CurTok == static_cast<int>(TokenType::tok_outputs)) {
+           CurTok == static_cast<int>(TokenType::tok_outputs) || CurTok == static_cast<int>(TokenType::tok_dt_var) ||
+           CurTok == static_cast<int>(TokenType::tok_state) || CurTok == static_cast<int>(TokenType::tok_ic) ||
+           CurTok == static_cast<int>(TokenType::tok_analysis) ||
+           CurTok == static_cast<int>(TokenType::tok_ddt) || CurTok == static_cast<int>(TokenType::tok_idt)) {
         std::string Name;
         if (CurTok == static_cast<int>(TokenType::tok_identifier))
             Name = m_lexer.IdentifierStr;
         else if (CurTok == static_cast<int>(TokenType::tok_inputs))
             Name = "inputs";
-        else
+        else if (CurTok == static_cast<int>(TokenType::tok_outputs))
             Name = "outputs";
+        else
+            Name = m_lexer.IdentifierStr;
 
         getNextToken();
         FluxType Type(TypeKind::Double);
