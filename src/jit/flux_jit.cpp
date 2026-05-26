@@ -879,6 +879,7 @@ void FluxJIT::registerFunction(const std::string& Name, void* FuncPtr)
     if (!m_lljit || !m_runtimeDylib)
         return;
 
+    // Register in the JITDylib for ORC internal symbol resolution.
     auto& ES = m_lljit->getExecutionSession();
     auto internedName = ES.intern(Name);
     llvm::orc::SymbolMap symMap;
@@ -895,6 +896,12 @@ void FluxJIT::registerFunction(const std::string& Name, void* FuncPtr)
                 llvm::errs() << "JIT symbol error: " << msg << "\n";
         });
     }
+
+    // Also add to the global process symbol table so the fallback
+    // DynamicLibrarySearchGenerator can find it via dlsym.
+    // This is essential on macOS where two-level namespace linking
+    // can hide symbols from libFluxScript.dylib from dlsym(nullptr,...).
+    llvm::sys::DynamicLibrary::AddSymbol(Name, FuncPtr);
 }
 
 int FluxJIT::autoTuneHotFunctions()
