@@ -75,10 +75,10 @@ jobs:
             bash -xe -c "
               apt-get update -qq &&
               apt-get install -y -qq wget gnupg lsb-release software-properties-common patchelf &&
-              wget -q https://apt.llvm.org/llvm.sh && chmod +x llvm.sh && ./llvm.sh 21 &&
+              wget -q https://apt.llvm.org/llvm.sh && chmod +x llvm.sh && ./llvm.sh 21 all &&
               mkdir -p install/include install/lib &&
-              cp -r include/flux install/include/ &&
-              cp build/libFluxScript.so install/lib/ &&
+              cp -r /src/include/flux install/include/ &&
+              cp /src/build/libFluxScript.so install/lib/ &&
               LLVM_REAL=\"\$(readlink -f /usr/lib/llvm-21/lib/libLLVM-21.so)\" &&
               if [ -n \"\$LLVM_REAL\" ]; then
                 cp -L \"\$LLVM_REAL\" install/lib/ &&
