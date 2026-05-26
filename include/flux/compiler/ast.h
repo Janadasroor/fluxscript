@@ -299,6 +299,7 @@ class PrototypeAST;
 class FunctionAST;
 class StructDeclAST;
 class EnumDeclAST;
+class ImplDeclAST;
 class ExprAST;
 
 class CodegenContext
@@ -361,6 +362,7 @@ public:
     // Index in the vector serves as StructTypeId.
     struct StructTypeInfo {
         std::string Name;
+        std::string ParentName;
         std::vector<std::pair<std::string, FluxType>> Fields;
         llvm::StructType* LLVMType = nullptr;
     };
@@ -396,6 +398,10 @@ public:
     // Generic enum definitions
     std::map<std::string, EnumDeclAST*> GenericEnums;
     std::vector<std::unique_ptr<EnumDeclAST> > GenericEnumDefs;
+
+    // Generic impl definitions
+    std::map<std::string, ImplDeclAST*> GenericImpls;
+    std::vector<std::unique_ptr<ImplDeclAST> > GenericImplDefs;
 
     // Already-specialized struct/enum type suffixes
     std::set<std::string> CompiledStructSpecializations;
@@ -1557,6 +1563,7 @@ public:
     }
     llvm::Function* codegen(CodegenContext& context);
     const std::string& getName() const { return Name; }
+    void setName(const std::string& N) { Name = N; }
     const std::vector<std::pair<std::string, FluxType>>& getArgs() const { return Args; }
     std::vector<std::pair<std::string, FluxType>>& getArgs() { return Args; }
     const FluxType& getReturnType() const { return ReturnType; }
@@ -1634,19 +1641,24 @@ public:
 class StructDeclAST
 {
     std::string Name;
+    std::string ParentName;
     std::vector<std::pair<std::string, FluxType>> Fields;
     int StructTypeId;
     std::vector<std::string> GenericParams;
 
 public:
     StructDeclAST(const std::string& Name,
-                  std::vector<std::pair<std::string, FluxType>> Fields)
-        : Name(Name), Fields(std::move(Fields)), StructTypeId(-1)
+                  std::vector<std::pair<std::string, FluxType>> Fields,
+                  const std::string& ParentName = "")
+        : Name(Name), ParentName(ParentName), Fields(std::move(Fields)), StructTypeId(-1)
     {
     }
 
     const std::string& getName() const { return Name; }
+    const std::string& getParentName() const { return ParentName; }
+    void setParentName(const std::string& parent) { ParentName = parent; }
     const std::vector<std::pair<std::string, FluxType>>& getFields() const { return Fields; }
+    std::vector<std::pair<std::string, FluxType>>& getFields() { return Fields; }
     int getStructTypeId() const { return StructTypeId; }
     void setStructTypeId(int id) { StructTypeId = id; }
     void setGenericParams(const std::vector<std::string>& Params) { GenericParams = Params; }
@@ -1736,15 +1748,18 @@ public:
 class ImplDeclAST
 {
     std::string TypeName;
+    std::string ParentName;
     std::vector<std::unique_ptr<FunctionAST>> Methods;
 
 public:
-    ImplDeclAST(const std::string& TypeName, std::vector<std::unique_ptr<FunctionAST>> Methods)
-        : TypeName(TypeName), Methods(std::move(Methods))
+    ImplDeclAST(const std::string& TypeName, std::vector<std::unique_ptr<FunctionAST>> Methods, const std::string& ParentName = "")
+        : TypeName(TypeName), ParentName(ParentName), Methods(std::move(Methods))
     {
     }
 
     const std::string& getTypeName() const { return TypeName; }
+    const std::string& getParentName() const { return ParentName; }
+    void setParentName(const std::string& parent) { ParentName = parent; }
     const std::vector<std::unique_ptr<FunctionAST>>& getMethods() const { return Methods; }
     std::vector<std::unique_ptr<FunctionAST>>& getMethods() { return Methods; }
     void codegen(CodegenContext& context);

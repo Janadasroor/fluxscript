@@ -489,6 +489,13 @@ bool CompilerInstance::collectImportFunctions(const std::string& moduleName,
             if (structDecl) {
                 structDecl->codegen(context);
             }
+        } else if (parser.CurTok == static_cast<int>(TokenType::tok_class)) {
+            std::unique_ptr<StructDeclAST> classStruct;
+            std::unique_ptr<ImplDeclAST> classImpl;
+            if (parser.ParseClassDecl(&classStruct, &classImpl)) {
+                if (classStruct) classStruct->codegen(context);
+                if (classImpl) classImpl->codegen(context);
+            }
         } else if (parser.CurTok == static_cast<int>(TokenType::tok_enum)) {
             std::vector<std::unique_ptr<StructDeclAST>> anonStructs;
             auto enumDecl = parser.ParseEnumDecl(&anonStructs);
@@ -513,9 +520,10 @@ bool CompilerInstance::collectImportFunctions(const std::string& moduleName,
                    parser.CurTok != static_cast<int>(TokenType::tok_def) &&
                    parser.CurTok != static_cast<int>(TokenType::tok_extern) &&
                    parser.CurTok != static_cast<int>(TokenType::tok_struct) &&
-                    parser.CurTok != static_cast<int>(TokenType::tok_enum) &&
-                    parser.CurTok != static_cast<int>(TokenType::tok_impl) &&
-                    parser.CurTok != static_cast<int>(TokenType::tok_import) &&
+                   parser.CurTok != static_cast<int>(TokenType::tok_class) &&
+                   parser.CurTok != static_cast<int>(TokenType::tok_enum) &&
+                   parser.CurTok != static_cast<int>(TokenType::tok_impl) &&
+                   parser.CurTok != static_cast<int>(TokenType::tok_import) &&
                    parser.CurTok != static_cast<int>(TokenType::tok_from) &&
                    parser.CurTok != static_cast<int>(TokenType::tok_update) &&
                    parser.CurTok != static_cast<int>(TokenType::tok_rbrace)) {
@@ -595,6 +603,13 @@ std::unique_ptr<ParsedAST> CompilerInstance::parse(const std::string& code, std:
             if (auto s = parser.ParseStructDecl()) {
                 ast->structs.push_back(std::move(s));
             }
+        } else if (parser.CurTok == static_cast<int>(TokenType::tok_class)) {
+            std::unique_ptr<StructDeclAST> classStruct;
+            std::unique_ptr<ImplDeclAST> classImpl;
+            if (parser.ParseClassDecl(&classStruct, &classImpl)) {
+                if (classStruct) ast->structs.push_back(std::move(classStruct));
+                if (classImpl) ast->impls.push_back(std::move(classImpl));
+            }
         } else if (parser.CurTok == static_cast<int>(TokenType::tok_enum)) {
             std::vector<std::unique_ptr<StructDeclAST>> anonStructs;
             if (auto e = parser.ParseEnumDecl(&anonStructs)) {
@@ -611,17 +626,18 @@ std::unique_ptr<ParsedAST> CompilerInstance::parse(const std::string& code, std:
             // Collect expressions into anonymous function
             std::vector<std::unique_ptr<ExprAST>> Exprs;
             while (parser.CurTok != static_cast<int>(TokenType::tok_eof) &&
-                   parser.CurTok != static_cast<int>(TokenType::tok_def) &&
-                   parser.CurTok != static_cast<int>(TokenType::tok_subckt) &&
-                   parser.CurTok != static_cast<int>(TokenType::tok_model) &&
-                   parser.CurTok != static_cast<int>(TokenType::tok_analysis) &&
+                    parser.CurTok != static_cast<int>(TokenType::tok_def) &&
+                    parser.CurTok != static_cast<int>(TokenType::tok_subckt) &&
+                    parser.CurTok != static_cast<int>(TokenType::tok_model) &&
+                    parser.CurTok != static_cast<int>(TokenType::tok_analysis) &&
                     parser.CurTok != static_cast<int>(TokenType::tok_measure) &&
                     parser.CurTok != static_cast<int>(TokenType::tok_extern) &&
                     parser.CurTok != static_cast<int>(TokenType::tok_struct) &&
+                    parser.CurTok != static_cast<int>(TokenType::tok_class) &&
                     parser.CurTok != static_cast<int>(TokenType::tok_enum) &&
                     parser.CurTok != static_cast<int>(TokenType::tok_impl) &&
                     parser.CurTok != static_cast<int>(TokenType::tok_import) &&
-                   parser.CurTok != static_cast<int>(TokenType::tok_rbrace)) {
+                    parser.CurTok != static_cast<int>(TokenType::tok_rbrace)) {
 
                 if (parser.CurTok == static_cast<int>(TokenType::tok_semicolon)) {
                     parser.getNextToken();
@@ -1311,6 +1327,13 @@ bool CompilerInstance::compileParser(Parser& parser, CodegenContext& context,
             if (auto s = parser.ParseStructDecl()) {
                 structs.push_back(std::move(s));
             }
+        } else if (parser.CurTok == static_cast<int>(TokenType::tok_class)) {
+            std::unique_ptr<StructDeclAST> classStruct;
+            std::unique_ptr<ImplDeclAST> classImpl;
+            if (parser.ParseClassDecl(&classStruct, &classImpl)) {
+                if (classStruct) structs.push_back(std::move(classStruct));
+                if (classImpl) impls.push_back(std::move(classImpl));
+            }
         } else if (parser.CurTok == static_cast<int>(TokenType::tok_enum)) {
             std::vector<std::unique_ptr<StructDeclAST>> anonStructs;
             if (auto e = parser.ParseEnumDecl(&anonStructs)) {
@@ -1332,6 +1355,7 @@ bool CompilerInstance::compileParser(Parser& parser, CodegenContext& context,
                    parser.CurTok != static_cast<int>(TokenType::tok_def) &&
                    parser.CurTok != static_cast<int>(TokenType::tok_extern) &&
                    parser.CurTok != static_cast<int>(TokenType::tok_struct) &&
+                   parser.CurTok != static_cast<int>(TokenType::tok_class) &&
                    parser.CurTok != static_cast<int>(TokenType::tok_enum) &&
                    parser.CurTok != static_cast<int>(TokenType::tok_impl) &&
                    parser.CurTok != static_cast<int>(TokenType::tok_import) &&
@@ -1475,6 +1499,22 @@ bool CompilerInstance::compileParser(Parser& parser, CodegenContext& context,
             }
         }
         enums = std::move(nonGeneric);
+    }
+
+    // --- Separate generic impls ---
+    {
+        std::vector<std::unique_ptr<ImplDeclAST>> nonGenericImpls;
+        nonGenericImpls.reserve(impls.size());
+        for (auto& i : impls) {
+            const std::string& name = i->getTypeName();
+            if (context.GenericStructs.count(name)) {
+                context.GenericImpls[name] = i.get();
+                context.GenericImplDefs.push_back(std::move(i));
+            } else {
+                nonGenericImpls.push_back(std::move(i));
+            }
+        }
+        impls = std::move(nonGenericImpls);
     }
 
     // --- Return-type inference ---

@@ -420,6 +420,73 @@ TypedValue BlockExprAST::codegen(CodegenContext& context)
         }
     }
 
+    // Check for variables falling out of scope that have onDestroy methods (including parents, derived-to-base order)
+    for (const auto& [varName, allocaVal] : context.NamedValues) {
+        if (OldNamedValues.find(varName) == OldNamedValues.end()) {
+            auto typeIt = context.NamedTypes.find(varName);
+            if (typeIt != context.NamedTypes.end()) {
+                FluxType varType = typeIt->second;
+                if (varType.Kind == TypeKind::UserStruct && varType.StructTypeId >= 0 &&
+                    varType.StructTypeId < static_cast<int>(context.StructTypes.size())) {
+                    std::string structName = context.StructTypes[varType.StructTypeId].Name;
+
+                    std::vector<std::string> destroyChain;
+                    std::string currentDestroyType = structName;
+                    while (!currentDestroyType.empty()) {
+                        destroyChain.push_back(currentDestroyType);
+                        auto indexIt = context.StructTypeIndex.find(currentDestroyType);
+                        if (indexIt != context.StructTypeIndex.end()) {
+                            int curId = indexIt->second;
+                            if (curId >= 0 && curId < static_cast<int>(context.StructTypes.size())) {
+                                currentDestroyType = context.StructTypes[curId].ParentName;
+                            } else {
+                                break;
+                            }
+                        } else {
+                            break;
+                        }
+                    }
+
+                    for (const std::string& chainTypeName : destroyChain) {
+                        auto methodsIt = context.TypeMethods.find(chainTypeName);
+                        if (methodsIt != context.TypeMethods.end()) {
+                            auto destroyIt = methodsIt->second.find("onDestroy");
+                            if (destroyIt != methodsIt->second.end()) {
+                                llvm::Function* destroyFn = destroyIt->second;
+                                if (destroyFn) {
+                                    auto indexIt = context.StructTypeIndex.find(chainTypeName);
+                                    if (indexIt != context.StructTypeIndex.end()) {
+                                        int curId = indexIt->second;
+                                        if (curId >= 0 && curId < static_cast<int>(context.StructTypes.size())) {
+                                            auto& structInfo = context.StructTypes[curId];
+                                            llvm::StructType* curLLVMType = structInfo.LLVMType;
+                                            FluxType curStructType = FluxType::userStruct(curId, curLLVMType);
+
+                                            llvm::Value* selfArg = allocaVal;
+                                            llvm::Type* expectedType = destroyFn->getFunctionType()->getParamType(0);
+                                            if (selfArg->getType() != expectedType) {
+                                                selfArg = context.Builder.CreateBitCast(selfArg, expectedType);
+                                            }
+
+                                            std::vector<llvm::Value*> destroyArgs;
+                                            if (shouldPassByPointer(curStructType, context)) {
+                                                destroyArgs.push_back(selfArg);
+                                            } else {
+                                                llvm::Value* loadedVal = context.Builder.CreateLoad(curLLVMType, selfArg, "self_destroy");
+                                                destroyArgs.push_back(loadedVal);
+                                            }
+                                            context.Builder.CreateCall(destroyFn, destroyArgs);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     // Restore scope
     context.NamedValues = OldNamedValues;
     context.NamedTypes = OldNamedTypes;
@@ -2821,6 +2888,66 @@ TypedValue LetExprAST::codegen(CodegenContext& context)
     TypedValue BodyTV = Body->codegen(context);
     if (!BodyTV.Val)
         return TypedValue();
+
+    // Call onDestroy if VarName is a UserStruct with onDestroy (including parents, derived-to-base order)
+    if (ActualType.Kind == TypeKind::UserStruct && ActualType.StructTypeId >= 0 &&
+        ActualType.StructTypeId < static_cast<int>(context.StructTypes.size())) {
+        std::string structName = context.StructTypes[ActualType.StructTypeId].Name;
+
+        std::vector<std::string> destroyChain;
+        std::string currentDestroyType = structName;
+        while (!currentDestroyType.empty()) {
+            destroyChain.push_back(currentDestroyType);
+            auto indexIt = context.StructTypeIndex.find(currentDestroyType);
+            if (indexIt != context.StructTypeIndex.end()) {
+                int curId = indexIt->second;
+                if (curId >= 0 && curId < static_cast<int>(context.StructTypes.size())) {
+                    currentDestroyType = context.StructTypes[curId].ParentName;
+                } else {
+                    break;
+                }
+            } else {
+                break;
+            }
+        }
+
+        for (const std::string& chainTypeName : destroyChain) {
+            auto methodsIt = context.TypeMethods.find(chainTypeName);
+            if (methodsIt != context.TypeMethods.end()) {
+                auto destroyIt = methodsIt->second.find("onDestroy");
+                if (destroyIt != methodsIt->second.end()) {
+                    llvm::Function* destroyFn = destroyIt->second;
+                    if (destroyFn) {
+                        auto indexIt = context.StructTypeIndex.find(chainTypeName);
+                        if (indexIt != context.StructTypeIndex.end()) {
+                            int curId = indexIt->second;
+                            if (curId >= 0 && curId < static_cast<int>(context.StructTypes.size())) {
+                                auto& structInfo = context.StructTypes[curId];
+                                llvm::StructType* curLLVMType = structInfo.LLVMType;
+                                FluxType curStructType = FluxType::userStruct(curId, curLLVMType);
+
+                                llvm::Value* selfArg = Alloca;
+                                llvm::Type* expectedType = destroyFn->getFunctionType()->getParamType(0);
+                                if (selfArg->getType() != expectedType) {
+                                    selfArg = context.Builder.CreateBitCast(selfArg, expectedType);
+                                }
+
+                                std::vector<llvm::Value*> destroyArgs;
+                                if (shouldPassByPointer(curStructType, context)) {
+                                    destroyArgs.push_back(selfArg);
+                                } else {
+                                    llvm::Value* loadedVal = context.Builder.CreateLoad(curLLVMType, selfArg, "self_destroy");
+                                    destroyArgs.push_back(loadedVal);
+                                }
+                                context.Builder.CreateCall(destroyFn, destroyArgs);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     context.NamedValues[VarName] = OldVal;
     context.NamedTypes[VarName] = OldType;
     return BodyTV;
@@ -3287,6 +3414,18 @@ void StructDeclAST::codegen(CodegenContext& context)
     if (it != context.StructTypeIndex.end())
         return; // Already registered — skip
 
+    // Prepend parent fields if inheritance is used
+    if (!ParentName.empty()) {
+        auto parentIt = context.StructTypeIndex.find(ParentName);
+        if (parentIt != context.StructTypeIndex.end()) {
+            int parentId = parentIt->second;
+            if (parentId >= 0 && parentId < static_cast<int>(context.StructTypes.size())) {
+                const auto& parentFields = context.StructTypes[parentId].Fields;
+                Fields.insert(Fields.begin(), parentFields.begin(), parentFields.end());
+            }
+        }
+    }
+
     // Collect field types — resolve any unresolved struct types first
     std::vector<llvm::Type*> fieldTypes;
     for (auto& [fieldName, fieldType] : Fields) {
@@ -3302,6 +3441,7 @@ void StructDeclAST::codegen(CodegenContext& context)
     // Register in context
     CodegenContext::StructTypeInfo info;
     info.Name = Name;
+    info.ParentName = ParentName;
     info.Fields = Fields;
     info.LLVMType = llvmStructTy;
     context.StructTypes.push_back(std::move(info));
@@ -3367,6 +3507,19 @@ TypedValue StructConstructExprAST::codegen(CodegenContext& context)
 
             // Substitute concrete types in fields
             std::vector<std::pair<std::string, FluxType>> concreteFields;
+            // Prepend parent fields if inheritance is used
+            std::string parentName = genericStruct->getParentName();
+            if (!parentName.empty()) {
+                auto parentIt = context.StructTypeIndex.find(parentName);
+                if (parentIt != context.StructTypeIndex.end()) {
+                    int parentId = parentIt->second;
+                    if (parentId >= 0 && parentId < static_cast<int>(context.StructTypes.size())) {
+                        const auto& parentFields = context.StructTypes[parentId].Fields;
+                        concreteFields.insert(concreteFields.begin(), parentFields.begin(), parentFields.end());
+                    }
+                }
+            }
+
             for (auto& [fName, fType] : genericFields) {
                 FluxType concreteType = fType;
                 if (fType.isGeneric()) {
@@ -3388,10 +3541,62 @@ TypedValue StructConstructExprAST::codegen(CodegenContext& context)
 
             CodegenContext::StructTypeInfo info;
             info.Name = resolvedName;
+            info.ParentName = parentName;
             info.Fields = concreteFields;
             info.LLVMType = llvmStructTy;
             context.StructTypes.push_back(std::move(info));
             context.StructTypeIndex[resolvedName] = typeId;
+
+            std::cerr << "DEBUG SPECIALIZATION: resolvedName=" << resolvedName << " StructName=" << StructName << " inGenericImpls=" << context.GenericImpls.count(StructName) << std::endl;
+            // Monomorphize generic methods if a generic impl exists
+            auto implIt = context.GenericImpls.find(StructName);
+            if (implIt != context.GenericImpls.end()) {
+                ImplDeclAST* genericImpl = implIt->second;
+                FluxType concreteSelfType = FluxType::userStruct(typeId, llvmStructTy);
+                for (auto& method : genericImpl->getMethods()) {
+                    auto* proto = method->getProto();
+                    auto specializedProto = proto->specialize(typeMap, suffix);
+
+                    // Force the self argument to be the concrete self type
+                    if (!specializedProto->getArgs().empty()) {
+                        specializedProto->setArgType(0, concreteSelfType);
+                    }
+
+                    // Prepend resolvedName to ensure uniqueness in LLVM
+                    std::string unmangledMethodName = proto->getName();
+                    if (unmangledMethodName.rfind(StructName + ".", 0) == 0) {
+                        unmangledMethodName = unmangledMethodName.substr(StructName.length() + 1);
+                    }
+                    std::string mangledName = resolvedName + "." + unmangledMethodName;
+                    specializedProto->setName(mangledName);
+
+                    // Save caller's insertion point — codegenWithProto will change it
+                    llvm::BasicBlock* SavedInsertBlock = context.Builder.GetInsertBlock();
+
+                    // Codegen the specialized method body
+                    llvm::Function* specializedFunc = method->codegenWithProto(context, specializedProto.get());
+
+                    // Restore the caller's insertion point
+                    if (SavedInsertBlock) {
+                        context.Builder.SetInsertPoint(SavedInsertBlock);
+                    }
+
+                    // Register in TypeMethods under resolvedName and unmangledMethodName
+                    context.TypeMethods[resolvedName][unmangledMethodName] = specializedFunc;
+                }
+            }
+
+            // Inherit parent methods if the generic struct has a parent
+            if (!parentName.empty()) {
+                auto parentIt = context.TypeMethods.find(parentName);
+                if (parentIt != context.TypeMethods.end()) {
+                    for (auto& [methodName, func] : parentIt->second) {
+                        if (context.TypeMethods[resolvedName].find(methodName) == context.TypeMethods[resolvedName].end()) {
+                            context.TypeMethods[resolvedName][methodName] = func;
+                        }
+                    }
+                }
+            }
         } else {
             std::cerr << "Failed to create struct specialization: " << resolvedName << std::endl;
             return TypedValue();
@@ -3442,6 +3647,61 @@ TypedValue StructConstructExprAST::codegen(CodegenContext& context)
             context.Builder.CreateStore(fieldVal.Val, gep);
         }
         // Fields not explicitly initialized are zero-initialized (alloca already zeros them)
+    }
+
+    // Check if onInit method exists (including parent classes) and call them in base-to-derived order
+    std::vector<std::string> initChain;
+    std::string currentInitType = resolvedName;
+    while (!currentInitType.empty()) {
+        initChain.push_back(currentInitType);
+        auto indexIt = context.StructTypeIndex.find(currentInitType);
+        if (indexIt != context.StructTypeIndex.end()) {
+            int curId = indexIt->second;
+            if (curId >= 0 && curId < static_cast<int>(context.StructTypes.size())) {
+                currentInitType = context.StructTypes[curId].ParentName;
+            } else {
+                break;
+            }
+        } else {
+            break;
+        }
+    }
+
+    for (auto itChain = initChain.rbegin(); itChain != initChain.rend(); ++itChain) {
+        std::string chainTypeName = *itChain;
+        auto typeIt = context.TypeMethods.find(chainTypeName);
+        if (typeIt != context.TypeMethods.end()) {
+            auto methodIt = typeIt->second.find("onInit");
+            if (methodIt != typeIt->second.end()) {
+                llvm::Function* initFn = methodIt->second;
+                if (initFn) {
+                    auto indexIt = context.StructTypeIndex.find(chainTypeName);
+                    if (indexIt != context.StructTypeIndex.end()) {
+                        int curId = indexIt->second;
+                        if (curId >= 0 && curId < static_cast<int>(context.StructTypes.size())) {
+                            auto& structInfo = context.StructTypes[curId];
+                            llvm::StructType* curLLVMType = structInfo.LLVMType;
+                            FluxType curStructType = FluxType::userStruct(curId, curLLVMType);
+
+                            llvm::Value* selfArg = alloca;
+                            llvm::Type* expectedType = initFn->getFunctionType()->getParamType(0);
+                            if (selfArg->getType() != expectedType) {
+                                selfArg = context.Builder.CreateBitCast(selfArg, expectedType);
+                            }
+
+                            std::vector<llvm::Value*> initArgs;
+                            if (shouldPassByPointer(curStructType, context)) {
+                                initArgs.push_back(selfArg);
+                            } else {
+                                llvm::Value* loadedVal = context.Builder.CreateLoad(curLLVMType, selfArg, "self_init");
+                                initArgs.push_back(loadedVal);
+                            }
+                            context.Builder.CreateCall(initFn, initArgs);
+                        }
+                    }
+                }
+            }
+        }
     }
 
     // Load the struct value (e.g. for passing to functions)
@@ -3525,22 +3785,42 @@ void ImplDeclAST::codegen(CodegenContext& context)
 
     for (auto& method : Methods) {
         auto* proto = method->getProto();
+        std::string unmangledName = proto->getName();
+        std::string mangledName = TypeName + "." + unmangledName;
+        proto->setName(mangledName);
+
         // Set the first argument (self) to the struct type
         if (!proto->getArgs().empty()) {
             proto->setArgType(0, selfType);
         }
         proto->codegen(context);
 
-        // Register method
-        context.TypeMethods[TypeName][proto->getName()] = nullptr;
+        // Register method with the UNMANGLED name
+        context.TypeMethods[TypeName][unmangledName] = nullptr;
+    }
+
+    // Inherit parent methods if ParentName is not empty
+    if (!ParentName.empty()) {
+        auto parentIt = context.TypeMethods.find(ParentName);
+        if (parentIt != context.TypeMethods.end()) {
+            for (auto& [methodName, func] : parentIt->second) {
+                // Copy parent's method if child doesn't override it
+                if (context.TypeMethods[TypeName].find(methodName) == context.TypeMethods[TypeName].end()) {
+                    context.TypeMethods[TypeName][methodName] = func;
+                }
+            }
+        }
     }
 
     // Generate code for each method (second pass — prototypes already emitted)
     for (auto& method : Methods) {
         auto* proto = method->getProto();
-        auto func = context.TheModule->getFunction(proto->getName());
+        std::string mangledName = proto->getName();
+        std::string unmangledName = mangledName.substr(TypeName.length() + 1);
+
+        auto func = context.TheModule->getFunction(mangledName);
         if (func) {
-            context.TypeMethods[TypeName][proto->getName()] = func;
+            context.TypeMethods[TypeName][unmangledName] = func;
             method->codegen(context);
         }
     }

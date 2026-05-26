@@ -154,13 +154,29 @@ set_tests_properties(flux-test-module-system PROPERTIES
     TIMEOUT 60
 )
 
+find_program(BASH_EXECUTABLE NAMES bash sh)
+
+# If bash/sh is not found, use a platform fallback
+if(NOT BASH_EXECUTABLE)
+    if(CMAKE_HOST_UNIX)
+        set(BASH_EXECUTABLE "sh")
+    endif()
+endif()
+
 # 
 #  Integration Tests (.flux snippets via flux-minimal)         
 # 
-add_test(NAME flux-test-integration
-    COMMAND ${CMAKE_COMMAND} -E chdir ${CMAKE_SOURCE_DIR} ${CMAKE_SOURCE_DIR}/tests/integration/run_tests.sh
-    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
-)
+if(BASH_EXECUTABLE)
+    add_test(NAME flux-test-integration
+        COMMAND ${BASH_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tests/integration/run_tests.sh
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+else()
+    add_test(NAME flux-test-integration
+        COMMAND ${CMAKE_SOURCE_DIR}/tests/integration/run_tests.sh
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+endif()
 set_tests_properties(flux-test-integration PROPERTIES
     LABELS "integration;compiler"
     TIMEOUT 120
@@ -169,10 +185,17 @@ set_tests_properties(flux-test-integration PROPERTIES
 # 
 #  FluxScript Feature Tests (runs all .flux script tests)     
 # 
-add_test(NAME flux-test-all-features
-    COMMAND sh ${CMAKE_SOURCE_DIR}/tests/run_flux_tests.sh
-    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
-)
+if(BASH_EXECUTABLE)
+    add_test(NAME flux-test-all-features
+        COMMAND ${BASH_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tests/run_flux_tests.sh
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+else()
+    add_test(NAME flux-test-all-features
+        COMMAND sh ${CMAKE_SOURCE_DIR}/tests/run_flux_tests.sh
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+endif()
 set_tests_properties(flux-test-all-features PROPERTIES
     ENVIRONMENT "FLUX=${CMAKE_BINARY_DIR}/flux"
 )

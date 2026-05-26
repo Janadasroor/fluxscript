@@ -25,6 +25,16 @@ TOTAL=0
 PASSED=0
 FAILED=0
 
+# Check if timeout command exists, otherwise use gtimeout or none
+TIMEOUT_CMD="timeout"
+if ! command -v timeout &> /dev/null; then
+    if command -v gtimeout &> /dev/null; then
+        TIMEOUT_CMD="gtimeout"
+    else
+        TIMEOUT_CMD=""
+    fi
+fi
+
 run_test() {
     local test_name="$1"
     local test_code="$2"
@@ -32,9 +42,18 @@ run_test() {
     TOTAL=$((TOTAL + 1))
     echo -n "$test_name... "
     
-    echo "$test_code" > /tmp/flux_test.flux
+    echo "$test_code" > flux_test.flux
     
-    if timeout 5 "$FLUX_BIN" /tmp/flux_test.flux > /dev/null 2>&1; then
+    local cmd_status
+    if [ -n "$TIMEOUT_CMD" ]; then
+        $TIMEOUT_CMD 5 "$FLUX_BIN" flux_test.flux > /dev/null 2>&1
+        cmd_status=$?
+    else
+        "$FLUX_BIN" flux_test.flux > /dev/null 2>&1
+        cmd_status=$?
+    fi
+
+    if [ $cmd_status -eq 0 ]; then
         echo -e "${GREEN} PASSED${NC}"
         PASSED=$((PASSED + 1))
     else
@@ -42,7 +61,7 @@ run_test() {
         FAILED=$((FAILED + 1))
     fi
     
-    rm -f /tmp/flux_test.flux
+    rm -f flux_test.flux
 }
 
 # Modified run_test for parser-only validation (uses --emit=check)
@@ -53,9 +72,18 @@ run_check_test() {
     TOTAL=$((TOTAL + 1))
     echo -n "$test_name... "
 
-    echo "$test_code" > /tmp/flux_test.flux
+    echo "$test_code" > flux_test.flux
 
-    if timeout 5 "$FLUX_BIN" --emit=check /tmp/flux_test.flux 2>&1 | grep -q "OK"; then
+    local cmd_status
+    if [ -n "$TIMEOUT_CMD" ]; then
+        $TIMEOUT_CMD 5 "$FLUX_BIN" --emit=check flux_test.flux 2>&1 | grep -q "OK"
+        cmd_status=$?
+    else
+        "$FLUX_BIN" --emit=check flux_test.flux 2>&1 | grep -q "OK"
+        cmd_status=$?
+    fi
+
+    if [ $cmd_status -eq 0 ]; then
         echo -e "${GREEN} PASSED${NC}"
         PASSED=$((PASSED + 1))
     else
@@ -63,7 +91,7 @@ run_check_test() {
         FAILED=$((FAILED + 1))
     fi
 
-    rm -f /tmp/flux_test.flux
+    rm -f flux_test.flux
 }
 
 # Test 1: Basic For Loop (baseline)
@@ -500,6 +528,140 @@ def verify_generics() -> Double {
 }
 
 verify_generics()
+'
+
+# Test 45: OOP Class Support
+run_test "OOP Class Support" '
+class Counter {
+    value: Double
+
+    def increment(self) -> Double {
+        self.value = self.value + 1.0;
+        self.value
+    }
+}
+
+class Box[T] {
+    content: T
+
+    def get(self) -> T {
+        return self.content;
+    }
+}
+
+def verify_classes() -> Double {
+    let c = Counter { value: 10.0 };
+    assert(c.increment() == 11.0, "Class method dispatch failed");
+    assert(c.increment() == 12.0, "Subsequent class method dispatch failed");
+
+    let b = Box[Double] { content: 42.0 };
+    assert(b.get() == 42.0, "Generic class method dispatch failed");
+
+    1.0
+}
+
+verify_classes()
+'
+
+# Test 46: OOP Class Inheritance & Lifecycle Hooks
+run_test "OOP Class Inheritance & Lifecycle Hooks" '
+extern def flux_print_double(x: Double) -> Double
+
+class Animal {
+    age: Double
+    initialized: Double
+    destroyed: Double
+
+    def onInit(self) -> Void {
+        self.initialized = 1.0;
+    }
+
+    def onDestroy(self) -> Void {
+        self.destroyed = 1.0;
+        flux_print_double(111.0);
+    }
+
+    def speak(self) -> Double { 1.0 }
+    def get_age(self) -> Double { self.age }
+}
+
+class Dog : Animal {
+    breed: Double
+    dog_init: Double
+    dog_destroyed: Double
+
+    def onInit(self) -> Void {
+        self.dog_init = 1.0;
+    }
+
+    def onDestroy(self) -> Void {
+        self.dog_destroyed = 1.0;
+        flux_print_double(222.0);
+    }
+
+    def speak(self) -> Double { 2.0 }
+}
+
+def verify_inheritance() -> Double {
+    let d = Dog { age: 5.0, breed: 9.0 };
+    assert(d.get_age() == 5.0, "Inherited method/field lookup failed");
+    assert(d.speak() == 2.0, "Method overriding failed");
+    assert(d.initialized == 1.0, "Parent onInit failed to run");
+    assert(d.dog_init == 1.0, "Child onInit failed to run");
+    1.0
+}
+
+verify_inheritance()
+'
+
+# Test 47: Unified OOP Integration (Struct, Enum, Class)
+run_test "Unified OOP Integration" '
+enum Status {
+    Active,
+    Inactive
+}
+
+struct Point {
+    x: Double,
+    y: Double
+}
+
+class User {
+    id: Double
+    pos: Point
+    status: Status
+
+    def update_position(self, new_pos: Point) -> Point {
+        self.pos = new_pos;
+        self.pos
+    }
+
+    def is_active(self) -> Double {
+        match self.status {
+            Status.Active -> 1.0,
+            default -> 0.0
+        }
+    }
+}
+
+def verify_unified() -> Double {
+    let u = User {
+        id: 1.0,
+        pos: Point { x: 10.0, y: 20.0 },
+        status: Status.Active
+    };
+
+    assert(u.is_active() == 1.0, "Enum integration inside class failed");
+
+    let p2 = Point { x: 30.0, y: 40.0 };
+    let updated_pos = u.update_position(p2);
+    assert(updated_pos.x == 30.0, "Nested struct field update failed");
+    assert(u.pos.y == 40.0, "Class state representation failed");
+
+    1.0
+}
+
+verify_unified()
 '
 
 echo ""

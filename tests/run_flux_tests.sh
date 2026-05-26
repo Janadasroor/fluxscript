@@ -7,22 +7,41 @@ if [ ! -x "$FLUX" ]; then
     exit 1
 fi
 DIR="$(dirname "$0")"
-TEST_FILE="$DIR/flux/test_all_features.flux"
 PASSED=0
 FAILED=0
+
+# Check if timeout command exists, otherwise use gtimeout or none
+TIMEOUT_CMD="timeout"
+if ! command -v timeout &> /dev/null; then
+    if command -v gtimeout &> /dev/null; then
+        TIMEOUT_CMD="gtimeout"
+    else
+        TIMEOUT_CMD=""
+    fi
+fi
 
 run_tests_from() {
     local TEST_FILE="$1"
     for func in $(grep "^def test_" "$TEST_FILE" | sed 's/def //' | sed 's/(.*//'); do
         echo -n "  $func... "
-        if timeout 10 "$FLUX" --entry="$func" --cache=false "$TEST_FILE" > /tmp/flux_test_out.txt 2>&1; then
+        local cmd_status
+        if [ -n "$TIMEOUT_CMD" ]; then
+            $TIMEOUT_CMD 10 "$FLUX" --entry="$func" --cache=false "$TEST_FILE" > flux_test_out.txt 2>&1
+            cmd_status=$?
+        else
+            "$FLUX" --entry="$func" --cache=false "$TEST_FILE" > flux_test_out.txt 2>&1
+            cmd_status=$?
+        fi
+
+        if [ $cmd_status -eq 0 ]; then
             echo "PASSED"
             PASSED=$((PASSED + 1))
         else
             echo "FAILED"
-            cat /tmp/flux_test_out.txt
+            cat flux_test_out.txt
             FAILED=$((FAILED + 1))
         fi
+        rm -f flux_test_out.txt
     done
 }
 

@@ -4284,4 +4284,98 @@ std::unique_ptr<ImplDeclAST> Parser::ParseImplDecl()
 
     return std::make_unique<ImplDeclAST>(TypeName, std::move(Methods));
 }
+
+bool Parser::ParseClassDecl(std::unique_ptr<StructDeclAST>* classStruct, std::unique_ptr<ImplDeclAST>* classImpl)
+{
+    getNextToken(); // eat class
+
+    if (CurTok != static_cast<int>(TokenType::tok_identifier)) {
+        ReportError("expected class name");
+        return false;
+    }
+    std::string Name = m_lexer.IdentifierStr;
+    getNextToken();
+
+    // Optional generic params
+    std::vector<std::string> GenericParams;
+    if (CurTok == '[') {
+        GenericParams = ParseGenericParams();
+        if (hasError()) return false;
+    }
+
+    // Optional inheritance : Parent
+    std::string ParentName = "";
+    if (CurTok == static_cast<int>(TokenType::tok_colon)) {
+        getNextToken(); // eat :
+        if (CurTok != static_cast<int>(TokenType::tok_identifier)) {
+            ReportError("expected parent class name after ':'");
+            return false;
+        }
+        ParentName = m_lexer.IdentifierStr;
+        getNextToken();
+    }
+
+    if (CurTok != static_cast<int>(TokenType::tok_lbrace)) {
+        ReportError("expected '{' to open class body");
+        return false;
+    }
+    getNextToken(); // eat {
+
+    std::vector<std::pair<std::string, FluxType>> Fields;
+    std::vector<std::unique_ptr<FunctionAST>> Methods;
+
+    while (CurTok != static_cast<int>(TokenType::tok_rbrace) &&
+           CurTok != static_cast<int>(TokenType::tok_eof)) {
+        if (CurTok == static_cast<int>(TokenType::tok_def)) {
+            auto Method = ParseDefinition();
+            if (!Method)
+                return false;
+            Methods.push_back(std::move(Method));
+        } else if (CurTok == static_cast<int>(TokenType::tok_identifier)) {
+            std::string FieldName = m_lexer.IdentifierStr;
+            getNextToken();
+
+            if (CurTok != static_cast<int>(TokenType::tok_colon)) {
+                ReportError("expected ':' after class field name");
+                return false;
+            }
+            getNextToken();
+
+            Fields.push_back({FieldName, parseTypeName(GenericParams)});
+
+            if (CurTok == ';') {
+                getNextToken(); // optional semicolon
+            } else if (CurTok == ',') {
+                getNextToken(); // optional comma
+            }
+        } else if (CurTok == ';') {
+            getNextToken(); // stray semicolons
+        } else {
+            ReportError("expected field declaration or method definition in class");
+            return false;
+        }
+    }
+
+    if (CurTok != static_cast<int>(TokenType::tok_rbrace)) {
+        ReportError("expected '}' to close class body");
+        return false;
+    }
+    getNextToken(); // eat }
+
+    // Register class struct name so parseTypeName can recognize it
+    m_knownStructTypeNames.insert(Name);
+
+    // Create the StructDeclAST (fields)
+    auto structDecl = std::make_unique<StructDeclAST>(Name, std::move(Fields), ParentName);
+    if (!GenericParams.empty())
+        structDecl->setGenericParams(GenericParams);
+
+    // Create the ImplDeclAST (methods)
+    auto implDecl = std::make_unique<ImplDeclAST>(Name, std::move(Methods), ParentName);
+
+    *classStruct = std::move(structDecl);
+    *classImpl = std::move(implDecl);
+
+    return true;
+}
 } // namespace Flux
