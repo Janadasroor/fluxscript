@@ -245,7 +245,17 @@ jobs:
         run: cmake --build build --config Release
 
       - name: Test
-        run: cd build && ctest --output-on-failure -C Release -R "flux-test" -E "all-features|waveform-extraction|tiered-jit|module-system"
+        shell: pwsh
+        run: |
+          $llvmDll = Get-ChildItem -Path llvm-windows -Recurse -Filter "LLVM*.dll" | Select-Object -First 1
+          if ($llvmDll) {
+            $llvmBin = $llvmDll.DirectoryName
+            $env:PATH = "$llvmBin;$env:PATH"
+          }
+          $fluxBin = Resolve-Path "build\Release"
+          $env:PATH = "$fluxBin;$env:PATH"
+          cd build
+          ctest --output-on-failure -C Release -R "flux-test" -E "all-features|waveform-extraction|tiered-jit|module-system"
 
       - name: Package
         if: startsWith(github.ref, 'refs/tags/v')
