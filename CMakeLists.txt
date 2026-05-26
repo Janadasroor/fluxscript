@@ -251,6 +251,20 @@ if(MSVC)
     endif()
 endif()
 if(CURL_FOUND)
+    # Some Ubuntu 22.04 runners ship a CURL config with stale
+    # multiarch include paths (e.g. /usr/include/aarch64-linux-gnu
+    # on x86_64).  Filter out any that don't exist.
+    get_target_property(_curl_incdirs CURL::libcurl INTERFACE_INCLUDE_DIRECTORIES)
+    if(_curl_incdirs)
+        set(_cleaned "")
+        foreach(_dir IN LISTS _curl_incdirs)
+            if(EXISTS "${_dir}")
+                list(APPEND _cleaned "${_dir}")
+            endif()
+        endforeach()
+        set_target_properties(CURL::libcurl PROPERTIES
+            INTERFACE_INCLUDE_DIRECTORIES "${_cleaned}")
+    endif()
     target_link_libraries(FluxScript PUBLIC CURL::libcurl)
     target_compile_definitions(FluxScript PUBLIC FLUX_HAS_CURL)
 endif()
