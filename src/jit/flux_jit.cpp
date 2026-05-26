@@ -881,7 +881,7 @@ void FluxJIT::registerFunction(const std::string& Name, void* FuncPtr)
 
     // Register in the JITDylib for ORC internal symbol resolution.
     auto& ES = m_lljit->getExecutionSession();
-    auto internedName = ES.intern(Name);
+    auto internedName = m_lljit->mangleAndIntern(Name);
     llvm::orc::SymbolMap symMap;
     symMap[internedName] = {llvm::orc::ExecutorAddr::fromPtr(FuncPtr), llvm::JITSymbolFlags::Exported};
 

@@ -427,25 +427,50 @@ double flux_bessel_y1(double x)
     return std::cyl_neumann(1.0, x);
 }
 #else
+// Fallback to POSIX or MSVC bessel functions
+#if defined(_WIN32) || defined(_MSC_VER)
+extern "C" double _j0(double);
+extern "C" double _j1(double);
+extern "C" double _y0(double);
+extern "C" double _y1(double);
+#else
+extern "C" double j0(double);
+extern "C" double j1(double);
+extern "C" double y0(double);
+extern "C" double y1(double);
+#endif
+
 double flux_bessel_j0(double x)
 {
-    (void)x;
-    return 0.0;
+#if defined(_WIN32) || defined(_MSC_VER)
+    return _j0(x);
+#else
+    return j0(x);
+#endif
 }
 double flux_bessel_j1(double x)
 {
-    (void)x;
-    return 0.0;
+#if defined(_WIN32) || defined(_MSC_VER)
+    return _j1(x);
+#else
+    return j1(x);
+#endif
 }
 double flux_bessel_y0(double x)
 {
-    (void)x;
-    return 0.0;
+#if defined(_WIN32) || defined(_MSC_VER)
+    return _y0(x);
+#else
+    return y0(x);
+#endif
 }
 double flux_bessel_y1(double x)
 {
-    (void)x;
-    return 0.0;
+#if defined(_WIN32) || defined(_MSC_VER)
+    return _y1(x);
+#else
+    return y1(x);
+#endif
 }
 #endif
 // ============================================================================
