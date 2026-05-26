@@ -9,8 +9,8 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <random>
 #include <string>
-#include <cstdlib>
 
 namespace fs = std::filesystem;
 
@@ -125,12 +125,17 @@ def test() math_utils::square(5.0)
 
 // Create a temp dir with module files symlinked from tests/modules/
 static std::string setup_module_dir(const std::string& modules_root) {
-    char tmpl[] = "/tmp/flux_modtest_XXXXXX";
-    char* dir = mkdtemp(tmpl);
-    if (!dir) return "";
-    std::string d(dir);
+    static std::mt19937 rng(std::random_device{}());
+    auto base = fs::temp_directory_path();
+    std::string d;
+    for (int attempt = 0; attempt < 100; ++attempt) {
+        std::string name = "flux_modtest_" + std::to_string(rng());
+        d = (base / name).string();
+        if (fs::create_directory(d)) break;
+    }
+    if (d.empty() || !fs::exists(d)) return "";
     for (auto& entry : fs::directory_iterator(modules_root)) {
-        fs::create_symlink(entry.path(), d / entry.path().filename());
+        fs::create_symlink(entry.path(), fs::path(d) / entry.path().filename());
     }
     return d;
 }

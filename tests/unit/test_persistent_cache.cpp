@@ -11,6 +11,7 @@
 #include <cmath>
 #include <cstdio>
 #include <iostream>
+#include <random>
 #include <string>
 #include <vector>
 #include <cstdlib>
@@ -27,9 +28,14 @@ using namespace Flux;
 namespace fs = std::filesystem;
 
 static std::string temp_cache_dir() {
-    char tmpl[] = "/tmp/flux_cache_test_XXXXXX";
-    char* dir = mkdtemp(tmpl);
-    return dir ? std::string(dir) : "/tmp/flux_cache_test_fallback";
+    static std::mt19937 rng(std::random_device{}());
+    auto base = fs::temp_directory_path();
+    for (int attempt = 0; attempt < 100; ++attempt) {
+        std::string name = "flux_cache_test_" + std::to_string(rng());
+        std::string d = (base / name).string();
+        if (fs::create_directory(d)) return d;
+    }
+    return (base / "flux_cache_test_fallback").string();
 }
 
 // ----------------------------------------------------------------
