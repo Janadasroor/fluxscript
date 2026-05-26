@@ -53,6 +53,7 @@ public:
     std::unique_ptr<EnumDeclAST> ParseEnumDecl(
         std::vector<std::unique_ptr<StructDeclAST>>* anonStructs = nullptr);
     std::unique_ptr<ImplDeclAST> ParseImplDecl();
+    bool ParseClassDecl(std::unique_ptr<StructDeclAST>* classStruct, std::unique_ptr<ImplDeclAST>* classImpl);
 
     int CurTok;
     int getNextToken();

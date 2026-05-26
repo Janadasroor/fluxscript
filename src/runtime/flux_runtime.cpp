@@ -1767,43 +1767,43 @@ extern "C" void flux_parallel_for(int64_t start, int64_t end, int64_t chunk_size
 // These provide short names (matrix_mul, etc.) that forward to the
 // flux_-prefixed implementations.  Unlike GNU asm .equ aliases,
 // this pattern works on both ELF and Mach-O (macOS).
-extern "C" void* matrix_mul(void* a, void* b) __attribute__((weak));
+extern "C" void* matrix_mul(void* a, void* b);
 extern "C" void* matrix_mul(void* a, void* b) { return Flux::flux_matrix_mul(a, b); }
-extern "C" void* matrix_add(void* a, void* b) __attribute__((weak));
+extern "C" void* matrix_add(void* a, void* b);
 extern "C" void* matrix_add(void* a, void* b) { return Flux::flux_matrix_add(a, b); }
-extern "C" void* matrix_sub(void* a, void* b) __attribute__((weak));
+extern "C" void* matrix_sub(void* a, void* b);
 extern "C" void* matrix_sub(void* a, void* b) { return Flux::flux_matrix_sub(a, b); }
-extern "C" void* matrix_transpose(void* m) __attribute__((weak));
+extern "C" void* matrix_transpose(void* m);
 extern "C" void* matrix_transpose(void* m) { return Flux::flux_matrix_transpose(m); }
-extern "C" void* matrix_inv(void* m) __attribute__((weak));
+extern "C" void* matrix_inv(void* m);
 extern "C" void* matrix_inv(void* m) { return Flux::flux_matrix_inv(m); }
-extern "C" void* matrix_solve(void* a, void* b) __attribute__((weak));
+extern "C" void* matrix_solve(void* a, void* b);
 extern "C" void* matrix_solve(void* a, void* b) { return Flux::flux_matrix_solve(a, b); }
-extern "C" double matrix_det(void* m) __attribute__((weak));
+extern "C" double matrix_det(void* m);
 extern "C" double matrix_det(void* m) { return Flux::flux_matrix_det(m); }
-extern "C" double matrix_get(void* m, int row, int col) __attribute__((weak));
+extern "C" double matrix_get(void* m, int row, int col);
 extern "C" double matrix_get(void* m, int row, int col) { return Flux::flux_matrix_get(m, row, col); }
-extern "C" int matrix_rows(void* m) __attribute__((weak));
+extern "C" int matrix_rows(void* m);
 extern "C" int matrix_rows(void* m) { return Flux::flux_matrix_rows(m); }
-extern "C" int matrix_cols(void* m) __attribute__((weak));
+extern "C" int matrix_cols(void* m);
 extern "C" int matrix_cols(void* m) { return Flux::flux_matrix_cols(m); }
-extern "C" void matrix_set(void* m, int row, int col, double val) __attribute__((weak));
+extern "C" void matrix_set(void* m, int row, int col, double val);
 extern "C" void matrix_set(void* m, int row, int col, double val) { return Flux::flux_matrix_set(m, row, col, val); }
-extern "C" void* matrix_zeros(int rows, int cols) __attribute__((weak));
+extern "C" void* matrix_zeros(int rows, int cols);
 extern "C" void* matrix_zeros(int rows, int cols) { return Flux::flux_matrix_zeros(rows, cols); }
-extern "C" void* matrix_ones(int rows, int cols) __attribute__((weak));
+extern "C" void* matrix_ones(int rows, int cols);
 extern "C" void* matrix_ones(int rows, int cols) { return Flux::flux_matrix_ones(rows, cols); }
-extern "C" void* matrix_eye(int n) __attribute__((weak));
+extern "C" void* matrix_eye(int n);
 extern "C" void* matrix_eye(int n) { return Flux::flux_matrix_eye(n); }
-extern "C" void* matrix_copy(void* m) __attribute__((weak));
+extern "C" void* matrix_copy(void* m);
 extern "C" void* matrix_copy(void* m) { return Flux::flux_matrix_copy(m); }
-extern "C" double matrix_sum(void* m) __attribute__((weak));
+extern "C" double matrix_sum(void* m);
 extern "C" double matrix_sum(void* m) { return Flux::flux_matrix_sum(m); }
-extern "C" double matrix_mean(void* m) __attribute__((weak));
+extern "C" double matrix_mean(void* m);
 extern "C" double matrix_mean(void* m) { return Flux::flux_matrix_mean(m); }
-extern "C" void* matrix_slice(void* m, int r0, int r1, int c0, int c1) __attribute__((weak));
+extern "C" void* matrix_slice(void* m, int r0, int r1, int c0, int c1);
 extern "C" void* matrix_slice(void* m, int r0, int r1, int c0, int c1) { return Flux::flux_matrix_slice(m, r0, r1, c0, c1); }
-extern "C" double pi() __attribute__((weak));
+extern "C" double pi();
 extern "C" double pi() { return Flux::flux_pi(); }
 
 extern "C" double flux_print_string(double str_dbl)
@@ -1907,38 +1907,38 @@ extern "C" double flux_set_diagnostic(double node_dbl, double type_dbl, double t
 // names.  Asm .equ aliases cannot reference cross-TU symbols, so we use C++
 // forwarding functions that the linker inlines to a tail call (jmp).
 // The declarations are already provided by the "advanced_math.h" include above.
-extern "C" void* matrix_lu(void*) __attribute__((weak));
+extern "C" void* matrix_lu(void*);
 extern "C" void* matrix_lu(void* m) { return flux_matrix_lu(m); }
 
-extern "C" void* matrix_qr(void*) __attribute__((weak));
+extern "C" void* matrix_qr(void*);
 extern "C" void* matrix_qr(void* m) { return flux_matrix_qr(m); }
 
-extern "C" void* matrix_svd(void*) __attribute__((weak));
+extern "C" void* matrix_svd(void*);
 extern "C" void* matrix_svd(void* m) { return flux_matrix_svd(m); }
 
-extern "C" void* matrix_cholesky(void*) __attribute__((weak));
+extern "C" void* matrix_cholesky(void*);
 extern "C" void* matrix_cholesky(void* m) { return flux_matrix_cholesky(m); }
 
-extern "C" void* matrix_eigenvalues(void*) __attribute__((weak));
+extern "C" void* matrix_eigenvalues(void*);
 extern "C" void* matrix_eigenvalues(void* m) { return flux_matrix_eigenvalues(m); }
 
-extern "C" void* matrix_eigenvectors(void*) __attribute__((weak));
+extern "C" void* matrix_eigenvectors(void*);
 extern "C" void* matrix_eigenvectors(void* m) { return flux_matrix_eigenvectors(m); }
 
-extern "C" double matrix_rank(void*) __attribute__((weak));
+extern "C" double matrix_rank(void*);
 extern "C" double matrix_rank(void* m) { return flux_matrix_rank(m); }
 
-extern "C" double matrix_cond(void*) __attribute__((weak));
+extern "C" double matrix_cond(void*);
 extern "C" double matrix_cond(void* m) { return flux_matrix_cond(m); }
 
-extern "C" double matrix_norm(void*, double) __attribute__((weak));
+extern "C" double matrix_norm(void*, double);
 extern "C" double matrix_norm(void* m, double p) { return flux_matrix_norm(m, p); }
 
-extern "C" void* fft(void*, double) __attribute__((weak));
+extern "C" void* fft(void*, double);
 extern "C" void* fft(void* sig, double sr) { return flux_fft(sig, sr); }
 
-extern "C" double fft_thd(void*, double) __attribute__((weak));
+extern "C" double fft_thd(void*, double);
 extern "C" double fft_thd(void* sig, double sr) { return flux_fft_thd(sig, sr); }
 
-extern "C" double fft_snr(void*, double) __attribute__((weak));
+extern "C" double fft_snr(void*, double);
 extern "C" double fft_snr(void* sig, double sr) { return flux_fft_snr(sig, sr); }
