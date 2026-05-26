@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(FluxScript VERSION 1.0.0 LANGUAGES CXX C)
+project(FluxScript VERSION 1.1.0 LANGUAGES CXX C)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -277,6 +277,27 @@ target_include_directories(FluxScript PUBLIC
 # Main CLI (replaces the old Qt-based flux)
 add_executable(flux cli/minimal.cpp)
 target_link_libraries(flux PRIVATE FluxScript)
+
+# Build stdlib bitcode cache for faster subsequent compilations
+set(STDLIB_SOURCE_DIR "${CMAKE_SOURCE_DIR}/stdlib")
+set(STDLIB_BC_DIR "${CMAKE_BINARY_DIR}/stdlib_bc")
+file(MAKE_DIRECTORY "${STDLIB_BC_DIR}")
+file(GLOB STDLIB_FLUX_FILES "${STDLIB_SOURCE_DIR}/*.flux")
+foreach(FLUX_FILE ${STDLIB_FLUX_FILES})
+    get_filename_component(MODULE_NAME "${FLUX_FILE}" NAME_WE)
+    set(BC_FILE "${STDLIB_BC_DIR}/${MODULE_NAME}.flux.bc")
+    add_custom_command(
+        OUTPUT "${BC_FILE}"
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${STDLIB_BC_DIR}"
+        COMMAND $<TARGET_FILE:flux> --emit bc -o "${BC_FILE}" "${FLUX_FILE}"
+        DEPENDS flux "${FLUX_FILE}"
+        COMMENT "Compiling stdlib/${MODULE_NAME}.flux to bitcode"
+    )
+    list(APPEND STDLIB_BC_FILES "${BC_FILE}")
+endforeach()
+if(STDLIB_BC_FILES)
+    add_custom_target(stdlib_bc DEPENDS ${STDLIB_BC_FILES})
+endif()
 
 add_executable(flux-pkg cli/flux-pkg.cpp)
 target_link_libraries(flux-pkg PRIVATE FluxScript)
