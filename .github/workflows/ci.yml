@@ -65,7 +65,7 @@ jobs:
                 -DFLUX_BUILD_TESTS=ON &&
               cmake --build build -j\$(nproc) &&
               cmake --build build --target flux 2>/dev/null &&
-              cd build && ctest --output-on-failure -R "flux-test" -E "all-features|waveform-extraction|tiered-jit|module-system" -j\$(nproc) || true
+              cd build && ctest --output-on-failure -R 'flux-test' -E 'all-features|waveform-extraction|tiered-jit|module-system' -j\$(nproc) || true
             "
 
       - name: Package (tag only)
