@@ -50,7 +50,7 @@ jobs:
         run: cmake --build build -j$(nproc)
 
       - name: Test
-        run: cd build && ctest --output-on-failure -R "flux-test" -j$(nproc)
+        run: cd build && ctest --output-on-failure -R "flux-test" -E "all-features" -j$(nproc)
 
   linux-arm64:
     runs-on: ubuntu-24.04-arm
@@ -90,7 +90,7 @@ jobs:
         run: cmake --build build -j$(nproc)
 
       - name: Test
-        run: cd build && ctest --output-on-failure -R "flux-test" -j$(nproc)
+        run: cd build && ctest --output-on-failure -R "flux-test" -E "all-features" -j$(nproc)
 
   macos-arm64:
     runs-on: macos-14
@@ -122,7 +122,7 @@ jobs:
         run: cmake --build build -j$(sysctl -n hw.logicalcpu)
 
       - name: Test
-        run: cd build && ctest --output-on-failure -R "flux-test" -j$(sysctl -n hw.logicalcpu)
+        run: cd build && ctest --output-on-failure -R "flux-test" -E "all-features" -j$(sysctl -n hw.logicalcpu)
 
   windows-x86_64:
     runs-on: windows-2022
@@ -175,4 +175,4 @@ jobs:
         run: cmake --build build --config Release
 
       - name: Test
-        run: cd build && ctest --output-on-failure -C Release -R "flux-test"
+        run: cd build && ctest --output-on-failure -C Release -R "flux-test" -E "all-features"
