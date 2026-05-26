@@ -61,10 +61,11 @@ jobs:
               cmake -B build -DCMAKE_BUILD_TYPE=Release \
                 -DLLVM_DIR=/usr/lib/llvm-21/lib/cmake/llvm \
                 -DClang_DIR=/usr/lib/llvm-21/lib/cmake/clang \
-                -DLLD_DIR=/usr/lib/llvm-21/lib/cmake/lld &&
+                -DLLD_DIR=/usr/lib/llvm-21/lib/cmake/lld \
+                -DFLUX_BUILD_TESTS=ON &&
               cmake --build build -j\$(nproc) &&
               cmake --build build --target flux 2>/dev/null &&
-              cd build && ctest --output-on-failure -j\$(nproc) || true
+              cd build && ctest --output-on-failure -j\$(nproc)
             "
 
       - name: Package (tag only)
@@ -122,11 +123,12 @@ jobs:
           cmake -B build -DCMAKE_BUILD_TYPE=Release \
             -DLLVM_DIR=/usr/lib/llvm-21/lib/cmake/llvm \
             -DClang_DIR=/usr/lib/llvm-21/lib/cmake/clang \
-            -DLLD_DIR=/usr/lib/llvm-21/lib/cmake/lld
+            -DLLD_DIR=/usr/lib/llvm-21/lib/cmake/lld \
+            -DFLUX_BUILD_TESTS=ON
           cmake --build build -j$(nproc)
 
       - name: Test
-        run: cd build && ctest --output-on-failure -j$(nproc) || true
+        run: cd build && ctest --output-on-failure -j$(nproc)
 
       - name: Package
         if: startsWith(github.ref, 'refs/tags/v')
@@ -161,11 +163,12 @@ jobs:
             -DLLVM_DIR="$(brew --prefix llvm@21)/lib/cmake/llvm" \
             -DClang_DIR="$(brew --prefix llvm@21)/lib/cmake/clang" \
             -DLLD_DIR="$(brew --prefix llvm@21)/lib/cmake/lld" \
-            -DCMAKE_PREFIX_PATH="$(brew --prefix eigen)"
+            -DCMAKE_PREFIX_PATH="$(brew --prefix eigen)" \
+            -DFLUX_BUILD_TESTS=ON
           cmake --build build -j$(sysctl -n hw.logicalcpu)
 
       - name: Test
-        run: cd build && ctest --output-on-failure -j$(sysctl -n hw.logicalcpu) || true
+        run: cd build && ctest --output-on-failure -j$(sysctl -n hw.logicalcpu)
 
       - name: Package
         if: startsWith(github.ref, 'refs/tags/v')
@@ -234,13 +237,13 @@ jobs:
           }
 
       - name: Build
-        run: cmake -B build -DCMAKE_BUILD_TYPE=Release -DLLVM_DIR="$env:LLVM_DIR"
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Release -DLLVM_DIR="$env:LLVM_DIR" -DFLUX_BUILD_TESTS=ON
 
       - name: Build
         run: cmake --build build --config Release
 
       - name: Test
-        run: cd build && ctest --output-on-failure -C Release || true
+        run: cd build && ctest --output-on-failure -C Release
 
       - name: Package
         if: startsWith(github.ref, 'refs/tags/v')
