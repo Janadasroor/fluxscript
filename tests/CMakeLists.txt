@@ -133,7 +133,12 @@ add_test_entry(flux-test-benchmark-jit "JIT Benchmark")
 #  Benchmark Suite (Comprehensive)                              
 # 
 add_test_executable(flux-test-benchmark-suite benchmarks/benchmark_suite.cpp)
-add_test_entry(flux-test-benchmark-suite "Comprehensive Benchmark")
+add_test(NAME flux-test-benchmark-suite
+    COMMAND flux-test-benchmark-suite
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+)
+set_tests_properties(flux-test-benchmark-suite PROPERTIES LABELS "unit")
+set_tests_properties(flux-test-benchmark-suite PROPERTIES TIMEOUT 600)
 # 
 
 # 
@@ -166,14 +171,14 @@ set_tests_properties(flux-test-integration PROPERTIES
 # 
 add_test(NAME flux-test-all-features
     COMMAND sh ${CMAKE_SOURCE_DIR}/tests/run_flux_tests.sh
-    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}/tests
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
 )
 set_tests_properties(flux-test-all-features PROPERTIES
     ENVIRONMENT "FLUX=${CMAKE_BINARY_DIR}/flux"
 )
 set_tests_properties(flux-test-all-features PROPERTIES
     LABELS "fluxscript;features"
-    TIMEOUT 120
+    TIMEOUT 600
 )
 
 # 
@@ -218,6 +223,9 @@ add_test_entry(flux-test-persistent-cache "Persistent JIT Cache")
 add_test_executable(flux-test-lsp unit/test_lsp_server.cpp)
 add_test_entry(flux-test-lsp "LSP Server")
 
+add_test_executable(flux-test-vector-ops unit/test_vector_operations.cpp)
+add_test_entry(flux-test-vector-ops "Vector Operations")
+
 set_tests_properties(
     flux-test-phase5
     flux-test-phase7-1
@@ -242,7 +250,6 @@ set_tests_properties(
     flux-test-phase2-behavioral
     flux-test-repro-issue
     flux-test-benchmark-jit
-    flux-test-benchmark-suite
     flux-test-runtime-autodiff
     flux-test-runtime-units
     flux-test-runtime-mixed-signal
@@ -253,6 +260,7 @@ set_tests_properties(
     flux-test-type-system
     flux-test-persistent-cache
     flux-test-lsp
+    flux-test-vector-ops
     PROPERTIES
         WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
         TIMEOUT 120

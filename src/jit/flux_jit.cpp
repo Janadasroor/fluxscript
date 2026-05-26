@@ -794,10 +794,7 @@ void* FluxJIT::getPointerToFunction(const std::string& Name)
             return nullptr;
         auto ExprSymbol = m_lljit->lookup(Name);
         if (!ExprSymbol) {
-            auto Err = ExprSymbol.takeError();
-            llvm::errs() << "[FluxJIT] lookup failed: " << Name << "\n";
-            llvm::handleAllErrors(std::move(Err),
-                                  [](const llvm::ErrorInfoBase& EI) { llvm::errs() << "  " << EI.message() << "\n"; });
+            llvm::consumeError(ExprSymbol.takeError());
             return nullptr;
         }
         ptr = reinterpret_cast<void*>(ExprSymbol->getValue());

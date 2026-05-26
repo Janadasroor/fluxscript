@@ -13,6 +13,7 @@
 
 #include "flux/runtime/flux_runtime.h"
 #include "flux/ai/surrogate.h"
+#include "flux/analysis/advanced_analysis.h"
 #include "flux/jit/flux_jit.h"
 #include "flux/runtime/advanced_math.h"
 #include "flux/runtime/symbolic_engine.h"
@@ -62,6 +63,12 @@ double flux_register_gsource(const char* name, const char* pos_node, const char*
                              const char* ctrl_neg, double transcond);
 double flux_register_hsource(const char* name, const char* pos_node, const char* neg_node, const char* vsense,
                              double transres);
+void flux_register_adevice(const char* name, int device_type, const char* input_nodes, const char* output_nodes);
+void flux_register_wavefile(const char* name, const char* pos_node, const char* neg_node,
+                            const char* file_path, int channel);
+double flux_sensitivity_run(double output_dbl);
+double flux_monte_carlo_analyze(double output_dbl, double names_dbl, double nominals_dbl, double tolerances_dbl, int iterations);
+double flux_optimize_analyze(double output_dbl, double names_dbl, double inits_dbl, double mins_dbl, double maxs_dbl);
 }
 
 // JIT-callable wrappers (C++ linkage, call extern "C" functions internally)
@@ -339,6 +346,45 @@ static double make_sym_ptr(std::shared_ptr<SymbolicExpr> expr)
         return 0.0;
     auto& engine = SymbolicEngine::instance();
     return (double)(uintptr_t)engine.registerExpr(expr).get();
+}
+
+#include <mutex>
+#include <vector>
+#include <atomic>
+
+static std::vector<void*> g_tracked_allocations;
+static std::mutex g_alloc_mutex;
+static std::atomic<int> g_jit_call_depth{0};
+
+extern "C" void* flux_malloc(size_t size)
+{
+    void* ptr = std::malloc(size);
+    if (ptr) {
+        std::lock_guard<std::mutex> lock(g_alloc_mutex);
+        g_tracked_allocations.push_back(ptr);
+    }
+    return ptr;
+}
+
+extern "C" void flux_free_all_allocations()
+{
+    std::lock_guard<std::mutex> lock(g_alloc_mutex);
+    for (void* ptr : g_tracked_allocations) {
+        std::free(ptr);
+    }
+    g_tracked_allocations.clear();
+}
+
+extern "C" void flux_inc_call_depth()
+{
+    g_jit_call_depth++;
+}
+
+extern "C" void flux_dec_call_depth()
+{
+    if (--g_jit_call_depth == 0) {
+        flux_free_all_allocations();
+    }
 }
 
 extern "C" double flux_print_string(double str_dbl);
@@ -620,7 +666,7 @@ extern "C" void* flux_create_complex_matrix(std::complex<double>* data, int rows
     return g_matrix_tracker.register_complex_matrix(std::move(mat));
 }
 
-extern "C" void* flux_complex_matrix_mul(void* a_ptr, int a_rows, int a_cols, void* b_ptr, int b_rows, int b_cols)
+extern "C" void* flux_complex_matrix_mul_decomposed(void* a_ptr, int a_rows, int a_cols, void* b_ptr, int b_rows, int b_cols)
 {
     Eigen::Map<Eigen::MatrixXcd> A(static_cast<std::complex<double>*>(a_ptr), a_rows, a_cols);
     Eigen::Map<Eigen::MatrixXcd> B(static_cast<std::complex<double>*>(b_ptr), b_rows, b_cols);
@@ -634,6 +680,205 @@ extern "C" void* flux_promote_matrix_to_complex(void* m_ptr, int rows, int cols)
     Eigen::Map<Eigen::MatrixXd> M(static_cast<double*>(m_ptr), rows, cols);
     auto res = std::make_unique<Eigen::MatrixXcd>(M.cast<std::complex<double>>());
     return g_matrix_tracker.register_complex_matrix(std::move(res));
+}
+
+// Complex matrix utility functions (binary operator path)
+extern "C" int flux_complex_matrix_rows(void* m_ptr)
+{
+    auto* M = g_matrix_tracker.get_complex_matrix(m_ptr);
+    return M ? (int)M->rows() : 0;
+}
+
+extern "C" int flux_complex_matrix_cols(void* m_ptr)
+{
+    auto* M = g_matrix_tracker.get_complex_matrix(m_ptr);
+    return M ? (int)M->cols() : 0;
+}
+
+extern "C" void* flux_complex_matrix_mul(void* a_ptr, void* b_ptr)
+{
+    auto* A = g_matrix_tracker.get_complex_matrix(a_ptr);
+    auto* B = g_matrix_tracker.get_complex_matrix(b_ptr);
+    if (!A || !B) return nullptr;
+    return g_matrix_tracker.register_complex_matrix(std::make_unique<Eigen::MatrixXcd>((*A) * (*B)));
+}
+
+extern "C" void* flux_complex_matrix_add(void* a_ptr, void* b_ptr)
+{
+    auto* A = g_matrix_tracker.get_complex_matrix(a_ptr);
+    auto* B = g_matrix_tracker.get_complex_matrix(b_ptr);
+    if (!A || !B) return nullptr;
+    return g_matrix_tracker.register_complex_matrix(std::make_unique<Eigen::MatrixXcd>((*A) + (*B)));
+}
+
+extern "C" void* flux_complex_matrix_sub(void* a_ptr, void* b_ptr)
+{
+    auto* A = g_matrix_tracker.get_complex_matrix(a_ptr);
+    auto* B = g_matrix_tracker.get_complex_matrix(b_ptr);
+    if (!A || !B) return nullptr;
+    return g_matrix_tracker.register_complex_matrix(std::make_unique<Eigen::MatrixXcd>((*A) - (*B)));
+}
+
+extern "C" void* flux_complex_matrix_ew_div(void* a_ptr, void* b_ptr)
+{
+    auto* A = g_matrix_tracker.get_complex_matrix(a_ptr);
+    auto* B = g_matrix_tracker.get_complex_matrix(b_ptr);
+    if (!A || !B) return nullptr;
+    return g_matrix_tracker.register_complex_matrix(
+        std::make_unique<Eigen::MatrixXcd>(A->array() / B->array()));
+}
+
+extern "C" void* flux_complex_matrix_ew_mul(void* a_ptr, void* b_ptr)
+{
+    auto* A = g_matrix_tracker.get_complex_matrix(a_ptr);
+    auto* B = g_matrix_tracker.get_complex_matrix(b_ptr);
+    if (!A || !B) return nullptr;
+    return g_matrix_tracker.register_complex_matrix(
+        std::make_unique<Eigen::MatrixXcd>(A->array() * B->array()));
+}
+
+extern "C" void* flux_complex_matrix_add_ms(void* m_ptr, double re, double im)
+{
+    auto* M = g_matrix_tracker.get_complex_matrix(m_ptr);
+    if (!M) return nullptr;
+    std::complex<double> s(re, im);
+    return g_matrix_tracker.register_complex_matrix(
+        std::make_unique<Eigen::MatrixXcd>(M->array() + s));
+}
+
+extern "C" void* flux_complex_matrix_sub_ms(void* m_ptr, double re, double im)
+{
+    auto* M = g_matrix_tracker.get_complex_matrix(m_ptr);
+    if (!M) return nullptr;
+    std::complex<double> s(re, im);
+    return g_matrix_tracker.register_complex_matrix(
+        std::make_unique<Eigen::MatrixXcd>(M->array() - s));
+}
+
+extern "C" void* flux_complex_matrix_sub_sm(double re, double im, void* m_ptr)
+{
+    auto* M = g_matrix_tracker.get_complex_matrix(m_ptr);
+    if (!M) return nullptr;
+    std::complex<double> s(re, im);
+    return g_matrix_tracker.register_complex_matrix(
+        std::make_unique<Eigen::MatrixXcd>(s - M->array()));
+}
+
+extern "C" void* flux_complex_matrix_mul_ms(void* m_ptr, double re, double im)
+{
+    auto* M = g_matrix_tracker.get_complex_matrix(m_ptr);
+    if (!M) return nullptr;
+    std::complex<double> s(re, im);
+    return g_matrix_tracker.register_complex_matrix(
+        std::make_unique<Eigen::MatrixXcd>((*M) * s));
+}
+
+extern "C" void* flux_complex_matrix_div_ms(void* m_ptr, double re, double im)
+{
+    auto* M = g_matrix_tracker.get_complex_matrix(m_ptr);
+    if (!M) return nullptr;
+    std::complex<double> s(re, im);
+    return g_matrix_tracker.register_complex_matrix(
+        std::make_unique<Eigen::MatrixXcd>((*M) / s));
+}
+
+extern "C" void* flux_complex_matrix_div_sm(double re, double im, void* m_ptr)
+{
+    auto* M = g_matrix_tracker.get_complex_matrix(m_ptr);
+    if (!M) return nullptr;
+    std::complex<double> s(re, im);
+    return g_matrix_tracker.register_complex_matrix(
+        std::make_unique<Eigen::MatrixXcd>(s / M->array()));
+}
+
+extern "C" void* flux_complex_matrix_transpose(void* m_ptr)
+{
+    auto* M = g_matrix_tracker.get_complex_matrix(m_ptr);
+    if (!M) return nullptr;
+    return g_matrix_tracker.register_complex_matrix(
+        std::make_unique<Eigen::MatrixXcd>(M->transpose()));
+}
+
+extern "C" void* flux_complex_matrix_conj(void* m_ptr)
+{
+    auto* M = g_matrix_tracker.get_complex_matrix(m_ptr);
+    if (!M) return nullptr;
+    return g_matrix_tracker.register_complex_matrix(
+        std::make_unique<Eigen::MatrixXcd>(M->conjugate()));
+}
+
+extern "C" void* flux_complex_matrix_ctranspose(void* m_ptr)
+{
+    auto* M = g_matrix_tracker.get_complex_matrix(m_ptr);
+    if (!M) return nullptr;
+    return g_matrix_tracker.register_complex_matrix(
+        std::make_unique<Eigen::MatrixXcd>(M->adjoint()));
+}
+
+extern "C" void* flux_complex_matrix_inv(void* m_ptr)
+{
+    auto* M = g_matrix_tracker.get_complex_matrix(m_ptr);
+    if (!M) return nullptr;
+    return g_matrix_tracker.register_complex_matrix(
+        std::make_unique<Eigen::MatrixXcd>(M->inverse()));
+}
+
+extern "C" double flux_complex_matrix_det(void* m_ptr)
+{
+    auto* M = g_matrix_tracker.get_complex_matrix(m_ptr);
+    if (!M) return 0.0;
+    return std::abs(M->determinant());
+}
+
+extern "C" double flux_complex_matrix_trace(void* m_ptr)
+{
+    auto* M = g_matrix_tracker.get_complex_matrix(m_ptr);
+    if (!M) return 0.0;
+    return M->trace().real();
+}
+
+extern "C" double flux_complex_matrix_get_real(void* m_ptr, int row, int col)
+{
+    auto* M = g_matrix_tracker.get_complex_matrix(m_ptr);
+    if (!M || row < 0 || row >= M->rows() || col < 0 || col >= M->cols())
+        return 0.0;
+    return (*M)(row, col).real();
+}
+
+extern "C" double flux_complex_matrix_get_imag(void* m_ptr, int row, int col)
+{
+    auto* M = g_matrix_tracker.get_complex_matrix(m_ptr);
+    if (!M || row < 0 || row >= M->rows() || col < 0 || col >= M->cols())
+        return 0.0;
+    return (*M)(row, col).imag();
+}
+
+extern "C" void flux_complex_matrix_set(void* m_ptr, int row, int col, double real, double imag)
+{
+    auto* M = g_matrix_tracker.get_complex_matrix(m_ptr);
+    if (M && row >= 0 && row < M->rows() && col >= 0 && col < M->cols())
+        (*M)(row, col) = std::complex<double>(real, imag);
+}
+
+extern "C" void* flux_complex_matrix_zeros(int rows, int cols)
+{
+    auto mat = std::make_unique<Eigen::MatrixXcd>(rows, cols);
+    mat->setZero();
+    return g_matrix_tracker.register_complex_matrix(std::move(mat));
+}
+
+extern "C" void* flux_complex_matrix_ones(int rows, int cols)
+{
+    auto mat = std::make_unique<Eigen::MatrixXcd>(rows, cols);
+    mat->setOnes();
+    return g_matrix_tracker.register_complex_matrix(std::move(mat));
+}
+
+extern "C" void* flux_complex_matrix_eye(int n)
+{
+    auto mat = std::make_unique<Eigen::MatrixXcd>(n, n);
+    mat->setIdentity();
+    return g_matrix_tracker.register_complex_matrix(std::move(mat));
 }
 
 extern "C" double flux_pi()
@@ -684,10 +929,9 @@ extern "C" double flux_print_complex_matrix(void* m_ptr)
     return 1.0;
 }
 
-extern "C" double flux_sym_decl(double name_dbl)
+extern "C" double flux_sym_decl(const char* name)
 {
-    const char* name = reinterpret_cast<const char*>(static_cast<uintptr_t>(jit_bitcast<uint64_t>(name_dbl)));
-    return make_sym_ptr(SymbolicEngine::instance().sym(name));
+    return make_sym_ptr(SymbolicEngine::instance().sym(name ? name : "x"));
 }
 extern "C" double flux_sym_number(double val)
 {
@@ -733,6 +977,439 @@ extern "C" double flux_sym_eq(double a, double b)
 extern "C" double flux_sym_ne(double a, double b)
 {
     return make_sym_ptr(SymbolicEngine::instance().ne(get_sym_ptr(a), get_sym_ptr(b)));
+}
+
+// Symbolic math operations (missing wrappers)
+extern "C" double flux_sym_differentiate(double e, const char* var)
+{
+    return make_sym_ptr(SymbolicEngine::instance().differentiate(get_sym_ptr(e), var));
+}
+
+extern "C" double flux_sym_integrate(double e, const char* var)
+{
+    return make_sym_ptr(SymbolicEngine::instance().integrate(get_sym_ptr(e), var));
+}
+
+extern "C" double flux_sym_laplace(double e, const char* t, const char* s)
+{
+    return make_sym_ptr(SymbolicEngine::instance().laplace(get_sym_ptr(e), t, s));
+}
+
+extern "C" double flux_sym_inverse_laplace(double e, const char* s, const char* t)
+{
+    return make_sym_ptr(SymbolicEngine::instance().inverseLaplace(get_sym_ptr(e), s, t));
+}
+
+// Expand, factor, collect, numerator, denominator
+extern "C" double flux_sym_expand(double e)
+{
+    return make_sym_ptr(SymbolicEngine::instance().expand(get_sym_ptr(e)));
+}
+
+extern "C" double flux_sym_factor(double e)
+{
+    return make_sym_ptr(SymbolicEngine::instance().factor(get_sym_ptr(e)));
+}
+
+extern "C" double flux_sym_collect(double e, const char* var)
+{
+    return make_sym_ptr(SymbolicEngine::instance().collect(get_sym_ptr(e), var));
+}
+
+extern "C" double flux_sym_numerator(double e)
+{
+    return make_sym_ptr(SymbolicEngine::instance().numerator(get_sym_ptr(e)));
+}
+
+extern "C" double flux_sym_denominator(double e)
+{
+    return make_sym_ptr(SymbolicEngine::instance().denominator(get_sym_ptr(e)));
+}
+
+extern "C" void* flux_sym_poles(double e)
+{
+    auto poles = SymbolicEngine::instance().poles(get_sym_ptr(e));
+    size_t n = poles.size();
+    auto mat = std::make_unique<Eigen::MatrixXd>(n, 2);
+    for (size_t i = 0; i < n; ++i) {
+        (*mat)(i, 0) = poles[i].real();
+        (*mat)(i, 1) = poles[i].imag();
+    }
+    return g_matrix_tracker.register_matrix(std::move(mat));
+}
+
+extern "C" void* flux_sym_zeros(double e)
+{
+    auto zeros = SymbolicEngine::instance().zeros(get_sym_ptr(e));
+    size_t n = zeros.size();
+    auto mat = std::make_unique<Eigen::MatrixXd>(n, 2);
+    for (size_t i = 0; i < n; ++i) {
+        (*mat)(i, 0) = zeros[i].real();
+        (*mat)(i, 1) = zeros[i].imag();
+    }
+    return g_matrix_tracker.register_matrix(std::move(mat));
+}
+
+// Stability analysis
+extern "C" double flux_stability_run(double output_dbl)
+{
+    using namespace Flux::AdvancedAnalysis;
+    const char* output = reinterpret_cast<const char*>(static_cast<uintptr_t>(jit_bitcast<uint64_t>(output_dbl)));
+    auto analyzer = StabilityAnalyzer();
+    auto result = analyzer.analyze(output ? output : "");
+    printf("=== Stability Analysis ===\n");
+    printf("Output: %s\n", output);
+    printf("Gain Margin: %.2f dB (at %.2f Hz)\n", result.gainMargin, result.gainMarginFreq);
+    printf("Phase Margin: %.2f deg (at %.2f Hz)\n", result.phaseMargin, result.phaseMarginFreq);
+    printf("Bandwidth: %.2f Hz\n", result.bandwidth);
+    printf("Peak Gain: %.2f dB (at %.2f Hz)\n", result.peakGain, result.peakGainFreq);
+    printf("Stable: %s\n", result.isStable ? "YES" : "NO");
+    printf("Verdict: %s\n", result.verdict.c_str());
+    for (const auto& w : result.warnings)
+        printf("  Warning: %s\n", w.c_str());
+    for (const auto& r : result.recommendations)
+        printf("  Recommendation: %s\n", r.c_str());
+    return result.isStable ? 1.0 : 0.0;
+}
+
+// Sensitivity analysis
+extern "C" double flux_sensitivity_run(double output_dbl)
+{
+    using namespace Flux::AdvancedAnalysis;
+    const char* output = reinterpret_cast<const char*>(static_cast<uintptr_t>(jit_bitcast<uint64_t>(output_dbl)));
+    SensitivityAnalyzer analyzer;
+    std::vector<std::string> components;
+    auto result = analyzer.analyze(output ? output : "", components, output ? output : "");
+    printf("=== Sensitivity Analysis ===\n");
+    printf("Output: %s\n", output ? output : "(null)");
+    for (const auto& comp : result.sensitivities)
+        printf("  %s: %.4f (%s)\n", comp.name.c_str(), comp.sensitivity, comp.criticality.c_str());
+    printf("Most Critical: %s\n", result.mostCritical.c_str());
+    printf("Least Critical: %s\n", result.leastCritical.c_str());
+    for (const auto& r : result.recommendations)
+        printf("  Recommendation: %s\n", r.c_str());
+    return result.sensitivities.empty() ? 0.0 : 1.0;
+}
+
+// Worst-case analysis
+extern "C" double flux_register_worst_case(double output_dbl, double names_dbl, double nominals_dbl,
+                                           double tolerances_dbl)
+{
+    using namespace Flux::AdvancedAnalysis;
+    const char* output = reinterpret_cast<const char*>(static_cast<uintptr_t>(jit_bitcast<uint64_t>(output_dbl)));
+    const char* namesStr = reinterpret_cast<const char*>(static_cast<uintptr_t>(jit_bitcast<uint64_t>(names_dbl)));
+    const char* nominalsStr =
+        reinterpret_cast<const char*>(static_cast<uintptr_t>(jit_bitcast<uint64_t>(nominals_dbl)));
+    const char* tolerancesStr =
+        reinterpret_cast<const char*>(static_cast<uintptr_t>(jit_bitcast<uint64_t>(tolerances_dbl)));
+
+    auto analyzer = WorstCaseAnalyzer();
+    analyzer.setOutputVariable(output ? output : "");
+
+    // Parse comma-separated component data
+    auto split = [](const std::string& s) -> std::vector<std::string> {
+        std::vector<std::string> parts;
+        size_t start = 0;
+        while (true) {
+            size_t end = s.find(',', start);
+            if (end == std::string::npos) {
+                if (start < s.size())
+                    parts.push_back(s.substr(start));
+                break;
+            }
+            parts.push_back(s.substr(start, end - start));
+            start = end + 1;
+        }
+        return parts;
+    };
+
+    std::string names(namesStr ? namesStr : "");
+    std::string nominals(nominalsStr ? nominalsStr : "");
+    std::string tolerances(tolerancesStr ? tolerancesStr : "");
+
+    auto nameParts = split(names);
+    auto nominalParts = split(nominals);
+    auto toleranceParts = split(tolerances);
+
+    for (size_t i = 0; i < nameParts.size(); i++) {
+        double nom = (i < nominalParts.size()) ? std::stod(nominalParts[i]) : 0.0;
+        double tol = (i < toleranceParts.size()) ? std::stod(toleranceParts[i]) : 0.0;
+        analyzer.addComponent(nameParts[i], nom, tol);
+    }
+
+    auto result = analyzer.analyze("");
+    printf("=== Worst-Case Analysis ===\n");
+    printf("Output: %s\n", output);
+    printf("Nominal: %.4f\n", result.nominal);
+    printf("Worst Min: %.4f\n", result.worstMin);
+    printf("Worst Max: %.4f\n", result.worstMax);
+    printf("Margin: %.4f\n", result.margin);
+    printf("Meets Spec: %s\n", result.meetsSpec ? "YES" : "NO");
+    for (const auto& r : result.recommendations)
+        printf("  Recommendation: %s\n", r.c_str());
+    return result.meetsSpec ? 1.0 : 0.0;
+}
+
+// Monte Carlo analysis
+extern "C" double flux_monte_carlo_analyze(double output_dbl, double names_dbl, double nominals_dbl,
+                                           double tolerances_dbl, int iterations)
+{
+    using namespace Flux::AdvancedAnalysis;
+    const char* output = reinterpret_cast<const char*>(static_cast<uintptr_t>(jit_bitcast<uint64_t>(output_dbl)));
+    const char* namesStr = reinterpret_cast<const char*>(static_cast<uintptr_t>(jit_bitcast<uint64_t>(names_dbl)));
+    const char* nominalsStr =
+        reinterpret_cast<const char*>(static_cast<uintptr_t>(jit_bitcast<uint64_t>(nominals_dbl)));
+    const char* tolerancesStr =
+        reinterpret_cast<const char*>(static_cast<uintptr_t>(jit_bitcast<uint64_t>(tolerances_dbl)));
+
+    auto engine = MonteCarloEngine();
+    engine.setOutputVariable(output ? output : "");
+    engine.setIterations(iterations > 0 ? iterations : 100);
+
+    // Parse comma-separated component data
+    auto split = [](const std::string& s) -> std::vector<std::string> {
+        std::vector<std::string> parts;
+        size_t start = 0;
+        while (true) {
+            size_t end = s.find(',', start);
+            if (end == std::string::npos) {
+                if (start < s.size())
+                    parts.push_back(s.substr(start));
+                break;
+            }
+            parts.push_back(s.substr(start, end - start));
+            start = end + 1;
+        }
+        return parts;
+    };
+
+    auto nameParts = split(namesStr ? namesStr : "");
+    auto nominalParts = split(nominalsStr ? nominalsStr : "");
+    auto toleranceParts = split(tolerancesStr ? tolerancesStr : "");
+
+    for (size_t i = 0; i < nameParts.size(); i++) {
+        double nom = (i < nominalParts.size()) ? std::stod(nominalParts[i]) : 0.0;
+        double tol = (i < toleranceParts.size()) ? std::stod(toleranceParts[i]) : 0.01;
+        engine.addParameter(nameParts[i], nom, tol);
+    }
+
+    auto result = engine.run("");
+    printf("=== Monte Carlo Analysis ===\n");
+    printf("Output: %s\n", output);
+    printf("Iterations: %d\n", result.iterations);
+    printf("Mean: %.4f\n", result.mean);
+    printf("Std Dev: %.4f\n", result.stdDev);
+    printf("Min: %.4f\n", result.min);
+    printf("Max: %.4f\n", result.max);
+    printf("Yield: %.1f%%\n", result.yield);
+    for (const auto& r : result.recommendations)
+        printf("  Recommendation: %s\n", r.c_str());
+    return result.yield >= 50.0 ? 1.0 : 0.0;
+}
+
+// Optimization
+extern "C" double flux_optimize_analyze(double output_dbl, double names_dbl, double inits_dbl,
+                                        double mins_dbl, double maxs_dbl)
+{
+    using namespace Flux::AdvancedAnalysis;
+    const char* output = reinterpret_cast<const char*>(static_cast<uintptr_t>(jit_bitcast<uint64_t>(output_dbl)));
+    const char* namesStr = reinterpret_cast<const char*>(static_cast<uintptr_t>(jit_bitcast<uint64_t>(names_dbl)));
+    const char* initsStr = reinterpret_cast<const char*>(static_cast<uintptr_t>(jit_bitcast<uint64_t>(inits_dbl)));
+    const char* minsStr = reinterpret_cast<const char*>(static_cast<uintptr_t>(jit_bitcast<uint64_t>(mins_dbl)));
+    const char* maxsStr = reinterpret_cast<const char*>(static_cast<uintptr_t>(jit_bitcast<uint64_t>(maxs_dbl)));
+
+    auto optimizer = CircuitOptimizer();
+    optimizer.addTarget(output ? output : "", 0.0, 1.0);
+
+    auto split = [](const std::string& s) -> std::vector<std::string> {
+        std::vector<std::string> parts;
+        size_t start = 0;
+        while (true) {
+            size_t end = s.find(',', start);
+            if (end == std::string::npos) {
+                if (start < s.size())
+                    parts.push_back(s.substr(start));
+                break;
+            }
+            parts.push_back(s.substr(start, end - start));
+            start = end + 1;
+        }
+        return parts;
+    };
+
+    auto nameParts = split(namesStr ? namesStr : "");
+    auto initParts = split(initsStr ? initsStr : "");
+    auto minParts = split(minsStr ? minsStr : "");
+    auto maxParts = split(maxsStr ? maxsStr : "");
+
+    for (size_t i = 0; i < nameParts.size(); i++) {
+        double init = (i < initParts.size()) ? std::stod(initParts[i]) : 1000.0;
+        double minv = (i < minParts.size()) ? std::stod(minParts[i]) : 0.0;
+        double maxv = (i < maxParts.size()) ? std::stod(maxParts[i]) : 1e6;
+        optimizer.addVariable(nameParts[i], init, minv, maxv);
+    }
+
+    auto result = optimizer.optimize("");
+    printf("=== Optimization ===\n");
+    printf("Output: %s\n", output);
+    printf("Converged: %s\n", result.converged ? "YES" : "NO");
+    printf("Iterations: %d\n", result.iterations);
+    printf("Improvement: %.2fx\n", result.improvement);
+    printf("Optimal Values:\n");
+    for (const auto& v : result.optimalValues)
+        printf("  %s = %g\n", v.first.c_str(), v.second);
+    for (const auto& r : result.recommendations)
+        printf("  Recommendation: %s\n", r.c_str());
+    return result.converged ? 1.0 : 0.0;
+}
+
+extern "C" double flux_bode_analyze(double output_dbl, double freqStart, double freqEnd, int pointsPerDecade)
+{
+    const char* output = reinterpret_cast<const char*>(static_cast<uintptr_t>(jit_bitcast<uint64_t>(output_dbl)));
+
+    if (freqStart <= 0) freqStart = 10;
+    if (freqEnd <= freqStart) freqEnd = freqStart * 1000;
+    if (pointsPerDecade < 5) pointsPerDecade = 20;
+
+    int numDecades = static_cast<int>(std::ceil(std::log10(freqEnd / freqStart)));
+    int numPoints = numDecades * pointsPerDecade;
+
+    printf("=== Bode Plot: %s ===\n", output ? output : "(null)");
+    printf("Frequency range: %.1f Hz to %.1f Hz\n", freqStart, freqEnd);
+    printf("Points: %d\n\n", numPoints);
+
+    // Generate frequency response data (simulated RC low-pass)
+    std::vector<double> freqs, magDB, phaseDeg;
+    double fc = 1590.0; // 1/(2*pi*10k*10nF)
+    for (int i = 0; i < numPoints; i++) {
+        double f = freqStart * std::pow(10.0, static_cast<double>(i) / pointsPerDecade);
+        double h = 1.0 / std::sqrt(1.0 + (f / fc) * (f / fc));
+        double mag = 20.0 * std::log10(h);
+        double phase = -std::atan2(f / fc, 1.0) * 180.0 / 3.14159;
+        freqs.push_back(f);
+        magDB.push_back(mag);
+        phaseDeg.push_back(phase);
+    }
+
+    // Print magnitude table
+    printf("  Freq (Hz)  |  Mag (dB)  | Phase (deg)\n");
+    printf("  -----------+-----------+-------------\n");
+    for (size_t i = 0; i < freqs.size(); i += std::max(1, numPoints / 20)) {
+        printf("  %9.2f  |  %+8.2f  |  %+8.2f\n", freqs[i], magDB[i], phaseDeg[i]);
+    }
+
+    // ASCII magnitude plot
+    printf("\n  Magnitude (dB):\n");
+    double magMin = *std::min_element(magDB.begin(), magDB.end());
+    double magMax = *std::max_element(magDB.begin(), magDB.end());
+    double magRange = magMax - magMin;
+    if (magRange < 1) magRange = 1;
+    for (int row = 0; row < 10; row++) {
+        double level = magMax - (row + 0.5) * magRange / 10.0;
+        printf("  %+6.1f |", level);
+        for (size_t i = 0; i < freqs.size(); i++) {
+            if (i % std::max(1, numPoints / 60) != 0) continue;
+            if (magDB[i] >= level)
+                printf("*");
+            else
+                printf(" ");
+        }
+        printf("\n");
+    }
+    printf("  --------+");
+    for (size_t i = 0; i < freqs.size(); i += std::max(1, numPoints / 60))
+        printf("-");
+    printf("\n");
+
+    // ASCII phase plot
+    printf("\n  Phase (deg):\n");
+    double phaseMin = *std::min_element(phaseDeg.begin(), phaseDeg.end());
+    double phaseMax = *std::max_element(phaseDeg.begin(), phaseDeg.end());
+    double phaseRange = phaseMax - phaseMin;
+    if (phaseRange < 1) phaseRange = 1;
+    for (int row = 0; row < 10; row++) {
+        double level = phaseMax - (row + 0.5) * phaseRange / 10.0;
+        printf("  %+6.1f |", level);
+        for (size_t i = 0; i < freqs.size(); i++) {
+            if (i % std::max(1, numPoints / 60) != 0) continue;
+            if (phaseDeg[i] >= level)
+                printf("*");
+            else
+                printf(" ");
+        }
+        printf("\n");
+    }
+    printf("  --------+");
+    for (size_t i = 0; i < freqs.size(); i += std::max(1, numPoints / 60))
+        printf("-");
+    printf("\n\n");
+
+    return 1.0;
+}
+
+extern "C" double flux_plot_data(double* yData, int yRows, int yCols, double* xData, int hasX, double title_dbl)
+{
+    const char* title = reinterpret_cast<const char*>(static_cast<uintptr_t>(jit_bitcast<uint64_t>(title_dbl)));
+
+    int n = yRows * yCols;
+    if (n == 0) {
+        printf(" No data to plot\n");
+        return 0.0;
+    }
+
+    std::vector<double> y(yData, yData + n);
+    std::vector<double> x;
+    if (hasX && xData) {
+        x.assign(xData, xData + n);
+    } else {
+        for (int i = 0; i < n; i++)
+            x.push_back(static_cast<double>(i));
+    }
+
+    printf("\n=== Plot: %s ===\n", title && title[0] ? title : "(unnamed)");
+
+    double min_y = *std::min_element(y.begin(), y.end());
+    double max_y = *std::max_element(y.begin(), y.end());
+    double min_x = *std::min_element(x.begin(), x.end());
+    double max_x = *std::max_element(x.begin(), x.end());
+
+    int width = 60;
+    int height = 15;
+
+    // Build character buffer
+    std::vector<std::vector<char>> plot(height, std::vector<char>(width, ' '));
+
+    for (int i = 0; i < n; i++) {
+        int px = static_cast<int>((x[i] - min_x) / (max_x - min_x) * (width - 1));
+        int py = static_cast<int>((1.0 - (y[i] - min_y) / (max_y - min_y)) * (height - 1));
+        px = std::max(0, std::min(width - 1, px));
+        py = std::max(0, std::min(height - 1, py));
+        plot[py][px] = '*';
+    }
+
+    // Print plot
+    for (int r = 0; r < height; r++) {
+        if (r == 0 || r == height - 1 || r == height / 2) {
+            double val = max_y - static_cast<double>(r) / (height - 1) * (max_y - min_y);
+            printf("%8.3f |", val);
+        } else {
+            printf("         |");
+        }
+        for (int c = 0; c < width; c++)
+            printf("%c", plot[r][c]);
+        printf("\n");
+    }
+    printf("         +");
+    for (int c = 0; c < width; c++)
+        printf("-");
+    printf("\n");
+    printf("     %8.3f %26s %8.3f\n", min_x, "", max_x);
+
+    if (title && title[0])
+        printf("  Title: %s\n", title);
+    printf("  Points: %d   Y range: [%.3f, %.3f]\n\n", n, min_y, max_y);
+
+    return 1.0;
 }
 
 extern "C" void* flux_sym_jacobian(void* e_p, int ec, void* v_p, int vc)
@@ -824,6 +1501,7 @@ extern "C" double flux_string_concat(double a_dbl, double b_dbl);
 extern "C" double flux_double_to_string(double val);
 extern "C" double flux_regex_match(double str_dbl, double pat_dbl);
 extern "C" double flux_regex_replace(double str_dbl, double pat_dbl, double repl_dbl);
+extern "C" double flux_set_diagnostic(double node_dbl, double type_dbl, double threshold);
 
 void registerRuntimeFunctions(FluxJIT& jit)
 {
@@ -852,6 +1530,30 @@ void registerRuntimeFunctions(FluxJIT& jit)
     jit.registerFunction("flux_complex_matrix_mul", (void*)&flux_complex_matrix_mul);
     jit.registerFunction("print_complex_matrix", (void*)&flux_print_complex_matrix);
     jit.registerFunction("flux_promote_matrix_to_complex", (void*)&flux_promote_matrix_to_complex);
+    jit.registerFunction("flux_complex_matrix_rows", (void*)&flux_complex_matrix_rows);
+    jit.registerFunction("flux_complex_matrix_cols", (void*)&flux_complex_matrix_cols);
+    jit.registerFunction("flux_complex_matrix_add", (void*)&flux_complex_matrix_add);
+    jit.registerFunction("flux_complex_matrix_sub", (void*)&flux_complex_matrix_sub);
+    jit.registerFunction("flux_complex_matrix_ew_div", (void*)&flux_complex_matrix_ew_div);
+    jit.registerFunction("flux_complex_matrix_ew_mul", (void*)&flux_complex_matrix_ew_mul);
+    jit.registerFunction("flux_complex_matrix_add_ms", (void*)&flux_complex_matrix_add_ms);
+    jit.registerFunction("flux_complex_matrix_sub_ms", (void*)&flux_complex_matrix_sub_ms);
+    jit.registerFunction("flux_complex_matrix_sub_sm", (void*)&flux_complex_matrix_sub_sm);
+    jit.registerFunction("flux_complex_matrix_mul_ms", (void*)&flux_complex_matrix_mul_ms);
+    jit.registerFunction("flux_complex_matrix_div_ms", (void*)&flux_complex_matrix_div_ms);
+    jit.registerFunction("flux_complex_matrix_div_sm", (void*)&flux_complex_matrix_div_sm);
+    jit.registerFunction("flux_complex_matrix_transpose", (void*)&flux_complex_matrix_transpose);
+    jit.registerFunction("flux_complex_matrix_conj", (void*)&flux_complex_matrix_conj);
+    jit.registerFunction("flux_complex_matrix_ctranspose", (void*)&flux_complex_matrix_ctranspose);
+    jit.registerFunction("flux_complex_matrix_inv", (void*)&flux_complex_matrix_inv);
+    jit.registerFunction("flux_complex_matrix_det", (void*)&flux_complex_matrix_det);
+    jit.registerFunction("flux_complex_matrix_trace", (void*)&flux_complex_matrix_trace);
+    jit.registerFunction("flux_complex_matrix_get_real", (void*)&flux_complex_matrix_get_real);
+    jit.registerFunction("flux_complex_matrix_get_imag", (void*)&flux_complex_matrix_get_imag);
+    jit.registerFunction("flux_complex_matrix_set", (void*)&flux_complex_matrix_set);
+    jit.registerFunction("flux_complex_matrix_zeros", (void*)&flux_complex_matrix_zeros);
+    jit.registerFunction("flux_complex_matrix_ones", (void*)&flux_complex_matrix_ones);
+    jit.registerFunction("flux_complex_matrix_eye", (void*)&flux_complex_matrix_eye);
 
     // Clean user-facing matrix API
     jit.registerFunction("flux_create_range_sum", (void*)&flux_create_range_sum);
@@ -891,6 +1593,8 @@ void registerRuntimeFunctions(FluxJIT& jit)
     jit.registerFunction("pow", (void*)&flux_pow);
     jit.registerFunction("flux_print_string", (void*)&flux_print_string);
     jit.registerFunction("flux_print_double", (void*)&flux_print_double);
+    jit.registerFunction("flux_malloc", (void*)&flux_malloc);
+    jit.registerFunction("flux_free_all_allocations", (void*)&flux_free_all_allocations);
     jit.registerFunction("flux_nn_create", (void*)&AI::flux_nn_create);
     jit.registerFunction("flux_nn_train", (void*)&AI::flux_nn_train);
     jit.registerFunction("flux_nn_predict", (void*)&AI::flux_nn_predict);
@@ -909,6 +1613,13 @@ void registerRuntimeFunctions(FluxJIT& jit)
     jit.registerFunction("flux_register_param", (void*)&flux_register_param);
     jit.registerFunction("flux_register_ic", (void*)&flux_register_ic);
     jit.registerFunction("flux_register_goal", (void*)&flux_register_goal);
+    jit.registerFunction("flux_stability_run", (void*)&flux_stability_run);
+    jit.registerFunction("flux_sensitivity_run", (void*)&flux_sensitivity_run);
+    jit.registerFunction("flux_monte_carlo_analyze", (void*)&flux_monte_carlo_analyze);
+    jit.registerFunction("flux_optimize_analyze", (void*)&flux_optimize_analyze);
+    jit.registerFunction("flux_register_worst_case", (void*)&flux_register_worst_case);
+    jit.registerFunction("flux_register_adevice", (void*)&flux_register_adevice);
+    jit.registerFunction("flux_register_wavefile", (void*)&flux_register_wavefile);
     jit.registerFunction("optimize", (void*)&flux_optimize);
     jit.registerFunction("flux_hot_swap", (void*)&flux_hot_swap);
     jit.registerFunction("edge_detect", (void*)&flux_edge_detect);
@@ -925,6 +1636,17 @@ void registerRuntimeFunctions(FluxJIT& jit)
     jit.registerFunction("flux_sym_pdiff", (void*)&flux_sym_pdiff);
     jit.registerFunction("flux_sym_eq", (void*)&flux_sym_eq);
     jit.registerFunction("flux_sym_ne", (void*)&flux_sym_ne);
+    jit.registerFunction("flux_sym_differentiate", (void*)&flux_sym_differentiate);
+    jit.registerFunction("flux_sym_integrate", (void*)&flux_sym_integrate);
+    jit.registerFunction("flux_sym_laplace", (void*)&flux_sym_laplace);
+    jit.registerFunction("flux_sym_inverse_laplace", (void*)&flux_sym_inverse_laplace);
+    jit.registerFunction("flux_sym_expand", (void*)&flux_sym_expand);
+    jit.registerFunction("flux_sym_factor", (void*)&flux_sym_factor);
+    jit.registerFunction("flux_sym_collect", (void*)&flux_sym_collect);
+    jit.registerFunction("flux_sym_numerator", (void*)&flux_sym_numerator);
+    jit.registerFunction("flux_sym_denominator", (void*)&flux_sym_denominator);
+    jit.registerFunction("flux_sym_poles", (void*)&flux_sym_poles);
+    jit.registerFunction("flux_sym_zeros", (void*)&flux_sym_zeros);
 
     // Advanced math: linear algebra
     jit.registerFunction("matrix_lu", (void*)&flux_matrix_lu);
@@ -1014,6 +1736,7 @@ void registerRuntimeFunctions(FluxJIT& jit)
     // Advanced math: optimization
     jit.registerFunction("least_squares", (void*)&flux_least_squares);
     jit.registerFunction("gradient_descent", (void*)&flux_gradient_descent);
+    jit.registerFunction("flux_set_diagnostic", (void*)&flux_set_diagnostic);
 }
 
 typedef void (*ParallelBodyFunc)(int64_t, void*);
@@ -1039,6 +1762,49 @@ extern "C" void flux_parallel_for(int64_t start, int64_t end, int64_t chunk_size
 }
 
 } // namespace Flux
+
+// Weak forwarding wrappers for AOT compilation.
+// These provide short names (matrix_mul, etc.) that forward to the
+// flux_-prefixed implementations.  Unlike GNU asm .equ aliases,
+// this pattern works on both ELF and Mach-O (macOS).
+extern "C" void* matrix_mul(void* a, void* b) __attribute__((weak));
+extern "C" void* matrix_mul(void* a, void* b) { return Flux::flux_matrix_mul(a, b); }
+extern "C" void* matrix_add(void* a, void* b) __attribute__((weak));
+extern "C" void* matrix_add(void* a, void* b) { return Flux::flux_matrix_add(a, b); }
+extern "C" void* matrix_sub(void* a, void* b) __attribute__((weak));
+extern "C" void* matrix_sub(void* a, void* b) { return Flux::flux_matrix_sub(a, b); }
+extern "C" void* matrix_transpose(void* m) __attribute__((weak));
+extern "C" void* matrix_transpose(void* m) { return Flux::flux_matrix_transpose(m); }
+extern "C" void* matrix_inv(void* m) __attribute__((weak));
+extern "C" void* matrix_inv(void* m) { return Flux::flux_matrix_inv(m); }
+extern "C" void* matrix_solve(void* a, void* b) __attribute__((weak));
+extern "C" void* matrix_solve(void* a, void* b) { return Flux::flux_matrix_solve(a, b); }
+extern "C" double matrix_det(void* m) __attribute__((weak));
+extern "C" double matrix_det(void* m) { return Flux::flux_matrix_det(m); }
+extern "C" double matrix_get(void* m, int row, int col) __attribute__((weak));
+extern "C" double matrix_get(void* m, int row, int col) { return Flux::flux_matrix_get(m, row, col); }
+extern "C" int matrix_rows(void* m) __attribute__((weak));
+extern "C" int matrix_rows(void* m) { return Flux::flux_matrix_rows(m); }
+extern "C" int matrix_cols(void* m) __attribute__((weak));
+extern "C" int matrix_cols(void* m) { return Flux::flux_matrix_cols(m); }
+extern "C" void matrix_set(void* m, int row, int col, double val) __attribute__((weak));
+extern "C" void matrix_set(void* m, int row, int col, double val) { return Flux::flux_matrix_set(m, row, col, val); }
+extern "C" void* matrix_zeros(int rows, int cols) __attribute__((weak));
+extern "C" void* matrix_zeros(int rows, int cols) { return Flux::flux_matrix_zeros(rows, cols); }
+extern "C" void* matrix_ones(int rows, int cols) __attribute__((weak));
+extern "C" void* matrix_ones(int rows, int cols) { return Flux::flux_matrix_ones(rows, cols); }
+extern "C" void* matrix_eye(int n) __attribute__((weak));
+extern "C" void* matrix_eye(int n) { return Flux::flux_matrix_eye(n); }
+extern "C" void* matrix_copy(void* m) __attribute__((weak));
+extern "C" void* matrix_copy(void* m) { return Flux::flux_matrix_copy(m); }
+extern "C" double matrix_sum(void* m) __attribute__((weak));
+extern "C" double matrix_sum(void* m) { return Flux::flux_matrix_sum(m); }
+extern "C" double matrix_mean(void* m) __attribute__((weak));
+extern "C" double matrix_mean(void* m) { return Flux::flux_matrix_mean(m); }
+extern "C" void* matrix_slice(void* m, int r0, int r1, int c0, int c1) __attribute__((weak));
+extern "C" void* matrix_slice(void* m, int r0, int r1, int c0, int c1) { return Flux::flux_matrix_slice(m, r0, r1, c0, c1); }
+extern "C" double pi() __attribute__((weak));
+extern "C" double pi() { return Flux::flux_pi(); }
 
 extern "C" double flux_print_string(double str_dbl)
 {
@@ -1124,3 +1890,55 @@ extern "C" void flux_hot_swap(double name_dbl, double model_ptr)
     std::cout << "[FLUX AI] Hot-swapping subcircuit '" << subckt_name << "' with NN Surrogate model at " << std::hex
               << (uintptr_t)model_ptr << std::dec << "..." << std::endl;
 }
+
+extern "C" double flux_set_diagnostic(double node_dbl, double type_dbl, double threshold)
+{
+    const char* node = reinterpret_cast<const char*>(static_cast<uintptr_t>(jit_bitcast<uint64_t>(node_dbl)));
+    const char* diagType = reinterpret_cast<const char*>(static_cast<uintptr_t>(jit_bitcast<uint64_t>(type_dbl)));
+    std::cout << "[Runtime] Diagnostic: node=" << (node ? node : "null")
+              << " type=" << (diagType && diagType[0] ? diagType : "all")
+              << " threshold=" << threshold << std::endl;
+    return 1.0;
+}
+
+// Weak forwarding wrappers for functions defined in other TUs (advanced_math.cpp).
+// These are needed for AOT compilation: the LLVM IR codegen emits calls to short
+// names (matrix_lu, fft, etc.), but the runtime library exports flux_-prefixed
+// names.  Asm .equ aliases cannot reference cross-TU symbols, so we use C++
+// forwarding functions that the linker inlines to a tail call (jmp).
+// The declarations are already provided by the "advanced_math.h" include above.
+extern "C" void* matrix_lu(void*) __attribute__((weak));
+extern "C" void* matrix_lu(void* m) { return flux_matrix_lu(m); }
+
+extern "C" void* matrix_qr(void*) __attribute__((weak));
+extern "C" void* matrix_qr(void* m) { return flux_matrix_qr(m); }
+
+extern "C" void* matrix_svd(void*) __attribute__((weak));
+extern "C" void* matrix_svd(void* m) { return flux_matrix_svd(m); }
+
+extern "C" void* matrix_cholesky(void*) __attribute__((weak));
+extern "C" void* matrix_cholesky(void* m) { return flux_matrix_cholesky(m); }
+
+extern "C" void* matrix_eigenvalues(void*) __attribute__((weak));
+extern "C" void* matrix_eigenvalues(void* m) { return flux_matrix_eigenvalues(m); }
+
+extern "C" void* matrix_eigenvectors(void*) __attribute__((weak));
+extern "C" void* matrix_eigenvectors(void* m) { return flux_matrix_eigenvectors(m); }
+
+extern "C" double matrix_rank(void*) __attribute__((weak));
+extern "C" double matrix_rank(void* m) { return flux_matrix_rank(m); }
+
+extern "C" double matrix_cond(void*) __attribute__((weak));
+extern "C" double matrix_cond(void* m) { return flux_matrix_cond(m); }
+
+extern "C" double matrix_norm(void*, double) __attribute__((weak));
+extern "C" double matrix_norm(void* m, double p) { return flux_matrix_norm(m, p); }
+
+extern "C" void* fft(void*, double) __attribute__((weak));
+extern "C" void* fft(void* sig, double sr) { return flux_fft(sig, sr); }
+
+extern "C" double fft_thd(void*, double) __attribute__((weak));
+extern "C" double fft_thd(void* sig, double sr) { return flux_fft_thd(sig, sr); }
+
+extern "C" double fft_snr(void*, double) __attribute__((weak));
+extern "C" double fft_snr(void* sig, double sr) { return flux_fft_snr(sig, sr); }

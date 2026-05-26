@@ -91,6 +91,7 @@ enum class TokenType
 
     // Type annotation
     tok_arrow = -41, // ->
+    tok_fat_arrow = -150, // => (match arms)
 
     // Complex numbers
     tok_imaginary = -42, // Number with 'j' suffix (e.g., 2.0j)
@@ -213,6 +214,7 @@ enum class TokenType
     tok_stability = -302,       // Stability analysis
     // tok_sensitivity already defined at -137
     tok_optimize = -303, // Optimization
+    tok_plot = -301,          // ASCII plot
 
     tok_phasor = -305,        // Phasor type
     tok_bode = -306,          // Bode plot
@@ -232,6 +234,9 @@ enum class TokenType
     tok_monte_carlo = -282,   // monte carlo analysis
     tok_virtual_probe = -283, // virtual logic analyzer probe
     tok_hot_swap = -284,      // AI model hot-swapping
+
+    // Method dispatch
+    tok_impl = -285,          // impl block
 
     // Analysis Control
     tok_analysis = -116, // analysis directive
@@ -275,7 +280,6 @@ enum class TokenType
 
     /* Verilog-A Lite */
     tok_analog = -200,      // analog block
-    tok_contributor = -194, // <+ operator
     tok_branch = -195,      // branch declaration
     // (tok_V and tok_I were removed — "V" and "I" are lexed as tok_identifier)
     tok_ddt = -115,         // ddt() time derivative
@@ -375,6 +379,9 @@ enum class TokenType
 
     // Integer literal (bare digits, no decimal / exponent / unit)
     tok_integer = -300,
+
+    // Block terminator for user-defined types
+    tok_end = -307,
 };
 
 struct LexerDiagnostic
@@ -413,6 +420,22 @@ public:
     void clearErrors();
     const std::vector<LexerDiagnostic>& getErrors() const;
     bool hasErrors() const;
+
+    struct SavedState {
+        size_t pos;
+        size_t tokenStart;
+        int lastChar;
+        int line;
+        int column;
+        int currentTokenLine;
+        int currentTokenColumn;
+        size_t lineStart;
+        size_t currentTokenOffset;
+        size_t currentTokenLength;
+    };
+
+    SavedState saveState() const;
+    void restoreState(const SavedState& state);
 
 private:
     int gettok();

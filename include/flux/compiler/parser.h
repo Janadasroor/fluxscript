@@ -18,6 +18,7 @@
 #include "flux/compiler/lexer.h"
 #include <map>
 #include <memory>
+#include <unordered_set>
 
 namespace Flux {
 
@@ -44,6 +45,14 @@ public:
     std::unique_ptr<MeasureExprAST> ParseMeasure();
     std::unique_ptr<SubcktAST> ParseSubckt();
     std::unique_ptr<ModelAST> ParseModel();
+
+    // User-defined types
+    std::unique_ptr<StructDeclAST> ParseStructDecl();
+    std::unique_ptr<ExprAST> ParseStructConstructExpr(const std::string& TypeName,
+                                                       const std::vector<FluxType>& GenericTypeArgs = {});
+    std::unique_ptr<EnumDeclAST> ParseEnumDecl(
+        std::vector<std::unique_ptr<StructDeclAST>>* anonStructs = nullptr);
+    std::unique_ptr<ImplDeclAST> ParseImplDecl();
 
     int CurTok;
     int getNextToken();
@@ -98,6 +107,9 @@ private:
     std::unique_ptr<ExprAST> ParseYieldExpr();
     std::unique_ptr<ExprAST> ParseCornerExpr();
     std::unique_ptr<ExprAST> ParseMatchExpr();
+    // Parse a match pattern: identifier, number, Enum.Variant, or Enum.Variant(binding_var)
+    // Returns (pattern_expr, binding_var_name)
+    std::pair<std::unique_ptr<ExprAST>, std::string> ParseMatchPattern();
     std::unique_ptr<ExprAST> ParseForeachExpr();
     std::unique_ptr<ExprAST> ParseRepeatUntil();
     std::unique_ptr<ExprAST> ParseDoWhile();
@@ -116,12 +128,24 @@ private:
     std::unique_ptr<ExprAST> ParseJacobianExpr();
     std::unique_ptr<ExprAST> ParsePDEExpr();
     std::unique_ptr<ExprAST> ParsePartialDiffExpr();
+    std::unique_ptr<ExprAST> ParseIntegrateExpr();
+    std::unique_ptr<ExprAST> ParseLaplaceExpr();
+    std::unique_ptr<ExprAST> ParseInverseLaplaceExpr();
+    std::unique_ptr<ExprAST> ParseExpandExpr();
+    std::unique_ptr<ExprAST> ParseFactorExpr();
+    std::unique_ptr<ExprAST> ParseCollectExpr();
+    std::unique_ptr<ExprAST> ParseNumeratorExpr();
+    std::unique_ptr<ExprAST> ParseDenominatorExpr();
+    std::unique_ptr<ExprAST> ParsePolesExpr();
+    std::unique_ptr<ExprAST> ParseZerosExpr();
 
     // AI / Neural Network
     std::unique_ptr<ExprAST> ParseTrainExpr();
     std::unique_ptr<ExprAST> ParsePredictExpr();
     std::unique_ptr<ExprAST> ParseGoalExpr();
     std::unique_ptr<ExprAST> ParseOptimizeExpr();
+    std::unique_ptr<ExprAST> ParseBodeExpr();
+    std::unique_ptr<ExprAST> ParsePlotExpr();
     std::unique_ptr<ExprAST> ParseThermalBlock();
     std::unique_ptr<ExprAST> ParseMonteCarlo();
     std::unique_ptr<ExprAST> ParseVirtualProbe();
@@ -144,6 +168,7 @@ private:
     std::unique_ptr<ExprAST> ParseFSource();
     std::unique_ptr<ExprAST> ParseGSource();
     std::unique_ptr<ExprAST> ParseHSource();
+    std::unique_ptr<ExprAST> ParseWaveFile();
     std::unique_ptr<ExprAST> ParseMonteCarloAnalysis();
     std::unique_ptr<ExprAST> ParseWorstCaseAnalysis();
     std::unique_ptr<ExprAST> ParseStabilityAnalysis();
@@ -173,6 +198,8 @@ private:
     std::unique_ptr<ExprAST> ParseConvergeDecl();
     std::unique_ptr<ExprAST> ParseDiscontinuityDecl();
     std::unique_ptr<ExprAST> ParseStateDecl();
+    std::unique_ptr<ExprAST> ParseDiagnosticDecl();
+    std::unique_ptr<ExprAST> ParseToleranceDecl();
     std::unique_ptr<ExprAST> ParseVerifyBlock();
     std::unique_ptr<ExprAST> ParseParam();
     std::unique_ptr<ExprAST> ParseIC();
@@ -211,13 +238,30 @@ private:
     std::unique_ptr<ExprAST> ParseBenchmarkDecl();
     std::unique_ptr<ExprAST> ParseOptimizeDecl();
     std::unique_ptr<ExprAST> ParseSweepDecl();
+    std::unique_ptr<ExprAST> ParseADeviceExpr();
     std::unique_ptr<ExprAST> ParseReportDecl();
 
     int GetTokPrecedence();
 
+    // Generics support
+    std::vector<std::string> ParseGenericParams();
+    std::vector<FluxType> ParseGenericTypeArgs();
+
+    // Helper: parse a type name from the current token
+    FluxType parseTypeName(const std::vector<std::string>& genericParams = {});
+
     Lexer m_lexer;
     std::map<int, int> m_binopPrecedence;
     bool m_hasError;
+    // Active generic type parameter names during prototype parsing.
+    // Populated by ParsePrototype() so ParseIdentifierExpr() and type
+    // parsing can detect generic type references.
+    std::vector<std::string> m_activeGenericParams;
+    // User-defined struct and enum type names known to the parser.
+    // Populated by ParseStructDecl() / ParseEnumDecl() so parseTypeName()
+    // can recognize them and produce the correct FluxType for resolution at codegen time.
+    std::unordered_set<std::string> m_knownStructTypeNames;
+    std::unordered_set<std::string> m_knownEnumTypeNames;
 };
 
 } // namespace Flux

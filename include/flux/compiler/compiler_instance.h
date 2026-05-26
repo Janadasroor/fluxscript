@@ -14,6 +14,8 @@
 #ifndef FLUX_COMPILER_COMPILER_INSTANCE_H
 #define FLUX_COMPILER_COMPILER_INSTANCE_H
 
+#include <cstdint>
+#include <functional>
 #include <map>
 #include <memory>
 #include <string>
@@ -40,6 +42,13 @@ struct TokenInfo
     std::string rawText;
 };
 
+/// Progress callback for long compilations.
+/// stage: human-readable stage name (e.g. "Parsing", "Codegen", "Object emission")
+/// current: zero-based index within the stage (0 when the stage begins)
+/// total: total items in this stage (0 when unknown)
+/// Returns true to continue, false to cancel.
+using CompileProgressCallback = std::function<bool(const std::string& stage, int current, int total)>;
+
 struct CompilerOptions
 {
     std::string inputName = "<stdin>";
@@ -47,17 +56,28 @@ struct CompilerOptions
     OptimizationLevel optimizationLevel = OptimizationLevel::O2;
     bool injectStdlib = true;
     bool debugInfo = false;
+
+    /// Optional progress callback for AOT compilation of large projects.
+    /// Set before calling compileToIR() / emitArtifact().
+    CompileProgressCallback progressCallback = nullptr;
+
+    /// Number of parallel jobs for function codegen (default 1 = sequential).
+    int numJobs = 1;
 };
 
 struct CompileArtifacts
 {
     std::unique_ptr<CodegenContext> codegenContext;
     std::map<std::string, FluxType> functionReturnTypes;
+    CompileProgressCallback compileProgress = nullptr;
 };
 
 struct ParsedAST
 {
     std::vector<std::unique_ptr<FunctionAST>> functions;
+    std::vector<std::unique_ptr<StructDeclAST>> structs;
+    std::vector<std::unique_ptr<EnumDeclAST>> enums;
+    std::vector<std::unique_ptr<ImplDeclAST>> impls;
     std::vector<std::unique_ptr<SubcktAST>> subckts;
     std::vector<std::unique_ptr<ModelAST>> models;
     std::vector<std::unique_ptr<AnalysisExprAST>> analyses;
@@ -88,11 +108,20 @@ private:
     void injectStandardLibrary(CodegenContext& context, std::map<std::string, FluxType>& returnTypes) const;
     bool compileParser(Parser& parser, CodegenContext& context, std::map<std::string, FluxType>& returnTypes,
                        std::string& error, std::map<std::string, bool>& importedModules,
-                       const std::vector<std::string>& symbols = {}) const;
+                       const std::vector<std::string>& symbols = {},
+                       std::vector<std::unique_ptr<FunctionAST>>* preParsedFunctions = nullptr) const;
     bool importModule(const std::string& moduleName, CodegenContext& context,
                       std::map<std::string, FluxType>& returnTypes, std::string* error,
                       std::map<std::string, bool>& importedModules, const std::vector<std::string>& symbols = {}) const;
+    bool collectImportFunctions(const std::string& moduleName,
+                                std::vector<std::unique_ptr<FunctionAST>>& outFunctions,
+                                CodegenContext& context, std::map<std::string, FluxType>& returnTypes,
+                                std::string* error, std::map<std::string, bool>& importedModules,
+                                const std::vector<std::string>& symbols = {}) const;
     std::string resolveImportPath(const std::string& moduleName) const;
+    bool loadAndLinkBitcodeModule(const std::string& bcPath, CodegenContext& context,
+                                  std::map<std::string, FluxType>& returnTypes,
+                                  std::string* error = nullptr) const;
 
     CompilerOptions m_options;
     mutable ModuleLoader m_moduleLoader;

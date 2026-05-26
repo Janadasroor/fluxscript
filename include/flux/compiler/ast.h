@@ -94,7 +94,10 @@ enum class TypeKind
     Vector,       // Vector { double*, i32 }
     Symbolic,     // Symbolic expression handle (double/uintptr_t)
     Fixed,        // Fixed-point integer (Q format)
-    ComplexMatrix // Complex Matrix { std::complex<double>*, i32, i32 }
+    ComplexMatrix, // Complex Matrix { std::complex<double>*, i32, i32 }
+    Generic,      // Generic type parameter placeholder (e.g., T in def foo[T](x: T))
+    UserStruct,   // User-defined struct type (e.g., struct Vec2 { x: Double, y: Double })
+    UserEnum      // User-defined enum type (e.g., enum Color { Red, Green, Blue })
 };
 
 class FluxType
@@ -104,10 +107,45 @@ public:
     UnitDimensions Dimensions;
     int Bits = 32;  // Total bits for Fixed
     int Fract = 16; // Fractional bits for Fixed
+    std::string GenericName; // Type parameter name for TypeKind::Generic
+    int StructTypeId = 0;    // Struct type ID for TypeKind::UserStruct (index into CodegenContext.StructTypes)
+    llvm::Type* StructLLVMType = nullptr; // LLVM struct type pointer for UserStruct (cached)
+    int EnumTypeId = 0;      // Enum type ID for TypeKind::UserEnum (index into CodegenContext.EnumTypes)
+    llvm::Type* EnumLLVMType = nullptr; // LLVM tagged union type for UserEnum with payload
 
     FluxType(TypeKind K = TypeKind::Double, UnitDimensions D = {}) : Kind(K), Dimensions(D) {}
 
     FluxType(TypeKind K, int bits, int fract) : Kind(K), Bits(bits), Fract(fract) {}
+
+    // Create a Generic type parameter placeholder
+    static FluxType generic(const std::string& Name)
+    {
+        FluxType T(TypeKind::Generic);
+        T.GenericName = Name;
+        return T;
+    }
+
+    // Create a User-defined struct type
+    static FluxType userStruct(int structId, llvm::Type* llvmType)
+    {
+        FluxType T(TypeKind::UserStruct);
+        T.StructTypeId = structId;
+        T.StructLLVMType = llvmType;
+        return T;
+    }
+
+    bool isGeneric() const { return Kind == TypeKind::Generic; }
+    bool isStruct() const { return Kind == TypeKind::UserStruct; }
+    bool isEnum() const { return Kind == TypeKind::UserEnum; }
+
+    // Create a User-defined enum type
+    static FluxType userEnum(int enumTypeId, llvm::Type* llvmType = nullptr)
+    {
+        FluxType T(TypeKind::UserEnum);
+        T.EnumTypeId = enumTypeId;
+        T.EnumLLVMType = llvmType;
+        return T;
+    }
 
     llvm::Type* getLLVMType(llvm::LLVMContext& Context) const
     {
@@ -137,6 +175,15 @@ public:
         case TypeKind::String:
             // Strings are represented as i8* (pointer to char)
             return llvm::PointerType::get(Context, 0);
+        case TypeKind::Generic:
+            // Generic type parameters should be substituted before codegen.
+            // Fall back to Double as a safe default.
+            return llvm::Type::getDoubleTy(Context);
+        case TypeKind::UserStruct:
+            // Fall back to Double if the struct type hasn't been resolved yet.
+            return StructLLVMType ? StructLLVMType : llvm::Type::getDoubleTy(Context);
+        case TypeKind::UserEnum:
+            return EnumLLVMType ? EnumLLVMType : llvm::Type::getInt32Ty(Context);
         case TypeKind::Double:
         default:
             return llvm::Type::getDoubleTy(Context);
@@ -248,6 +295,12 @@ public:
     }
 };
 
+class PrototypeAST;
+class FunctionAST;
+class StructDeclAST;
+class EnumDeclAST;
+class ExprAST;
+
 class CodegenContext
 {
 public:
@@ -303,6 +356,53 @@ public:
     // function name → vector of param types. Populated during compilation
     // so that inferParamTypes can see callee param types from imported modules.
     std::map<std::string, std::vector<FluxType>> CrossModuleParamTypes;
+
+    // Struct type definitions: maps struct name → field list
+    // Index in the vector serves as StructTypeId.
+    struct StructTypeInfo {
+        std::string Name;
+        std::vector<std::pair<std::string, FluxType>> Fields;
+        llvm::StructType* LLVMType = nullptr;
+    };
+    std::vector<StructTypeInfo> StructTypes;
+    std::map<std::string, int> StructTypeIndex; // name → index
+
+    // Enum type definitions
+    struct EnumTypeInfo {
+        std::string Name;
+        std::vector<std::string> Variants; // variant name → discriminant = index
+        std::vector<FluxType> VariantPayloads; // payload type per variant (Void if none)
+        llvm::StructType* LLVMType = nullptr; // { i32, union_of_payloads }
+        std::vector<bool> VariantIsBoxed; // whether variant payload is heap-allocated (boxed)
+    };
+    std::vector<EnumTypeInfo> EnumTypes;
+    std::map<std::string, int> EnumTypeIndex; // name → index
+
+    // Generic function definitions: original (un-specialized) function name → FunctionAST.
+    // Populated during parse phase, used during codegen for monomorphization.
+    std::map<std::string, FunctionAST*> GenericFunctions;
+
+    // Set of already-specialized generic function suffixes, to avoid
+    // re-compiling the same specialization.
+    std::set<std::string> CompiledSpecializations;
+
+    // Owning storage for generic function definitions.
+    std::vector<std::unique_ptr<FunctionAST> > GenericFunctionDefs;
+
+    // Generic struct definitions
+    std::map<std::string, StructDeclAST*> GenericStructs;
+    std::vector<std::unique_ptr<StructDeclAST> > GenericStructDefs;
+
+    // Generic enum definitions
+    std::map<std::string, EnumDeclAST*> GenericEnums;
+    std::vector<std::unique_ptr<EnumDeclAST> > GenericEnumDefs;
+
+    // Already-specialized struct/enum type suffixes
+    std::set<std::string> CompiledStructSpecializations;
+    std::set<std::string> CompiledEnumSpecializations;
+
+    // Method dispatch: type name → { method name → Function }
+    std::map<std::string, std::map<std::string, llvm::Function*>> TypeMethods;
 
     CodegenContext()
         : OwnedContext(std::make_unique<llvm::LLVMContext>()), TheContext(*OwnedContext), Builder(TheContext)
@@ -406,6 +506,17 @@ public:
     TypedValue codegen(CodegenContext& context) override;
     double getReal() const { return Real; }
     double getImag() const { return Imag; }
+};
+
+class PhasorExprAST : public ExprAST
+{
+    std::unique_ptr<ExprAST> Magnitude;
+    std::unique_ptr<ExprAST> PhaseDeg;
+
+public:
+    PhasorExprAST(std::unique_ptr<ExprAST> mag, std::unique_ptr<ExprAST> phase)
+        : Magnitude(std::move(mag)), PhaseDeg(std::move(phase)) {}
+    TypedValue codegen(CodegenContext& context) override;
 };
 
 class StringExprAST : public ExprAST
@@ -550,6 +661,7 @@ public:
     {
     }
     TypedValue codegen(CodegenContext& context) override;
+    ExprAST* getObject() { return Object.get(); }
     const ExprAST* getObject() const { return Object.get(); }
     const std::string& getMemberName() const { return MemberName; }
     bool containsYield() const override { return Object->containsYield(); }
@@ -599,18 +711,40 @@ public:
 class CallExprAST : public ExprAST
 {
     std::string Callee;
+    std::unique_ptr<ExprAST> CalleeExpr; // expression-based callee (e.g., obj.method)
     std::vector<std::unique_ptr<ExprAST>> Args;
+    std::vector<FluxType> GenericTypeArgs; // Explicit type args for generic calls (e.g., foo[Int, Double](x))
 
 public:
     CallExprAST(const std::string& Callee, std::vector<std::unique_ptr<ExprAST>> Args)
         : Callee(Callee), Args(std::move(Args))
     {
     }
+
+    CallExprAST(const std::string& Callee, std::vector<std::unique_ptr<ExprAST>> Args,
+                std::vector<FluxType> GenericTypeArgs)
+        : Callee(Callee), Args(std::move(Args)), GenericTypeArgs(std::move(GenericTypeArgs))
+    {
+    }
+
+    // Expression-based callee (e.g., obj.method(args))
+    CallExprAST(std::unique_ptr<ExprAST> CalleeExpr, std::vector<std::unique_ptr<ExprAST>> Args)
+        : CalleeExpr(std::move(CalleeExpr)), Args(std::move(Args))
+    {
+    }
+
     TypedValue codegen(CodegenContext& context) override;
     const std::string& getCallee() const { return Callee; }
+    ExprAST* getCalleeExpr() const { return CalleeExpr.get(); }
+    bool hasCalleeExpr() const { return CalleeExpr != nullptr; }
     const std::vector<std::unique_ptr<ExprAST>>& getArgs() const { return Args; }
+    const std::vector<FluxType>& getGenericTypeArgs() const { return GenericTypeArgs; }
+    void setGenericTypeArgs(const std::vector<FluxType>& TArgs) { GenericTypeArgs = TArgs; }
+    bool hasGenericTypeArgs() const { return !GenericTypeArgs.empty(); }
     bool containsYield() const override
     {
+        if (CalleeExpr && CalleeExpr->containsYield())
+            return true;
         for (const auto& Arg : Args) {
             if (Arg->containsYield())
                 return true;
@@ -1254,13 +1388,17 @@ public:
 
 class MonteCarloExprAST : public ExprAST
 {
-    std::unique_ptr<ExprAST> Expression;
-    std::vector<std::string> Parameters;
+    std::string OutputName;
+    std::vector<std::string> ComponentNames;
+    std::vector<double> Nominals;
+    std::vector<double> Tolerances;
     int Iterations;
 
 public:
-    MonteCarloExprAST(std::unique_ptr<ExprAST> expr, std::vector<std::string> params, int iters)
-        : Expression(std::move(expr)), Parameters(std::move(params)), Iterations(iters)
+    MonteCarloExprAST(const std::string& outputName, const std::vector<std::string>& componentNames,
+                      const std::vector<double>& nominals, const std::vector<double>& tolerances, int iterations)
+        : OutputName(outputName), ComponentNames(componentNames), Nominals(nominals), Tolerances(tolerances),
+          Iterations(iterations)
     {
     }
     TypedValue codegen(CodegenContext& context) override;
@@ -1320,14 +1458,17 @@ class MatchExprAST : public ExprAST
     std::unique_ptr<ExprAST> Value;
     std::vector<std::pair<std::unique_ptr<ExprAST>, std::unique_ptr<ExprAST>>> Arms; // (pattern, result)
     std::unique_ptr<ExprAST> DefaultArm;
+    std::vector<std::vector<std::string>> Bindings; // variable names for payload extraction per arm (empty means none)
 
 public:
     MatchExprAST(std::unique_ptr<ExprAST> Value) : Value(std::move(Value)) {}
     TypedValue codegen(CodegenContext& context) override;
-    void addArm(std::unique_ptr<ExprAST> pattern, std::unique_ptr<ExprAST> result);
+    void addArm(std::unique_ptr<ExprAST> pattern, std::unique_ptr<ExprAST> result,
+                const std::vector<std::string>& bindings = {});
     void setDefault(std::unique_ptr<ExprAST> arm);
     const ExprAST* getValue() const { return Value.get(); }
     const std::vector<std::pair<std::unique_ptr<ExprAST>, std::unique_ptr<ExprAST>>>& getArms() const { return Arms; }
+    const std::vector<std::vector<std::string>>& getBindings() const { return Bindings; }
     const ExprAST* getDefaultArm() const { return DefaultArm.get(); }
     bool containsYield() const override
     {
@@ -1406,6 +1547,7 @@ class PrototypeAST
     FluxType ReturnType;
     int Line = 0;
     bool IsGenerator = false;
+    std::vector<std::string> GenericParams; // Generic type parameter names (e.g., [T, U])
 
 public:
     PrototypeAST(const std::string& Name, std::vector<std::pair<std::string, FluxType>> Args,
@@ -1430,6 +1572,39 @@ public:
 
     void setGenerator(bool G) { IsGenerator = G; }
     bool isGenerator() const { return IsGenerator; }
+
+    // Generic type parameter support
+    void setGenericParams(const std::vector<std::string>& Params) { GenericParams = Params; }
+    const std::vector<std::string>& getGenericParams() const { return GenericParams; }
+    bool isGeneric() const { return !GenericParams.empty(); }
+
+    // Create a concrete (specialized) prototype by substituting generic type params
+    std::unique_ptr<PrototypeAST> specialize(
+        const std::map<std::string, FluxType>& typeMap,
+        const std::string& suffix) const
+    {
+        auto substitute = [&](const FluxType& T) -> FluxType {
+            if (T.isGeneric()) {
+                auto it = typeMap.find(T.GenericName);
+                if (it != typeMap.end())
+                    return it->second;
+            }
+            return T;
+        };
+
+        std::vector<std::pair<std::string, FluxType>> ConcreteArgs;
+        ConcreteArgs.reserve(Args.size());
+        for (const auto& Arg : Args) {
+            ConcreteArgs.push_back({Arg.first, substitute(Arg.second)});
+        }
+
+        auto ConcreteProto = std::make_unique<PrototypeAST>(
+            Name + suffix, std::move(ConcreteArgs), substitute(ReturnType));
+        ConcreteProto->setLocation(Line);
+        if (IsGenerator)
+            ConcreteProto->setGenerator(true);
+        return ConcreteProto;
+    }
 };
 
 class FunctionAST
@@ -1443,8 +1618,136 @@ public:
     {
     }
     llvm::Function* codegen(CodegenContext& context);
+    llvm::Function* codegenWithProto(CodegenContext& context, PrototypeAST* customProto);
     PrototypeAST* getProto() const { return Proto.get(); }
     const ExprAST* getBody() const { return Body.get(); }
+    ExprAST* getBody() { return Body.get(); }
+};
+
+// ============================================================================
+// Struct Definition AST Node
+// ============================================================================
+
+/// StructDeclAST - Represents `struct Name` with zero or more typed fields.
+/// Each field is a name/type pair.  The struct gets a unique StructTypeId at
+/// parse time (index into CodegenContext::StructTypes).
+class StructDeclAST
+{
+    std::string Name;
+    std::vector<std::pair<std::string, FluxType>> Fields;
+    int StructTypeId;
+    std::vector<std::string> GenericParams;
+
+public:
+    StructDeclAST(const std::string& Name,
+                  std::vector<std::pair<std::string, FluxType>> Fields)
+        : Name(Name), Fields(std::move(Fields)), StructTypeId(-1)
+    {
+    }
+
+    const std::string& getName() const { return Name; }
+    const std::vector<std::pair<std::string, FluxType>>& getFields() const { return Fields; }
+    int getStructTypeId() const { return StructTypeId; }
+    void setStructTypeId(int id) { StructTypeId = id; }
+    void setGenericParams(const std::vector<std::string>& Params) { GenericParams = Params; }
+    const std::vector<std::string>& getGenericParams() const { return GenericParams; }
+    bool isGeneric() const { return !GenericParams.empty(); }
+    void codegen(CodegenContext& context);
+};
+
+/// StructConstructExprAST - Represents `TypeName { name: expr, ... }`.
+/// Fields can be in any order; missing fields get a default (zero-initialized) value.
+class StructConstructExprAST : public ExprAST
+{
+    std::string StructName;
+    int StructTypeId;
+    std::map<std::string, std::unique_ptr<ExprAST>> FieldValues;
+    std::vector<FluxType> GenericTypeArgs;
+
+public:
+    StructConstructExprAST(const std::string& Name, int TypeId,
+                           std::map<std::string, std::unique_ptr<ExprAST>> Fields)
+        : StructName(Name), StructTypeId(TypeId), FieldValues(std::move(Fields))
+    {
+    }
+
+    StructConstructExprAST(const std::string& Name, int TypeId,
+                           std::map<std::string, std::unique_ptr<ExprAST>> Fields,
+                           std::vector<FluxType> GenericTypeArgs)
+        : StructName(Name), StructTypeId(TypeId), FieldValues(std::move(Fields)),
+          GenericTypeArgs(std::move(GenericTypeArgs))
+    {
+    }
+
+    TypedValue codegen(CodegenContext& context) override;
+    const std::string& getStructName() const { return StructName; }
+    int getStructTypeId() const { return StructTypeId; }
+    const std::vector<FluxType>& getGenericTypeArgs() const { return GenericTypeArgs; }
+    bool hasGenericTypeArgs() const { return !GenericTypeArgs.empty(); }
+    bool containsYield() const override
+    {
+        for (auto& [_, val] : FieldValues)
+            if (val->containsYield()) return true;
+        return false;
+    }
+};
+
+// ============================================================================
+// Enum Definition AST Node
+// ============================================================================
+
+/// EnumDeclAST - Represents `enum Name` with zero or more variants.
+/// Each variant is a simple name (discriminant = index).
+/// Variants may carry a payload type: VariantName(Type)
+class EnumDeclAST
+{
+    std::string Name;
+    std::vector<std::string> Variants;
+    std::vector<FluxType> VariantPayloads;
+    int EnumTypeId;
+    std::vector<std::string> GenericParams;
+
+public:
+    EnumDeclAST(const std::string& Name, std::vector<std::string> Variants,
+                std::vector<FluxType> VariantPayloads = {})
+        : Name(Name), Variants(std::move(Variants)),
+          VariantPayloads(std::move(VariantPayloads)), EnumTypeId(-1)
+    {
+    }
+
+    const std::string& getName() const { return Name; }
+    const std::vector<std::string>& getVariants() const { return Variants; }
+    const std::vector<FluxType>& getVariantPayloads() const { return VariantPayloads; }
+    int getEnumTypeId() const { return EnumTypeId; }
+    void setEnumTypeId(int id) { EnumTypeId = id; }
+    void setGenericParams(const std::vector<std::string>& Params) { GenericParams = Params; }
+    const std::vector<std::string>& getGenericParams() const { return GenericParams; }
+    bool isGeneric() const { return !GenericParams.empty(); }
+    void codegen(CodegenContext& context);
+};
+
+
+
+/// ImplDeclAST - Represents an impl block:
+///   impl TypeName
+///       def method1(self, args) -> ReturnType ... end
+///       def method2(self, args) -> ReturnType ... end
+///   end
+class ImplDeclAST
+{
+    std::string TypeName;
+    std::vector<std::unique_ptr<FunctionAST>> Methods;
+
+public:
+    ImplDeclAST(const std::string& TypeName, std::vector<std::unique_ptr<FunctionAST>> Methods)
+        : TypeName(TypeName), Methods(std::move(Methods))
+    {
+    }
+
+    const std::string& getTypeName() const { return TypeName; }
+    const std::vector<std::unique_ptr<FunctionAST>>& getMethods() const { return Methods; }
+    std::vector<std::unique_ptr<FunctionAST>>& getMethods() { return Methods; }
+    void codegen(CodegenContext& context);
 };
 
 // Debug info helper
@@ -1827,11 +2130,49 @@ public:
 class OptimizationExprAST : public ExprAST
 {
     std::string OutputName;
+    std::vector<std::string> VarNames;
+    std::vector<double> InitVals;
+    std::vector<double> MinVals;
+    std::vector<double> MaxVals;
 
 public:
-    OptimizationExprAST(const std::string& output) : OutputName(output) {}
+    OptimizationExprAST(const std::string& outputName, const std::vector<std::string>& varNames,
+                        const std::vector<double>& initVals, const std::vector<double>& minVals,
+                        const std::vector<double>& maxVals)
+        : OutputName(outputName), VarNames(varNames), InitVals(initVals), MinVals(minVals), MaxVals(maxVals)
+    {
+    }
     TypedValue codegen(CodegenContext& context) override;
     const std::string& getOutputName() const { return OutputName; }
+};
+
+// Bode Plot Analysis
+class BodeExprAST : public ExprAST
+{
+    std::string OutputName;
+    double FreqStart;
+    double FreqEnd;
+    int PointsPerDecade;
+
+public:
+    BodeExprAST(const std::string& outputName, double freqStart, double freqEnd, int pointsPerDecade)
+        : OutputName(outputName), FreqStart(freqStart), FreqEnd(freqEnd), PointsPerDecade(pointsPerDecade)
+    {
+    }
+    TypedValue codegen(CodegenContext& context) override;
+};
+
+// ASCII Plot
+class PlotExprAST : public ExprAST
+{
+    std::vector<std::unique_ptr<ExprAST>> Args;
+
+public:
+    PlotExprAST(std::vector<std::unique_ptr<ExprAST>> args)
+        : Args(std::move(args))
+    {
+    }
+    TypedValue codegen(CodegenContext& context) override;
 };
 
 // FFT Analysis

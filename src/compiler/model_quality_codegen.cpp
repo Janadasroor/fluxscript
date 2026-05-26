@@ -249,4 +249,32 @@ TypedValue ToleranceDeclAST::codegen(CodegenContext& context)
     return TypedValue(llvm::ConstantFP::get(context.TheContext, llvm::APFloat(1.0)), TypeKind::Double);
 }
 
+TypedValue DiagnosticDeclAST::codegen(CodegenContext& context)
+{
+    std::cout << "[CodeGen] Diagnostic: node=" << Node << " type=" << DiagnosticType
+              << " threshold=" << Threshold << std::endl;
+
+    // Set diagnostic parameters in runtime
+    llvm::Function* DiagF = context.TheModule->getFunction("flux_set_diagnostic");
+    if (!DiagF) {
+        llvm::Type* DoubleTy = llvm::Type::getDoubleTy(context.TheContext);
+        DiagF = llvm::Function::Create(
+            llvm::FunctionType::get(DoubleTy, {DoubleTy, DoubleTy, DoubleTy}, false),
+            llvm::Function::ExternalLinkage, "flux_set_diagnostic", context.TheModule);
+    }
+
+    auto stringToDouble = [&](const std::string& s) -> llvm::Value* {
+        llvm::Value* Ptr = context.Builder.CreateGlobalString(s);
+        llvm::Type* Int64Ty = llvm::Type::getInt64Ty(context.TheContext);
+        llvm::Value* IntVal = context.Builder.CreatePtrToInt(Ptr, Int64Ty, "str_int");
+        return context.Builder.CreateBitCast(IntVal, llvm::Type::getDoubleTy(context.TheContext), "str_dbl");
+    };
+
+    context.Builder.CreateCall(DiagF, {stringToDouble(Node), stringToDouble(DiagnosticType),
+                                       llvm::ConstantFP::get(llvm::Type::getDoubleTy(context.TheContext), Threshold)},
+                               "diag_res");
+
+    return TypedValue(llvm::ConstantFP::get(context.TheContext, llvm::APFloat(1.0)), TypeKind::Double);
+}
+
 } // namespace Flux

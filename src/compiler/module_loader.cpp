@@ -116,8 +116,8 @@ void ModuleLoader::clearSearchPaths()
 
 std::filesystem::path ModuleLoader::findModule(const std::string& moduleName) const
 {
-    // Try different file extensions
-    std::vector<std::string> extensions = {".flux", ".flux.bc", ".flux.ll"};
+    // Try different file extensions — prefer pre-compiled bitcode for speed
+    std::vector<std::string> extensions = {".flux.bc", ".flux", ".flux.ll"};
 
     for (const auto& searchPath : m_searchPaths) {
         for (const auto& ext : extensions) {

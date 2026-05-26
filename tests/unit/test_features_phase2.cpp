@@ -123,15 +123,15 @@ void test_neural_surrogate() {
     AI::NetworkArchitecture arch;
     arch.layers = {2, 16, 16, 1};  // 2 inputs, 2 hidden layers, 1 output
     arch.activation = "relu";
-    arch.epochs = 50;
+    arch.epochs = 200;
     arch.learningRate = 0.01;
     
     AI::NeuralNetworkSurrogate nn(arch);
+    nn.setSeed(42);
     
     // Generate training data: y = x1^2 + x2^2
     AI::TrainingData data;
-    std::random_device rd;
-    std::mt19937 gen(rd());
+    std::mt19937 gen(42);
     std::uniform_real_distribution<> dis(-1.0, 1.0);
     
     for (int i = 0; i < 100; ++i) {
@@ -172,7 +172,7 @@ void test_neural_surrogate() {
     std::cout << "\n\nTest 2: Model Evaluation Metrics\n";
     std::cout << "\n";
     
-    // Generate test data
+    // Generate test data (continue with same RNG state)
     AI::TrainingData testData;
     for (int i = 0; i < 20; ++i) {
         double x1 = dis(gen);
@@ -203,6 +203,7 @@ void test_neural_surrogate() {
     // Simulate training surrogate for circuit simulation
     // y = gain, x = [R1, R2, C1, Vcc]
     AI::NeuralNetworkSurrogate circuitSurrogate;
+    circuitSurrogate.setSeed(123);
     AI::NetworkArchitecture circuitArch;
     circuitArch.layers = {4, 32, 32, 3};  // 4 params -> 3 outputs (gain, bw, thd)
     circuitSurrogate.setArchitecture(circuitArch);

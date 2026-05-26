@@ -43,7 +43,13 @@ struct MatrixResult
     int cols;
 };
 
-using FluxValue = std::variant<double, std::complex<double>, int, MatrixResult>;
+struct VectorResult
+{
+    double* data;
+    int len;
+};
+
+using FluxValue = std::variant<double, std::complex<double>, int, MatrixResult, VectorResult>;
 
 class JITEngine
 {

@@ -107,7 +107,8 @@ bool ensureParentDirectory(const std::string& path, std::string* error)
     return true;
 }
 
-std::unique_ptr<llvm::TargetMachine> createTargetMachine(const OptimizationLevel level, std::string* error)
+std::unique_ptr<llvm::TargetMachine> createTargetMachine(const OptimizationLevel level, bool pic,
+                                                        std::string* error)
 {
     llvm::InitializeNativeTarget();
     llvm::InitializeNativeTargetAsmPrinter();
@@ -139,8 +140,10 @@ std::unique_ptr<llvm::TargetMachine> createTargetMachine(const OptimizationLevel
         break;
     }
 
+    auto relocModel = pic ? llvm::Reloc::PIC_ : llvm::Reloc::Static;
+
     return std::unique_ptr<llvm::TargetMachine>(
-        target->createTargetMachine(llvm::Triple(triple), llvm::sys::getHostCPUName().str(), "", options, std::nullopt,
+        target->createTargetMachine(llvm::Triple(triple), llvm::sys::getHostCPUName().str(), "", options, relocModel,
                                     std::nullopt, codegenLevel));
 }
 
@@ -271,9 +274,13 @@ std::string computeCacheKey(const std::string& code, const CompilerOptions& opti
 }
 
 bool emitObjectBuffer(CompileArtifacts& artifacts, OptimizationLevel optimizationLevel,
-                      std::unique_ptr<llvm::MemoryBuffer>& output, std::string* error)
+                      std::unique_ptr<llvm::MemoryBuffer>& output, std::string* error, bool pic)
 {
-    auto targetMachine = createTargetMachine(optimizationLevel, error);
+    auto& progCb = artifacts.compileProgress;
+    if (progCb && !progCb("Object emission", 0, 1))
+        return false;
+
+    auto targetMachine = createTargetMachine(optimizationLevel, pic, error);
     if (!targetMachine)
         return false;
 
@@ -291,6 +298,8 @@ bool emitObjectBuffer(CompileArtifacts& artifacts, OptimizationLevel optimizatio
     }
 
     passManager.run(module);
+    if (progCb && !progCb("Object emission", 1, 1))
+        return false;
     output = llvm::MemoryBuffer::getMemBufferCopy(llvm::StringRef(objectBytes.data(), objectBytes.size()),
                                                   module.getName().str() + ".o");
     return true;
@@ -313,6 +322,8 @@ bool emitArtifact(const std::string& code, const AOTOptions& options, std::strin
         options.moduleName.empty() ? baseNameWithoutExtension(options.inputName) : options.moduleName;
     compilerOptions.optimizationLevel = options.optimizationLevel;
     compilerOptions.debugInfo = options.debugInfo;
+    compilerOptions.progressCallback = options.progressCallback;
+    compilerOptions.numJobs = options.numJobs;
 
     CompilerInstance compiler(compilerOptions);
     auto artifacts = compiler.compileToIR(code, error);
@@ -321,7 +332,7 @@ bool emitArtifact(const std::string& code, const AOTOptions& options, std::strin
 
     const bool emitShared = options.sharedLibrary || fs::path(options.outputPath).extension() == ".so";
     std::unique_ptr<llvm::MemoryBuffer> objectBuffer;
-    if (!emitObjectBuffer(*artifacts, options.optimizationLevel, objectBuffer, error))
+    if (!emitObjectBuffer(*artifacts, options.optimizationLevel, objectBuffer, error, emitShared))
         return false;
 
     if (!emitShared)
@@ -332,7 +343,8 @@ bool emitArtifact(const std::string& code, const AOTOptions& options, std::strin
         return false;
 
     const std::string command =
-        "c++ -shared -o " + shellQuote(options.outputPath) + " " + shellQuote(objectPath.string());
+        "c++ -shared -o " + shellQuote(options.outputPath) + " " + shellQuote(objectPath.string())
+        + " -lFluxScript";
     if (std::system(command.c_str()) != 0) {
         if (error)
             *error = "Failed to link shared library with system C++ driver.";

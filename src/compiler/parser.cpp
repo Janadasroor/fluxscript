@@ -12,6 +12,7 @@
  limitations under the License. */
 
 #include "flux/compiler/parser.h"
+#include "flux/compiler/model_quality_ast.h"
 #include "flux/compiler/symbolic_ast.h"
 #include <iostream>
 
@@ -90,6 +91,7 @@ bool Parser::IsSynchronizationToken(int token)
     case TokenType::tok_while:
     case TokenType::tok_rbrace:
     case TokenType::tok_semicolon:
+    case TokenType::tok_end:
         return true;
     default:
         return token == static_cast<int>(TokenType::tok_semicolon);
@@ -393,7 +395,7 @@ std::unique_ptr<ExprAST> Parser::ParseParenExpr()
     if (!V)
         return nullptr;
     if (CurTok != ')') {
-        ReportError("expected ')'");
+        ReportError("expected ')' after expression");
         return nullptr;
     }
     getNextToken();
@@ -520,6 +522,12 @@ std::unique_ptr<ExprAST> Parser::ParseIdentifierExpr()
         }
     }
 
+    std::vector<FluxType> GenericTypeArgs;
+    if (CurTok == '[') {
+        GenericTypeArgs = ParseGenericTypeArgs();
+        if (hasError()) return nullptr;
+    }
+
     if (CurTok == '(') {
         getNextToken();
         std::vector<std::unique_ptr<ExprAST>> Args;
@@ -539,9 +547,16 @@ std::unique_ptr<ExprAST> Parser::ParseIdentifierExpr()
             }
         }
         getNextToken();
-        auto Result = std::make_unique<CallExprAST>(IdName, std::move(Args));
+        auto Result = std::make_unique<CallExprAST>(IdName, std::move(Args), std::move(GenericTypeArgs));
         Result->setLocation(line, col);
         return Result;
+    }
+    // Struct construction: TypeName { name: expr, ... }
+    // Only if IdName is a known struct or enum type, or we have explicit generic type args,
+    // to avoid clashing with match body `match expr { ... }`.
+    if (CurTok == static_cast<int>(TokenType::tok_lbrace) &&
+        (m_knownStructTypeNames.count(IdName) || m_knownEnumTypeNames.count(IdName) || !GenericTypeArgs.empty())) {
+        return ParseStructConstructExpr(IdName, GenericTypeArgs);
     }
     auto Result = std::make_unique<VariableExprAST>(IdName);
     Result->setLocation(line, col);
@@ -555,7 +570,7 @@ std::unique_ptr<ExprAST> Parser::ParseIfExpr()
     if (!Cond)
         return nullptr;
     if (CurTok != static_cast<int>(TokenType::tok_then)) {
-        ReportError("expected then");
+        ReportError("expected 'then' after if condition");
         return nullptr;
     }
     getNextToken();
@@ -563,7 +578,7 @@ std::unique_ptr<ExprAST> Parser::ParseIfExpr()
     if (!Then)
         return nullptr;
     if (CurTok != static_cast<int>(TokenType::tok_else)) {
-        ReportError("expected else");
+        ReportError("expected 'else' after if-then");
         return nullptr;
     }
     getNextToken();
@@ -911,6 +926,7 @@ std::unique_ptr<ExprAST> Parser::ParseMatrixExpr()
         getNextToken();
         return std::make_unique<MatrixExprAST>(std::move(Rows), 0, 0);
     }
+    bool hasSemicolon = false;
     int maxCols = 0;
     while (true) {
         std::vector<std::unique_ptr<ExprAST>> CurrentRow;
@@ -935,7 +951,14 @@ std::unique_ptr<ExprAST> Parser::ParseMatrixExpr()
             getNextToken();
             break;
         }
+        hasSemicolon = true;
         getNextToken();
+    }
+    if (!hasSemicolon && Rows.size() == 1) {
+        std::vector<std::unique_ptr<ExprAST>> Elems;
+        for (auto& elem : Rows[0])
+            Elems.push_back(std::move(elem));
+        return std::make_unique<VectorExprAST>(std::move(Elems));
     }
     for (auto& row : Rows)
         while (row.size() < (size_t)maxCols)
@@ -973,7 +996,7 @@ std::unique_ptr<ExprAST> Parser::ParseBlockExpr()
             getNextToken();
     }
     if (CurTok != static_cast<int>(TokenType::tok_rbrace)) {
-        ReportError("expected '}'");
+        ReportError("expected '}' to close statement block");
         return nullptr;
     }
     getNextToken();
@@ -1330,13 +1353,29 @@ std::unique_ptr<ExprAST> Parser::ParsePrimary()
         Res = ParseHasUnitExpr();
         break;
 
+    // SPICE model quality directives
+    case static_cast<int>(TokenType::tok_diagnostic):
+        Res = ParseDiagnosticDecl();
+        break;
+    case static_cast<int>(TokenType::tok_tolerance):
+        Res = ParseToleranceDecl();
+        break;
+
+    // Symbolic math: find poles/zeros of transfer function
+    case static_cast<int>(TokenType::tok_poles):
+        Res = ParsePolesExpr();
+        break;
+    case static_cast<int>(TokenType::tok_zeros):
+        Res = ParseZerosExpr();
+        break;
+
+    case static_cast<int>(TokenType::tok_end):
+        // end is a block terminator for struct/enum/impl, not an expression.
+        // Consume it to avoid infinite loops in the caller.
+        getNextToken();
+        return nullptr;
     default: {
-        std::string msg = "unknown token in expression: ";
-        if (CurTok > 0 && CurTok < 128)
-            msg += (char)CurTok;
-        else
-            msg += std::to_string(CurTok);
-        ReportError(msg);
+        ReportError("unexpected token in expression: " + Lexer::tokenSpelling(CurTok));
         return nullptr;
     }
     }
@@ -1354,7 +1393,59 @@ std::unique_ptr<ExprAST> Parser::ParsePrimary()
             }
             std::string MemberName = m_lexer.IdentifierStr;
             getNextToken();
-            Res = std::make_unique<MemberExprAST>(std::move(Res), MemberName);
+
+            // Method call: obj.method(args)
+            if (CurTok == '(') {
+                getNextToken(); // eat (
+                std::vector<std::unique_ptr<ExprAST>> CallArgs;
+                if (CurTok != ')') {
+                    while (true) {
+                        if (auto Arg = ParseExpression())
+                            CallArgs.push_back(std::move(Arg));
+                        else
+                            return nullptr;
+                        if (CurTok == ')')
+                            break;
+                        if (CurTok != ',') {
+                            ReportError("expected ')' or ',' in method argument list");
+                            return nullptr;
+                        }
+                        getNextToken();
+                    }
+                }
+                getNextToken(); // eat )
+                auto member = std::make_unique<MemberExprAST>(std::move(Res), MemberName);
+                Res = std::make_unique<CallExprAST>(std::move(member), std::move(CallArgs));
+            } else if (CurTok == static_cast<int>(TokenType::tok_lbrace)) {
+                // Check if this is an enum variant construction with named fields: EnumName.VariantName { fields }
+                bool isEnumVariant = false;
+                std::string enumName;
+                if (auto* varExpr = dynamic_cast<VariableExprAST*>(Res.get())) {
+                    enumName = varExpr->getName();
+                    if (m_knownEnumTypeNames.count(enumName)) {
+                        isEnumVariant = true;
+                    }
+                }
+                if (isEnumVariant) {
+                    std::string anonName = "__enum_" + enumName + "_" + MemberName + "_Fields";
+                    if (m_knownStructTypeNames.count(anonName)) {
+                        // Yes! Parse the braced struct construction
+                        auto structCtor = ParseStructConstructExpr(anonName);
+                        if (!structCtor) return nullptr;
+
+                        auto member = std::make_unique<MemberExprAST>(std::move(Res), MemberName);
+                        std::vector<std::unique_ptr<ExprAST>> CallArgs;
+                        CallArgs.push_back(std::move(structCtor));
+                        Res = std::make_unique<CallExprAST>(std::move(member), std::move(CallArgs));
+                    } else {
+                        Res = std::make_unique<MemberExprAST>(std::move(Res), MemberName);
+                    }
+                } else {
+                    Res = std::make_unique<MemberExprAST>(std::move(Res), MemberName);
+                }
+            } else {
+                Res = std::make_unique<MemberExprAST>(std::move(Res), MemberName);
+            }
         } else {
             break;
         }
@@ -1443,7 +1534,10 @@ std::unique_ptr<ExprAST> Parser::ParseBinOpRHS(int ExprPrec, std::unique_ptr<Exp
                 return nullptr;
             }
             getNextToken();
-            LHS = std::make_unique<IndexExprAST>(std::move(LHS), std::move(rowIdx), std::move(colIdx));
+            if (colIdx)
+                LHS = std::make_unique<IndexExprAST>(std::move(LHS), std::move(rowIdx), std::move(colIdx));
+            else
+                LHS = std::make_unique<IndexExprAST>(std::move(LHS), std::move(rowIdx));
         } else {
             LHS = std::make_unique<BinaryExprAST>(BinOp, std::move(LHS), std::move(RHS));
         }
@@ -1469,6 +1563,13 @@ std::unique_ptr<PrototypeAST> Parser::ParsePrototype()
 
     std::string FnName = (CurTok == static_cast<int>(TokenType::tok_update)) ? "update" : m_lexer.IdentifierStr;
     getNextToken();
+    // Optional generic params: def foo[T](x: T) -> T
+    std::vector<std::string> GenericParams;
+    if (CurTok == '[') {
+        GenericParams = ParseGenericParams();
+        if (hasError()) return nullptr;
+        m_activeGenericParams = GenericParams;
+    }
     if (CurTok != '(')
         return nullptr;
     getNextToken();
@@ -1495,12 +1596,39 @@ std::unique_ptr<PrototypeAST> Parser::ParsePrototype()
             Type = FluxType::fromToken(CurTok);
             // Check for unit type names (e.g., Voltage, Current)
             if (Type.Kind == TypeKind::Double && CurTok == static_cast<int>(TokenType::tok_identifier)) {
-                FluxType unitType = FluxType::fromUnitName(m_lexer.IdentifierStr);
-                if (unitType.Dimensions.mass != 0 || unitType.Dimensions.length != 0 || unitType.Dimensions.time != 0 ||
-                    unitType.Dimensions.current != 0 || unitType.Dimensions.temperature != 0 ||
-                    unitType.Dimensions.amount != 0 || unitType.Dimensions.luminous != 0) {
-                    Type = unitType;
+                std::string typeName = m_lexer.IdentifierStr;
+                // Check if it matches an active generic parameter
+                bool isGeneric = false;
+                for (auto& gp : m_activeGenericParams) {
+                    if (gp == typeName) {
+                        Type = FluxType::generic(typeName);
+                        isGeneric = true;
+                        break;
+                    }
                 }
+                if (!isGeneric) {
+                    // Check user-defined struct types
+                    if (m_knownStructTypeNames.count(typeName)) {
+                        Type = FluxType(TypeKind::UserStruct);
+                        Type.StructTypeId = -1;
+                        Type.StructLLVMType = nullptr;
+                        Type.GenericName = typeName;
+                    } else if (m_knownEnumTypeNames.count(typeName)) {
+                        Type = FluxType(TypeKind::UserEnum);
+                        Type.EnumTypeId = -1;
+                        Type.EnumLLVMType = nullptr;
+                        Type.GenericName = typeName;
+                    } else {
+                        FluxType unitType = FluxType::fromUnitName(typeName);
+                        if (unitType.Dimensions.mass != 0 || unitType.Dimensions.length != 0 || unitType.Dimensions.time != 0 ||
+                            unitType.Dimensions.current != 0 || unitType.Dimensions.temperature != 0 ||
+                            unitType.Dimensions.amount != 0 || unitType.Dimensions.luminous != 0) {
+                            Type = unitType;
+                        }
+                    }
+                }
+            } else if (Type.Kind == TypeKind::Double && CurTok == static_cast<int>(TokenType::tok_type_double)) {
+                // Explicit "Double" keyword — keep as Double
             }
             getNextToken(); // eat type keyword
         }
@@ -1518,18 +1646,47 @@ std::unique_ptr<PrototypeAST> Parser::ParsePrototype()
     if (CurTok == static_cast<int>(TokenType::tok_arrow)) {
         getNextToken();
         RetType = FluxType::fromToken(CurTok);
-        // Check for unit type names in return type annotation
+        // Check for unit type names or generic type params in return type annotation
         if (RetType.Kind == TypeKind::Double && CurTok == static_cast<int>(TokenType::tok_identifier)) {
-            FluxType unitType = FluxType::fromUnitName(m_lexer.IdentifierStr);
-            if (unitType.Dimensions.mass != 0 || unitType.Dimensions.length != 0 || unitType.Dimensions.time != 0 ||
-                unitType.Dimensions.current != 0 || unitType.Dimensions.temperature != 0 ||
-                unitType.Dimensions.amount != 0 || unitType.Dimensions.luminous != 0) {
-                RetType = unitType;
+            std::string typeName = m_lexer.IdentifierStr;
+            // Check if it matches an active generic parameter
+            bool isGeneric = false;
+            for (auto& gp : m_activeGenericParams) {
+                if (gp == typeName) {
+                    RetType = FluxType::generic(typeName);
+                    isGeneric = true;
+                    break;
+                }
+            }
+            if (!isGeneric) {
+                // Check user-defined struct types
+                if (m_knownStructTypeNames.count(typeName)) {
+                    RetType = FluxType(TypeKind::UserStruct);
+                    RetType.StructTypeId = -1;
+                    RetType.StructLLVMType = nullptr;
+                    RetType.GenericName = typeName;
+                } else if (m_knownEnumTypeNames.count(typeName)) {
+                    RetType = FluxType(TypeKind::UserEnum);
+                    RetType.EnumTypeId = -1;
+                    RetType.EnumLLVMType = nullptr;
+                    RetType.GenericName = typeName;
+                } else {
+                    FluxType unitType = FluxType::fromUnitName(typeName);
+                    if (unitType.Dimensions.mass != 0 || unitType.Dimensions.length != 0 || unitType.Dimensions.time != 0 ||
+                        unitType.Dimensions.current != 0 || unitType.Dimensions.temperature != 0 ||
+                        unitType.Dimensions.amount != 0 || unitType.Dimensions.luminous != 0) {
+                        RetType = unitType;
+                    }
+                }
             }
         }
         getNextToken();
     }
-    return std::make_unique<PrototypeAST>(FnName, std::move(Args), RetType);
+    auto proto = std::make_unique<PrototypeAST>(FnName, std::move(Args), RetType);
+    if (!GenericParams.empty()) {
+        proto->setGenericParams(GenericParams);
+    }
+    return proto;
 }
 
 std::unique_ptr<PrototypeAST> Parser::ParseExtern()
@@ -1544,8 +1701,15 @@ std::unique_ptr<FunctionAST> Parser::ParseDefinition()
     auto Proto = ParsePrototype();
     if (!Proto)
         return nullptr;
-    if (auto Body = ParseExpression())
+    if (auto Body = ParseExpression()) {
+        if (dynamic_cast<ComplexExprAST*>(Body.get()))
+            Proto->setReturnType(FluxType(TypeKind::Complex));
+        else if (dynamic_cast<MatrixExprAST*>(Body.get()))
+            Proto->setReturnType(FluxType(TypeKind::Matrix));
+        else if (dynamic_cast<VectorExprAST*>(Body.get()))
+            Proto->setReturnType(FluxType(TypeKind::Vector));
         return std::make_unique<FunctionAST>(std::move(Proto), std::move(Body));
+    }
     return nullptr;
 }
 
@@ -1706,6 +1870,8 @@ std::unique_ptr<FunctionAST> Parser::ParseTopLevelExpr()
             RetType = FluxType(TypeKind::Complex);
         } else if (dynamic_cast<MatrixExprAST*>(Body.get())) {
             RetType = FluxType(TypeKind::Matrix);
+        } else if (dynamic_cast<VectorExprAST*>(Body.get())) {
+            RetType = FluxType(TypeKind::Vector);
         }
         return std::make_unique<FunctionAST>(
             std::make_unique<PrototypeAST>("__anon_expr", std::vector<std::pair<std::string, FluxType>>(), RetType),
@@ -1909,7 +2075,7 @@ std::unique_ptr<ExprAST> Parser::ParseESource()
     getNextToken();
 
     if (CurTok != ',') {
-        ReportError("expected ','");
+        ReportError("expected ',' between E-source output nodes");
         return nullptr;
     }
     getNextToken();
@@ -1923,7 +2089,7 @@ std::unique_ptr<ExprAST> Parser::ParseESource()
     getNextToken();
 
     if (CurTok != ')') {
-        ReportError("expected ')'");
+        ReportError("expected ')' after E-source output nodes");
         return nullptr;
     }
     getNextToken();
@@ -1944,7 +2110,7 @@ std::unique_ptr<ExprAST> Parser::ParseESource()
     getNextToken();
 
     if (CurTok != ',') {
-        ReportError("expected ','");
+        ReportError("expected ',' between E-source control nodes");
         return nullptr;
     }
     getNextToken();
@@ -1958,7 +2124,7 @@ std::unique_ptr<ExprAST> Parser::ParseESource()
     getNextToken();
 
     if (CurTok != ')') {
-        ReportError("expected ')'");
+        ReportError("expected ')' after E-source control nodes");
         return nullptr;
     }
     getNextToken();
@@ -1985,7 +2151,7 @@ std::unique_ptr<ExprAST> Parser::ParseFSource()
 
     // Parse output nodes
     if (CurTok != '(') {
-        ReportError("expected '('");
+        ReportError("expected '(' for F-source output nodes");
         return nullptr;
     }
     getNextToken();
@@ -1996,7 +2162,7 @@ std::unique_ptr<ExprAST> Parser::ParseFSource()
     getNextToken();
 
     if (CurTok != ',') {
-        ReportError("expected ','");
+        ReportError("expected ',' between F-source output nodes");
         return nullptr;
     }
     getNextToken();
@@ -2007,7 +2173,7 @@ std::unique_ptr<ExprAST> Parser::ParseFSource()
     getNextToken();
 
     if (CurTok != ')') {
-        ReportError("expected ')'");
+        ReportError("expected ')' after F-source output nodes");
         return nullptr;
     }
     getNextToken();
@@ -2042,7 +2208,7 @@ std::unique_ptr<ExprAST> Parser::ParseGSource()
 
     // Parse output nodes
     if (CurTok != '(') {
-        ReportError("expected '('");
+        ReportError("expected '(' for G-source output nodes");
         return nullptr;
     }
     getNextToken();
@@ -2053,7 +2219,7 @@ std::unique_ptr<ExprAST> Parser::ParseGSource()
     getNextToken();
 
     if (CurTok != ',') {
-        ReportError("expected ','");
+        ReportError("expected ',' between G-source output nodes");
         return nullptr;
     }
     getNextToken();
@@ -2064,7 +2230,7 @@ std::unique_ptr<ExprAST> Parser::ParseGSource()
     getNextToken();
 
     if (CurTok != ')') {
-        ReportError("expected ')'");
+        ReportError("expected ')' after G-source output nodes");
         return nullptr;
     }
     getNextToken();
@@ -2082,7 +2248,7 @@ std::unique_ptr<ExprAST> Parser::ParseGSource()
     getNextToken();
 
     if (CurTok != ',') {
-        ReportError("expected ','");
+        ReportError("expected ',' between G-source control nodes");
         return nullptr;
     }
     getNextToken();
@@ -2093,7 +2259,7 @@ std::unique_ptr<ExprAST> Parser::ParseGSource()
     getNextToken();
 
     if (CurTok != ')') {
-        ReportError("expected ')'");
+        ReportError("expected ')' after G-source control nodes");
         return nullptr;
     }
     getNextToken();
@@ -2120,7 +2286,7 @@ std::unique_ptr<ExprAST> Parser::ParseHSource()
 
     // Parse output nodes
     if (CurTok != '(') {
-        ReportError("expected '('");
+        ReportError("expected '(' for H-source output nodes");
         return nullptr;
     }
     getNextToken();
@@ -2131,7 +2297,7 @@ std::unique_ptr<ExprAST> Parser::ParseHSource()
     getNextToken();
 
     if (CurTok != ',') {
-        ReportError("expected ','");
+        ReportError("expected ',' between H-source output nodes");
         return nullptr;
     }
     getNextToken();
@@ -2142,7 +2308,7 @@ std::unique_ptr<ExprAST> Parser::ParseHSource()
     getNextToken();
 
     if (CurTok != ')') {
-        ReportError("expected ')'");
+        ReportError("expected ')' after H-source output nodes");
         return nullptr;
     }
     getNextToken();
@@ -2661,7 +2827,7 @@ std::unique_ptr<ExprAST> Parser::ParseFSMExpr()
         getNextToken();
 
         if (CurTok != ',') {
-            ReportError("expected ','");
+            ReportError("expected ',' between current state and next state in transition");
             return nullptr;
         }
         getNextToken();
@@ -2675,7 +2841,7 @@ std::unique_ptr<ExprAST> Parser::ParseFSMExpr()
         getNextToken();
 
         if (CurTok != ',') {
-            ReportError("expected ','");
+            ReportError("expected ',' between next state and condition in transition");
             return nullptr;
         }
         getNextToken();
@@ -2686,7 +2852,7 @@ std::unique_ptr<ExprAST> Parser::ParseFSMExpr()
             return nullptr;
 
         if (CurTok != ',') {
-            ReportError("expected ','");
+            ReportError("expected ',' between condition and output in transition");
             return nullptr;
         }
         getNextToken();
@@ -3513,13 +3679,21 @@ std::unique_ptr<ExprAST> Parser::ParseMonteCarlo()
     }
     getNextToken(); // eat (
 
-    auto expr = ParseExpression();
-    if (!expr)
+    std::string outputName;
+    if (CurTok == static_cast<int>(TokenType::tok_identifier)) {
+        outputName = m_lexer.IdentifierStr;
+        getNextToken();
+    } else if (CurTok == static_cast<int>(TokenType::tok_string)) {
+        outputName = m_lexer.StringVal;
+        getNextToken();
+    } else {
+        ReportError("expected output name in montecarlo");
         return nullptr;
+    }
 
     std::vector<std::string> params;
     if (CurTok != ',') {
-        ReportError("expected ',' after expression in montecarlo");
+        ReportError("expected ',' after output name in montecarlo");
         return nullptr;
     }
     getNextToken(); // eat ,
@@ -3563,7 +3737,8 @@ std::unique_ptr<ExprAST> Parser::ParseMonteCarlo()
     }
     getNextToken(); // eat )
 
-    auto Res = std::make_unique<MonteCarloExprAST>(std::move(expr), std::move(params), iters);
+    auto Res = std::make_unique<MonteCarloExprAST>(outputName, std::move(params),
+                                                    std::vector<double>{}, std::vector<double>{}, iters);
     Res->setLocation(line, col);
     return Res;
 }
@@ -3641,5 +3816,472 @@ std::unique_ptr<ExprAST> Parser::ParseHotSwap()
     auto Res = std::make_unique<HotSwapExprAST>(std::move(subckt), std::move(model));
     Res->setLocation(line, col);
     return Res;
+}
+
+// ============================================================================
+// User-defined type parsers
+// ============================================================================
+
+/// ParseGenericParams — parse [T, U, V] after a generic declaration name.
+/// Expects CurTok == '['. Returns type parameter names.
+std::vector<std::string> Parser::ParseGenericParams()
+{
+    getNextToken(); // eat [
+    std::vector<std::string> params;
+    while (CurTok == static_cast<int>(TokenType::tok_identifier)) {
+        params.push_back(m_lexer.IdentifierStr);
+        getNextToken();
+        if (CurTok == ']')
+            break;
+        if (CurTok != ',') {
+            ReportError("expected ',' or ']' in generic parameter list");
+            return {};
+        }
+        getNextToken();
+    }
+    if (CurTok != ']') {
+        ReportError("expected ']' to close generic parameter list");
+        return {};
+    }
+    getNextToken(); // eat ]
+    return params;
+}
+
+/// ParseGenericTypeArgs — parse [Double, Int, T] in generic call/construction.
+/// Expects CurTok == '['. Returns resolved FluxTypes.
+std::vector<FluxType> Parser::ParseGenericTypeArgs()
+{
+    getNextToken(); // eat [
+    std::vector<FluxType> args;
+    while (true) {
+        FluxType type = parseTypeName(m_activeGenericParams);
+        args.push_back(type);
+        if (CurTok == ']')
+            break;
+        if (CurTok != ',') {
+            ReportError("expected ',' or ']' in generic type arguments");
+            return {};
+        }
+        getNextToken();
+    }
+    if (CurTok != ']') {
+        ReportError("expected ']' to close generic type arguments");
+        return {};
+    }
+    getNextToken(); // eat ]
+    return args;
+}
+
+/// ParseStructDecl — parse:
+///   struct Name
+///       field: Type
+///       field: Type
+///   end
+/// or:
+///   struct Name { field: Type, field: Type }
+std::unique_ptr<StructDeclAST> Parser::ParseStructDecl()
+{
+    getNextToken(); // eat struct
+
+    if (CurTok != static_cast<int>(TokenType::tok_identifier)) {
+        ReportError("expected struct name");
+        return nullptr;
+    }
+    std::string Name = m_lexer.IdentifierStr;
+    getNextToken();
+
+    // Optional generic params
+    std::vector<std::string> GenericParams;
+    if (CurTok == '[') {
+        GenericParams = ParseGenericParams();
+        if (hasError()) return nullptr;
+    }
+
+    // Support both brace-delimited { ... } and end-delimited block syntax
+    bool useBraceBlock = (CurTok == static_cast<int>(TokenType::tok_lbrace));
+    if (useBraceBlock)
+        getNextToken(); // eat {
+
+    // Parse fields
+    std::vector<std::pair<std::string, FluxType>> Fields;
+    while (true) {
+        if (useBraceBlock) {
+            if (CurTok == static_cast<int>(TokenType::tok_rbrace))
+                break;
+        } else {
+            if (CurTok == static_cast<int>(TokenType::tok_end) ||
+                CurTok == static_cast<int>(TokenType::tok_eof))
+                break;
+        }
+
+        if (CurTok != static_cast<int>(TokenType::tok_identifier)) {
+            ReportError("expected field name in struct");
+            return nullptr;
+        }
+        std::string FieldName = m_lexer.IdentifierStr;
+        getNextToken();
+
+        if (CurTok != static_cast<int>(TokenType::tok_colon)) {
+            ReportError("expected ':' after struct field name");
+            return nullptr;
+        }
+        getNextToken();
+
+        Fields.push_back({FieldName, parseTypeName(GenericParams)});
+
+        if (useBraceBlock && CurTok == ',')
+            getNextToken();
+    }
+
+    if (useBraceBlock) {
+        if (CurTok != static_cast<int>(TokenType::tok_rbrace)) {
+            ReportError("expected '}' to close struct");
+            return nullptr;
+        }
+        getNextToken(); // eat }
+    } else {
+        if (CurTok != static_cast<int>(TokenType::tok_end)) {
+            ReportError("expected 'end' to close struct");
+            return nullptr;
+        }
+        getNextToken(); // eat end
+    }
+
+    // Register struct type name so parseTypeName can recognize it
+    // in subsequent type annotations (e.g. function parameters, nested struct fields).
+    m_knownStructTypeNames.insert(Name);
+
+    auto result = std::make_unique<StructDeclAST>(Name, std::move(Fields));
+    if (!GenericParams.empty())
+        result->setGenericParams(std::move(GenericParams));
+    return result;
+}
+
+/// Helper: parse a type name from the current token.
+/// Handles built-in type keywords (double, int, bool, etc.),
+/// capitalized type names (Double, Int, Bool, etc.),
+/// unit type names (Voltage, Current, etc.),
+/// and generic type parameters.
+FluxType Parser::parseTypeName(const std::vector<std::string>& genericParams)
+{
+    // Built-in type keywords (lowercase)
+    if (CurTok == static_cast<int>(TokenType::tok_type_float) ||
+        CurTok == static_cast<int>(TokenType::tok_type_double) ||
+        CurTok == static_cast<int>(TokenType::tok_type_int) ||
+        CurTok == static_cast<int>(TokenType::tok_type_bool) ||
+        CurTok == static_cast<int>(TokenType::tok_type_void) ||
+        CurTok == static_cast<int>(TokenType::tok_type_complex) ||
+        CurTok == static_cast<int>(TokenType::tok_type_string) ||
+        CurTok == static_cast<int>(TokenType::tok_type_matrix) ||
+        CurTok == static_cast<int>(TokenType::tok_type_vector)) {
+        FluxType t = FluxType::fromToken(CurTok);
+        getNextToken();
+        return t;
+    }
+
+    // Identifier — could be built-in type name (capitalized), unit type, or generic param
+    if (CurTok == static_cast<int>(TokenType::tok_identifier)) {
+        std::string typeName = m_lexer.IdentifierStr;
+        getNextToken();
+
+        // Check built-in capitalized names
+        if (typeName == "Double" || typeName == "double")
+            return FluxType(TypeKind::Double);
+        if (typeName == "Float" || typeName == "float")
+            return FluxType(TypeKind::Float);
+        if (typeName == "Int" || typeName == "int")
+            return FluxType(TypeKind::Int);
+        if (typeName == "Bool" || typeName == "bool")
+            return FluxType(TypeKind::Bool);
+        if (typeName == "Void" || typeName == "void")
+            return FluxType(TypeKind::Void);
+        if (typeName == "Complex" || typeName == "complex")
+            return FluxType(TypeKind::Complex);
+        if (typeName == "String" || typeName == "string")
+            return FluxType(TypeKind::String);
+        if (typeName == "Matrix" || typeName == "matrix")
+            return FluxType(TypeKind::Matrix);
+        if (typeName == "Vector" || typeName == "vector")
+            return FluxType(TypeKind::Vector);
+
+        // Check generic type parameter
+        for (auto& gp : genericParams) {
+            if (gp == typeName)
+                return FluxType::generic(typeName);
+        }
+
+        // Check unit type names (Voltage, Current, etc.)
+        FluxType unitType = FluxType::fromUnitName(typeName);
+        if (unitType.Dimensions.mass != 0 || unitType.Dimensions.length != 0 ||
+            unitType.Dimensions.time != 0 || unitType.Dimensions.current != 0 ||
+            unitType.Dimensions.temperature != 0 || unitType.Dimensions.amount != 0 ||
+            unitType.Dimensions.luminous != 0) {
+            return unitType;
+        }
+
+        // Check user-defined struct types
+        if (m_knownStructTypeNames.count(typeName)) {
+            FluxType t(TypeKind::UserStruct);
+            t.StructTypeId = -1;     // resolve at codegen time
+            t.StructLLVMType = nullptr;
+            t.GenericName = typeName; // carry name for resolution
+            return t;
+        }
+
+        // Check user-defined enum types
+        if (m_knownEnumTypeNames.count(typeName)) {
+            FluxType t(TypeKind::UserEnum);
+            t.EnumTypeId = -1;       // resolve at codegen time
+            t.EnumLLVMType = nullptr;
+            t.GenericName = typeName; // carry name for resolution
+            return t;
+        }
+
+        ReportError("unknown type: " + typeName);
+        return FluxType(TypeKind::Double);
+    }
+
+    ReportError("expected type");
+    return FluxType(TypeKind::Double);
+}
+
+/// ParseStructConstructExpr — parse:
+///   TypeName { name: expr, name: expr }
+/// Called after the identifier and optional generic type args have been consumed.
+std::unique_ptr<ExprAST> Parser::ParseStructConstructExpr(
+    const std::string& TypeName,
+    const std::vector<FluxType>& GenericTypeArgs)
+{
+    // CurTok should be tok_lbrace already
+    int line = m_lexer.getCurrentLine();
+    int col = m_lexer.getCurrentColumn();
+    getNextToken(); // eat {
+
+    std::map<std::string, std::unique_ptr<ExprAST>> FieldValues;
+
+    while (CurTok != static_cast<int>(TokenType::tok_rbrace) &&
+           CurTok != static_cast<int>(TokenType::tok_eof)) {
+        if (CurTok != static_cast<int>(TokenType::tok_identifier)) {
+            ReportError("expected field name in struct constructor");
+            return nullptr;
+        }
+        std::string FieldName = m_lexer.IdentifierStr;
+        getNextToken();
+
+        if (CurTok != static_cast<int>(TokenType::tok_colon)) {
+            ReportError("expected ':' after field name in struct constructor");
+            return nullptr;
+        }
+        getNextToken();
+
+        auto Value = ParseExpression();
+        if (!Value)
+            return nullptr;
+
+        FieldValues[FieldName] = std::move(Value);
+
+        if (CurTok == ',')
+            getNextToken();
+        else if (CurTok != static_cast<int>(TokenType::tok_rbrace)) {
+            ReportError("expected ',' or '}' in struct constructor");
+            return nullptr;
+        }
+    }
+
+    if (CurTok != static_cast<int>(TokenType::tok_rbrace)) {
+        ReportError("expected '}' to close struct constructor");
+        return nullptr;
+    }
+    getNextToken(); // eat }
+
+    auto result = std::make_unique<StructConstructExprAST>(
+        TypeName, -1, std::move(FieldValues), GenericTypeArgs);
+    result->setLocation(line, col);
+    return result;
+}
+
+/// ParseEnumDecl — parse:
+///   enum Name
+///       Variant
+///       Variant(Type)
+///       Variant { field1: Type1, field2: Type2 }
+///   end
+/// or:
+///   enum Name { Variant, Variant(Type), Variant { field: Type } }
+std::unique_ptr<EnumDeclAST> Parser::ParseEnumDecl(
+    std::vector<std::unique_ptr<StructDeclAST>>* anonStructs)
+{
+    getNextToken(); // eat enum
+
+    if (CurTok != static_cast<int>(TokenType::tok_identifier)) {
+        ReportError("expected enum name");
+        return nullptr;
+    }
+    std::string Name = m_lexer.IdentifierStr;
+    getNextToken();
+
+    // Optional generic params
+    std::vector<std::string> GenericParams;
+    if (CurTok == '[') {
+        GenericParams = ParseGenericParams();
+        if (hasError()) return nullptr;
+    }
+
+    // Support both brace-delimited { ... } and end-delimited block syntax
+    bool useBraceBlock = (CurTok == static_cast<int>(TokenType::tok_lbrace));
+    if (useBraceBlock)
+        getNextToken(); // eat {
+
+    std::vector<std::string> Variants;
+    std::vector<FluxType> Payloads;
+
+    while (true) {
+        // Check for block terminator
+        if (useBraceBlock) {
+            if (CurTok == static_cast<int>(TokenType::tok_rbrace))
+                break;
+        } else {
+            if (CurTok == static_cast<int>(TokenType::tok_end) ||
+                CurTok == static_cast<int>(TokenType::tok_eof))
+                break;
+        }
+
+        if (CurTok != static_cast<int>(TokenType::tok_identifier)) {
+            ReportError("expected variant name in enum");
+            return nullptr;
+        }
+        std::string VariantName = m_lexer.IdentifierStr;
+        getNextToken();
+
+        FluxType Payload(TypeKind::Void);
+        if (CurTok == '(') {
+            getNextToken(); // eat (
+            Payload = parseTypeName(GenericParams);
+
+            if (CurTok != ')') {
+                ReportError("expected ')' after variant type");
+                return nullptr;
+            }
+            getNextToken(); // eat )
+        } else if (CurTok == static_cast<int>(TokenType::tok_lbrace)) {
+            getNextToken(); // eat {
+
+            std::vector<std::pair<std::string, FluxType>> fields;
+            while (CurTok != static_cast<int>(TokenType::tok_rbrace) &&
+                   CurTok != static_cast<int>(TokenType::tok_eof)) {
+                if (CurTok != static_cast<int>(TokenType::tok_identifier)) {
+                    ReportError("expected field name in enum variant struct");
+                    return nullptr;
+                }
+                std::string fieldName = m_lexer.IdentifierStr;
+                getNextToken();
+
+                if (CurTok != static_cast<int>(TokenType::tok_colon)) {
+                    ReportError("expected ':' after struct field name");
+                    return nullptr;
+                }
+                getNextToken();
+
+                fields.push_back({fieldName, parseTypeName(GenericParams)});
+
+                if (CurTok == ',')
+                    getNextToken();
+                else if (CurTok != static_cast<int>(TokenType::tok_rbrace)) {
+                    ReportError("expected ',' or '}' in enum variant struct");
+                    return nullptr;
+                }
+            }
+
+            if (CurTok != static_cast<int>(TokenType::tok_rbrace)) {
+                ReportError("expected '}' to close enum variant struct");
+                return nullptr;
+            }
+            getNextToken(); // eat }
+
+            // Generate a synthetic struct type for this variant's payload
+            std::string anonName = "__enum_" + Name + "_" + VariantName + "_Fields";
+            m_knownStructTypeNames.insert(anonName);
+
+            Payload = FluxType(TypeKind::UserStruct);
+            Payload.StructTypeId = -1;
+            Payload.StructLLVMType = nullptr;
+            Payload.GenericName = anonName;
+
+            if (anonStructs) {
+                anonStructs->push_back(
+                    std::make_unique<StructDeclAST>(anonName, std::move(fields)));
+            }
+        }
+
+        Variants.push_back(VariantName);
+        Payloads.push_back(Payload);
+
+        // In brace block, consume comma separator
+        if (useBraceBlock && CurTok == ',')
+            getNextToken();
+    }
+
+    if (useBraceBlock) {
+        if (CurTok != static_cast<int>(TokenType::tok_rbrace)) {
+            ReportError("expected '}' to close enum");
+            return nullptr;
+        }
+        getNextToken(); // eat }
+    } else {
+        if (CurTok != static_cast<int>(TokenType::tok_end)) {
+            ReportError("expected 'end' to close enum");
+            return nullptr;
+        }
+        getNextToken(); // eat end
+    }
+
+    // Register enum type name so parseTypeName can recognize it
+    // in subsequent type annotations (e.g. function parameters, return types).
+    m_knownEnumTypeNames.insert(Name);
+
+    auto result = std::make_unique<EnumDeclAST>(Name, std::move(Variants), std::move(Payloads));
+    if (!GenericParams.empty())
+        result->setGenericParams(std::move(GenericParams));
+    return result;
+}
+
+/// ParseImplDecl — parse:
+///   impl TypeName
+///       def method(...) ...
+///       def method(...) ...
+///   end
+std::unique_ptr<ImplDeclAST> Parser::ParseImplDecl()
+{
+    getNextToken(); // eat impl
+
+    if (CurTok != static_cast<int>(TokenType::tok_identifier)) {
+        ReportError("expected type name after 'impl'");
+        return nullptr;
+    }
+    std::string TypeName = m_lexer.IdentifierStr;
+    getNextToken();
+
+    std::vector<std::unique_ptr<FunctionAST>> Methods;
+
+    while (CurTok != static_cast<int>(TokenType::tok_end) &&
+           CurTok != static_cast<int>(TokenType::tok_eof)) {
+        if (CurTok == static_cast<int>(TokenType::tok_def)) {
+            auto Method = ParseDefinition();
+            if (!Method)
+                return nullptr;
+            Methods.push_back(std::move(Method));
+        } else {
+            ReportError("expected 'def' or 'end' in impl block");
+            return nullptr;
+        }
+    }
+
+    if (CurTok != static_cast<int>(TokenType::tok_end)) {
+        ReportError("expected 'end' to close impl block");
+        return nullptr;
+    }
+    getNextToken(); // eat end
+
+    return std::make_unique<ImplDeclAST>(TypeName, std::move(Methods));
 }
 } // namespace Flux

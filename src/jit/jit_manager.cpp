@@ -321,11 +321,11 @@ bool JITManager::compileSource(const std::string& source, JITComponent& comp, st
             std::cout << "  " << F.getName().str() << " (linkage: " << F.getLinkage() << ")" << std::endl;
         }
 
-        comp.jit->addModule(std::move(artifacts->codegenContext->OwnedModule),
-                            std::move(artifacts->codegenContext->OwnedContext));
-
         // Register runtime functions (sin, cos, etc.) so the JIT can resolve them
         registerRuntimeFunctions(*comp.jit);
+
+        comp.jit->addModule(std::move(artifacts->codegenContext->OwnedModule),
+                            std::move(artifacts->codegenContext->OwnedContext));
 
         // Get function pointers from the JIT
         // Find the function name from the source (first "def name" pattern)

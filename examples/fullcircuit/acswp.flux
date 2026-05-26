@@ -1,6 +1,7 @@
 # FullCircuit — AC Small-Signal Frequency Sweep Analysis
 import circuit
 import mna
+import dcsolve
 
 def ac_build(comps : matrix, ctrl : matrix, freq, V : matrix) {
     var N = circuit_num_nodes(ctrl)
@@ -55,6 +56,14 @@ def ac_build(comps : matrix, ctrl : matrix, freq, V : matrix) {
             ac_stamp_diode_ss(A, comps, ci, np, nm, V, N, dim)
         } else if (t == 10.0 || t == 11.0) {
             ac_stamp_bjt_ss(A, comps, ci, np, nm, V, N, dim)
+        } else if (t == 12.0 || t == 13.0) {
+            ac_stamp_mos_ss(A, comps, ci, np, nm, V, N, dim)
+        } else if (t == 14.0 || t == 15.0) {
+            ac_stamp_jfet_ss(A, comps, ci, np, nm, V, N, dim)
+        } else if (t == 16.0) {
+            ac_stamp_vcsw_ss(A, comps, ci, np, nm, V, N, dim)
+        } else if (t == 17.0) {
+            ac_stamp_ccsw_ss(A, comps, ctrl, ci, np, nm, V, N, dim)
         }
         ci = ci + 1.0
     }
@@ -200,48 +209,203 @@ def ac_stamp_diode_ss(A : matrix, comps : matrix, ci, np, nm, V : matrix, N, dim
     if (np > 0.0 && np <= N) { vnp = matrix_get(V, np, 0) }
     if (nm > 0.0 && nm <= N) { vnm = matrix_get(V, nm, 0) }
     var vd = vnp - vnm
-    var geq = isat / (nf * vt) * exp(vd / (nf * vt))
-    if (vd <= -5.0 * nf * vt) { geq = -isat / (nf * vt) }
+    var djr = diode_junction(vd, isat, nf, vt)
+    var geq = matrix_get(djr, 1, 0)
     ac_stamp_g(A, np, nm, geq, N, dim)
 }
 
 def ac_stamp_bjt_ss(A : matrix, comps : matrix, ci, nc_node, nb_node, V : matrix, N, dim) {
     var ne_node = circuit_node_3(comps, ci)
+    var bf = circuit_param(comps, ci, 4.0)
     var isat = circuit_param(comps, ci, 5.0)
     var vaf = circuit_param(comps, ci, 6.0)
     var vt = circuit_param(comps, ci, 7.0)
+    var br = circuit_param(comps, ci, 8.0)
+    if (br <= 0.0) { br = 2.0 }
     var vc_v = 0.0; var vb_v = 0.0; var ve_v = 0.0
     if (nc_node > 0.0 && nc_node <= N) { vc_v = matrix_get(V, nc_node, 0) }
     if (nb_node > 0.0 && nb_node <= N) { vb_v = matrix_get(V, nb_node, 0) }
     if (ne_node > 0.0 && ne_node <= N) { ve_v = matrix_get(V, ne_node, 0) }
-    var vbe = vb_v - ve_v; var vce = vc_v - ve_v
-    var i_c = isat * exp(vbe / vt)
-    if (vaf > 0.0 && vce > -vaf * 0.5) { i_c = i_c * (1.0 + vce / vaf) }
-    var gbe = i_c / vt; var gm = gbe; var go = 0.0
-    if (vaf > 0.0) { go = i_c / vaf }
+    var vbe = vb_v - ve_v
+    var vbc = vb_v - vc_v
+    var vce = vc_v - ve_v
+    var be_jn = diode_junction(vbe, isat, 1.0, vt)
+    var icc = matrix_get(be_jn, 0, 0)
+    var gbe = matrix_get(be_jn, 1, 0)
+    var bc_jn = diode_junction(vbc, isat, 1.0, vt)
+    var iec = matrix_get(bc_jn, 0, 0)
+    var gbc = matrix_get(bc_jn, 1, 0)
+    var af = bf / (bf + 1.0)
+    var go = 0.0
+    if (vaf > 0.0 && vce > -vaf * 0.5) {
+        var vce_vaf = vce
+        if (vce_vaf < 0.0) { vce_vaf = 0.0 }
+        icc = icc * (1.0 + vce_vaf / vaf)
+        go = icc / vaf
+    }
+    var gpi = gbe / bf + gbc / br
+    var gm_cb = af * gbe - gbc
     if (nc_node > 0.0 && nc_node <= N) {
-        matrix_set(A, mna_ndx(nc_node), mna_ndx(nc_node), matrix_get(A, mna_ndx(nc_node), mna_ndx(nc_node)) + go)
-        matrix_set(A, mna_ndx(nc_node) + dim, mna_ndx(nc_node) + dim, matrix_get(A, mna_ndx(nc_node) + dim, mna_ndx(nc_node) + dim) + go)
+        matrix_set(A, mna_ndx(nc_node), mna_ndx(nc_node), matrix_get(A, mna_ndx(nc_node), mna_ndx(nc_node)) + go + gbc)
+        matrix_set(A, mna_ndx(nc_node) + dim, mna_ndx(nc_node) + dim, matrix_get(A, mna_ndx(nc_node) + dim, mna_ndx(nc_node) + dim) + go + gbc)
     }
     if (nc_node > 0.0 && nc_node <= N && nb_node > 0.0 && nb_node <= N) {
-        matrix_set(A, mna_ndx(nc_node), mna_ndx(nb_node), matrix_get(A, mna_ndx(nc_node), mna_ndx(nb_node)) - gm)
-        matrix_set(A, mna_ndx(nc_node) + dim, mna_ndx(nb_node) + dim, matrix_get(A, mna_ndx(nc_node) + dim, mna_ndx(nb_node) + dim) - gm)
+        matrix_set(A, mna_ndx(nc_node), mna_ndx(nb_node), matrix_get(A, mna_ndx(nc_node), mna_ndx(nb_node)) + gm_cb)
+        matrix_set(A, mna_ndx(nc_node) + dim, mna_ndx(nb_node) + dim, matrix_get(A, mna_ndx(nc_node) + dim, mna_ndx(nb_node) + dim) + gm_cb)
     }
     if (nc_node > 0.0 && nc_node <= N && ne_node > 0.0 && ne_node <= N) {
-        matrix_set(A, mna_ndx(nc_node), mna_ndx(ne_node), matrix_get(A, mna_ndx(nc_node), mna_ndx(ne_node)) + gm + go)
-        matrix_set(A, mna_ndx(nc_node) + dim, mna_ndx(ne_node) + dim, matrix_get(A, mna_ndx(nc_node) + dim, mna_ndx(ne_node) + dim) + gm + go)
+        matrix_set(A, mna_ndx(nc_node), mna_ndx(ne_node), matrix_get(A, mna_ndx(nc_node), mna_ndx(ne_node)) - (af * gbe + go))
+        matrix_set(A, mna_ndx(nc_node) + dim, mna_ndx(ne_node) + dim, matrix_get(A, mna_ndx(nc_node) + dim, mna_ndx(ne_node) + dim) - (af * gbe + go))
     }
     if (nb_node > 0.0 && nb_node <= N) {
-        matrix_set(A, mna_ndx(nb_node), mna_ndx(nb_node), matrix_get(A, mna_ndx(nb_node), mna_ndx(nb_node)) + gbe)
-        matrix_set(A, mna_ndx(nb_node) + dim, mna_ndx(nb_node) + dim, matrix_get(A, mna_ndx(nb_node) + dim, mna_ndx(nb_node) + dim) + gbe)
+        matrix_set(A, mna_ndx(nb_node), mna_ndx(nb_node), matrix_get(A, mna_ndx(nb_node), mna_ndx(nb_node)) + gpi)
+        matrix_set(A, mna_ndx(nb_node) + dim, mna_ndx(nb_node) + dim, matrix_get(A, mna_ndx(nb_node) + dim, mna_ndx(nb_node) + dim) + gpi)
+    }
+    if (nb_node > 0.0 && nb_node <= N && nc_node > 0.0 && nc_node <= N) {
+        matrix_set(A, mna_ndx(nb_node), mna_ndx(nc_node), matrix_get(A, mna_ndx(nb_node), mna_ndx(nc_node)) - gbc / br)
+        matrix_set(A, mna_ndx(nb_node) + dim, mna_ndx(nc_node) + dim, matrix_get(A, mna_ndx(nb_node) + dim, mna_ndx(nc_node) + dim) - gbc / br)
     }
     if (nb_node > 0.0 && nb_node <= N && ne_node > 0.0 && ne_node <= N) {
-        matrix_set(A, mna_ndx(nb_node), mna_ndx(ne_node), matrix_get(A, mna_ndx(nb_node), mna_ndx(ne_node)) - gbe)
-        matrix_set(A, mna_ndx(nb_node) + dim, mna_ndx(ne_node) + dim, matrix_get(A, mna_ndx(nb_node) + dim, mna_ndx(ne_node) + dim) - gbe)
+        matrix_set(A, mna_ndx(nb_node), mna_ndx(ne_node), matrix_get(A, mna_ndx(nb_node), mna_ndx(ne_node)) - gbe / bf)
+        matrix_set(A, mna_ndx(nb_node) + dim, mna_ndx(ne_node) + dim, matrix_get(A, mna_ndx(nb_node) + dim, mna_ndx(ne_node) + dim) - gbe / bf)
+    }
+    if (ne_node > 0.0 && ne_node <= N && nb_node > 0.0 && nb_node <= N) {
+        matrix_set(A, mna_ndx(ne_node), mna_ndx(nb_node), matrix_get(A, mna_ndx(ne_node), mna_ndx(nb_node)) - (af * gbe + gbe / bf) + gbc * (1.0 - 1.0 / br))
+        matrix_set(A, mna_ndx(ne_node) + dim, mna_ndx(nb_node) + dim, matrix_get(A, mna_ndx(ne_node) + dim, mna_ndx(nb_node) + dim) - (af * gbe + gbe / bf) + gbc * (1.0 - 1.0 / br))
+    }
+    if (ne_node > 0.0 && ne_node <= N && nc_node > 0.0 && nc_node <= N) {
+        matrix_set(A, mna_ndx(ne_node), mna_ndx(nc_node), matrix_get(A, mna_ndx(ne_node), mna_ndx(nc_node)) - go - gbc * (1.0 - 1.0 / br))
+        matrix_set(A, mna_ndx(ne_node) + dim, mna_ndx(nc_node) + dim, matrix_get(A, mna_ndx(ne_node) + dim, mna_ndx(nc_node) + dim) - go - gbc * (1.0 - 1.0 / br))
     }
     if (ne_node > 0.0 && ne_node <= N) {
-        matrix_set(A, mna_ndx(ne_node), mna_ndx(ne_node), matrix_get(A, mna_ndx(ne_node), mna_ndx(ne_node)) + gm + gbe + go)
-        matrix_set(A, mna_ndx(ne_node) + dim, mna_ndx(ne_node) + dim, matrix_get(A, mna_ndx(ne_node) + dim, mna_ndx(ne_node) + dim) + gm + gbe + go)
+        matrix_set(A, mna_ndx(ne_node), mna_ndx(ne_node), matrix_get(A, mna_ndx(ne_node), mna_ndx(ne_node)) + af * gbe + gbe / bf + go)
+        matrix_set(A, mna_ndx(ne_node) + dim, mna_ndx(ne_node) + dim, matrix_get(A, mna_ndx(ne_node) + dim, mna_ndx(ne_node) + dim) + af * gbe + gbe / bf + go)
+    }
+}
+
+def ac_stamp_mos_ss(A : matrix, comps : matrix, ci, nd_node, ng_node, V : matrix, N, dim) {
+    var ns_node = circuit_node_3(comps, ci)
+    var t = circuit_component_type(comps, ci)
+    var kp_val = circuit_param(comps, ci, 5.0)
+    var vto_val = circuit_param(comps, ci, 6.0)
+    var lambda_val = circuit_param(comps, ci, 7.0)
+    var vd_v = 0.0; var vg_v = 0.0; var vs_v = 0.0
+    if (nd_node > 0.0 && nd_node <= N) { vd_v = matrix_get(V, nd_node, 0) }
+    if (ng_node > 0.0 && ng_node <= N) { vg_v = matrix_get(V, ng_node, 0) }
+    if (ns_node > 0.0 && ns_node <= N) { vs_v = matrix_get(V, ns_node, 0) }
+    var vgs = vg_v - vs_v
+    var vds = vd_v - vs_v
+    var gm = 0.0; var gds = 0.0
+    var vov = vgs - vto_val
+    if (t == 13.0) { vgs = -vgs; vds = -vds; vov = -vov }
+    if (vov > 0.0) {
+        if (vds < vov) {
+            var id = kp_val * (vov * vds - 0.5 * vds * vds)
+            gm = kp_val * vds
+            gds = kp_val * (vov - vds)
+            if (lambda_val > 0.0) {
+                id = id * (1.0 + lambda_val * vds)
+                gm = gm * (1.0 + lambda_val * vds)
+                gds = gds * (1.0 + lambda_val * vds) + lambda_val * id / (1.0 + lambda_val * vds)
+            }
+        } else {
+            var id = 0.5 * kp_val * vov * vov
+            gm = kp_val * vov
+            gds = 0.0
+            if (lambda_val > 0.0) {
+                id = id * (1.0 + lambda_val * vds)
+                gm = gm * (1.0 + lambda_val * vds)
+                gds = lambda_val * id / (1.0 + lambda_val * vds)
+            }
+        }
+    }
+    var gds_plus_gm = gds + gm
+    if (nd_node > 0.0 && nd_node <= N) {
+        matrix_set(A, mna_ndx(nd_node), mna_ndx(nd_node), matrix_get(A, mna_ndx(nd_node), mna_ndx(nd_node)) + gds)
+        matrix_set(A, mna_ndx(nd_node) + dim, mna_ndx(nd_node) + dim, matrix_get(A, mna_ndx(nd_node) + dim, mna_ndx(nd_node) + dim) + gds)
+    }
+    if (nd_node > 0.0 && nd_node <= N && ng_node > 0.0 && ng_node <= N) {
+        matrix_set(A, mna_ndx(nd_node), mna_ndx(ng_node), matrix_get(A, mna_ndx(nd_node), mna_ndx(ng_node)) + gm)
+        matrix_set(A, mna_ndx(nd_node) + dim, mna_ndx(ng_node) + dim, matrix_get(A, mna_ndx(nd_node) + dim, mna_ndx(ng_node) + dim) + gm)
+    }
+    if (nd_node > 0.0 && nd_node <= N && ns_node > 0.0 && ns_node <= N) {
+        matrix_set(A, mna_ndx(nd_node), mna_ndx(ns_node), matrix_get(A, mna_ndx(nd_node), mna_ndx(ns_node)) - gds_plus_gm)
+        matrix_set(A, mna_ndx(nd_node) + dim, mna_ndx(ns_node) + dim, matrix_get(A, mna_ndx(nd_node) + dim, mna_ndx(ns_node) + dim) - gds_plus_gm)
+    }
+    if (ns_node > 0.0 && ns_node <= N && nd_node > 0.0 && nd_node <= N) {
+        matrix_set(A, mna_ndx(ns_node), mna_ndx(nd_node), matrix_get(A, mna_ndx(ns_node), mna_ndx(nd_node)) - gds)
+        matrix_set(A, mna_ndx(ns_node) + dim, mna_ndx(nd_node) + dim, matrix_get(A, mna_ndx(ns_node) + dim, mna_ndx(nd_node) + dim) - gds)
+    }
+    if (ns_node > 0.0 && ns_node <= N && ng_node > 0.0 && ng_node <= N) {
+        matrix_set(A, mna_ndx(ns_node), mna_ndx(ng_node), matrix_get(A, mna_ndx(ns_node), mna_ndx(ng_node)) - gm)
+        matrix_set(A, mna_ndx(ns_node) + dim, mna_ndx(ng_node) + dim, matrix_get(A, mna_ndx(ns_node) + dim, mna_ndx(ng_node) + dim) - gm)
+    }
+    if (ns_node > 0.0 && ns_node <= N) {
+        matrix_set(A, mna_ndx(ns_node), mna_ndx(ns_node), matrix_get(A, mna_ndx(ns_node), mna_ndx(ns_node)) + gds_plus_gm)
+        matrix_set(A, mna_ndx(ns_node) + dim, mna_ndx(ns_node) + dim, matrix_get(A, mna_ndx(ns_node) + dim, mna_ndx(ns_node) + dim) + gds_plus_gm)
+    }
+}
+
+def ac_stamp_jfet_ss(A : matrix, comps : matrix, ci, nd_node, ng_node, V : matrix, N, dim) {
+    var ns_node = circuit_node_3(comps, ci)
+    var t = circuit_component_type(comps, ci)
+    var beta_val = circuit_param(comps, ci, 5.0)
+    var vto_val = circuit_param(comps, ci, 6.0)
+    var lambda_val = circuit_param(comps, ci, 7.0)
+    var vd_v = 0.0; var vg_v = 0.0; var vs_v = 0.0
+    if (nd_node > 0.0 && nd_node <= N) { vd_v = matrix_get(V, nd_node, 0) }
+    if (ng_node > 0.0 && ng_node <= N) { vg_v = matrix_get(V, ng_node, 0) }
+    if (ns_node > 0.0 && ns_node <= N) { vs_v = matrix_get(V, ns_node, 0) }
+    var vgs = vg_v - vs_v
+    var vds = vd_v - vs_v
+    var gm = 0.0; var gds = 0.0
+    var vov = vgs - vto_val
+    if (t == 15.0) { vgs = -vgs; vds = -vds; vov = -vov }
+    if (vov > 0.0) {
+        if (vds < vov) {
+            var id = beta_val * (vov * vds - 0.5 * vds * vds)
+            gm = beta_val * vds
+            gds = beta_val * (vov - vds)
+            if (lambda_val > 0.0) {
+                id = id * (1.0 + lambda_val * vds)
+                gm = gm * (1.0 + lambda_val * vds)
+                gds = gds * (1.0 + lambda_val * vds) + lambda_val * id / (1.0 + lambda_val * vds)
+            }
+        } else {
+            var id = 0.5 * beta_val * vov * vov
+            gm = beta_val * vov
+            gds = 0.0
+            if (lambda_val > 0.0) {
+                id = id * (1.0 + lambda_val * vds)
+                gm = gm * (1.0 + lambda_val * vds)
+                gds = lambda_val * id / (1.0 + lambda_val * vds)
+            }
+        }
+    }
+    var gds_plus_gm = gds + gm
+    if (nd_node > 0.0 && nd_node <= N) {
+        matrix_set(A, mna_ndx(nd_node), mna_ndx(nd_node), matrix_get(A, mna_ndx(nd_node), mna_ndx(nd_node)) + gds)
+        matrix_set(A, mna_ndx(nd_node) + dim, mna_ndx(nd_node) + dim, matrix_get(A, mna_ndx(nd_node) + dim, mna_ndx(nd_node) + dim) + gds)
+    }
+    if (nd_node > 0.0 && nd_node <= N && ng_node > 0.0 && ng_node <= N) {
+        matrix_set(A, mna_ndx(nd_node), mna_ndx(ng_node), matrix_get(A, mna_ndx(nd_node), mna_ndx(ng_node)) + gm)
+        matrix_set(A, mna_ndx(nd_node) + dim, mna_ndx(ng_node) + dim, matrix_get(A, mna_ndx(nd_node) + dim, mna_ndx(ng_node) + dim) + gm)
+    }
+    if (nd_node > 0.0 && nd_node <= N && ns_node > 0.0 && ns_node <= N) {
+        matrix_set(A, mna_ndx(nd_node), mna_ndx(ns_node), matrix_get(A, mna_ndx(nd_node), mna_ndx(ns_node)) - gds_plus_gm)
+        matrix_set(A, mna_ndx(nd_node) + dim, mna_ndx(ns_node) + dim, matrix_get(A, mna_ndx(nd_node) + dim, mna_ndx(ns_node) + dim) - gds_plus_gm)
+    }
+    if (ns_node > 0.0 && ns_node <= N && nd_node > 0.0 && nd_node <= N) {
+        matrix_set(A, mna_ndx(ns_node), mna_ndx(nd_node), matrix_get(A, mna_ndx(ns_node), mna_ndx(nd_node)) - gds)
+        matrix_set(A, mna_ndx(ns_node) + dim, mna_ndx(nd_node) + dim, matrix_get(A, mna_ndx(ns_node) + dim, mna_ndx(nd_node) + dim) - gds)
+    }
+    if (ns_node > 0.0 && ns_node <= N && ng_node > 0.0 && ng_node <= N) {
+        matrix_set(A, mna_ndx(ns_node), mna_ndx(ng_node), matrix_get(A, mna_ndx(ns_node), mna_ndx(ng_node)) - gm)
+        matrix_set(A, mna_ndx(ns_node) + dim, mna_ndx(ng_node) + dim, matrix_get(A, mna_ndx(ns_node) + dim, mna_ndx(ng_node) + dim) - gm)
+    }
+    if (ns_node > 0.0 && ns_node <= N) {
+        matrix_set(A, mna_ndx(ns_node), mna_ndx(ns_node), matrix_get(A, mna_ndx(ns_node), mna_ndx(ns_node)) + gds_plus_gm)
+        matrix_set(A, mna_ndx(ns_node) + dim, mna_ndx(ns_node) + dim, matrix_get(A, mna_ndx(ns_node) + dim, mna_ndx(ns_node) + dim) + gds_plus_gm)
     }
 }
 
@@ -284,4 +448,50 @@ def ac_sweep(comps : matrix, ctrl : matrix, f_start, f_stop, npoints, V : matrix
         si = si + 1.0
     }
     results
+}
+
+def ac_stamp_vcsw_ss(A : matrix, comps : matrix, ci, np_node, nm_node, V : matrix, N, dim) {
+    var ncp_node = circuit_node_3(comps, ci)
+    var ncm_node = circuit_param(comps, ci, 4.0)
+    var vnp = 0.0; var vnm = 0.0; var vcp = 0.0; var vcm = 0.0
+    if (np_node > 0.0 && np_node <= N) { vnp = matrix_get(V, np_node, 0) }
+    if (nm_node > 0.0 && nm_node <= N) { vnm = matrix_get(V, nm_node, 0) }
+    if (ncp_node > 0.0 && ncp_node <= N) { vcp = matrix_get(V, ncp_node, 0) }
+    if (ncm_node > 0.0 && ncm_node <= N) { vcm = matrix_get(V, ncm_node, 0) }
+    var Vctrl = vcp - vcm
+    var Vdiff = vnp - vnm
+    var sw_info = vcsw_conductance(comps, ci, Vctrl)
+    var g = matrix_get(sw_info, 0, 0)
+    var dg = matrix_get(sw_info, 1, 0)
+    var gm_val = dg * Vdiff
+    ac_stamp_g(A, np_node, nm_node, g, N, dim)
+    if (gm_val != 0.0) {
+        ac_stamp_gm(A, np_node, nm_node, ncp_node, ncm_node, gm_val, N, dim)
+    }
+}
+
+def ac_stamp_ccsw_ss(A : matrix, comps : matrix, ctrl : matrix, ci, np_node, nm_node, V : matrix, N, dim) {
+    var vsrc_idx = circuit_param(comps, ci, 3.0)
+    var Ictrl = circuit_param(comps, ci, 9.0)
+    var vnp = 0.0; var vnm = 0.0
+    if (np_node > 0.0 && np_node <= N) { vnp = matrix_get(V, np_node, 0) }
+    if (nm_node > 0.0 && nm_node <= N) { vnm = matrix_get(V, nm_node, 0) }
+    var Vdiff = vnp - vnm
+    var sw_info = ccsw_conductance(comps, ci, Ictrl)
+    var g = matrix_get(sw_info, 0, 0)
+    var dg = matrix_get(sw_info, 1, 0)
+    var gm_val = dg * Vdiff
+    ac_stamp_g(A, np_node, nm_node, g, N, dim)
+    if (gm_val != 0.0 && vsrc_idx >= 0.0) {
+        var vsrc_bi = mna_branch_index(comps, ctrl, vsrc_idx)
+        var br = N + vsrc_bi
+        if (np_node > 0.0 && np_node <= N && br < N + dim) {
+            matrix_set(A, mna_ndx(np_node), br, matrix_get(A, mna_ndx(np_node), br) + gm_val)
+            matrix_set(A, mna_ndx(np_node) + dim, br + dim, matrix_get(A, mna_ndx(np_node) + dim, br + dim) + gm_val)
+        }
+        if (nm_node > 0.0 && nm_node <= N && br < N + dim) {
+            matrix_set(A, mna_ndx(nm_node), br, matrix_get(A, mna_ndx(nm_node), br) - gm_val)
+            matrix_set(A, mna_ndx(nm_node) + dim, br + dim, matrix_get(A, mna_ndx(nm_node) + dim, br + dim) - gm_val)
+        }
+    }
 }

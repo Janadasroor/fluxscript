@@ -142,7 +142,7 @@ std::unique_ptr<ExprAST> Parser::ParseAnalogBlock()
                 }
 
                 if (CurTok != ')') {
-                    ReportError("expected ')'");
+                    ReportError("expected ')' after nodes in contributor");
                     return nullptr;
                 }
                 getNextToken(); // eat )
@@ -208,7 +208,7 @@ std::unique_ptr<ExprAST> Parser::ParseDdtExpr()
         return nullptr;
 
     if (CurTok != ')') {
-        ReportError("expected ')'");
+        ReportError("expected ')' after ddt expression");
         return nullptr;
     }
     getNextToken(); // eat )
@@ -240,7 +240,7 @@ std::unique_ptr<ExprAST> Parser::ParseIdtExpr()
     }
 
     if (CurTok != ')') {
-        ReportError("expected ')'");
+        ReportError("expected ')' after idt expression");
         return nullptr;
     }
     getNextToken(); // eat )

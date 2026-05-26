@@ -15,6 +15,7 @@
 tests/integration/results/
 todo/
 TODO.md
+AGENT.md
 progress.md
 /*.csv
 /*.json

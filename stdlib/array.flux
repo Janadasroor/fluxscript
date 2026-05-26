@@ -1,3 +1,9 @@
+# matrix creation helpers wrapping extern C functions
+def eye(n) matrix_eye(n)
+def ones(r, c) matrix_ones(r, c)
+def sum(m) matrix_sum(m)
+def mean(m) matrix_mean(m)
+
 # linspace: evenly spaced values from start to stop
 # Args: start - first value, stop - last value, n - number of points
 # Throws: if n < 2

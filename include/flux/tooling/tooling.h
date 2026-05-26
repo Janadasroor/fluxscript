@@ -38,6 +38,11 @@ struct AOTOptions
     OptimizationLevel optimizationLevel = OptimizationLevel::O2;
     bool debugInfo = false;
     bool sharedLibrary = false;
+    /// Optional progress callback for large projects.
+    CompileProgressCallback progressCallback = nullptr;
+
+    /// Number of parallel jobs for function codegen (default 1 = sequential).
+    int numJobs = 1;
 };
 
 struct ProfileResult
@@ -69,7 +74,8 @@ std::string computeCacheKey(const std::string& code, const CompilerOptions& opti
 std::string computeImportGraphHash(const std::string& mainCode);
 
 bool emitObjectBuffer(CompileArtifacts& artifacts, OptimizationLevel optimizationLevel,
-                      std::unique_ptr<llvm::MemoryBuffer>& output, std::string* error = nullptr);
+                      std::unique_ptr<llvm::MemoryBuffer>& output, std::string* error = nullptr,
+                      bool pic = false);
 bool emitObjectFile(CompileArtifacts& artifacts, const std::string& outputPath, std::string* error = nullptr);
 bool emitArtifact(const std::string& code, const AOTOptions& options, std::string* error = nullptr);
 

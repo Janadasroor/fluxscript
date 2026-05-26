@@ -48,6 +48,20 @@ def main() {
     print("  Components: "); print(circuit_count(ctrl4)); println("")
     println("")
 
+    println("5. NPN with .model card")
+    var comps5 = matrix_zeros(max_comps, 12.0)
+    var ctrl5 = circuit_create(max_nodes, max_comps)
+    var N5 = netlist_parse("circuits/npn_model.sp", comps5, ctrl5)
+    print("  N = "); print(N5); println(" (expected 3)")
+    println("")
+
+    println("6. Diode with .model card")
+    var comps6 = matrix_zeros(max_comps, 12.0)
+    var ctrl6 = circuit_create(max_nodes, max_comps)
+    var N6 = netlist_parse("circuits/diode_model.sp", comps6, ctrl6)
+    print("  N = "); print(N6); println(" (expected 2)")
+    println("")
+
     println("=== All netlist tests complete ===")
 }
 main()

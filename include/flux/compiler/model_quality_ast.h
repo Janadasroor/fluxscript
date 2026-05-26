@@ -212,6 +212,24 @@ public:
     double getRelativeTolerancePercent() const { return RelativeTolerancePercent; }
 };
 
+// Standalone diagnostic directive: diagnostic V(node) [type="overshoot"] [threshold=0.1]
+class DiagnosticDeclAST : public ExprAST
+{
+    std::string Node;
+    std::string DiagnosticType;
+    double Threshold;
+
+public:
+    DiagnosticDeclAST(const std::string& node, const std::string& type = "", double threshold = 0.0)
+        : Node(node), DiagnosticType(type), Threshold(threshold) {}
+
+    TypedValue codegen(CodegenContext& context) override;
+
+    const std::string& getNode() const { return Node; }
+    const std::string& getDiagnosticType() const { return DiagnosticType; }
+    double getThreshold() const { return Threshold; }
+};
+
 } // namespace Flux
 
 #endif // FLUX_MODEL_QUALITY_AST_H

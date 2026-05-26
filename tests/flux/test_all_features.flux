@@ -175,3 +175,41 @@ def test_hypot_dim() {
 def test_pow_op_dimensionless() {
     2.0 ^ 3 == 8.0
 }
+
+# --- Struct feature tests ---
+
+struct Point2D { x: Double, y: Double }
+
+def test_struct_construct_access() {
+    let p = Point2D { x: 3.0, y: 4.0 };
+    p.x == 3.0 && p.y == 4.0
+}
+
+def test_struct_letin() {
+    let p = Point2D { x: 7.0, y: 8.0 } in p.y == 8.0
+}
+
+def test_struct_multi_field() {
+    let p = Point2D { x: 1.0, y: 2.0 };
+    let a = p.x + p.y;
+    a == 3.0
+}
+
+# --- Enum feature tests ---
+
+enum TrafficLight
+    Red
+    Yellow
+    Green
+end
+
+def test_enum_variant() {
+    let c = TrafficLight.Green;
+    1.0
+}
+
+def test_enum_mixed() {
+    let r = TrafficLight.Red;
+    let g = TrafficLight.Green;
+    1.0
+}

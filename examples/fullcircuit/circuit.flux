@@ -34,7 +34,10 @@
 #  11: Qpnp (PNP BJT)
 #  12: Mnmos (NMOS)
 #  13: Mpmos (PMOS)
-#  14: X   (subcircuit placeholder)
+#  14: Jnjf (N-channel JFET)
+#  15: Jpjf (P-channel JFET)
+#  16: S (VCSW, voltage-controlled switch)
+#  17: W (CCSW, current-controlled switch)
 
 def circuit_create(num_nodes, max_comps) {
     var comps = matrix_zeros(max_comps, 12)
@@ -124,6 +127,28 @@ def circuit_add_iac(comps : matrix, ctrl : matrix, n_plus, n_minus, dc_val, ac_m
     matrix_set(comps, i, 9, ac_freq)
     matrix_set(comps, i, 10, ac_phase)
     matrix_set(ctrl, 1, 0, i + 1.0)
+    i
+}
+
+def circuit_add_vpulse(comps : matrix, ctrl : matrix, n_plus, n_minus, per, v1, v2, td, tr_val, tfall, pw) {
+    var i = circuit_add_vdc(comps, ctrl, n_plus, n_minus, per)
+    circuit_set_param(comps, i, 5, tr_val)
+    circuit_set_param(comps, i, 6, tfall)
+    circuit_set_param(comps, i, 7, pw)
+    circuit_set_param(comps, i, 8, v1)
+    circuit_set_param(comps, i, 9, v2)
+    circuit_set_param(comps, i, 10, td)
+    circuit_set_param(comps, i, 11, 1.0)
+    i
+}
+
+def circuit_add_vsin(comps : matrix, ctrl : matrix, n_plus, n_minus, voff, vamp, freq, phase) {
+    var i = circuit_add_vdc(comps, ctrl, n_plus, n_minus, 0.0)
+    circuit_set_param(comps, i, 5, phase)
+    circuit_set_param(comps, i, 8, voff)
+    circuit_set_param(comps, i, 9, vamp)
+    circuit_set_param(comps, i, 10, freq)
+    circuit_set_param(comps, i, 11, 2.0)
     i
 }
 
@@ -219,6 +244,70 @@ def circuit_add_pmos(comps : matrix, ctrl : matrix, n_d, n_g, n_s, n_b, kp, vto,
     matrix_set(comps, i, 5, kp)
     matrix_set(comps, i, 6, vto)
     matrix_set(comps, i, 7, lambda_val)
+    matrix_set(ctrl, 1, 0, i + 1.0)
+    i
+}
+
+def circuit_add_njf(comps : matrix, ctrl : matrix, n_d, n_g, n_s, beta_val, vto, lambda_val) {
+    var i = matrix_get(ctrl, 1, 0)
+    matrix_set(comps, i, 0, 14.0)
+    matrix_set(comps, i, 1, n_d)
+    matrix_set(comps, i, 2, n_g)
+    matrix_set(comps, i, 3, n_s)
+    matrix_set(comps, i, 4, 0.0)
+    matrix_set(comps, i, 5, beta_val)
+    matrix_set(comps, i, 6, vto)
+    matrix_set(comps, i, 7, lambda_val)
+    matrix_set(ctrl, 1, 0, i + 1.0)
+    i
+}
+
+def circuit_add_pjf(comps : matrix, ctrl : matrix, n_d, n_g, n_s, beta_val, vto, lambda_val) {
+    var i = matrix_get(ctrl, 1, 0)
+    matrix_set(comps, i, 0, 15.0)
+    matrix_set(comps, i, 1, n_d)
+    matrix_set(comps, i, 2, n_g)
+    matrix_set(comps, i, 3, n_s)
+    matrix_set(comps, i, 4, 0.0)
+    matrix_set(comps, i, 5, beta_val)
+    matrix_set(comps, i, 6, vto)
+    matrix_set(comps, i, 7, lambda_val)
+    matrix_set(ctrl, 1, 0, i + 1.0)
+    i
+}
+
+# --- controlled switches ---
+# VCSW: voltage-controlled switch (SPICE S)
+# col[0]=16, col[1]=n+, col[2]=n-, col[3]=n_c+, col[4]=n_c-
+# col[5]=RON, col[6]=ROFF, col[7]=VON, col[8]=VOFF
+def circuit_add_vcsw(comps : matrix, ctrl : matrix, n_plus, n_minus, n_cp, n_cm, ron, roff, von, voff) {
+    var i = matrix_get(ctrl, 1, 0)
+    matrix_set(comps, i, 0, 16.0)
+    matrix_set(comps, i, 1, n_plus)
+    matrix_set(comps, i, 2, n_minus)
+    matrix_set(comps, i, 3, n_cp)
+    matrix_set(comps, i, 4, n_cm)
+    matrix_set(comps, i, 5, ron)
+    matrix_set(comps, i, 6, roff)
+    matrix_set(comps, i, 7, von)
+    matrix_set(comps, i, 8, voff)
+    matrix_set(ctrl, 1, 0, i + 1.0)
+    i
+}
+
+# CCSW: current-controlled switch (SPICE W)
+# col[0]=17, col[1]=n+, col[2]=n-, col[3]=vsrc_component_idx
+# col[5]=RON, col[6]=ROFF, col[7]=ION, col[8]=IOFF
+def circuit_add_ccsw(comps : matrix, ctrl : matrix, n_plus, n_minus, vsrc_idx, ron, roff, ion, ioff) {
+    var i = matrix_get(ctrl, 1, 0)
+    matrix_set(comps, i, 0, 17.0)
+    matrix_set(comps, i, 1, n_plus)
+    matrix_set(comps, i, 2, n_minus)
+    matrix_set(comps, i, 3, vsrc_idx)
+    matrix_set(comps, i, 5, ron)
+    matrix_set(comps, i, 6, roff)
+    matrix_set(comps, i, 7, ion)
+    matrix_set(comps, i, 8, ioff)
     matrix_set(ctrl, 1, 0, i + 1.0)
     i
 }

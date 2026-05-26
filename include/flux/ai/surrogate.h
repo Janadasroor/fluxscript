@@ -66,6 +66,7 @@ public:
 
     void setArchitecture(const NetworkArchitecture& arch);
     void setEpochs(int epochs) { m_arch.epochs = epochs; }
+    void setSeed(unsigned seed) { m_seed = seed; }
 
     TrainingResult train(const TrainingData& data);
     TrainingResult train(const TrainingData& trainData, const TrainingData& valData);
@@ -102,6 +103,7 @@ private:
 
     NetworkArchitecture m_arch;
     bool m_trained;
+    unsigned m_seed = 0;
     std::vector<Eigen::MatrixXd> m_weights;
     std::vector<Eigen::VectorXd> m_biases;
     mutable std::vector<Eigen::VectorXd> m_activations;

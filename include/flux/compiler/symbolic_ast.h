@@ -137,6 +137,115 @@ public:
     TypedValue codegen(CodegenContext& context) override;
 };
 
+// Indefinite integral
+class IntegrateExprAST : public ExprAST
+{
+    std::unique_ptr<ExprAST> Expression;
+    std::string Variable;
+
+public:
+    IntegrateExprAST(std::unique_ptr<ExprAST> expr, std::string var)
+        : Expression(std::move(expr)), Variable(std::move(var))
+    {
+    }
+    TypedValue codegen(CodegenContext& context) override;
+};
+
+// Laplace transform
+class LaplaceExprAST : public ExprAST
+{
+    std::unique_ptr<ExprAST> Expression;
+    std::string TimeVar;
+    std::string SVar;
+
+public:
+    LaplaceExprAST(std::unique_ptr<ExprAST> expr, std::string tVar, std::string sVar)
+        : Expression(std::move(expr)), TimeVar(std::move(tVar)), SVar(std::move(sVar))
+    {
+    }
+    TypedValue codegen(CodegenContext& context) override;
+};
+
+// Inverse Laplace transform
+class InverseLaplaceExprAST : public ExprAST
+{
+    std::unique_ptr<ExprAST> Expression;
+    std::string SVar;
+    std::string TimeVar;
+
+public:
+    InverseLaplaceExprAST(std::unique_ptr<ExprAST> expr, std::string sVar, std::string tVar)
+        : Expression(std::move(expr)), SVar(std::move(sVar)), TimeVar(std::move(tVar))
+    {
+    }
+    TypedValue codegen(CodegenContext& context) override;
+};
+
+// Expand expression
+class ExpandExprAST : public ExprAST
+{
+    std::unique_ptr<ExprAST> Expression;
+public:
+    ExpandExprAST(std::unique_ptr<ExprAST> expr) : Expression(std::move(expr)) {}
+    TypedValue codegen(CodegenContext& context) override;
+};
+
+// Factor expression
+class FactorExprAST : public ExprAST
+{
+    std::unique_ptr<ExprAST> Expression;
+public:
+    FactorExprAST(std::unique_ptr<ExprAST> expr) : Expression(std::move(expr)) {}
+    TypedValue codegen(CodegenContext& context) override;
+};
+
+// Collect terms
+class CollectExprAST : public ExprAST
+{
+    std::unique_ptr<ExprAST> Expression;
+    std::string Variable;
+public:
+    CollectExprAST(std::unique_ptr<ExprAST> expr, std::string var)
+        : Expression(std::move(expr)), Variable(std::move(var)) {}
+    TypedValue codegen(CodegenContext& context) override;
+};
+
+// Get numerator of rational expression
+class NumeratorExprAST : public ExprAST
+{
+    std::unique_ptr<ExprAST> Expression;
+public:
+    NumeratorExprAST(std::unique_ptr<ExprAST> expr) : Expression(std::move(expr)) {}
+    TypedValue codegen(CodegenContext& context) override;
+};
+
+// Get denominator of rational expression
+class DenominatorExprAST : public ExprAST
+{
+    std::unique_ptr<ExprAST> Expression;
+public:
+    DenominatorExprAST(std::unique_ptr<ExprAST> expr) : Expression(std::move(expr)) {}
+    TypedValue codegen(CodegenContext& context) override;
+};
+
+// Find poles of transfer function
+class PolesExprAST : public ExprAST
+{
+    std::unique_ptr<ExprAST> Expression;
+public:
+    PolesExprAST(std::unique_ptr<ExprAST> expr) : Expression(std::move(expr)) {}
+    TypedValue codegen(CodegenContext& context) override;
+};
+
+// Find zeros of transfer function
+class ZerosExprAST : public ExprAST
+{
+    std::unique_ptr<ExprAST> Expression;
+public:
+    ZerosExprAST(std::unique_ptr<ExprAST> expr) : Expression(std::move(expr)) {}
+    TypedValue codegen(CodegenContext& context) override;
+};
+
 } // namespace Flux
 
 #endif // FLUX_SYMBOLIC_AST_H

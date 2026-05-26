@@ -296,9 +296,11 @@ TypedValue CornerExprAST::codegen(CodegenContext& context)
 
 // ============ Pattern Match Codegen ============
 
-void MatchExprAST::addArm(std::unique_ptr<ExprAST> pattern, std::unique_ptr<ExprAST> result)
+void MatchExprAST::addArm(std::unique_ptr<ExprAST> pattern, std::unique_ptr<ExprAST> result,
+                          const std::vector<std::string>& bindings)
 {
     Arms.emplace_back(std::move(pattern), std::move(result));
+    Bindings.push_back(bindings);
 }
 
 void MatchExprAST::setDefault(std::unique_ptr<ExprAST> arm)
@@ -306,86 +308,311 @@ void MatchExprAST::setDefault(std::unique_ptr<ExprAST> arm)
     DefaultArm = std::move(arm);
 }
 
+static const std::vector<std::string> emptyBindings;
+
 TypedValue MatchExprAST::codegen(CodegenContext& context)
 {
-    // Generate pattern matching as a series of if-else comparisons
     llvm::Function* TheFunction = context.Builder.GetInsertBlock()->getParent();
     llvm::LLVMContext& Ctx = context.TheContext;
     llvm::Type* DoubleTy = llvm::Type::getDoubleTy(Ctx);
 
-    // Generate the value to match against
     TypedValue MatchValTV = Value->codegen(context);
     if (!MatchValTV.Val)
         return TypedValue();
 
-    // Create merge and result alloc
+    bool isEnumMatch = MatchValTV.Type.isEnum();
+    bool isPayloadEnum = isEnumMatch && MatchValTV.Val->getType()->isStructTy();
+
+    // Determine return type from result expressions (default to Double)
+    llvm::Type* ResultTy = DoubleTy;
+
     llvm::BasicBlock* MergeBB = llvm::BasicBlock::Create(Ctx, "match_merge");
-    llvm::AllocaInst* ResultAlloc = context.Builder.CreateAlloca(DoubleTy, nullptr, "match_result");
+    llvm::AllocaInst* ResultAlloc = context.Builder.CreateAlloca(ResultTy, nullptr, "match_result");
 
-    llvm::BasicBlock* CurrentBB = context.Builder.GetInsertBlock();
+    // Build chained checks: each arm gets a check block and a match body block
+    std::vector<llvm::BasicBlock*> checkBBs;
+    std::vector<llvm::BasicBlock*> matchBBs;
+    for (size_t i = 0; i < Arms.size(); ++i) {
+        checkBBs.push_back(llvm::BasicBlock::Create(Ctx, "match_check_" + std::to_string(i), TheFunction));
+        matchBBs.push_back(llvm::BasicBlock::Create(Ctx, "match_arm_" + std::to_string(i), TheFunction));
+    }
 
-    // Generate each arm as nested if-else
-    llvm::BasicBlock* NextCheckBB = nullptr;
+    if (checkBBs.empty()) {
+        // No arms — direct branch to merge/default
+        if (DefaultArm) {
+            TypedValue DefaultTV = DefaultArm->codegen(context);
+            if (!DefaultTV.Val) return TypedValue();
+            llvm::Value* DefaultV = DefaultTV.Val;
+            if (DefaultV->getType()->isIntegerTy())
+                DefaultV = context.Builder.CreateSIToFP(DefaultV, DoubleTy, "default_cast");
+            context.Builder.CreateStore(DefaultV, ResultAlloc);
+        }
+        context.Builder.CreateBr(MergeBB);
+        TheFunction->insert(TheFunction->end(), MergeBB);
+        context.Builder.SetInsertPoint(MergeBB);
+        llvm::Value* ResultVal = context.Builder.CreateLoad(ResultTy, ResultAlloc, "match_result_val");
+        return TypedValue(ResultVal, TypeKind::Double);
+    }
 
-    for (int i = static_cast<int>(Arms.size()) - 1; i >= 0; i--) {
+    // Branch from current block to the first check
+    context.Builder.CreateBr(checkBBs[0]);
+
+    // Generate each arm
+    llvm::BasicBlock* DefaultFallbackBB = nullptr;
+    for (size_t i = 0; i < Arms.size(); ++i) {
         auto& [Pattern, Result] = Arms[i];
+        const auto& armBindings = i < Bindings.size() ? Bindings[i] : emptyBindings;
 
-        // Create the "else" block (next check or default)
-        llvm::BasicBlock* ElseBB;
-        if (NextCheckBB) {
-            ElseBB = NextCheckBB;
-        } else if (i == static_cast<int>(Arms.size()) - 1 && DefaultArm) {
-            ElseBB = llvm::BasicBlock::Create(Ctx, "match_default", TheFunction);
+        // Determine which block to branch to when this check fails
+        llvm::BasicBlock* NextBB;
+        if (i + 1 < Arms.size()) {
+            NextBB = checkBBs[i + 1];
+        } else if (DefaultArm) {
+            NextBB = llvm::BasicBlock::Create(Ctx, "match_default", TheFunction);
+            DefaultFallbackBB = NextBB;
         } else {
-            ElseBB = MergeBB;
+            NextBB = MergeBB;
         }
 
-        // Create match block
-        llvm::BasicBlock* MatchBB = llvm::BasicBlock::Create(Ctx, "match_arm_" + std::to_string(i), TheFunction);
+        // Emit check in the check block
+        context.Builder.SetInsertPoint(checkBBs[i]);
 
-        // Re-generate pattern value (need to regenerate in current context)
-        // Save and restore builder position
-        llvm::IRBuilder<>::InsertPoint GuardIP = context.Builder.saveIP();
-        context.Builder.SetInsertPoint(CurrentBB);
+        llvm::Value* IsMatch = nullptr;
 
-        TypedValue PatternTV = Pattern->codegen(context);
-        if (!PatternTV.Val)
-            return TypedValue();
+        if (isPayloadEnum) {
+            // Extract discriminant (i32 tag) from tagged union struct value
+            llvm::Value* TagVal = context.Builder.CreateExtractValue(
+                MatchValTV.Val, {0}, "tag");
 
-        llvm::Value* IsMatch =
-            context.Builder.CreateFCmpOEQ(MatchValTV.Val, PatternTV.Val, "match_check_" + std::to_string(i));
+            llvm::Value* PatDiscVal = nullptr;
 
-        context.Builder.CreateCondBr(IsMatch, MatchBB, ElseBB);
+            // If pattern has a binding variable, compute discriminant from AST without
+            // codegen'ing the pattern (which would fail on the unbounded binding variable).
+            if (!armBindings.empty()) {
+                if (auto* callPat = dynamic_cast<CallExprAST*>(Pattern.get())) {
+                    if (auto* memberPat = dynamic_cast<MemberExprAST*>(callPat->getCalleeExpr())) {
+                        if (auto* objPat = dynamic_cast<VariableExprAST*>(memberPat->getObject())) {
+                            std::string enumName = objPat->getName();
+                            std::string varName = memberPat->getMemberName();
+                            auto enumIt = context.EnumTypeIndex.find(enumName);
+                            if (enumIt != context.EnumTypeIndex.end()) {
+                                int enumId = enumIt->second;
+                                if (enumId >= 0 && enumId < static_cast<int>(context.EnumTypes.size())) {
+                                    auto& enumInfo = context.EnumTypes[enumId];
+                                    for (size_t vi = 0; vi < enumInfo.Variants.size(); ++vi) {
+                                        if (enumInfo.Variants[vi] == varName) {
+                                            PatDiscVal = llvm::ConstantInt::get(
+                                                llvm::Type::getInt32Ty(Ctx), vi);
+                                            break;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
 
-        // Generate match arm body
-        context.Builder.SetInsertPoint(MatchBB);
+            // Fallback: codegen pattern normally (works for bindless patterns like Option.Some(5.0))
+            if (!PatDiscVal) {
+                TypedValue PatternTV = Pattern->codegen(context);
+                if (!PatternTV.Val)
+                    return TypedValue();
+                PatDiscVal = PatternTV.Val;
+                if (PatDiscVal->getType()->isStructTy()) {
+                    PatDiscVal = context.Builder.CreateExtractValue(PatDiscVal, {0}, "pat_tag");
+                }
+            }
+
+            // Cast to i32 if needed
+            if (PatDiscVal->getType() != llvm::Type::getInt32Ty(Ctx))
+                PatDiscVal = context.Builder.CreateIntCast(PatDiscVal, llvm::Type::getInt32Ty(Ctx), false, "pat_tag_casted");
+            IsMatch = context.Builder.CreateICmpEQ(TagVal, PatDiscVal, "tag_cmp_" + std::to_string(i));
+        } else if (isEnumMatch) {
+            // Simple enum (i32 discriminant) — or tagged union if payload enum exists
+            TypedValue PatternTV = Pattern->codegen(context);
+            if (!PatternTV.Val)
+                return TypedValue();
+            llvm::Value* patVal = PatternTV.Val;
+            // If pattern produced a struct, extract its tag (i32)
+            if (patVal->getType()->isStructTy()) {
+                patVal = context.Builder.CreateExtractValue(patVal, {0}, "pat_tag");
+            }
+            llvm::Value* matchVal = MatchValTV.Val;
+            // If match value is a struct, extract its tag
+            if (matchVal->getType()->isStructTy()) {
+                matchVal = context.Builder.CreateExtractValue(matchVal, {0}, "val_tag");
+            }
+            if (patVal->getType() != matchVal->getType())
+                patVal = context.Builder.CreateIntCast(patVal, matchVal->getType(), false, "pat_cast");
+            IsMatch = context.Builder.CreateICmpEQ(matchVal, patVal, "cmp_" + std::to_string(i));
+        } else {
+            // Non-enum match: use existing comparison logic
+            TypedValue PatternTV = Pattern->codegen(context);
+            if (!PatternTV.Val)
+                return TypedValue();
+
+            llvm::Value*& PatternVal = PatternTV.Val;
+            llvm::Value* MatchVal = MatchValTV.Val;
+
+            if (MatchVal->getType()->isIntegerTy()) {
+                if (PatternVal->getType() != MatchVal->getType())
+                    PatternVal = context.Builder.CreateIntCast(PatternVal, MatchVal->getType(), false, "pat_cast");
+                IsMatch = context.Builder.CreateICmpEQ(MatchVal, PatternVal, "cmp_" + std::to_string(i));
+            } else if (MatchVal->getType()->isFloatingPointTy()) {
+                if (PatternVal->getType()->isIntegerTy())
+                    PatternVal = context.Builder.CreateSIToFP(PatternVal, MatchVal->getType(), "pat_to_fp");
+                IsMatch = context.Builder.CreateFCmpOEQ(MatchVal, PatternVal, "cmp_" + std::to_string(i));
+            } else {
+                // Fallback: compare as integers via ptrtoint
+                IsMatch = context.Builder.CreateICmpEQ(
+                    context.Builder.CreatePtrToInt(MatchVal, llvm::Type::getInt64Ty(Ctx)),
+                    context.Builder.CreatePtrToInt(PatternVal, llvm::Type::getInt64Ty(Ctx)),
+                    "cmp_" + std::to_string(i));
+            }
+        }
+
+        context.Builder.CreateCondBr(IsMatch, matchBBs[i], NextBB);
+
+        // Emit match body
+        context.Builder.SetInsertPoint(matchBBs[i]);
+
+        // If this pattern has binding variables, extract payload fields and store them
+        if (!armBindings.empty() && isPayloadEnum) {
+            // Allocate the matched union value on the stack to get a pointer to it
+            llvm::Value* matchValAlloca = context.Builder.CreateAlloca(MatchValTV.Val->getType(), nullptr, "match_val_alloc");
+            context.Builder.CreateStore(MatchValTV.Val, matchValAlloca);
+
+            // Get GEP pointer to the generic payload
+            llvm::Value* payloadPtr = context.Builder.CreateStructGEP(MatchValTV.Val->getType(), matchValAlloca, 1, "payload_ptr");
+
+            // Identify the actual matched variant payload type
+            int matchedVarIdx = -1;
+            std::string variantName;
+            if (auto* callPat = dynamic_cast<CallExprAST*>(Pattern.get())) {
+                if (auto* memberPat = dynamic_cast<MemberExprAST*>(callPat->getCalleeExpr())) {
+                    variantName = memberPat->getMemberName();
+                }
+            } else if (auto* memberPat = dynamic_cast<MemberExprAST*>(Pattern.get())) {
+                variantName = memberPat->getMemberName();
+            }
+
+            int enumTypeId = MatchValTV.Type.EnumTypeId;
+            if (enumTypeId >= 0 && enumTypeId < static_cast<int>(context.EnumTypes.size())) {
+                auto& enumInfo = context.EnumTypes[enumTypeId];
+                for (size_t vi = 0; vi < enumInfo.Variants.size(); ++vi) {
+                    if (enumInfo.Variants[vi] == variantName) {
+                        matchedVarIdx = static_cast<int>(vi);
+                        break;
+                    }
+                }
+            }
+
+            if (matchedVarIdx >= 0) {
+                auto& enumInfo = context.EnumTypes[enumTypeId];
+                FluxType concretePayloadType = enumInfo.VariantPayloads[matchedVarIdx];
+                // Inline resolveUserStructType
+                if (concretePayloadType.Kind == TypeKind::UserStruct && concretePayloadType.StructTypeId < 0 && !concretePayloadType.GenericName.empty()) {
+                    auto it = context.StructTypeIndex.find(concretePayloadType.GenericName);
+                    if (it != context.StructTypeIndex.end()) {
+                        concretePayloadType.StructTypeId = it->second;
+                        if (it->second >= 0 && it->second < static_cast<int>(context.StructTypes.size())) {
+                            concretePayloadType.StructLLVMType = context.StructTypes[it->second].LLVMType;
+                        }
+                    }
+                }
+                // Inline resolveUserEnumType
+                if (concretePayloadType.Kind == TypeKind::UserEnum && concretePayloadType.EnumTypeId < 0 && !concretePayloadType.GenericName.empty()) {
+                    auto it = context.EnumTypeIndex.find(concretePayloadType.GenericName);
+                    if (it != context.EnumTypeIndex.end()) {
+                        concretePayloadType.EnumTypeId = it->second;
+                        if (it->second >= 0 && it->second < static_cast<int>(context.EnumTypes.size())) {
+                            concretePayloadType.EnumLLVMType = context.EnumTypes[it->second].LLVMType;
+                        }
+                    }
+                }
+
+                llvm::Type* concretePayloadLLVMTy = concretePayloadType.getLLVMType(context.TheContext);
+
+                bool isBoxed = matchedVarIdx < static_cast<int>(enumInfo.VariantIsBoxed.size()) ? enumInfo.VariantIsBoxed[matchedVarIdx] : false;
+                llvm::Value* concretePayloadPtr = nullptr;
+                if (isBoxed) {
+                    llvm::Value* unionPayloadPtr = context.Builder.CreatePointerCast(
+                        payloadPtr, llvm::PointerType::get(llvm::PointerType::get(context.TheContext, 0), 0), "union_payload_ptr");
+                    llvm::Value* heapPtrVal = context.Builder.CreateLoad(
+                        llvm::PointerType::get(context.TheContext, 0), unionPayloadPtr, "heap_ptr_val");
+                    concretePayloadPtr = context.Builder.CreatePointerCast(
+                        heapPtrVal, llvm::PointerType::get(concretePayloadLLVMTy, 0), "concrete_payload_ptr");
+                } else {
+                    concretePayloadPtr = context.Builder.CreatePointerCast(
+                        payloadPtr, llvm::PointerType::get(concretePayloadLLVMTy, 0), "concrete_payload_ptr");
+                }
+
+                if (armBindings.size() == 1 && !concretePayloadLLVMTy->isStructTy()) {
+                    // Single scalar binding: load and store entire payload
+                    llvm::Value* val = context.Builder.CreateLoad(concretePayloadLLVMTy, concretePayloadPtr, "scalar_payload");
+                    llvm::AllocaInst* BindingAlloca = context.Builder.CreateAlloca(concretePayloadLLVMTy, nullptr, armBindings[0]);
+                    context.Builder.CreateStore(val, BindingAlloca);
+                    context.NamedValues[armBindings[0]] = BindingAlloca;
+                } else {
+                    // Multiple bindings: extract each field from the concrete payload struct
+                    for (size_t bi = 0; bi < armBindings.size(); ++bi) {
+                        llvm::Value* fieldPtr = context.Builder.CreateStructGEP(concretePayloadLLVMTy, concretePayloadPtr, bi, armBindings[bi]);
+                        llvm::Type* fieldTy = concretePayloadLLVMTy->getStructElementType(bi);
+                        llvm::Value* FieldVal = context.Builder.CreateLoad(fieldTy, fieldPtr, armBindings[bi] + "_val");
+                        llvm::AllocaInst* FieldAlloca = context.Builder.CreateAlloca(fieldTy, nullptr, armBindings[bi]);
+                        context.Builder.CreateStore(FieldVal, FieldAlloca);
+                        context.NamedValues[armBindings[bi]] = FieldAlloca;
+                    }
+                }
+            }
+        }
+
         TypedValue ResultTV = Result->codegen(context);
         if (!ResultTV.Val)
             return TypedValue();
-        context.Builder.CreateStore(ResultTV.Val, ResultAlloc);
-        context.Builder.CreateBr(MergeBB);
 
-        NextCheckBB = ElseBB;
-        context.Builder.restoreIP(GuardIP);
+        // Clean up binding variables if we added any
+        if (!armBindings.empty() && isPayloadEnum) {
+            for (const auto& bv : armBindings) {
+                context.NamedValues.erase(bv);
+            }
+        }
+
+        llvm::Value* ResultV = ResultTV.Val;
+        if (ResultV->getType() != ResultTy) {
+            if (ResultV->getType()->isIntegerTy())
+                ResultV = context.Builder.CreateSIToFP(ResultV, ResultTy, "match_cast");
+        }
+        context.Builder.CreateStore(ResultV, ResultAlloc);
+        context.Builder.CreateBr(MergeBB);
     }
 
-    // Generate default arm if exists and not yet handled
-    if (DefaultArm && NextCheckBB != MergeBB) {
-        // We need to check if NextCheckBB is the default block we created
-        if (NextCheckBB && NextCheckBB->getName() == "match_default") {
-            context.Builder.SetInsertPoint(NextCheckBB);
-            TypedValue DefaultTV = DefaultArm->codegen(context);
-            if (!DefaultTV.Val)
-                return TypedValue();
-            context.Builder.CreateStore(DefaultTV.Val, ResultAlloc);
-            context.Builder.CreateBr(MergeBB);
+    // Emit default arm if present
+    if (DefaultArm) {
+        llvm::BasicBlock* DefaultBB = DefaultFallbackBB;
+        if (!DefaultBB) {
+            DefaultBB = llvm::BasicBlock::Create(Ctx, "match_default", TheFunction);
+            context.Builder.SetInsertPoint(checkBBs.empty() ? context.Builder.GetInsertBlock() : checkBBs.back());
+        } else {
+            context.Builder.SetInsertPoint(DefaultBB);
         }
+        TypedValue DefaultTV = DefaultArm->codegen(context);
+        if (!DefaultTV.Val)
+            return TypedValue();
+        llvm::Value* DefaultV = DefaultTV.Val;
+        if (DefaultV->getType() != ResultTy) {
+            if (DefaultV->getType()->isIntegerTy())
+                DefaultV = context.Builder.CreateSIToFP(DefaultV, ResultTy, "default_cast");
+        }
+        context.Builder.CreateStore(DefaultV, ResultAlloc);
+        context.Builder.CreateBr(MergeBB);
     }
 
     // Insert merge block and load result
     TheFunction->insert(TheFunction->end(), MergeBB);
     context.Builder.SetInsertPoint(MergeBB);
-    llvm::Value* ResultVal = context.Builder.CreateLoad(DoubleTy, ResultAlloc, "match_result_val");
+    llvm::Value* ResultVal = context.Builder.CreateLoad(ResultTy, ResultAlloc, "match_result_val");
     return TypedValue(ResultVal, TypeKind::Double);
 }
 

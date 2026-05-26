@@ -56,6 +56,11 @@ void printResult(const Flux::FluxValue& value)
         std::cout << complexValue.real() << (complexValue.imag() >= 0 ? "+" : "") << complexValue.imag() << "j\n";
         return;
     }
+    if (std::holds_alternative<Flux::VectorResult>(value)) {
+        const auto vec = std::get<Flux::VectorResult>(value);
+        std::cout << "<vector len=" << vec.len << ">\n";
+        return;
+    }
 
     const auto matrix = std::get<Flux::MatrixResult>(value);
     std::cout << "<matrix " << matrix.rows << "x" << matrix.cols << ">\n";

@@ -275,4 +275,337 @@ std::unique_ptr<ExprAST> Parser::ParsePartialDiffExpr()
     return std::make_unique<PartialDiffExprAST>(std::move(expr), var, order);
 }
 
+std::unique_ptr<ExprAST> Parser::ParseIntegrateExpr()
+{
+    getNextToken(); // eat integrate
+    if (CurTok != '(') {
+        ReportError("expected '(' after integrate");
+        return nullptr;
+    }
+    getNextToken(); // eat (
+
+    auto expr = ParseExpression();
+    if (!expr)
+        return nullptr;
+
+    if (CurTok != ',') {
+        ReportError("expected ',' after expression in integrate");
+        return nullptr;
+    }
+    getNextToken(); // eat ,
+
+    if (CurTok != static_cast<int>(TokenType::tok_identifier)) {
+        ReportError("expected variable name in integrate");
+        return nullptr;
+    }
+    std::string varName = m_lexer.IdentifierStr;
+    getNextToken();
+
+    if (CurTok != ')') {
+        ReportError("expected ')' after integrate");
+        return nullptr;
+    }
+    getNextToken();
+
+    return std::make_unique<IntegrateExprAST>(std::move(expr), varName);
+}
+
+std::unique_ptr<ExprAST> Parser::ParseLaplaceExpr()
+{
+    getNextToken(); // eat laplace
+    if (CurTok != '(') {
+        ReportError("expected '(' after laplace");
+        return nullptr;
+    }
+    getNextToken(); // eat (
+
+    auto expr = ParseExpression();
+    if (!expr)
+        return nullptr;
+
+    if (CurTok != ',') {
+        ReportError("expected ',' after expression in laplace");
+        return nullptr;
+    }
+    getNextToken(); // eat ,
+
+    if (CurTok != static_cast<int>(TokenType::tok_identifier)) {
+        ReportError("expected time variable name in laplace");
+        return nullptr;
+    }
+    std::string tVar = m_lexer.IdentifierStr;
+    getNextToken();
+
+    if (CurTok != ',') {
+        ReportError("expected ',' after time variable in laplace");
+        return nullptr;
+    }
+    getNextToken(); // eat ,
+
+    if (CurTok != static_cast<int>(TokenType::tok_identifier)) {
+        ReportError("expected s-domain variable name in laplace");
+        return nullptr;
+    }
+    std::string sVar = m_lexer.IdentifierStr;
+    getNextToken();
+
+    if (CurTok != ')') {
+        ReportError("expected ')' after laplace");
+        return nullptr;
+    }
+    getNextToken();
+
+    return std::make_unique<LaplaceExprAST>(std::move(expr), tVar, sVar);
+}
+
+std::unique_ptr<ExprAST> Parser::ParseInverseLaplaceExpr()
+{
+    getNextToken(); // eat inverse_laplace
+    if (CurTok != '(') {
+        ReportError("expected '(' after inverse_laplace");
+        return nullptr;
+    }
+    getNextToken(); // eat (
+
+    auto expr = ParseExpression();
+    if (!expr)
+        return nullptr;
+
+    if (CurTok != ',') {
+        ReportError("expected ',' after expression in inverse_laplace");
+        return nullptr;
+    }
+    getNextToken(); // eat ,
+
+    if (CurTok != static_cast<int>(TokenType::tok_identifier)) {
+        ReportError("expected s-domain variable name in inverse_laplace");
+        return nullptr;
+    }
+    std::string sVar = m_lexer.IdentifierStr;
+    getNextToken();
+
+    if (CurTok != ',') {
+        ReportError("expected ',' after s variable in inverse_laplace");
+        return nullptr;
+    }
+    getNextToken(); // eat ,
+
+    if (CurTok != static_cast<int>(TokenType::tok_identifier)) {
+        ReportError("expected time variable name in inverse_laplace");
+        return nullptr;
+    }
+    std::string tVar = m_lexer.IdentifierStr;
+    getNextToken();
+
+    if (CurTok != ')') {
+        ReportError("expected ')' after inverse_laplace");
+        return nullptr;
+    }
+    getNextToken();
+
+    return std::make_unique<InverseLaplaceExprAST>(std::move(expr), sVar, tVar);
+}
+
+// expand(expr)
+std::unique_ptr<ExprAST> Parser::ParseExpandExpr()
+{
+    int line = m_lexer.getCurrentLine();
+    int col = m_lexer.getCurrentColumn();
+    getNextToken(); // eat expand
+
+    if (CurTok != '(') {
+        ReportError("expected '(' after expand");
+        return nullptr;
+    }
+    getNextToken(); // eat (
+
+    auto expr = ParseExpression();
+    if (!expr) return nullptr;
+
+    if (CurTok != ')') {
+        ReportError("expected ')' after expand expression");
+        return nullptr;
+    }
+    getNextToken();
+
+    auto Res = std::make_unique<ExpandExprAST>(std::move(expr));
+    Res->setLocation(line, col);
+    return Res;
+}
+
+// factor(expr)
+std::unique_ptr<ExprAST> Parser::ParseFactorExpr()
+{
+    int line = m_lexer.getCurrentLine();
+    int col = m_lexer.getCurrentColumn();
+    getNextToken(); // eat factor
+
+    if (CurTok != '(') {
+        ReportError("expected '(' after factor");
+        return nullptr;
+    }
+    getNextToken();
+
+    auto expr = ParseExpression();
+    if (!expr) return nullptr;
+
+    if (CurTok != ')') {
+        ReportError("expected ')' after factor expression");
+        return nullptr;
+    }
+    getNextToken();
+
+    auto Res = std::make_unique<FactorExprAST>(std::move(expr));
+    Res->setLocation(line, col);
+    return Res;
+}
+
+// collect(expr, var)
+std::unique_ptr<ExprAST> Parser::ParseCollectExpr()
+{
+    int line = m_lexer.getCurrentLine();
+    int col = m_lexer.getCurrentColumn();
+    getNextToken(); // eat collect
+
+    if (CurTok != '(') {
+        ReportError("expected '(' after collect");
+        return nullptr;
+    }
+    getNextToken();
+
+    auto expr = ParseExpression();
+    if (!expr) return nullptr;
+
+    if (CurTok != ',') {
+        ReportError("expected ',' after expression in collect");
+        return nullptr;
+    }
+    getNextToken();
+
+    if (CurTok != static_cast<int>(TokenType::tok_identifier)) {
+        ReportError("expected variable name in collect");
+        return nullptr;
+    }
+    std::string var = m_lexer.IdentifierStr;
+    getNextToken();
+
+    if (CurTok != ')') {
+        ReportError("expected ')' after collect arguments");
+        return nullptr;
+    }
+    getNextToken();
+
+    auto Res = std::make_unique<CollectExprAST>(std::move(expr), var);
+    Res->setLocation(line, col);
+    return Res;
+}
+
+// numerator(expr)
+std::unique_ptr<ExprAST> Parser::ParseNumeratorExpr()
+{
+    int line = m_lexer.getCurrentLine();
+    int col = m_lexer.getCurrentColumn();
+    getNextToken(); // eat numerator
+
+    if (CurTok != '(') {
+        ReportError("expected '(' after numerator");
+        return nullptr;
+    }
+    getNextToken();
+
+    auto expr = ParseExpression();
+    if (!expr) return nullptr;
+
+    if (CurTok != ')') {
+        ReportError("expected ')' after numerator expression");
+        return nullptr;
+    }
+    getNextToken();
+
+    auto Res = std::make_unique<NumeratorExprAST>(std::move(expr));
+    Res->setLocation(line, col);
+    return Res;
+}
+
+// denominator(expr)
+std::unique_ptr<ExprAST> Parser::ParseDenominatorExpr()
+{
+    int line = m_lexer.getCurrentLine();
+    int col = m_lexer.getCurrentColumn();
+    getNextToken(); // eat denominator
+
+    if (CurTok != '(') {
+        ReportError("expected '(' after denominator");
+        return nullptr;
+    }
+    getNextToken();
+
+    auto expr = ParseExpression();
+    if (!expr) return nullptr;
+
+    if (CurTok != ')') {
+        ReportError("expected ')' after denominator expression");
+        return nullptr;
+    }
+    getNextToken();
+
+    auto Res = std::make_unique<DenominatorExprAST>(std::move(expr));
+    Res->setLocation(line, col);
+    return Res;
+}
+
+// poles(expr)
+std::unique_ptr<ExprAST> Parser::ParsePolesExpr()
+{
+    int line = m_lexer.getCurrentLine();
+    int col = m_lexer.getCurrentColumn();
+    getNextToken(); // eat poles
+
+    if (CurTok != '(') {
+        ReportError("expected '(' after poles");
+        return nullptr;
+    }
+    getNextToken();
+
+    auto expr = ParseExpression();
+    if (!expr) return nullptr;
+
+    if (CurTok != ')') {
+        ReportError("expected ')' after poles expression");
+        return nullptr;
+    }
+    getNextToken();
+
+    auto Res = std::make_unique<PolesExprAST>(std::move(expr));
+    Res->setLocation(line, col);
+    return Res;
+}
+
+// zeros(expr)
+std::unique_ptr<ExprAST> Parser::ParseZerosExpr()
+{
+    int line = m_lexer.getCurrentLine();
+    int col = m_lexer.getCurrentColumn();
+    getNextToken(); // eat zeros
+
+    if (CurTok != '(') {
+        ReportError("expected '(' after zeros");
+        return nullptr;
+    }
+    getNextToken();
+
+    auto expr = ParseExpression();
+    if (!expr) return nullptr;
+
+    if (CurTok != ')') {
+        ReportError("expected ')' after zeros expression");
+        return nullptr;
+    }
+    getNextToken();
+
+    auto Res = std::make_unique<ZerosExprAST>(std::move(expr));
+    Res->setLocation(line, col);
+    return Res;
+}
+
 } // namespace Flux

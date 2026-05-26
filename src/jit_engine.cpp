@@ -28,6 +28,11 @@
 #include <filesystem>
 #include <iostream>
 
+extern "C" {
+void flux_inc_call_depth();
+void flux_dec_call_depth();
+}
+
 namespace Flux {
 
 JITEngine& JITEngine::instance()
@@ -190,9 +195,19 @@ FluxValue JITEngine::callFunction(const std::string& name, const std::vector<dou
             *error = "Function not found: " + name;
         return 0.0;
     }
+
+    struct CallDepthGuard {
+        CallDepthGuard() {
+            flux_inc_call_depth();
+        }
+        ~CallDepthGuard() {
+            flux_dec_call_depth();
+        }
+    } guard;
+
     FluxType retType = m_functionReturnTypes[resolvedName];
 
-    if (retType.Kind == TypeKind::Matrix) {
+    if (retType.Kind == TypeKind::Matrix || retType.Kind == TypeKind::ComplexMatrix) {
         struct MatrixRet
         {
             void* ptr;
@@ -232,6 +247,39 @@ FluxValue JITEngine::callFunction(const std::string& name, const std::vector<dou
         MatrixResult result{r->ptr, r->rows, r->cols};
         delete r;
         return result;
+    } else if (retType.Kind == TypeKind::Vector) {
+        struct VectorRet
+        {
+            double* data;
+            int32_t len;
+        };
+        VectorRet r;
+        switch (args.size()) {
+        case 0:
+            r = reinterpret_cast<VectorRet (*)()>(fnPtr)();
+            break;
+        case 1:
+            r = reinterpret_cast<VectorRet (*)(double)>(fnPtr)(args[0]);
+            break;
+        case 2:
+            r = reinterpret_cast<VectorRet (*)(double, double)>(fnPtr)(args[0], args[1]);
+            break;
+        case 3:
+            r = reinterpret_cast<VectorRet (*)(double, double, double)>(fnPtr)(args[0], args[1], args[2]);
+            break;
+        case 4:
+            r = reinterpret_cast<VectorRet (*)(double, double, double, double)>(fnPtr)(args[0], args[1], args[2], args[3]);
+            break;
+        case 5:
+            r = reinterpret_cast<VectorRet (*)(double, double, double, double, double)>(fnPtr)(
+                args[0], args[1], args[2], args[3], args[4]);
+            break;
+        default:
+            if (error)
+                *error = "Unsupported argument count for vector function";
+            return VectorResult{nullptr, 0};
+        }
+        return VectorResult{r.data, r.len};
     } else if (retType.Kind == TypeKind::Complex) {
         struct ComplexRet
         {

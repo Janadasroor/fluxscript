@@ -11,6 +11,7 @@
  See the License for the specific language governing permissions and
  limitations under the License. */
 
+#include <algorithm>
 #include <string>
 
 #include <llvm/Support/CommandLine.h>
@@ -19,6 +20,32 @@
 #include <llvm/Support/raw_ostream.h>
 
 #include "flux/tooling/tooling.h"
+
+namespace {
+
+/// Simple ASCII progress bar that redraws on the same line.
+void printProgressBar(const std::string& stage, int current, int total)
+{
+    if (total <= 0) {
+        llvm::outs() << "\r[" << stage << "] ...   ";
+        llvm::outs().flush();
+        return;
+    }
+    const int barWidth = 40;
+    int done = current * barWidth / std::max(total, 1);
+    int remain = barWidth - done;
+    int pct = current * 100 / std::max(total, 1);
+    llvm::outs() << "\r[" << stage << "] [";
+    for (int i = 0; i < done; ++i) llvm::outs() << '=';
+    if (done < barWidth) llvm::outs() << '>';
+    for (int i = 0; i < remain - (done < barWidth ? 1 : 0); ++i) llvm::outs() << ' ';
+    llvm::outs() << "] " << pct << "% (" << current << "/" << total << ")";
+    llvm::outs().flush();
+    if (current >= total)
+        llvm::outs() << "\n";
+}
+
+} // namespace
 
 namespace {
 
@@ -38,6 +65,9 @@ llvm::cl::opt<bool> EmitShared("shared", llvm::cl::desc("Emit a shared library i
 
 llvm::cl::opt<bool> EmitDebug("debug", llvm::cl::desc("Emit DWARF debug information"), llvm::cl::init(false),
                               llvm::cl::cat(FluxcCategory));
+
+llvm::cl::opt<int> Jobs("j", llvm::cl::desc("Number of parallel jobs for codegen (default 1)"),
+                         llvm::cl::init(1), llvm::cl::cat(FluxcCategory));
 
 Flux::OptimizationLevel toOptimizationLevel(unsigned level)
 {
@@ -76,9 +106,15 @@ int main(int argc, char** argv)
     options.optimizationLevel = toOptimizationLevel(OptLevel);
     options.sharedLibrary = EmitShared;
     options.debugInfo = EmitDebug;
+    options.numJobs = (Jobs > 0) ? Jobs : 1;
+    options.progressCallback = [](const std::string& stage, int current, int total) -> bool {
+        printProgressBar(stage, current, total);
+        return true;
+    };
 
     std::string error;
     if (!Flux::Tooling::emitArtifact(std::string(input.get()->getBuffer()), options, &error)) {
+        llvm::outs() << "\n";
         llvm::errs() << "fluxc: " << error << "\n";
         return 1;
     }

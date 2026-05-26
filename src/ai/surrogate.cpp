@@ -44,8 +44,7 @@ void NeuralNetworkSurrogate::initializeWeights()
     m_weights.clear();
     m_biases.clear();
 
-    std::random_device rd;
-    std::mt19937 gen(rd());
+    std::mt19937 gen(m_seed ? m_seed : std::random_device{}());
 
     for (size_t i = 0; i < m_arch.layers.size() - 1; ++i) {
         int inSize = m_arch.layers[i];
@@ -82,8 +81,7 @@ TrainingResult NeuralNetworkSurrogate::train(const TrainingData& data)
 
         std::vector<int> indices(data.numSamples());
         std::iota(indices.begin(), indices.end(), 0);
-        static std::random_device rd;
-        static std::mt19937 gen(rd());
+        thread_local std::mt19937 gen(m_seed ? m_seed + 1 : std::random_device{}());
         std::shuffle(indices.begin(), indices.end(), gen);
 
         for (int idx : indices) {

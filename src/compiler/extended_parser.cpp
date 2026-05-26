@@ -202,11 +202,10 @@ std::unique_ptr<ExprAST> Parser::ParseMatchExpr()
         getNextToken(); // eat {
 
         while (CurTok != static_cast<int>(TokenType::tok_rbrace) && CurTok != static_cast<int>(TokenType::tok_eof)) {
-
-            // Handle patterns: identifiers, numbers, wildcard _, default
+            // Handle patterns: identifiers, numbers, integers, wildcard _
             if (CurTok == static_cast<int>(TokenType::tok_identifier) ||
-                CurTok == static_cast<int>(TokenType::tok_number) || CurTok == '_' ||
-                CurTok == static_cast<int>(TokenType::tok_default)) {
+                CurTok == static_cast<int>(TokenType::tok_number) ||
+                CurTok == static_cast<int>(TokenType::tok_integer) || CurTok == '_') {
 
                 std::unique_ptr<ExprAST> pattern;
 
@@ -237,6 +236,25 @@ std::unique_ptr<ExprAST> Parser::ParseMatchExpr()
                         return nullptr;
                 }
 
+                // Extract binding variables from enum variant patterns (e.g., Option.Some(v) or Item.Label(txt, val) -> ...)
+                std::vector<std::string> bindings;
+                if (auto* call = dynamic_cast<CallExprAST*>(pattern.get())) {
+                    if (call->hasCalleeExpr()) {
+                        if (auto* member = dynamic_cast<MemberExprAST*>(call->getCalleeExpr())) {
+                            if (auto* obj = dynamic_cast<VariableExprAST*>(member->getObject())) {
+                                if (m_knownEnumTypeNames.count(obj->getName())) {
+                                    const auto& args = call->getArgs();
+                                    for (auto& arg : args) {
+                                        if (auto* var = dynamic_cast<VariableExprAST*>(arg.get())) {
+                                            bindings.push_back(var->getName());
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
                 if (CurTok != static_cast<int>(TokenType::tok_arrow)) {
                     ReportError("expected '=>' after match pattern");
                     return nullptr;
@@ -247,7 +265,7 @@ std::unique_ptr<ExprAST> Parser::ParseMatchExpr()
                 if (!result)
                     return nullptr;
 
-                expr->addArm(std::move(pattern), std::move(result));
+                expr->addArm(std::move(pattern), std::move(result), bindings);
 
                 if (CurTok == ',') {
                     getNextToken();
@@ -390,7 +408,7 @@ std::unique_ptr<ExprAST> Parser::ParseCrossExpr()
     }
 
     if (CurTok != ')') {
-        ReportError("expected ')'");
+        ReportError("expected ')' after cross expression");
         return nullptr;
     }
     getNextToken(); // eat )

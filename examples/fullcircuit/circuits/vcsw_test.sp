@@ -1,0 +1,7 @@
+* VCSW test circuit
+V1 1 0 DC 5
+R1 1 2 1k
+S1 2 0 3 0 SW
+V2 3 0 DC 3
+.MODEL SW VSWITCH(RON=10 ROFF=1e6 VON=2 VOFF=1)
+.END

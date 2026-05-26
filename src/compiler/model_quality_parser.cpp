@@ -48,7 +48,7 @@ std::unique_ptr<ExprAST> Parser::ParseAssertDecl()
     }
 
     if (CurTok != ')') {
-        ReportError("expected ')'");
+        ReportError("expected ')' after node name in assert");
         return nullptr;
     }
     getNextToken(); // eat )
@@ -118,7 +118,7 @@ std::unique_ptr<ExprAST> Parser::ParseSettleDecl()
     getNextToken(); // eat V
 
     if (CurTok != '(') {
-        ReportError("expected '('");
+        ReportError("expected '(' after V in settle");
         return nullptr;
     }
     getNextToken();
@@ -130,7 +130,7 @@ std::unique_ptr<ExprAST> Parser::ParseSettleDecl()
     }
 
     if (CurTok != ')') {
-        ReportError("expected ')'");
+        ReportError("expected ')' after node name in settle");
         return nullptr;
     }
     getNextToken(); // eat )
@@ -211,7 +211,7 @@ std::unique_ptr<ExprAST> Parser::ParseCompareDecl()
     getNextToken(); // eat V
 
     if (CurTok != '(') {
-        ReportError("expected '('");
+        ReportError("expected '(' after V in compare");
         return nullptr;
     }
     getNextToken();
@@ -223,7 +223,7 @@ std::unique_ptr<ExprAST> Parser::ParseCompareDecl()
     }
 
     if (CurTok != ')') {
-        ReportError("expected ')'");
+        ReportError("expected ')' after node name in compare");
         return nullptr;
     }
     getNextToken(); // eat )
@@ -284,7 +284,7 @@ std::unique_ptr<ExprAST> Parser::ParseConvergeDecl()
     getNextToken();
 
     if (CurTok != '(') {
-        ReportError("expected '('");
+        ReportError("expected '(' after V in converge");
         return nullptr;
     }
     getNextToken();
@@ -296,7 +296,7 @@ std::unique_ptr<ExprAST> Parser::ParseConvergeDecl()
     }
 
     if (CurTok != ')') {
-        ReportError("expected ')'");
+        ReportError("expected ')' after node name in converge");
         return nullptr;
     }
     getNextToken(); // eat )
@@ -341,7 +341,7 @@ std::unique_ptr<ExprAST> Parser::ParseDiscontinuityDecl()
     getNextToken();
 
     if (CurTok != '(') {
-        ReportError("expected '('");
+        ReportError("expected '(' after V in discontinuity");
         return nullptr;
     }
     getNextToken();
@@ -353,7 +353,7 @@ std::unique_ptr<ExprAST> Parser::ParseDiscontinuityDecl()
     }
 
     if (CurTok != ')') {
-        ReportError("expected ')'");
+        ReportError("expected ')' after node name in discontinuity");
         return nullptr;
     }
     getNextToken();
@@ -380,7 +380,7 @@ std::unique_ptr<ExprAST> Parser::ParseStateDecl()
     getNextToken();
 
     if (CurTok != '(') {
-        ReportError("expected '('");
+        ReportError("expected '(' after V in state");
         return nullptr;
     }
     getNextToken();
@@ -392,7 +392,7 @@ std::unique_ptr<ExprAST> Parser::ParseStateDecl()
     }
 
     if (CurTok != ')') {
-        ReportError("expected ')'");
+        ReportError("expected ')' after node name in state");
         return nullptr;
     }
     getNextToken();
@@ -406,6 +406,91 @@ std::unique_ptr<ExprAST> Parser::ParseStateDecl()
     std::cout << "[Parser] State: V(" << node << ") depth=" << historyDepth << std::endl;
 
     return std::make_unique<StateDeclAST>(node, historyDepth);
+}
+
+// Parse diagnostic directive: diagnostic V(node) [type="overshoot"] [threshold=0.1]
+std::unique_ptr<ExprAST> Parser::ParseDiagnosticDecl()
+{
+    getNextToken(); // eat diagnostic
+
+    std::string node;
+    std::string diagType;
+    double threshold = 0.0;
+
+    if (CurTok == static_cast<int>(TokenType::tok_identifier) && m_lexer.IdentifierStr == "all") {
+        node = "all";
+        getNextToken();
+    } else if (CurTok == static_cast<int>(TokenType::tok_identifier)) {
+        node = m_lexer.IdentifierStr;
+        getNextToken();
+        if (CurTok == '(') {
+            getNextToken();
+            if (CurTok == static_cast<int>(TokenType::tok_identifier)) {
+                node += "(" + m_lexer.IdentifierStr + ")";
+                getNextToken();
+            }
+            if (CurTok == ')') {
+                getNextToken();
+            }
+        }
+    }
+
+    // Parse optional type and threshold
+    while (CurTok == static_cast<int>(TokenType::tok_identifier)) {
+        std::string key = m_lexer.IdentifierStr;
+        getNextToken();
+        if (CurTok == '=') {
+            getNextToken();
+            if (key == "type" && CurTok == static_cast<int>(TokenType::tok_string)) {
+                diagType = m_lexer.StringVal;
+                getNextToken();
+            } else if (key == "threshold" && (CurTok == static_cast<int>(TokenType::tok_number) ||
+                                               CurTok == static_cast<int>(TokenType::tok_integer))) {
+                threshold = (CurTok == static_cast<int>(TokenType::tok_number))
+                            ? m_lexer.NumVal : static_cast<double>(m_lexer.IntVal);
+                getNextToken();
+            } else {
+                break;
+            }
+        } else {
+            break;
+        }
+    }
+
+    return std::make_unique<DiagnosticDeclAST>(node, diagType, threshold);
+}
+
+// Parse standalone tolerance directive: tolerance abs=1e-6 rel=1.0
+std::unique_ptr<ExprAST> Parser::ParseToleranceDecl()
+{
+    getNextToken(); // eat tolerance
+
+    double absTol = 1e-6;
+    double relTol = 1.0;
+
+    if (CurTok == static_cast<int>(TokenType::tok_identifier) && m_lexer.IdentifierStr == "abs") {
+        getNextToken();
+        if (CurTok == '=') {
+            getNextToken();
+        }
+        if (CurTok == static_cast<int>(TokenType::tok_number)) {
+            absTol = m_lexer.NumVal;
+            getNextToken();
+        }
+    }
+
+    if (CurTok == static_cast<int>(TokenType::tok_identifier) && m_lexer.IdentifierStr == "rel") {
+        getNextToken();
+        if (CurTok == '=') {
+            getNextToken();
+        }
+        if (CurTok == static_cast<int>(TokenType::tok_number)) {
+            relTol = m_lexer.NumVal;
+            getNextToken();
+        }
+    }
+
+    return std::make_unique<ToleranceDeclAST>(absTol, relTol);
 }
 
 std::unique_ptr<ExprAST> Parser::ParseVerifyBlock()

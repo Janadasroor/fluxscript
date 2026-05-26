@@ -83,6 +83,8 @@ std::string Lexer::tokenSpelling(int token)
         return "in";
     case TokenType::tok_do:
         return "do";
+    case TokenType::tok_end:
+        return "end";
     case TokenType::tok_while:
         return "while";
     case TokenType::tok_let:
@@ -191,6 +193,96 @@ std::string Lexer::tokenSpelling(int token)
     // Integer literal
     case TokenType::tok_integer:
         return "integer";
+
+    // Identifiers and literals
+    case TokenType::tok_identifier:
+        return "identifier";
+    case TokenType::tok_number:
+        return "number";
+    case TokenType::tok_string:
+        return "string";
+    case TokenType::tok_imaginary:
+        return "imaginary";
+    case TokenType::tok_complex:
+        return "complex";
+
+    // Compound assignment operators
+    case TokenType::tok_plus_equal:
+        return "+=";
+    case TokenType::tok_minus_equal:
+        return "-=";
+    case TokenType::tok_star_equal:
+        return "*=";
+    case TokenType::tok_slash_equal:
+        return "/=";
+
+    // Comparison operators
+    case TokenType::tok_equal:
+        return "==";
+    case TokenType::tok_not_equal:
+        return "!=";
+    case TokenType::tok_less_equal:
+        return "<=";
+    case TokenType::tok_greater_equal:
+        return ">=";
+
+    // Arrow operators
+    case TokenType::tok_arrow:
+        return "->";
+    case TokenType::tok_fat_arrow:
+        return "=>";
+
+    // Block delimiters
+    case TokenType::tok_lbrace:
+        return "{";
+    case TokenType::tok_rbrace:
+        return "}";
+    case TokenType::tok_semicolon:
+        return ";";
+    case TokenType::tok_colon:
+        return ":";
+
+    // Member access, transpose, namespace
+    case TokenType::tok_transpose:
+        return "'";
+    case TokenType::tok_dot:
+        return ".";
+    case TokenType::tok_namespace_sep:
+        return "::";
+
+    // Logical operators
+    case TokenType::tok_logical_and:
+        return "&&";
+    case TokenType::tok_logical_or:
+        return "||";
+    case TokenType::tok_logical_not:
+        return "!";
+
+    // Bitwise operators
+    case TokenType::tok_bitwise_and:
+        return "&";
+    case TokenType::tok_bitwise_or:
+        return "|";
+    case TokenType::tok_bitwise_xor:
+        return "xor";
+    case TokenType::tok_bitwise_not:
+        return "~";
+    case TokenType::tok_bitwise_shl:
+        return "<<";
+    case TokenType::tok_bitwise_shr:
+        return ">>";
+
+    // Element-wise operators
+    case TokenType::tok_ew_mul:
+        return ".*";
+    case TokenType::tok_ew_div:
+        return "./";
+    case TokenType::tok_ew_power:
+        return ".^";
+
+    // Other operators
+    case TokenType::tok_power:
+        return "^";
 
     default:
         return "token(" + std::to_string(token) + ")";
@@ -401,6 +493,8 @@ int Lexer::gettok()
             return static_cast<int>(TokenType::tok_inline);
         if (IdentifierStr == "noexcept")
             return static_cast<int>(TokenType::tok_noexcept);
+        if (IdentifierStr == "impl")
+            return static_cast<int>(TokenType::tok_impl);
         if (IdentifierStr == "export")
             return static_cast<int>(TokenType::tok_export);
         if (IdentifierStr == "namespace")
@@ -421,6 +515,8 @@ int Lexer::gettok()
             return static_cast<int>(TokenType::tok_repeat);
         if (IdentifierStr == "until")
             return static_cast<int>(TokenType::tok_until);
+        if (IdentifierStr == "end")
+            return static_cast<int>(TokenType::tok_end);
         if (IdentifierStr == "parallel")
             return static_cast<int>(TokenType::tok_parallel);
         if (IdentifierStr == "schematic")

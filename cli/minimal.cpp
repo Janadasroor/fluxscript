@@ -14,8 +14,10 @@
 // Minimal FluxScript CLI without Qt dependencies
 #include <cmath>
 #include <complex>
+#include <filesystem>
 #include <string>
 
+#include <llvm/Bitcode/BitcodeWriter.h>
 #include <llvm/Support/CommandLine.h>
 #include <llvm/Support/FileSystem.h>
 #include <llvm/Support/InitLLVM.h>
@@ -35,6 +37,7 @@ enum class EmitMode
     Tokens,
     Check,
     LLVM,
+    Bitcode,
     JIT,
     MLIR
 };
@@ -49,6 +52,7 @@ llvm::cl::opt<EmitMode> EmitAction(
     llvm::cl::values(clEnumValN(EmitMode::Tokens, "tokens", "Lex and dump tokens"),
                      clEnumValN(EmitMode::Check, "check", "Parse and type/codegen-check without running"),
                      clEnumValN(EmitMode::LLVM, "llvm", "Emit generated LLVM IR"),
+                     clEnumValN(EmitMode::Bitcode, "bc", "Emit LLVM bitcode"),
                      clEnumValN(EmitMode::JIT, "jit", "Compile and run with the LLVM JIT"),
                      clEnumValN(EmitMode::MLIR, "mlir", "Emit MLIR from the optional MLIR integration path")),
     llvm::cl::init(EmitMode::JIT), llvm::cl::cat(FluxCategory));
@@ -70,6 +74,9 @@ llvm::cl::opt<int> Iterations("iterations", llvm::cl::desc("Number of entry-poin
 
 llvm::cl::opt<bool> EnableCache("cache", llvm::cl::desc("Enable the on-disk JIT cache"), llvm::cl::init(true),
                                 llvm::cl::cat(FluxCategory));
+
+llvm::cl::opt<std::string> OutputFilename("o", llvm::cl::desc("Output file for --emit bc mode"),
+                                          llvm::cl::init(""), llvm::cl::cat(FluxCategory));
 
 Flux::OptimizationLevel toOptimizationLevel(unsigned level)
 {
@@ -127,12 +134,26 @@ void printResult(const Flux::FluxValue& result)
     if (std::holds_alternative<Flux::MatrixResult>(result)) {
         const auto value = std::get<Flux::MatrixResult>(result);
         if (value.ptr) {
-            llvm::outs() << "Matrix Result (" << flux_matrix_rows(value.ptr) << "x" << flux_matrix_cols(value.ptr)
-                         << "):\n";
-            flux_print_matrix(value.ptr);
+            llvm::outs() << "Matrix Result (" << value.rows << "x" << value.cols << "):\n";
         } else {
             llvm::outs() << "Matrix Result (Empty)\n";
         }
+        return;
+    }
+
+    if (std::holds_alternative<Flux::VectorResult>(result)) {
+        const auto value = std::get<Flux::VectorResult>(result);
+        if (value.data && value.len > 0) {
+            llvm::outs() << "Vector Result (len=" << value.len << "): [";
+            for (int i = 0; i < value.len; ++i) {
+                if (i > 0) llvm::outs() << ", ";
+                llvm::outs() << value.data[i];
+            }
+            llvm::outs() << "]\n";
+        } else {
+            llvm::outs() << "Vector Result (Empty)\n";
+        }
+        return;
     }
 }
 
@@ -249,6 +270,37 @@ int emitMLIR(const std::string& code)
     return 0;
 }
 
+int emitBitcode(const std::string& code)
+{
+    Flux::CompilerOptions options;
+    options.inputName = InputFilename;
+    options.moduleName = InputFilename == "-" ? std::string("stdin") : std::string(InputFilename);
+    options.optimizationLevel = toOptimizationLevel(OptLevel);
+    Flux::CompilerInstance compiler(options);
+    std::string error;
+    auto artifacts = compiler.compileToIR(code, &error);
+    if (!artifacts) {
+        llvm::errs() << "Compile Error: " << error << "\n";
+        return 1;
+    }
+
+    if (OutputFilename.empty()) {
+        // Write bitcode to stdout
+        llvm::WriteBitcodeToFile(*artifacts->codegenContext->TheModule, llvm::outs());
+    } else {
+        std::error_code EC;
+        llvm::raw_fd_ostream os(OutputFilename, EC, llvm::sys::fs::OF_None);
+        if (EC) {
+            llvm::errs() << "Error opening output file: " << EC.message() << "\n";
+            return 1;
+        }
+        llvm::WriteBitcodeToFile(*artifacts->codegenContext->TheModule, os);
+        os.close();
+        llvm::outs() << "Wrote " << OutputFilename << "\n";
+    }
+    return 0;
+}
+
 } // namespace
 
 int main(int argc, char** argv)
@@ -276,6 +328,8 @@ int main(int argc, char** argv)
         return checkOnly(code);
     case EmitMode::LLVM:
         return emitLLVM(code);
+    case EmitMode::Bitcode:
+        return emitBitcode(code);
     case EmitMode::JIT:
         return runJIT(code);
     case EmitMode::MLIR:
