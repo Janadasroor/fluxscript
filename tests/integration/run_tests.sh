@@ -58,11 +58,12 @@ run_test() {
     echo "$test_code" > flux_test.flux
     
     local cmd_status
+    local test_output
     if [ -n "$TIMEOUT_CMD" ]; then
-        $TIMEOUT_CMD 5 "$FLUX_BIN" flux_test.flux > /dev/null 2>&1
+        test_output=$($TIMEOUT_CMD 5 "$FLUX_BIN" flux_test.flux 2>&1)
         cmd_status=$?
     else
-        "$FLUX_BIN" flux_test.flux > /dev/null 2>&1
+        test_output=$("$FLUX_BIN" flux_test.flux 2>&1)
         cmd_status=$?
     fi
 
@@ -71,6 +72,9 @@ run_test() {
         PASSED=$((PASSED + 1))
     else
         echo -e "${RED} FAILED${NC}"
+        echo "=== TEST OUTPUT FOR $test_name ==="
+        echo "$test_output"
+        echo "=================================="
         FAILED=$((FAILED + 1))
     fi
     
@@ -88,11 +92,14 @@ run_check_test() {
     echo "$test_code" > flux_test.flux
 
     local cmd_status
+    local test_output
     if [ -n "$TIMEOUT_CMD" ]; then
-        $TIMEOUT_CMD 5 "$FLUX_BIN" --emit=check flux_test.flux 2>&1 | grep -q "OK"
+        test_output=$($TIMEOUT_CMD 5 "$FLUX_BIN" --emit=check flux_test.flux 2>&1)
+        echo "$test_output" | grep -q "OK"
         cmd_status=$?
     else
-        "$FLUX_BIN" --emit=check flux_test.flux 2>&1 | grep -q "OK"
+        test_output=$("$FLUX_BIN" --emit=check flux_test.flux 2>&1)
+        echo "$test_output" | grep -q "OK"
         cmd_status=$?
     fi
 
@@ -101,6 +108,9 @@ run_check_test() {
         PASSED=$((PASSED + 1))
     else
         echo -e "${RED} FAILED${NC}"
+        echo "=== TEST OUTPUT FOR $test_name ==="
+        echo "$test_output"
+        echo "=================================="
         FAILED=$((FAILED + 1))
     fi
 
