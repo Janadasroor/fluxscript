@@ -3401,6 +3401,10 @@ TypedValue RangeExprAST::codegen(CodegenContext& context)
 
 llvm::Function* PrototypeAST::codegen(CodegenContext& context)
 {
+    // Resolve user-defined type in return type before checking shouldReturnBySRet
+    resolveUserStructType(ReturnType, context);
+    resolveUserEnumType(ReturnType, context);
+
     std::vector<llvm::Type*> ArgTypes;
     llvm::Type* DoubleTy = llvm::Type::getDoubleTy(context.TheContext);
     llvm::Type* VoidPtrTy = llvm::PointerType::get(context.TheContext, 0);
@@ -3440,11 +3444,6 @@ llvm::Function* PrototypeAST::codegen(CodegenContext& context)
             }
         }
     }
-
-
-    // Resolve user-defined type in return type before getLLVMType
-    resolveUserStructType(ReturnType, context);
-    resolveUserEnumType(ReturnType, context);
 
     if (Name.find("make") != std::string::npos) {
         std::cerr << "DEBUG PROTO " << Name << " ReturnType kind=" << (int)ReturnType.Kind << " id=" << ReturnType.StructTypeId << " llvm=" << ReturnType.StructLLVMType << std::endl;
