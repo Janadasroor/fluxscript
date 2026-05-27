@@ -463,6 +463,11 @@ TypedValue BlockExprAST::codegen(CodegenContext& context)
                                             FluxType curStructType = FluxType::userStruct(curId, curLLVMType);
 
                                             llvm::Value* selfArg = allocaVal;
+                                            if (auto* allocaInst = llvm::dyn_cast<llvm::AllocaInst>(allocaVal)) {
+                                                if (allocaInst->getAllocatedType()->isPointerTy()) {
+                                                    selfArg = context.Builder.CreateLoad(allocaInst->getAllocatedType(), allocaInst, "self_ptr");
+                                                }
+                                            }
                                             llvm::Type* expectedType = destroyFn->getFunctionType()->getParamType(0);
                                             if (selfArg->getType() != expectedType) {
                                                 selfArg = context.Builder.CreateBitCast(selfArg, expectedType);
@@ -621,11 +626,17 @@ TypedValue MemberExprAST::codegen(CodegenContext& context)
         }
 
         llvm::Value* structPtr = nullptr;
-        if (auto* allocaInst = llvm::dyn_cast<llvm::AllocaInst>(objVal.Val)) {
+        if (objVal.Val->getType()->isPointerTy()) {
+            structPtr = objVal.Val;
+        } else if (auto* allocaInst = llvm::dyn_cast<llvm::AllocaInst>(objVal.Val)) {
             structPtr = allocaInst;
         } else {
             structPtr = context.Builder.CreateAlloca(objVal.Val->getType(), nullptr, "structtmp");
             context.Builder.CreateStore(objVal.Val, structPtr);
+        }
+
+        if (structPtr->getType() != llvm::PointerType::get(structInfo.LLVMType, 0)) {
+            structPtr = context.Builder.CreateBitCast(structPtr, llvm::PointerType::get(structInfo.LLVMType, 0));
         }
 
         if (!structInfo.LLVMType) {
@@ -776,7 +787,15 @@ TypedValue AssignExprAST::codegen(CodegenContext& context)
                                 std::cerr << "Struct " << structInfo.Name << " has no LLVM type" << std::endl;
                                 return TypedValue();
                             }
-                            llvm::Value* gep = context.Builder.CreateStructGEP(structInfo.LLVMType, objAlloca, fieldIdx, MEM->getMemberName());
+                            auto* allocaInst = llvm::cast<llvm::AllocaInst>(objAlloca);
+                            llvm::Value* structPtr = objAlloca;
+                            if (allocaInst->getAllocatedType()->isPointerTy()) {
+                                structPtr = context.Builder.CreateLoad(allocaInst->getAllocatedType(), allocaInst, "ptr_val");
+                            }
+                            if (structPtr->getType() != llvm::PointerType::get(structInfo.LLVMType, 0)) {
+                                structPtr = context.Builder.CreateBitCast(structPtr, llvm::PointerType::get(structInfo.LLVMType, 0));
+                            }
+                            llvm::Value* gep = context.Builder.CreateStructGEP(structInfo.LLVMType, structPtr, fieldIdx, MEM->getMemberName());
                             TypedValue rhsVal = Val->codegen(context);
                             if (!rhsVal.Val) return TypedValue();
                             context.Builder.CreateStore(rhsVal.Val, gep);
@@ -848,7 +867,14 @@ TypedValue AssignExprAST::codegen(CodegenContext& context)
 
     auto* Alloca = llvm::cast<llvm::AllocaInst>(Variable);
     llvm::Type* VarTy = Alloca->getAllocatedType();
-    FluxType VarFluxTy = typeFromLLVM(VarTy);
+    FluxType VarFluxTy;
+    if (context.NamedTypes.count(TargetName)) {
+        VarFluxTy = context.NamedTypes[TargetName];
+        resolveUserStructType(VarFluxTy, context);
+        resolveUserEnumType(VarFluxTy, context);
+    } else {
+        VarFluxTy = typeFromLLVM(VarTy);
+    }
 
     TypedValue CurrentTV(context.Builder.CreateLoad(VarTy, Variable, "current"), VarFluxTy);
     TypedValue ValTV = Val->codegen(context);
@@ -2927,6 +2953,11 @@ TypedValue LetExprAST::codegen(CodegenContext& context)
                                 FluxType curStructType = FluxType::userStruct(curId, curLLVMType);
 
                                 llvm::Value* selfArg = Alloca;
+                                if (auto* allocaInst = llvm::dyn_cast<llvm::AllocaInst>(Alloca)) {
+                                    if (allocaInst->getAllocatedType()->isPointerTy()) {
+                                        selfArg = context.Builder.CreateLoad(allocaInst->getAllocatedType(), allocaInst, "self_ptr");
+                                    }
+                                }
                                 llvm::Type* expectedType = destroyFn->getFunctionType()->getParamType(0);
                                 if (selfArg->getType() != expectedType) {
                                     selfArg = context.Builder.CreateBitCast(selfArg, expectedType);
@@ -3684,6 +3715,11 @@ TypedValue StructConstructExprAST::codegen(CodegenContext& context)
                             FluxType curStructType = FluxType::userStruct(curId, curLLVMType);
 
                             llvm::Value* selfArg = alloca;
+                            if (auto* allocaInst = llvm::dyn_cast<llvm::AllocaInst>(alloca)) {
+                                if (allocaInst->getAllocatedType()->isPointerTy()) {
+                                    selfArg = context.Builder.CreateLoad(allocaInst->getAllocatedType(), allocaInst, "self_ptr");
+                                }
+                            }
                             llvm::Type* expectedType = initFn->getFunctionType()->getParamType(0);
                             if (selfArg->getType() != expectedType) {
                                 selfArg = context.Builder.CreateBitCast(selfArg, expectedType);
@@ -3983,10 +4019,14 @@ llvm::Function* FunctionAST::codegen(CodegenContext& context)
             ArgVal = context.Builder.CreateIntToPtr(ArgVal, ExpectedTy, "int_to_ptr");
         }
 
-        llvm::AllocaInst* Alloca = context.Builder.CreateAlloca(ExpectedTy, nullptr, argName);
+        llvm::Type* AllocaTy = ExpectedTy;
         if (shouldPassByPointer(argType, context)) {
-            llvm::Value* LoadedVal = context.Builder.CreateLoad(ExpectedTy, ArgVal, argName + "_val");
-            context.Builder.CreateStore(LoadedVal, Alloca);
+            AllocaTy = llvm::PointerType::get(ExpectedTy, 0);
+        }
+        llvm::AllocaInst* Alloca = context.Builder.CreateAlloca(AllocaTy, nullptr, argName);
+        if (shouldPassByPointer(argType, context)) {
+            llvm::Value* CastArgVal = context.Builder.CreateBitCast(ArgVal, AllocaTy);
+            context.Builder.CreateStore(CastArgVal, Alloca);
         } else {
             context.Builder.CreateStore(ArgVal, Alloca);
         }
