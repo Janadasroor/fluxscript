@@ -111,7 +111,11 @@ static bool shouldPassByPointer(const FluxType& type, CodegenContext& context)
         return false;
 
     uint64_t size = context.TheModule->getDataLayout().getTypeStoreSize(llvmTy);
+#ifdef _WIN32
+    return size > 8;
+#else
     return size > 16;
+#endif
 }
 
 
@@ -3351,8 +3355,14 @@ llvm::Function* PrototypeAST::codegen(CodegenContext& context)
     llvm::Type* DoublePtrTy = llvm::PointerType::get(DoubleTy->getContext(), 0);
 
     const bool returnsMatrix = (ReturnType.Kind == TypeKind::Matrix || ReturnType.Kind == TypeKind::ComplexMatrix);
+#ifdef _WIN32
+    const bool returnsVector = (ReturnType.Kind == TypeKind::Vector);
+#else
+    const bool returnsVector = false;
+#endif
+    const bool useSRet = returnsMatrix || returnsVector;
 
-    if (returnsMatrix) {
+    if (useSRet) {
         // sret: hidden first parameter is pointer to return struct
         ArgTypes.push_back(VoidPtrTy);
     }
@@ -3394,24 +3404,29 @@ llvm::Function* PrototypeAST::codegen(CodegenContext& context)
         std::cerr << "DEBUG PROTO " << Name << " ReturnType kind=" << (int)ReturnType.Kind << " id=" << ReturnType.StructTypeId << " llvm=" << ReturnType.StructLLVMType << std::endl;
     }
 
-    // Matrix returns use void return type with sret parameter
+    // sret returns use void return type with parameter
     llvm::Type* RetTy =
-        returnsMatrix ? llvm::Type::getVoidTy(context.TheContext)
-                      : (ReturnType.Kind == TypeKind::String ? DoubleTy : ReturnType.getLLVMType(context.TheContext));
+        useSRet ? llvm::Type::getVoidTy(context.TheContext)
+                : (ReturnType.Kind == TypeKind::String ? DoubleTy : ReturnType.getLLVMType(context.TheContext));
 
     llvm::FunctionType* FT = llvm::FunctionType::get(RetTy, ArgTypes, false);
     llvm::Function* F = llvm::Function::Create(FT, llvm::Function::ExternalLinkage, Name, context.TheModule);
 
     // Mark sret parameter with attribute
-    if (returnsMatrix) {
-        llvm::Type* MatSTy = FluxType(TypeKind::Matrix).getLLVMType(context.TheContext);
-        F->addParamAttr(0, llvm::Attribute::getWithStructRetType(context.TheContext, MatSTy));
+    if (useSRet) {
+        llvm::Type* sretTy = nullptr;
+        if (returnsMatrix) {
+            sretTy = FluxType(TypeKind::Matrix).getLLVMType(context.TheContext);
+        } else {
+            sretTy = FluxType(TypeKind::Vector).getLLVMType(context.TheContext);
+        }
+        F->addParamAttr(0, llvm::Attribute::getWithStructRetType(context.TheContext, sretTy));
         F->addParamAttr(0, llvm::Attribute::get(context.TheContext, llvm::Attribute::NoAlias));
     }
 
     // Mark large parameters with readonly attribute
     unsigned AttrIdx = 0;
-    if (returnsMatrix) {
+    if (useSRet) {
         AttrIdx++; // skip sret
     }
     if (IsGenerator) {
@@ -3426,7 +3441,7 @@ llvm::Function* PrototypeAST::codegen(CodegenContext& context)
 
     unsigned Idx = 0;
     auto ArgIt = F->arg_begin();
-    if (returnsMatrix) {
+    if (useSRet) {
         ArgIt->setName("sret");
         ++ArgIt;
     }
@@ -3874,26 +3889,31 @@ llvm::Function* FunctionAST::codegen(CodegenContext& context)
     if (isGenerator)
         Proto->setGenerator(true);
 
-    const bool returnsMatrix =
-        (Proto->getReturnType().Kind == TypeKind::Matrix || Proto->getReturnType().Kind == TypeKind::ComplexMatrix);
+    const bool returnsMatrix = (Proto->getReturnType().Kind == TypeKind::Matrix || Proto->getReturnType().Kind == TypeKind::ComplexMatrix);
+#ifdef _WIN32
+    const bool returnsVector = (Proto->getReturnType().Kind == TypeKind::Vector);
+#else
+    const bool returnsVector = false;
+#endif
+    const bool useSRet = returnsMatrix || returnsVector;
 
     llvm::Function* TheFunction = context.TheModule->getFunction(Proto->getName());
     if (TheFunction) {
         // For sret functions, the declared return type is void but the actual
         // struct type is determined by the sret parameter attribute.
-        llvm::Type* ExpectedRetTy = returnsMatrix ? llvm::Type::getVoidTy(context.TheContext)
-                                                  : Proto->getReturnType().getLLVMType(context.TheContext);
+        llvm::Type* ExpectedRetTy = useSRet ? llvm::Type::getVoidTy(context.TheContext)
+                                            : Proto->getReturnType().getLLVMType(context.TheContext);
         bool typeMismatch = (TheFunction->getReturnType() != ExpectedRetTy);
         if (!typeMismatch) {
             auto protoArgs = Proto->getArgs();
             size_t expectedNumArgs = protoArgs.size();
-            if (returnsMatrix)
+            if (useSRet)
                 expectedNumArgs += 1; // sret param
             if (isGenerator)
                 expectedNumArgs += 1; // gen state param
             if (TheFunction->arg_size() == expectedNumArgs) {
                 auto funcArgIt = TheFunction->arg_begin();
-                if (returnsMatrix)
+                if (useSRet)
                     ++funcArgIt; // skip sret
                 if (isGenerator)
                     ++funcArgIt; // skip gen state
@@ -3947,10 +3967,10 @@ llvm::Function* FunctionAST::codegen(CodegenContext& context)
 
     llvm::Type* RetTy = Proto->getReturnType().getLLVMType(context.TheContext);
 
-    // For matrix returns, use the sret parameter as the return value pointer.
+    // For sret returns, use the sret parameter as the return value pointer.
     // For other types, create a stack alloca.
     llvm::Value* RetValAlloca = nullptr;
-    if (returnsMatrix) {
+    if (useSRet) {
         // sret parameter is the first argument
         RetValAlloca = &(*TheFunction->arg_begin());
     } else if (!RetTy->isVoidTy()) {
@@ -3988,7 +4008,7 @@ llvm::Function* FunctionAST::codegen(CodegenContext& context)
     const auto& ArgTypes = Proto->getArgs();
     unsigned Idx = 0;
     auto ArgIt = TheFunction->arg_begin();
-    if (returnsMatrix)
+    if (useSRet)
         ++ArgIt; // Skip sret pointer
     if (isGenerator)
         ++ArgIt; // Skip state pointer
@@ -4109,7 +4129,7 @@ llvm::Function* FunctionAST::codegen(CodegenContext& context)
         TheFunction->insert(TheFunction->end(), ReturnBB);
         context.Builder.SetInsertPoint(ReturnBB);
         if (RetValAlloca) {
-            if (returnsMatrix) {
+            if (useSRet) {
                 // sret: result already stored via the hidden pointer parameter
                 context.Builder.CreateRetVoid();
             } else {
