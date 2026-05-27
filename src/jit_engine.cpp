@@ -253,7 +253,34 @@ FluxValue JITEngine::callFunction(const std::string& name, const std::vector<dou
             double* data;
             int32_t len;
         };
-        VectorRet r;
+        VectorRet r{nullptr, 0};
+#ifdef _WIN32
+        switch (args.size()) {
+        case 0:
+            reinterpret_cast<void (*)(VectorRet*)>(fnPtr)(&r);
+            break;
+        case 1:
+            reinterpret_cast<void (*)(VectorRet*, double)>(fnPtr)(&r, args[0]);
+            break;
+        case 2:
+            reinterpret_cast<void (*)(VectorRet*, double, double)>(fnPtr)(&r, args[0], args[1]);
+            break;
+        case 3:
+            reinterpret_cast<void (*)(VectorRet*, double, double, double)>(fnPtr)(&r, args[0], args[1], args[2]);
+            break;
+        case 4:
+            reinterpret_cast<void (*)(VectorRet*, double, double, double, double)>(fnPtr)(&r, args[0], args[1], args[2], args[3]);
+            break;
+        case 5:
+            reinterpret_cast<void (*)(VectorRet*, double, double, double, double, double)>(fnPtr)(
+                &r, args[0], args[1], args[2], args[3], args[4]);
+            break;
+        default:
+            if (error)
+                *error = "Unsupported argument count for vector function";
+            return VectorResult{nullptr, 0};
+        }
+#else
         switch (args.size()) {
         case 0:
             r = reinterpret_cast<VectorRet (*)()>(fnPtr)();
@@ -279,6 +306,7 @@ FluxValue JITEngine::callFunction(const std::string& name, const std::vector<dou
                 *error = "Unsupported argument count for vector function";
             return VectorResult{nullptr, 0};
         }
+#endif
         return VectorResult{r.data, r.len};
     } else if (retType.Kind == TypeKind::Complex) {
         struct ComplexRet

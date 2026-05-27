@@ -5,6 +5,19 @@
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 FLUX_BIN="$PROJECT_DIR/build/flux"
+if [ ! -x "$FLUX_BIN" ]; then
+    if [ -x "$PROJECT_DIR/build/flux.exe" ]; then
+        FLUX_BIN="$PROJECT_DIR/build/flux.exe"
+    elif [ -x "$PROJECT_DIR/build/Release/flux.exe" ]; then
+        FLUX_BIN="$PROJECT_DIR/build/Release/flux.exe"
+    elif [ -x "$PROJECT_DIR/build/Debug/flux.exe" ]; then
+        FLUX_BIN="$PROJECT_DIR/build/Debug/flux.exe"
+    elif [ -x "$PROJECT_DIR/build/RelWithDebInfo/flux.exe" ]; then
+        FLUX_BIN="$PROJECT_DIR/build/RelWithDebInfo/flux.exe"
+    elif [ -x "$PROJECT_DIR/build/MinSizeRel/flux.exe" ]; then
+        FLUX_BIN="$PROJECT_DIR/build/MinSizeRel/flux.exe"
+    fi
+fi
 
 if [ ! -x "$FLUX_BIN" ]; then
     echo "flux not found at $FLUX_BIN"
