@@ -2057,7 +2057,9 @@ TypedValue CallExprAST::codegen(CodegenContext& context)
                 unsigned firstArgIdx = isSretCall ? 1 : 0;
                 if (calleeFn->arg_size() > firstArgIdx && selfVal->getType() != calleeFn->getArg(firstArgIdx)->getType()) {
                     llvm::Type* firstArgTy = calleeFn->getArg(firstArgIdx)->getType();
-                    if (selfVal->getType()->isIntegerTy() && firstArgTy->isFloatingPointTy())
+                    if (firstArgTy->isPointerTy() && selfVal->getType()->isPointerTy())
+                        selfVal = context.Builder.CreatePointerCast(selfVal, firstArgTy);
+                    else if (selfVal->getType()->isIntegerTy() && firstArgTy->isFloatingPointTy())
                         selfVal = context.Builder.CreateSIToFP(selfVal, firstArgTy, "self_cast");
                     else if (selfVal->getType()->isFloatingPointTy() && firstArgTy->isIntegerTy())
                         selfVal = context.Builder.CreateFPToSI(selfVal, firstArgTy, "self_cast");
@@ -2086,7 +2088,9 @@ TypedValue CallExprAST::codegen(CodegenContext& context)
                     }
                     
                     if (argVal.Val->getType() != expectedTy) {
-                        if (argVal.Val->getType()->isIntegerTy() && expectedTy->isFloatingPointTy())
+                        if (expectedTy->isPointerTy() && argVal.Val->getType()->isPointerTy())
+                            argVal.Val = context.Builder.CreatePointerCast(argVal.Val, expectedTy);
+                        else if (argVal.Val->getType()->isIntegerTy() && expectedTy->isFloatingPointTy())
                             argVal.Val = context.Builder.CreateSIToFP(argVal.Val, expectedTy, "arg_cast");
                         else if (argVal.Val->getType()->isFloatingPointTy() && expectedTy->isIntegerTy())
                             argVal.Val = context.Builder.CreateFPToSI(argVal.Val, expectedTy, "arg_cast");
@@ -2621,7 +2625,9 @@ TypedValue CallExprAST::codegen(CodegenContext& context)
             }
         }
         if (ArgV->getType() != ExpectedTy) {
-            if (ExpectedTy->isIntegerTy() && ArgV->getType()->isFloatingPointTy()) {
+            if (ExpectedTy->isPointerTy() && ArgV->getType()->isPointerTy()) {
+                ArgV = context.Builder.CreatePointerCast(ArgV, ExpectedTy);
+            } else if (ExpectedTy->isIntegerTy() && ArgV->getType()->isFloatingPointTy()) {
                 ArgV = context.Builder.CreateFPToSI(ArgV, ExpectedTy, "cast");
             } else if (ExpectedTy->isFloatingPointTy() && ArgV->getType()->isIntegerTy()) {
                 ArgV = context.Builder.CreateSIToFP(ArgV, ExpectedTy, "cast");
