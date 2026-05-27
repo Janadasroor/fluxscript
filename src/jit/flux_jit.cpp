@@ -343,6 +343,16 @@ FluxJIT::FluxJIT(OptimizationLevel optLevel) : m_dataLayout(""), m_optLevel(optL
     if (TM)
         m_targetMachine = std::move(*TM);
 
+#ifdef _WIN32
+    auto JIT = llvm::orc::LLJITBuilder()
+                   .setJITTargetMachineBuilder(std::move(*JTMB))
+                   .setObjectLinkingLayerCreator([&](llvm::orc::ExecutionSession& ES) {
+                       auto Layer = std::make_unique<llvm::orc::RTDyldObjectLinkingLayer>(
+                           ES, []() { return std::make_unique<llvm::SectionMemoryManager>(); });
+                       return Layer;
+                   })
+                   .create();
+#else
     auto JIT = llvm::orc::LLJITBuilder()
                    .setJITTargetMachineBuilder(std::move(*JTMB))
                    .setObjectLinkingLayerCreator([&](llvm::orc::ExecutionSession& ES) {
@@ -351,6 +361,7 @@ FluxJIT::FluxJIT(OptimizationLevel optLevel) : m_dataLayout(""), m_optLevel(optL
                        return Layer;
                    })
                    .create();
+#endif
     if (!JIT) {
         logError(JIT.takeError(), "Failed to create LLJIT");
         return;
