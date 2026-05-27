@@ -68,17 +68,18 @@ void emitLocation(ExprAST* ast, CodegenContext& context)
         llvm::DILocation::get(context.TheContext, ast->getLine(), ast->getCol(), Scope));
 }
 
-// Resolve a UserStruct FluxType that was parsed with a placeholder StructTypeId (-1).
-// Looks up the struct name (stored in GenericName) in the codegen context's struct
-// registry and fills in StructTypeId and StructLLVMType.
 static void resolveUserStructType(FluxType& type, CodegenContext& context)
 {
-    if (type.Kind == TypeKind::UserStruct && type.StructTypeId < 0 && !type.GenericName.empty()) {
-        auto it = context.StructTypeIndex.find(type.GenericName);
-        if (it != context.StructTypeIndex.end()) {
-            type.StructTypeId = it->second;
-            if (it->second >= 0 && it->second < static_cast<int>(context.StructTypes.size())) {
-                type.StructLLVMType = context.StructTypes[it->second].LLVMType;
+    if (type.Kind == TypeKind::UserStruct) {
+        if (type.StructTypeId < 0 && !type.GenericName.empty()) {
+            auto it = context.StructTypeIndex.find(type.GenericName);
+            if (it != context.StructTypeIndex.end()) {
+                type.StructTypeId = it->second;
+            }
+        }
+        if (type.StructTypeId >= 0 && !type.StructLLVMType) {
+            if (type.StructTypeId < static_cast<int>(context.StructTypes.size())) {
+                type.StructLLVMType = context.StructTypes[type.StructTypeId].LLVMType;
             }
         }
     }
@@ -86,12 +87,16 @@ static void resolveUserStructType(FluxType& type, CodegenContext& context)
 
 static void resolveUserEnumType(FluxType& type, CodegenContext& context)
 {
-    if (type.Kind == TypeKind::UserEnum && type.EnumTypeId < 0 && !type.GenericName.empty()) {
-        auto it = context.EnumTypeIndex.find(type.GenericName);
-        if (it != context.EnumTypeIndex.end()) {
-            type.EnumTypeId = it->second;
-            if (it->second >= 0 && it->second < static_cast<int>(context.EnumTypes.size())) {
-                type.EnumLLVMType = context.EnumTypes[it->second].LLVMType;
+    if (type.Kind == TypeKind::UserEnum) {
+        if (type.EnumTypeId < 0 && !type.GenericName.empty()) {
+            auto it = context.EnumTypeIndex.find(type.GenericName);
+            if (it != context.EnumTypeIndex.end()) {
+                type.EnumTypeId = it->second;
+            }
+        }
+        if (type.EnumTypeId >= 0 && !type.EnumLLVMType) {
+            if (type.EnumTypeId < static_cast<int>(context.EnumTypes.size())) {
+                type.EnumLLVMType = context.EnumTypes[type.EnumTypeId].LLVMType;
             }
         }
     }
