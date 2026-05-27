@@ -348,7 +348,7 @@ FluxJIT::FluxJIT(OptimizationLevel optLevel) : m_dataLayout(""), m_optLevel(optL
                    .setJITTargetMachineBuilder(std::move(*JTMB))
                    .setObjectLinkingLayerCreator([&](llvm::orc::ExecutionSession& ES) {
                        auto Layer = std::make_unique<llvm::orc::RTDyldObjectLinkingLayer>(
-                           ES, []() -> std::unique_ptr<llvm::RuntimeDyld::MemoryManager> {
+                           ES, [](const llvm::MemoryBuffer&) -> std::unique_ptr<llvm::RuntimeDyld::MemoryManager> {
                                return std::make_unique<llvm::SectionMemoryManager>();
                            });
                        return Layer;

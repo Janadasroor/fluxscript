@@ -1968,9 +1968,11 @@ TypedValue CallExprAST::codegen(CodegenContext& context)
             {
                 llvm::Value* selfVal = objVal.Val;
                 if (shouldPassByPointer(objVal.Type, context)) {
-                    llvm::Value* tempAlloca = context.Builder.CreateAlloca(selfVal->getType(), nullptr, "self_temp");
-                    context.Builder.CreateStore(selfVal, tempAlloca);
-                    selfVal = tempAlloca;
+                    if (!selfVal->getType()->isPointerTy()) {
+                        llvm::Value* tempAlloca = context.Builder.CreateAlloca(selfVal->getType(), nullptr, "self_temp");
+                        context.Builder.CreateStore(selfVal, tempAlloca);
+                        selfVal = tempAlloca;
+                    }
                 } else if (calleeFn->arg_size() > 0 && selfVal->getType() != calleeFn->getArg(0)->getType()) {
                     if (selfVal->getType()->isIntegerTy() && calleeFn->getArg(0)->getType()->isFloatingPointTy())
                         selfVal = context.Builder.CreateSIToFP(selfVal, calleeFn->getArg(0)->getType(), "self_cast");
@@ -1987,9 +1989,11 @@ TypedValue CallExprAST::codegen(CodegenContext& context)
                 if (calleeFn->arg_size() > calleeIdx) {
                     llvm::Type* expectedTy = calleeFn->getArg(calleeIdx)->getType();
                     if (shouldPassByPointer(argVal.Type, context)) {
-                        llvm::Value* tempAlloca = context.Builder.CreateAlloca(argVal.Val->getType(), nullptr, "arg_temp");
-                        context.Builder.CreateStore(argVal.Val, tempAlloca);
-                        argVal.Val = tempAlloca;
+                        if (!argVal.Val->getType()->isPointerTy()) {
+                            llvm::Value* tempAlloca = context.Builder.CreateAlloca(argVal.Val->getType(), nullptr, "arg_temp");
+                            context.Builder.CreateStore(argVal.Val, tempAlloca);
+                            argVal.Val = tempAlloca;
+                        }
                     } else if (argVal.Val->getType() != expectedTy) {
                         if (argVal.Val->getType()->isIntegerTy() && expectedTy->isFloatingPointTy())
                             argVal.Val = context.Builder.CreateSIToFP(argVal.Val, expectedTy, "arg_cast");
@@ -2494,9 +2498,11 @@ TypedValue CallExprAST::codegen(CodegenContext& context)
 
         llvm::Type* ExpectedTy = CalleeF->getArg(ArgsV.size())->getType();
         if (shouldPassByPointer(ArgTVs[i].Type, context)) {
-            llvm::Value* tempAlloca = context.Builder.CreateAlloca(ArgV->getType(), nullptr, "arg_temp");
-            context.Builder.CreateStore(ArgV, tempAlloca);
-            ArgV = tempAlloca;
+            if (!ArgV->getType()->isPointerTy()) {
+                llvm::Value* tempAlloca = context.Builder.CreateAlloca(ArgV->getType(), nullptr, "arg_temp");
+                context.Builder.CreateStore(ArgV, tempAlloca);
+                ArgV = tempAlloca;
+            }
         } else if (ArgV->getType() != ExpectedTy) {
             if (ExpectedTy->isIntegerTy() && ArgV->getType()->isFloatingPointTy()) {
                 ArgV = context.Builder.CreateFPToSI(ArgV, ExpectedTy, "cast");
