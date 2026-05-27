@@ -3999,7 +3999,10 @@ void ImplDeclAST::codegen(CodegenContext& context)
         auto func = context.TheModule->getFunction(mangledName);
         if (func) {
             context.TypeMethods[TypeName][unmangledName] = func;
-            method->codegen(context);
+            llvm::Function* newFunc = method->codegen(context);
+            if (newFunc) {
+                context.TypeMethods[TypeName][unmangledName] = newFunc;
+            }
         }
     }
 }
