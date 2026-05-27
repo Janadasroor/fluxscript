@@ -841,7 +841,14 @@ TypedValue AssignExprAST::codegen(CodegenContext& context)
                             llvm::Value* gep = context.Builder.CreateStructGEP(structInfo.LLVMType, structPtr, fieldIdx, MEM->getMemberName());
                             TypedValue rhsVal = Val->codegen(context);
                             if (!rhsVal.Val) return TypedValue();
-                            context.Builder.CreateStore(rhsVal.Val, gep);
+                            llvm::Value* rhsValPtr = rhsVal.Val;
+                            if (shouldPassByPointer(rhsVal.Type, context)) {
+                                if (rhsValPtr->getType()->isPointerTy()) {
+                                    llvm::Type* rhsStructTy = rhsVal.Type.getLLVMType(context.TheContext);
+                                    rhsValPtr = context.Builder.CreateLoad(rhsStructTy, rhsValPtr, "rhs_val");
+                                }
+                            }
+                            context.Builder.CreateStore(rhsValPtr, gep);
                             return rhsVal;
                         }
                     }
@@ -1014,7 +1021,15 @@ TypedValue AssignExprAST::codegen(CodegenContext& context)
         }
     }
 
-    context.Builder.CreateStore(ValTV.Val, Variable);
+    llvm::Value* storeVal = ValTV.Val;
+    if (shouldPassByPointer(VarFluxTy, context)) {
+        if (!storeVal->getType()->isPointerTy()) {
+            llvm::Value* tempAlloca = context.Builder.CreateAlloca(storeVal->getType(), nullptr, "assign_temp");
+            context.Builder.CreateStore(storeVal, tempAlloca);
+            storeVal = tempAlloca;
+        }
+    }
+    context.Builder.CreateStore(storeVal, Variable);
     return ValTV;
 }
 
@@ -2008,6 +2023,22 @@ TypedValue CallExprAST::codegen(CodegenContext& context)
 
             // Build args: self + user args
             std::vector<llvm::Value*> callArgs;
+            bool isSretCall = calleeFn->getReturnType()->isVoidTy() && calleeFn->arg_size() > 0 &&
+                              calleeFn->hasParamAttribute(0, llvm::Attribute::StructRet);
+            llvm::Value* sretPtr = nullptr;
+            FluxType retType = context.FuncReturnTypes[calleeFn->getName().str()];
+            resolveUserStructType(retType, context);
+            resolveUserEnumType(retType, context);
+
+            if (isSretCall) {
+                llvm::Type* sretLLVMTy = retType.getLLVMType(context.TheContext);
+                if (!sretLLVMTy) {
+                    sretLLVMTy = llvm::cast<llvm::StructType>(FluxType(TypeKind::Matrix).getLLVMType(context.TheContext));
+                }
+                sretPtr = context.Builder.CreateAlloca(sretLLVMTy, nullptr, "sret_ret");
+                callArgs.push_back(sretPtr);
+            }
+
             {
                 llvm::Value* selfVal = objVal.Val;
                 if (shouldPassByPointer(objVal.Type, context)) {
@@ -2016,15 +2047,25 @@ TypedValue CallExprAST::codegen(CodegenContext& context)
                         context.Builder.CreateStore(selfVal, tempAlloca);
                         selfVal = tempAlloca;
                     }
-                } else if (calleeFn->arg_size() > 0 && selfVal->getType() != calleeFn->getArg(0)->getType()) {
-                    if (selfVal->getType()->isIntegerTy() && calleeFn->getArg(0)->getType()->isFloatingPointTy())
-                        selfVal = context.Builder.CreateSIToFP(selfVal, calleeFn->getArg(0)->getType(), "self_cast");
-                    else if (selfVal->getType()->isFloatingPointTy() && calleeFn->getArg(0)->getType()->isIntegerTy())
-                        selfVal = context.Builder.CreateFPToSI(selfVal, calleeFn->getArg(0)->getType(), "self_cast");
+                } else {
+                    if ((objVal.Type.Kind == TypeKind::UserStruct || objVal.Type.Kind == TypeKind::UserEnum) && selfVal->getType()->isPointerTy()) {
+                        llvm::Type* selfLLVMTy = objVal.Type.getLLVMType(context.TheContext);
+                        selfVal = context.Builder.CreateLoad(selfLLVMTy, selfVal, "self_loaded");
+                    }
+                }
+                
+                unsigned firstArgIdx = isSretCall ? 1 : 0;
+                if (calleeFn->arg_size() > firstArgIdx && selfVal->getType() != calleeFn->getArg(firstArgIdx)->getType()) {
+                    llvm::Type* firstArgTy = calleeFn->getArg(firstArgIdx)->getType();
+                    if (selfVal->getType()->isIntegerTy() && firstArgTy->isFloatingPointTy())
+                        selfVal = context.Builder.CreateSIToFP(selfVal, firstArgTy, "self_cast");
+                    else if (selfVal->getType()->isFloatingPointTy() && firstArgTy->isIntegerTy())
+                        selfVal = context.Builder.CreateFPToSI(selfVal, firstArgTy, "self_cast");
                 }
                 callArgs.push_back(selfVal);
             }
-            size_t calleeIdx = 1;
+
+            size_t calleeIdx = isSretCall ? 2 : 1;
             for (auto& Arg : Args) {
                 TypedValue argVal = Arg->codegen(context);
                 if (!argVal.Val) return TypedValue();
@@ -2037,7 +2078,14 @@ TypedValue CallExprAST::codegen(CodegenContext& context)
                             context.Builder.CreateStore(argVal.Val, tempAlloca);
                             argVal.Val = tempAlloca;
                         }
-                    } else if (argVal.Val->getType() != expectedTy) {
+                    } else {
+                        if ((argVal.Type.Kind == TypeKind::UserStruct || argVal.Type.Kind == TypeKind::UserEnum) && argVal.Val->getType()->isPointerTy()) {
+                            llvm::Type* structTy = argVal.Type.getLLVMType(context.TheContext);
+                            argVal.Val = context.Builder.CreateLoad(structTy, argVal.Val, "arg_loaded");
+                        }
+                    }
+                    
+                    if (argVal.Val->getType() != expectedTy) {
                         if (argVal.Val->getType()->isIntegerTy() && expectedTy->isFloatingPointTy())
                             argVal.Val = context.Builder.CreateSIToFP(argVal.Val, expectedTy, "arg_cast");
                         else if (argVal.Val->getType()->isFloatingPointTy() && expectedTy->isIntegerTy())
@@ -2048,9 +2096,18 @@ TypedValue CallExprAST::codegen(CodegenContext& context)
                 ++calleeIdx;
             }
 
-            llvm::Value* result = context.Builder.CreateCall(calleeFn, callArgs, methodName);
-            FluxType retType = context.FuncReturnTypes[calleeFn->getName().str()];
-            return TypedValue(result, retType);
+            if (isSretCall) {
+                context.Builder.CreateCall(calleeFn, callArgs);
+                llvm::Type* sretLLVMTy = retType.getLLVMType(context.TheContext);
+                if (!sretLLVMTy) {
+                    sretLLVMTy = llvm::cast<llvm::StructType>(FluxType(TypeKind::Matrix).getLLVMType(context.TheContext));
+                }
+                llvm::Value* result = context.Builder.CreateLoad(sretLLVMTy, sretPtr, "sret_val");
+                return TypedValue(result, retType);
+            } else {
+                llvm::Value* result = context.Builder.CreateCall(calleeFn, callArgs, methodName);
+                return TypedValue(result, retType);
+            }
         }
         std::cerr << "Expression-based call not supported for non-member callee" << std::endl;
         return TypedValue();
@@ -2557,7 +2614,13 @@ TypedValue CallExprAST::codegen(CodegenContext& context)
                 context.Builder.CreateStore(ArgV, tempAlloca);
                 ArgV = tempAlloca;
             }
-        } else if (ArgV->getType() != ExpectedTy) {
+        } else {
+            if ((ArgTVs[i].Type.Kind == TypeKind::UserStruct || ArgTVs[i].Type.Kind == TypeKind::UserEnum) && ArgV->getType()->isPointerTy()) {
+                llvm::Type* structTy = ArgTVs[i].Type.getLLVMType(context.TheContext);
+                ArgV = context.Builder.CreateLoad(structTy, ArgV, "arg_loaded");
+            }
+        }
+        if (ArgV->getType() != ExpectedTy) {
             if (ExpectedTy->isIntegerTy() && ArgV->getType()->isFloatingPointTy()) {
                 ArgV = context.Builder.CreateFPToSI(ArgV, ExpectedTy, "cast");
             } else if (ExpectedTy->isFloatingPointTy() && ArgV->getType()->isIntegerTy()) {
