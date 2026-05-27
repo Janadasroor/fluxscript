@@ -156,6 +156,18 @@ set_tests_properties(flux-test-module-system PROPERTIES
 
 find_program(BASH_EXECUTABLE NAMES bash sh)
 
+# Fallback for Windows where Git Bash is installed but not on standard PATH
+if(NOT BASH_EXECUTABLE AND WIN32)
+    find_program(BASH_EXECUTABLE NAMES bash sh
+        PATHS
+        "C:/Program Files/Git/bin"
+        "C:/Program Files/Git/usr/bin"
+        "C:/Program Files (x86)/Git/bin"
+        "C:/Program Files (x86)/Git/usr/bin"
+        "C:/msys64/usr/bin"
+    )
+endif()
+
 # If bash/sh is not found, use a platform fallback
 if(NOT BASH_EXECUTABLE)
     if(CMAKE_HOST_UNIX)

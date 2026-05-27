@@ -31,12 +31,6 @@ jobs:
           path: build/_deps/eigen-src
           key: eigen-3.4.0-${{ runner.os }}
 
-      - name: Configure
-        run: |
-          cmake -B build -DCMAKE_BUILD_TYPE=Release \
-            -DLLVM_DIR=/usr/lib/llvm-21/lib/cmake/llvm \
-            -DFLUX_BUILD_TESTS=ON
-
       - name: Cache build
         id: cache-build
         uses: actions/cache@v4
@@ -45,6 +39,12 @@ jobs:
           key: build-${{ runner.os }}-${{ hashFiles('src/**/*.cpp', 'include/**/*.h', 'cli/**/*.cpp', 'tests/**/*.cpp', 'CMakeLists.txt', 'stdlib/*.flux') }}
           restore-keys: |
             build-${{ runner.os }}-
+
+      - name: Configure
+        run: |
+          cmake -B build -DCMAKE_BUILD_TYPE=Release \
+            -DLLVM_DIR=/usr/lib/llvm-21/lib/cmake/llvm \
+            -DFLUX_BUILD_TESTS=ON
 
       - name: Build
         run: cmake --build build -j$(nproc)
@@ -71,12 +71,6 @@ jobs:
           path: build/_deps/eigen-src
           key: eigen-3.4.0-${{ runner.os }}
 
-      - name: Configure
-        run: |
-          cmake -B build -DCMAKE_BUILD_TYPE=Release \
-            -DLLVM_DIR=/usr/lib/llvm-21/lib/cmake/llvm \
-            -DFLUX_BUILD_TESTS=ON
-
       - name: Cache build
         id: cache-build
         uses: actions/cache@v4
@@ -85,6 +79,12 @@ jobs:
           key: build-${{ runner.os }}-${{ hashFiles('src/**/*.cpp', 'include/**/*.h', 'cli/**/*.cpp', 'tests/**/*.cpp', 'CMakeLists.txt', 'stdlib/*.flux') }}
           restore-keys: |
             build-${{ runner.os }}-
+
+      - name: Configure
+        run: |
+          cmake -B build -DCMAKE_BUILD_TYPE=Release \
+            -DLLVM_DIR=/usr/lib/llvm-21/lib/cmake/llvm \
+            -DFLUX_BUILD_TESTS=ON
 
       - name: Build
         run: cmake --build build -j$(nproc)
@@ -102,6 +102,14 @@ jobs:
           brew install llvm@21 eigen
           brew link --overwrite llvm@21
 
+      - name: Cache build
+        uses: actions/cache@v4
+        with:
+          path: build
+          key: build-macos-${{ hashFiles('src/**/*.cpp', 'include/**/*.h', 'cli/**/*.cpp', 'tests/**/*.cpp', 'CMakeLists.txt', 'stdlib/*.flux') }}
+          restore-keys: |
+            build-macos-
+
       - name: Configure
         run: |
           cmake -B build \
@@ -111,14 +119,6 @@ jobs:
             -DLLD_DIR="$(brew --prefix llvm@21)/lib/cmake/lld" \
             -DCMAKE_PREFIX_PATH="$(brew --prefix eigen)" \
             -DFLUX_BUILD_TESTS=ON
-
-      - name: Cache build
-        uses: actions/cache@v4
-        with:
-          path: build
-          key: build-macos-${{ hashFiles('src/**/*.cpp', 'include/**/*.h', 'cli/**/*.cpp', 'tests/**/*.cpp', 'CMakeLists.txt', 'stdlib/*.flux') }}
-          restore-keys: |
-            build-macos-
 
       - name: Build
         run: cmake --build build -j$(sysctl -n hw.logicalcpu)
@@ -162,9 +162,6 @@ jobs:
           $cfg = Get-ChildItem -Path llvm-windows -Recurse -Filter "LLVMConfig.cmake" | Select-Object -First 1
           echo "LLVM_DIR=$($cfg.DirectoryName)" | Out-File -FilePath $env:GITHUB_ENV -Append
 
-      - name: Configure
-        run: cmake -B build -DCMAKE_BUILD_TYPE=Release -DLLVM_DIR="$env:LLVM_DIR" -DFLUX_BUILD_TESTS=ON
-
       - name: Cache build
         uses: actions/cache@v4
         with:
@@ -172,6 +169,9 @@ jobs:
           key: build-windows-${{ hashFiles('src/**/*.cpp', 'include/**/*.h', 'cli/**/*.cpp', 'tests/**/*.cpp', 'CMakeLists.txt', 'stdlib/*.flux') }}
           restore-keys: |
             build-windows-
+
+      - name: Configure
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Release -DLLVM_DIR="$env:LLVM_DIR" -DFLUX_BUILD_TESTS=ON
 
       - name: Build
         run: cmake --build build --config Release
