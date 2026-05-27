@@ -118,6 +118,40 @@ static bool shouldPassByPointer(const FluxType& type, CodegenContext& context)
 #endif
 }
 
+static bool shouldReturnBySRet(const FluxType& type, CodegenContext& context)
+{
+    FluxType resolved = type;
+    resolveUserStructType(resolved, context);
+    resolveUserEnumType(resolved, context);
+
+    if (resolved.Kind == TypeKind::Matrix || resolved.Kind == TypeKind::ComplexMatrix) {
+        return true;
+    }
+#ifdef _WIN32
+    if (resolved.Kind == TypeKind::Vector) {
+        return true;
+    }
+#endif
+
+    if (resolved.Kind == TypeKind::UserStruct || resolved.Kind == TypeKind::UserEnum) {
+        llvm::Type* llvmTy = resolved.getLLVMType(context.TheContext);
+        if (!llvmTy)
+            return false;
+
+        uint64_t size = context.TheModule->getDataLayout().getTypeStoreSize(llvmTy);
+#ifdef _WIN32
+        // On Windows x64: struct returns of size 1, 2, 4, 8 are in RAX, others are by reference (sret)
+        return (size != 1 && size != 2 && size != 4 && size != 8);
+#else
+        // On Linux/macOS System V and ARM64 ABI: struct returns up to 16 bytes are in RAX/RDX, others are sret
+        return size > 16;
+#endif
+    }
+
+    return false;
+}
+
+
 
 static FluxType typeFromLLVM(llvm::Type* Ty)
 {
@@ -2462,9 +2496,20 @@ TypedValue CallExprAST::codegen(CodegenContext& context)
         }
         // Check if it's an sret function (expects hidden return pointer as first arg)
         else if (isSretCall && CalleeF->arg_size() == Args.size() + 1) {
-            llvm::StructType* MatSTy =
-                llvm::cast<llvm::StructType>(FluxType(TypeKind::Matrix).getLLVMType(context.TheContext));
-            llvm::Value* RetSpace = context.Builder.CreateAlloca(MatSTy, nullptr, "mat_ret");
+            llvm::Type* sretTy = nullptr;
+            auto retIt = context.FuncReturnTypes.find(Callee);
+            if (retIt != context.FuncReturnTypes.end()) {
+                FluxType resolvedRet = retIt->second;
+                resolveUserStructType(resolvedRet, context);
+                resolveUserEnumType(resolvedRet, context);
+                sretTy = resolvedRet.getLLVMType(context.TheContext);
+            } else {
+                sretTy = CalleeF->getParamAttribute(0, llvm::Attribute::StructRet).getValueAsType();
+            }
+            if (!sretTy) {
+                sretTy = llvm::cast<llvm::StructType>(FluxType(TypeKind::Matrix).getLLVMType(context.TheContext));
+            }
+            llvm::Value* RetSpace = context.Builder.CreateAlloca(sretTy, nullptr, "sret_ret");
             ArgsV.push_back(RetSpace);
         } else {
             return TypedValue();
@@ -2593,27 +2638,34 @@ TypedValue CallExprAST::codegen(CodegenContext& context)
         return TypedValue(MatVal, extMatType);
     }
 
-    // User-defined function returning matrix via sret convention
+    // User-defined function returning matrix/vector/struct/enum via sret convention
     if (isSretCall) {
-        llvm::StructType* MatSTy =
-            llvm::cast<llvm::StructType>(FluxType(TypeKind::Matrix).getLLVMType(context.TheContext));
-        // ArgsV already has the sret pointer from arg_size mismatch handling
-        context.Builder.CreateCall(CalleeF, ArgsV);
-        llvm::Value* MatVal = context.Builder.CreateLoad(MatSTy, ArgsV[0], "mat_val");
-        FluxType sretMatType(TypeKind::Matrix);
+        FluxType sretRetType(TypeKind::Matrix);
         auto ftIt = context.FuncReturnTypes.find(Callee);
         if (ftIt != context.FuncReturnTypes.end()) {
-            sretMatType = ftIt->second;
+            sretRetType = ftIt->second;
         }
-        if (!ArgDims.empty()) {
+        resolveUserStructType(sretRetType, context);
+        resolveUserEnumType(sretRetType, context);
+
+        llvm::Type* sretRetLLVMTy = sretRetType.getLLVMType(context.TheContext);
+        if (!sretRetLLVMTy) {
+            sretRetLLVMTy = llvm::cast<llvm::StructType>(FluxType(TypeKind::Matrix).getLLVMType(context.TheContext));
+        }
+
+        // ArgsV already has the sret pointer from arg_size mismatch handling
+        context.Builder.CreateCall(CalleeF, ArgsV);
+        llvm::Value* RetVal = context.Builder.CreateLoad(sretRetLLVMTy, ArgsV[0], "sret_val");
+
+        if (!ArgDims.empty() && (sretRetType.Kind == TypeKind::Matrix || sretRetType.Kind == TypeKind::ComplexMatrix)) {
             auto extIt3 = context.ExternFuncTypes.find(Callee);
             if (extIt3 != context.ExternFuncTypes.end() && !extIt3->second.second.empty() &&
                 (extIt3->second.second[0].Kind == TypeKind::Matrix ||
                  extIt3->second.second[0].Kind == TypeKind::ComplexMatrix)) {
-                sretMatType.Dimensions = ArgDims[0];
+                sretRetType.Dimensions = ArgDims[0];
             }
         }
-        return TypedValue(MatVal, sretMatType);
+        return TypedValue(RetVal, sretRetType);
     }
 
     if (extRetIt != context.ExternFuncTypes.end() && extRetIt->second.first.Kind == TypeKind::Void) {
@@ -3354,13 +3406,7 @@ llvm::Function* PrototypeAST::codegen(CodegenContext& context)
     llvm::Type* VoidPtrTy = llvm::PointerType::get(context.TheContext, 0);
     llvm::Type* DoublePtrTy = llvm::PointerType::get(DoubleTy->getContext(), 0);
 
-    const bool returnsMatrix = (ReturnType.Kind == TypeKind::Matrix || ReturnType.Kind == TypeKind::ComplexMatrix);
-#ifdef _WIN32
-    const bool returnsVector = (ReturnType.Kind == TypeKind::Vector);
-#else
-    const bool returnsVector = false;
-#endif
-    const bool useSRet = returnsMatrix || returnsVector;
+    const bool useSRet = shouldReturnBySRet(ReturnType, context);
 
     if (useSRet) {
         // sret: hidden first parameter is pointer to return struct
@@ -3415,10 +3461,12 @@ llvm::Function* PrototypeAST::codegen(CodegenContext& context)
     // Mark sret parameter with attribute
     if (useSRet) {
         llvm::Type* sretTy = nullptr;
-        if (returnsMatrix) {
+        if (ReturnType.Kind == TypeKind::Matrix || ReturnType.Kind == TypeKind::ComplexMatrix) {
             sretTy = FluxType(TypeKind::Matrix).getLLVMType(context.TheContext);
-        } else {
+        } else if (ReturnType.Kind == TypeKind::Vector) {
             sretTy = FluxType(TypeKind::Vector).getLLVMType(context.TheContext);
+        } else {
+            sretTy = ReturnType.getLLVMType(context.TheContext);
         }
         F->addParamAttr(0, llvm::Attribute::getWithStructRetType(context.TheContext, sretTy));
         F->addParamAttr(0, llvm::Attribute::get(context.TheContext, llvm::Attribute::NoAlias));
@@ -3889,13 +3937,7 @@ llvm::Function* FunctionAST::codegen(CodegenContext& context)
     if (isGenerator)
         Proto->setGenerator(true);
 
-    const bool returnsMatrix = (Proto->getReturnType().Kind == TypeKind::Matrix || Proto->getReturnType().Kind == TypeKind::ComplexMatrix);
-#ifdef _WIN32
-    const bool returnsVector = (Proto->getReturnType().Kind == TypeKind::Vector);
-#else
-    const bool returnsVector = false;
-#endif
-    const bool useSRet = returnsMatrix || returnsVector;
+    const bool useSRet = shouldReturnBySRet(Proto->getReturnType(), context);
 
     llvm::Function* TheFunction = context.TheModule->getFunction(Proto->getName());
     if (TheFunction) {
