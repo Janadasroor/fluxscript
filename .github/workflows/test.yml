@@ -1,11 +1,17 @@
-name: Test (cached build)
+name: CI
+
 on:
-  workflow_dispatch:
+  push:
+    branches: [master]
+    tags: ['v*']
   pull_request:
     branches: [master]
+  workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
+  checks: write
+  pull-requests: read
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -52,6 +58,19 @@ jobs:
       - name: Test
         run: cd build && ctest --output-on-failure -R "flux-test" -E "all-features|waveform-extraction|tiered-jit|module-system" -j$(nproc)
 
+      - name: Package binary
+        run: |
+          mkdir -p dist
+          cp build/flux dist/flux-linux-x86_64
+          strip dist/flux-linux-x86_64
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: flux-linux-x86_64
+          path: dist/flux-linux-x86_64
+          if-no-files-found: error
+
   linux-arm64:
     runs-on: ubuntu-24.04-arm
     steps:
@@ -92,6 +111,19 @@ jobs:
       - name: Test
         run: cd build && ctest --output-on-failure -R "flux-test" -E "all-features|waveform-extraction|tiered-jit|module-system" -j$(nproc)
 
+      - name: Package binary
+        run: |
+          mkdir -p dist
+          cp build/flux dist/flux-linux-arm64
+          strip dist/flux-linux-arm64
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: flux-linux-arm64
+          path: dist/flux-linux-arm64
+          if-no-files-found: error
+
   macos-arm64:
     runs-on: macos-14
     steps:
@@ -125,6 +157,19 @@ jobs:
 
       - name: Test
         run: cd build && ctest --output-on-failure -R "flux-test" -E "all-features|waveform-extraction|tiered-jit|module-system" -j$(sysctl -n hw.logicalcpu)
+
+      - name: Package binary
+        run: |
+          mkdir -p dist
+          cp build/flux dist/flux-macos-arm64
+          strip dist/flux-macos-arm64
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: flux-macos-arm64
+          path: dist/flux-macos-arm64
+          if-no-files-found: error
 
   windows-x86_64:
     runs-on: windows-2022
@@ -188,3 +233,70 @@ jobs:
           $env:PATH = "$fluxBin;$env:PATH"
           cd build
           ctest --output-on-failure -C Release -R "flux-test" -E "all-features|waveform-extraction|tiered-jit|module-system"
+
+      - name: Package binary
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          Copy-Item "build\Release\flux.exe" "dist\flux-windows-x86_64.exe"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: flux-windows-x86_64
+          path: dist/flux-windows-x86_64.exe
+          if-no-files-found: error
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [linux-x86_64, linux-arm64, macos-arm64, windows-x86_64]
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Prepare release assets
+        run: |
+          mkdir -p assets
+          cp artifacts/flux-linux-x86_64/flux-linux-x86_64 assets/
+          cp artifacts/flux-linux-arm64/flux-linux-arm64 assets/
+          cp artifacts/flux-macos-arm64/flux-macos-arm64 assets/
+          cp artifacts/flux-windows-x86_64/flux-windows-x86_64.exe assets/
+          chmod +x assets/*
+
+      - name: Write release notes
+        run: |
+          TAG="${GITHUB_REF#refs/tags/}"
+          cat > release-notes.md <<- NOTEEND
+          ## FluxScript ${TAG}
+
+          ### Pre-built binaries
+
+          | Platform | Binary |
+          |----------|--------|
+          | Linux x86_64 | \`flux-linux-x86_64\` |
+          | Linux ARM64 | \`flux-linux-arm64\` |
+          | macOS ARM64 | \`flux-macos-arm64\` |
+          | Windows x86_64 | \`flux-windows-x86_64.exe\` |
+
+          ### Requirements
+          - LLVM 21 runtime libraries
+          - Linux: glibc 2.31+
+          - macOS: 14+
+          - Windows: VC++ Redistributable 2022
+
+          NOTEEND
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: FluxScript ${{ github.ref_name }}
+          body_path: release-notes.md
+          files: assets/*
