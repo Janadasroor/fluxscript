@@ -184,6 +184,27 @@ static bool shouldPassByPointer(const FluxType& type, CodegenContext& context)
 #endif
 }
 
+static bool isCopyType(const FluxType& type)
+{
+    // All types are Copy by default in current FluxScript. Everything is
+    // passed by value (or readonly pointer for large structs). Move semantics
+    // will be introduced when explicit Copy/move traits are implemented.
+    //
+    // Return false for a type only if it explicitly opts out of copy semantics
+    // via a Move-only trait. Currently no types do this, so all are Copy.
+    (void)type;
+    return true;
+}
+
+static bool checkNotMoved(const std::string& name, CodegenContext& context)
+{
+    if (context.MovedVariables.count(name)) {
+        std::cerr << "[FLUX ERROR] use of moved variable '" << name << "'" << std::endl;
+        return false;
+    }
+    return true;
+}
+
 static bool shouldReturnBySRet(const FluxType& type, CodegenContext& context)
 {
     FluxType resolved = type;
@@ -517,6 +538,7 @@ TypedValue BlockExprAST::codegen(CodegenContext& context)
     // Save current scope
     auto OldNamedValues = context.NamedValues;
     auto OldNamedTypes = context.NamedTypes;
+    auto OldMovedVariables = context.MovedVariables;
 
     for (size_t i = 0; i < Statements.size(); ++i) {
         if (context.Builder.GetInsertBlock()->getTerminator()) {
@@ -528,6 +550,7 @@ TypedValue BlockExprAST::codegen(CodegenContext& context)
             // Restore scope on failure
             context.NamedValues = OldNamedValues;
             context.NamedTypes = OldNamedTypes;
+            context.MovedVariables = OldMovedVariables;
             return TypedValue(nullptr, TypeKind::Void);
         }
     }
@@ -607,9 +630,8 @@ TypedValue BlockExprAST::codegen(CodegenContext& context)
     // Restore scope
     context.NamedValues = OldNamedValues;
     context.NamedTypes = OldNamedTypes;
-
-    return LastVal.Val ? LastVal
-                       : TypedValue(llvm::ConstantFP::get(context.TheContext, llvm::APFloat(0.0)), TypeKind::Double);
+    context.MovedVariables = OldMovedVariables;
+    return LastVal;
 }
 TypedValue VariableExprAST::codegen(CodegenContext& context)
 {
@@ -625,6 +647,9 @@ TypedValue VariableExprAST::codegen(CodegenContext& context)
             std::string unqualified = Name.substr(sepPos + 2);
             V = context.NamedValues[unqualified];
         }
+    }
+    if (V && !checkNotMoved(trimmedName, context)) {
+        return TypedValue();
     }
     if (!V) {
         std::cerr << "Unknown variable name: " << Name << " (trimmed: '" << trimmedName << "')" << std::endl;
@@ -747,8 +772,8 @@ TypedValue MemberExprAST::codegen(CodegenContext& context)
             context.Builder.CreateStore(objVal.Val, structPtr);
         }
 
-        if (structPtr->getType() != llvm::PointerType::get(structInfo.LLVMType, 0)) {
-            structPtr = context.Builder.CreateBitCast(structPtr, llvm::PointerType::get(structInfo.LLVMType, 0));
+        if (structPtr->getType() != llvm::PointerType::get(context.TheContext, 0)) {
+            structPtr = context.Builder.CreateBitCast(structPtr, llvm::PointerType::get(context.TheContext, 0));
         }
 
         if (!structInfo.LLVMType) {
@@ -912,14 +937,21 @@ TypedValue AssignExprAST::codegen(CodegenContext& context)
                             if (allocaInst->getAllocatedType()->isPointerTy()) {
                                 structPtr = context.Builder.CreateLoad(allocaInst->getAllocatedType(), allocaInst, "ptr_val");
                             }
-                            if (structPtr->getType() != llvm::PointerType::get(structInfo.LLVMType, 0)) {
-                                structPtr = context.Builder.CreateBitCast(structPtr, llvm::PointerType::get(structInfo.LLVMType, 0));
+                            if (structPtr->getType() != llvm::PointerType::get(context.TheContext, 0)) {
+                                structPtr = context.Builder.CreateBitCast(structPtr, llvm::PointerType::get(context.TheContext, 0));
                             }
                             llvm::Value* gep = context.Builder.CreateStructGEP(structInfo.LLVMType, structPtr, fieldIdx, MEM->getMemberName());
                             TypedValue rhsVal = Val->codegen(context);
                             if (!rhsVal.Val) {
                                 std::cerr << "[FLUX ERROR] Struct field assignment value expression failed to codegen" << std::endl;
                                 return TypedValue();
+                            }
+                            // Mark non-Copy source variables as moved on field assignment
+                            if (!isCopyType(rhsVal.Type)) {
+                                if (auto* rhsVar = dynamic_cast<VariableExprAST*>(Val.get())) {
+                                    std::string srcName = rhsVar->getName();
+                                    context.MovedVariables.insert(srcName);
+                                }
                             }
                             llvm::Value* rhsValPtr = rhsVal.Val;
                             if (shouldPassByPointer(rhsVal.Type, context)) {
@@ -978,6 +1010,15 @@ TypedValue AssignExprAST::codegen(CodegenContext& context)
                     std::cerr << "[FLUX ERROR] Implicit variable creation failed to codegen initializer" << std::endl;
                     return TypedValue();
                 }
+                // Mark non-Copy source variables as moved on assignment
+                if (!isCopyType(ValTV.Type)) {
+                    if (auto* rhsVar = dynamic_cast<VariableExprAST*>(Val.get())) {
+                        std::string srcName = rhsVar->getName();
+                        srcName.erase(0, srcName.find_first_not_of(" "));
+                        srcName.erase(srcName.find_last_not_of(" ") + 1);
+                        context.MovedVariables.insert(srcName);
+                    }
+                }
                 llvm::Type* AllocaTy = ValTV.Val->getType();
                 llvm::IRBuilder<> TmpB(&TheFunction->getEntryBlock(), TheFunction->getEntryBlock().begin());
                 Variable = TmpB.CreateAlloca(AllocaTy, nullptr, TargetName);
@@ -1015,6 +1056,16 @@ TypedValue AssignExprAST::codegen(CodegenContext& context)
     if (!ValTV.Val) {
         std::cerr << "[FLUX ERROR] Assignment value expression failed to codegen" << std::endl;
         return TypedValue();
+    }
+
+    // Mark non-Copy source variables as moved on assignment
+    if (!isCopyType(ValTV.Type)) {
+        if (auto* rhsVar = dynamic_cast<VariableExprAST*>(Val.get())) {
+            std::string srcName = rhsVar->getName();
+            srcName.erase(0, srcName.find_first_not_of(" "));
+            srcName.erase(srcName.find_last_not_of(" ") + 1);
+            context.MovedVariables.insert(srcName);
+        }
     }
 
     if (Op != 0) {
@@ -2252,7 +2303,7 @@ TypedValue CallExprAST::codegen(CodegenContext& context)
                                         llvm::Value* heapAlloc = context.Builder.CreateCall(mallocFn, {sizeVal}, "heap_alloc");
 
                                         llvm::Value* concretePayloadPtr = context.Builder.CreatePointerCast(
-                                            heapAlloc, llvm::PointerType::get(concretePayloadTy, 0), "concrete_heap_ptr");
+                                            heapAlloc, llvm::PointerType::get(context.TheContext, 0), "concrete_heap_ptr");
                                         context.Builder.CreateStore(payloadVal, concretePayloadPtr);
 
                                         llvm::Value* unionPayloadPtr = context.Builder.CreatePointerCast(
@@ -2368,6 +2419,13 @@ TypedValue CallExprAST::codegen(CodegenContext& context)
                 if (!argVal.Val) {
                     std::cerr << "[FLUX ERROR] Method call argument expression failed to codegen" << std::endl;
                     return TypedValue();
+                }
+                // Mark non-Copy variable arguments as moved
+                if (!isCopyType(argVal.Type)) {
+                    if (auto* argVar = dynamic_cast<VariableExprAST*>(Arg.get())) {
+                        std::string srcName = argVar->getName();
+                        context.MovedVariables.insert(srcName);
+                    }
                 }
                 // Cast argument to match the callee's parameter type
                 if (calleeFn->arg_size() > calleeIdx) {
@@ -2697,6 +2755,13 @@ TypedValue CallExprAST::codegen(CodegenContext& context)
                         std::cerr << "Failed to codegen arg " << i << " for struct " << Name << std::endl;
                         return TypedValue();
                     }
+                    // Mark non-Copy variable arguments as moved
+                    if (!isCopyType(fieldVal.Type)) {
+                        if (auto* argVar = dynamic_cast<VariableExprAST*>(Args[i].get())) {
+                            std::string srcName = argVar->getName();
+                            context.MovedVariables.insert(srcName);
+                        }
+                    }
                     llvm::Value* gep = context.Builder.CreateStructGEP(llvmStructTy, alloca, i,
                         structInfo.Fields[i].first);
                     context.Builder.CreateStore(fieldVal.Val, gep);
@@ -2718,6 +2783,15 @@ TypedValue CallExprAST::codegen(CodegenContext& context)
         TypedValue ArgTV = Expr->codegen(context);
         ArgTVs.push_back(ArgTV);
         ArgDims.push_back(ArgTV.Type.Dimensions);
+        // Mark non-Copy variable arguments as moved
+        if (!isCopyType(ArgTV.Type)) {
+            if (auto* argVar = dynamic_cast<VariableExprAST*>(Expr.get())) {
+                std::string srcName = argVar->getName();
+                srcName.erase(0, srcName.find_first_not_of(" "));
+                srcName.erase(srcName.find_last_not_of(" ") + 1);
+                context.MovedVariables.insert(srcName);
+            }
+        }
     }
 
     // If the callee wasn't found yet, check for generic function specialization.
@@ -3450,10 +3524,27 @@ TypedValue LetExprAST::codegen(CodegenContext& context)
             VarTy = InitV->getType();
         }
     }
+    // If initializer is a variable of non-Copy type, mark source as moved
+    if (!isCopyType(InitTV.Type)) {
+        if (auto* initVar = dynamic_cast<VariableExprAST*>(Init.get())) {
+            std::string srcName = initVar->getName();
+            srcName.erase(0, srcName.find_first_not_of(" "));
+            srcName.erase(srcName.find_last_not_of(" ") + 1);
+            context.MovedVariables.insert(srcName);
+        } else if (auto* initMember = dynamic_cast<MemberExprAST*>(Init.get())) {
+            if (auto* objVar = dynamic_cast<VariableExprAST*>(const_cast<ExprAST*>(initMember->getObject()))) {
+                std::string srcName = objVar->getName();
+                context.MovedVariables.insert(srcName);
+            }
+        }
+    }
+
     llvm::AllocaInst* Alloca = context.Builder.CreateAlloca(VarTy, nullptr, VarName.c_str());
     context.Builder.CreateStore(InitV, Alloca);
     llvm::Value* OldVal = context.NamedValues[VarName];
     FluxType OldType = context.NamedTypes[VarName];
+    bool OldWasMoved = context.MovedVariables.count(VarName) > 0;
+    context.MovedVariables.erase(VarName);
     context.NamedValues[VarName] = Alloca;
     context.NamedTypes[VarName] = ActualType;
 
@@ -3554,6 +3645,8 @@ TypedValue LetExprAST::codegen(CodegenContext& context)
     if (context.DebugEnabled) context.LexicalBlocks.pop_back();
     context.NamedValues[VarName] = OldVal;
     context.NamedTypes[VarName] = OldType;
+    if (OldWasMoved) context.MovedVariables.insert(VarName);
+    else context.MovedVariables.erase(VarName);
     return BodyTV;
 }
 
@@ -3567,7 +3660,9 @@ TypedValue LambdaExprAST::codegen(CodegenContext& context)
     llvm::BasicBlock* BB = llvm::BasicBlock::Create(context.TheContext, "entry", LambdaFn);
     llvm::BasicBlock* OldBB = context.Builder.GetInsertBlock();
     std::map<std::string, llvm::Value*> OldNamedValues = context.NamedValues;
+    auto OldMovedVars = context.MovedVariables;
     context.NamedValues.clear();
+    context.MovedVariables.clear();
     {
         llvm::IRBuilder<> LambdaBuilder(BB);
         unsigned Idx = 0;
@@ -4666,6 +4761,7 @@ llvm::Function* FunctionAST::codegen(CodegenContext& context)
         context.LexicalBlocks.push_back(subprogram);
     }
     context.NamedValues.clear();
+    context.MovedVariables.clear();
     const auto& ArgTypes = Proto->getArgs();
     unsigned Idx = 0;
     auto ArgIt = TheFunction->arg_begin();
