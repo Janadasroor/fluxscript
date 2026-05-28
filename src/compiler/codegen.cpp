@@ -2256,11 +2256,11 @@ TypedValue CallExprAST::codegen(CodegenContext& context)
                                         context.Builder.CreateStore(payloadVal, concretePayloadPtr);
 
                                         llvm::Value* unionPayloadPtr = context.Builder.CreatePointerCast(
-                                            payloadPtr, llvm::PointerType::get(llvm::PointerType::get(context.TheContext, 0), 0), "union_payload_ptr");
+                                            payloadPtr, llvm::PointerType::get(context.TheContext, 0), "union_payload_ptr");
                                         context.Builder.CreateStore(heapAlloc, unionPayloadPtr);
                                     } else {
                                         llvm::Value* concretePayloadPtr = context.Builder.CreatePointerCast(
-                                            payloadPtr, llvm::PointerType::get(concretePayloadTy, 0), "concrete_payload_ptr");
+                                            payloadPtr, llvm::PointerType::get(context.TheContext, 0), "concrete_payload_ptr");
                                         context.Builder.CreateStore(payloadVal, concretePayloadPtr);
                                     }
                                     llvm::Value* loaded = context.Builder.CreateLoad(taggedTy, structPtr, variantName);
@@ -4710,7 +4710,7 @@ llvm::Function* FunctionAST::codegen(CodegenContext& context)
 
         llvm::Type* AllocaTy = ExpectedTy;
         if (shouldPassByPointer(argType, context)) {
-            AllocaTy = llvm::PointerType::get(ExpectedTy, 0);
+            AllocaTy = llvm::PointerType::get(context.TheContext, 0);
         }
         llvm::AllocaInst* Alloca = context.Builder.CreateAlloca(AllocaTy, nullptr, argName);
         if (shouldPassByPointer(argType, context)) {
