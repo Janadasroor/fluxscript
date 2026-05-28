@@ -11,7 +11,7 @@
  See the License for the specific language governing permissions and
  limitations under the License. */
 
-// Minimal FluxScript CLI without Qt dependencies
+// FluxScript CLI - compiler driver and JIT runtime
 #include <cmath>
 #include <complex>
 #include <filesystem>
@@ -32,6 +32,39 @@
 
 namespace {
 
+static const char* VersionStr = "FluxScript v0.1.0 (LLVM JIT)";
+static const char* HelpExamples =
+    "EXAMPLES:\n"
+    "\n"
+    "  Run a script and print the result (default JIT mode):\n"
+    "    flux myscript.flux\n"
+    "\n"
+    "  Run a specific function from a script:\n"
+    "    flux --entry=my_function myscript.flux\n"
+    "\n"
+    "  Parse and type-check without executing:\n"
+    "    flux --emit=check myscript.flux\n"
+    "\n"
+    "  Emit LLVM IR and inspect the generated code:\n"
+    "    flux --emit=llvm myscript.flux\n"
+    "\n"
+    "  Emit LLVM bitcode to a file:\n"
+    "    flux --emit=bc -o output.bc myscript.flux\n"
+    "\n"
+    "  Disable JIT cache:\n"
+    "    flux --cache=0 myscript.flux\n"
+    "\n"
+    "  Compile without running (JIT mode, no execution):\n"
+    "    flux --no-run myscript.flux\n"
+    "\n"
+    "  Profile compile and run time (10 iterations):\n"
+    "    flux --profile --iterations=10 myscript.flux\n"
+    "\n"
+    "  Read script from stdin:\n"
+    "    echo '42.0' | flux\n"
+    "\n"
+    "For more information, see https://github.com/Janadasroor/fluxscript\n";
+
 enum class EmitMode
 {
     Tokens,
@@ -48,35 +81,38 @@ llvm::cl::opt<std::string> InputFilename(llvm::cl::Positional, llvm::cl::desc("<
                                          llvm::cl::cat(FluxCategory));
 
 llvm::cl::opt<EmitMode> EmitAction(
-    "emit", llvm::cl::desc("Select the compiler output mode"),
-    llvm::cl::values(clEnumValN(EmitMode::Tokens, "tokens", "Lex and dump tokens"),
-                     clEnumValN(EmitMode::Check, "check", "Parse and type/codegen-check without running"),
-                     clEnumValN(EmitMode::LLVM, "llvm", "Emit generated LLVM IR"),
-                     clEnumValN(EmitMode::Bitcode, "bc", "Emit LLVM bitcode"),
-                     clEnumValN(EmitMode::JIT, "jit", "Compile and run with the LLVM JIT"),
-                     clEnumValN(EmitMode::MLIR, "mlir", "Emit MLIR from the optional MLIR integration path")),
+    "emit", llvm::cl::desc("Compiler output mode (default: jit)"),
+    llvm::cl::values(clEnumValN(EmitMode::Tokens, "tokens", "Lex and dump token stream"),
+                     clEnumValN(EmitMode::Check, "check", "Parse, type-check, and verify IR without executing"),
+                     clEnumValN(EmitMode::LLVM, "llvm", "Emit human-readable LLVM IR to stdout"),
+                     clEnumValN(EmitMode::Bitcode, "bc", "Emit LLVM bitcode (.bc) to file (use -o)"),
+                     clEnumValN(EmitMode::JIT, "jit", "Compile and execute using the LLVM JIT engine (default)"),
+                     clEnumValN(EmitMode::MLIR, "mlir", "Emit MLIR via the optional MLIR integration")),
     llvm::cl::init(EmitMode::JIT), llvm::cl::cat(FluxCategory));
 
-llvm::cl::opt<unsigned> OptLevel(llvm::cl::Prefix, llvm::cl::desc("Optimization level"), llvm::cl::init(2),
-                                 llvm::cl::cat(FluxCategory));
+llvm::cl::opt<unsigned> OptLevel(llvm::cl::Prefix, llvm::cl::desc("LLVM optimization level 0-3 (default: 2)"),
+                                 llvm::cl::init(2), llvm::cl::cat(FluxCategory));
 
-llvm::cl::opt<std::string> EntryPoint("entry", llvm::cl::desc("Function to invoke in JIT mode"),
+llvm::cl::opt<std::string> EntryPoint("entry", llvm::cl::desc("Function name to invoke in JIT mode (default: top-level expression)"),
                                       llvm::cl::init("__anon_expr"), llvm::cl::cat(FluxCategory));
 
-llvm::cl::opt<bool> NoRun("no-run", llvm::cl::desc("Compile in JIT mode without invoking the entry point"),
+llvm::cl::opt<bool> NoRun("no-run", llvm::cl::desc("JIT compile without executing the entry point"),
                           llvm::cl::init(false), llvm::cl::cat(FluxCategory));
 
-llvm::cl::opt<bool> ProfileMode("profile", llvm::cl::desc("Measure JIT compile and run time"), llvm::cl::init(false),
-                                llvm::cl::cat(FluxCategory));
+llvm::cl::opt<bool> ProfileMode("profile", llvm::cl::desc("Benchmark mode: print compile and execution times"),
+                                llvm::cl::init(false), llvm::cl::cat(FluxCategory));
 
-llvm::cl::opt<int> Iterations("iterations", llvm::cl::desc("Number of entry-point invocations for profiling"),
+llvm::cl::opt<int> Iterations("iterations", llvm::cl::desc("Number of iterations for --profile benchmarking"),
                               llvm::cl::init(1), llvm::cl::cat(FluxCategory));
 
-llvm::cl::opt<bool> EnableCache("cache", llvm::cl::desc("Enable the on-disk JIT cache"), llvm::cl::init(true),
-                                llvm::cl::cat(FluxCategory));
+llvm::cl::opt<bool> EnableCache("cache", llvm::cl::desc("Enable on-disk JIT compilation cache (default: on, use --cache=0 to disable)"),
+                                llvm::cl::init(true), llvm::cl::cat(FluxCategory));
 
-llvm::cl::opt<std::string> OutputFilename("o", llvm::cl::desc("Output file for --emit bc mode"),
+llvm::cl::opt<std::string> OutputFilename("o", llvm::cl::desc("Output file path (used with --emit=bc)"),
                                           llvm::cl::init(""), llvm::cl::cat(FluxCategory));
+
+llvm::cl::opt<bool> ShowExamples("examples", llvm::cl::desc("Print usage examples and exit"),
+                                 llvm::cl::init(false), llvm::cl::cat(FluxCategory));
 
 Flux::OptimizationLevel toOptimizationLevel(unsigned level)
 {
@@ -306,11 +342,27 @@ int emitBitcode(const std::string& code)
 int main(int argc, char** argv)
 {
     llvm::InitLLVM initLLVM(argc, argv);
+
+    // Override LLVM's default --version handler
+    for (int i = 1; i < argc; ++i) {
+        const std::string a = argv[i];
+        if (a == "--version" || a == "-v") {
+            llvm::outs() << VersionStr << "\n";
+            llvm::outs() << "LLVM " << LLVM_VERSION_STRING << "\n";
+            return 0;
+        }
+    }
+
     llvm::cl::HideUnrelatedOptions(FluxCategory);
-    llvm::cl::ParseCommandLineOptions(argc, argv, "FluxScript LLVM driver\n");
+    llvm::cl::ParseCommandLineOptions(argc, argv, "FluxScript - LLVM JIT-compiled scripting language\n");
+
+    if (ShowExamples) {
+        llvm::outs() << HelpExamples;
+        return 0;
+    }
 
     if (OptLevel > 3) {
-        llvm::errs() << "Invalid optimization level: -O" << OptLevel << "\n";
+        llvm::errs() << "Error: Invalid optimization level -O" << OptLevel << " (valid: 0-3)\n";
         return 1;
     }
 
