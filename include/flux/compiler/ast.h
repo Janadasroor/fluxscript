@@ -300,6 +300,7 @@ class FunctionAST;
 class StructDeclAST;
 class EnumDeclAST;
 class ImplDeclAST;
+class TraitDeclAST;
 class ExprAST;
 
 class CodegenContext
@@ -337,6 +338,12 @@ public:
     llvm::Value* GeneratorStateAlloca = nullptr;       // Struct containing state index and locals
     std::vector<llvm::BasicBlock*> YieldTargets;       // Blocks to resume from
     llvm::BasicBlock* GeneratorDispatcherBB = nullptr; // Entry dispatcher
+
+    // Async context
+    llvm::Value* AsyncStateAlloca = nullptr;           // Struct containing state index
+    llvm::Value* AsyncResultAlloca = nullptr;          // Alloca for await result value
+    std::vector<llvm::BasicBlock*> AwaitResumeTargets; // Blocks to resume from after await
+    llvm::BasicBlock* AsyncDispatcherBB = nullptr;     // Entry dispatcher
 
     // Module import callback — called by ImportExprAST::codegen for function-body imports.
     // Parameters: moduleName, alias, symbols list
@@ -403,6 +410,24 @@ public:
     std::map<std::string, ImplDeclAST*> GenericImpls;
     std::vector<std::unique_ptr<ImplDeclAST> > GenericImplDefs;
 
+    // Trait definitions
+    struct TraitInfo {
+        std::string Name;
+        std::vector<std::string> SuperTraits;
+        // Method signatures: (name, args, returnType)
+        struct MethodSig {
+            std::string Name;
+            std::vector<std::pair<std::string, FluxType>> Args;
+            FluxType ReturnType;
+        };
+        std::vector<MethodSig> Methods;
+    };
+    std::vector<TraitInfo> Traits;
+    std::map<std::string, int> TraitIndex; // trait name → index
+
+    // Track trait implementations: (trait name, type name) pair
+    std::set<std::pair<std::string, std::string>> TraitImplementations;
+
     // Already-specialized struct/enum type suffixes
     std::set<std::string> CompiledStructSpecializations;
     std::set<std::string> CompiledEnumSpecializations;
@@ -452,6 +477,7 @@ public:
     int getLine() const { return Line; }
     int getCol() const { return Col; }
     virtual bool containsYield() const { return false; }
+    virtual bool containsAwait() const { return false; }
 };
 
 class NumberExprAST : public ExprAST
@@ -1331,6 +1357,17 @@ public:
     bool containsYield() const override { return true; }
 };
 
+// Await (async)
+class AwaitExprAST : public ExprAST
+{
+    std::unique_ptr<ExprAST> Value;
+
+public:
+    AwaitExprAST(std::unique_ptr<ExprAST> Value) : Value(std::move(Value)) {}
+    TypedValue codegen(CodegenContext& context) override;
+    bool containsAwait() const override { return true; }
+};
+
 // --- AI / Neural Network Nodes ---
 
 class TrainExprAST : public ExprAST
@@ -1553,7 +1590,9 @@ class PrototypeAST
     FluxType ReturnType;
     int Line = 0;
     bool IsGenerator = false;
+    bool IsAsync = false;
     std::vector<std::string> GenericParams; // Generic type parameter names (e.g., [T, U])
+    std::map<std::string, std::vector<std::string>> GenericParamBounds; // param name → trait bounds
 
 public:
     PrototypeAST(const std::string& Name, std::vector<std::pair<std::string, FluxType>> Args,
@@ -1580,10 +1619,20 @@ public:
     void setGenerator(bool G) { IsGenerator = G; }
     bool isGenerator() const { return IsGenerator; }
 
+    void setAsync(bool A) { IsAsync = A; }
+    bool isAsync() const { return IsAsync; }
+
     // Generic type parameter support
     void setGenericParams(const std::vector<std::string>& Params) { GenericParams = Params; }
     const std::vector<std::string>& getGenericParams() const { return GenericParams; }
     bool isGeneric() const { return !GenericParams.empty(); }
+
+    // Trait bounds on generic params
+    void addGenericParamBound(const std::string& paramName, const std::string& traitName)
+    {
+        GenericParamBounds[paramName].push_back(traitName);
+    }
+    const std::map<std::string, std::vector<std::string>>& getGenericParamBounds() const { return GenericParamBounds; }
 
     // Create a concrete (specialized) prototype by substituting generic type params
     std::unique_ptr<PrototypeAST> specialize(
@@ -1610,6 +1659,8 @@ public:
         ConcreteProto->setLocation(Line);
         if (IsGenerator)
             ConcreteProto->setGenerator(true);
+        if (IsAsync)
+            ConcreteProto->setAsync(true);
         return ConcreteProto;
     }
 };
@@ -1745,23 +1796,63 @@ public:
 ///       def method1(self, args) -> ReturnType ... end
 ///       def method2(self, args) -> ReturnType ... end
 ///   end
+/// Or a trait impl:
+///   impl TraitName for TypeName
+///       ...
+///   end
 class ImplDeclAST
 {
     std::string TypeName;
+    std::string TraitName;  // Empty for inherent impl, set for trait impl
     std::string ParentName;
     std::vector<std::unique_ptr<FunctionAST>> Methods;
 
 public:
     ImplDeclAST(const std::string& TypeName, std::vector<std::unique_ptr<FunctionAST>> Methods, const std::string& ParentName = "")
-        : TypeName(TypeName), ParentName(ParentName), Methods(std::move(Methods))
+        : TypeName(TypeName), TraitName(), ParentName(ParentName), Methods(std::move(Methods))
     {
     }
 
     const std::string& getTypeName() const { return TypeName; }
+    const std::string& getTraitName() const { return TraitName; }
+    void setTraitName(const std::string& T) { TraitName = T; }
+    bool isTraitImpl() const { return !TraitName.empty(); }
     const std::string& getParentName() const { return ParentName; }
     void setParentName(const std::string& parent) { ParentName = parent; }
     const std::vector<std::unique_ptr<FunctionAST>>& getMethods() const { return Methods; }
     std::vector<std::unique_ptr<FunctionAST>>& getMethods() { return Methods; }
+    void codegen(CodegenContext& context);
+};
+
+/// TraitDeclAST - Represents a trait declaration:
+///   trait Display
+///       def to_string(self) -> String
+///   end
+class TraitDeclAST
+{
+public:
+    // Method prototypes stored as (name, args, returnType)
+    struct MethodProto {
+        std::string Name;
+        std::vector<std::pair<std::string, FluxType>> Args;
+        FluxType ReturnType;
+    };
+
+private:
+    std::string Name;
+    std::vector<std::string> SuperTraits;
+    std::vector<MethodProto> Methods;
+
+public:
+    TraitDeclAST(const std::string& Name, std::vector<MethodProto> Methods,
+                 const std::vector<std::string>& SuperTraits = {})
+        : Name(Name), SuperTraits(SuperTraits), Methods(std::move(Methods))
+    {
+    }
+
+    const std::string& getName() const { return Name; }
+    const std::vector<std::string>& getSuperTraits() const { return SuperTraits; }
+    const std::vector<MethodProto>& getMethods() const { return Methods; }
     void codegen(CodegenContext& context);
 };
 

@@ -68,6 +68,7 @@ void JITEngine::initialize()
     m_jit = std::make_unique<FluxJIT>(OptimizationLevel::O2);
     m_compilerOptions.moduleName = "FluxJITCore";
     m_compilerOptions.injectStdlib = true;
+    m_compilerOptions.debugInfo = true;
     if (m_cacheDirectory.empty())
         m_cacheDirectory = Tooling::defaultCacheDirectory();
     m_cacheEnabled = false;

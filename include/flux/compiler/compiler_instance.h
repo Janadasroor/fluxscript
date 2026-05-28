@@ -78,6 +78,7 @@ struct ParsedAST
     std::vector<std::unique_ptr<StructDeclAST>> structs;
     std::vector<std::unique_ptr<EnumDeclAST>> enums;
     std::vector<std::unique_ptr<ImplDeclAST>> impls;
+    std::vector<std::unique_ptr<TraitDeclAST>> traits;
     std::vector<std::unique_ptr<SubcktAST>> subckts;
     std::vector<std::unique_ptr<ModelAST>> models;
     std::vector<std::unique_ptr<AnalysisExprAST>> analyses;

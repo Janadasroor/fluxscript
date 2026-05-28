@@ -39,6 +39,7 @@ public:
     std::unique_ptr<ExplainExprAST> ParseExplainExpr();
     std::unique_ptr<SubstituteStmtAST> ParseSubstituteStmt();
     std::unique_ptr<ExprAST> ParseUpdateFunc();
+    std::unique_ptr<FunctionAST> ParseAsyncDef();
 
     // Time-domain simulation and SPICE
     std::unique_ptr<AnalysisExprAST> ParseAnalysis();
@@ -53,6 +54,7 @@ public:
     std::unique_ptr<EnumDeclAST> ParseEnumDecl(
         std::vector<std::unique_ptr<StructDeclAST>>* anonStructs = nullptr);
     std::unique_ptr<ImplDeclAST> ParseImplDecl();
+    std::unique_ptr<TraitDeclAST> ParseTraitDecl();
     bool ParseClassDecl(std::unique_ptr<StructDeclAST>* classStruct, std::unique_ptr<ImplDeclAST>* classImpl);
 
     int CurTok;
@@ -106,6 +108,7 @@ private:
     std::unique_ptr<ExprAST> ParseThrowExpr();
     std::unique_ptr<ExprAST> ParseAssertExpr();
     std::unique_ptr<ExprAST> ParseYieldExpr();
+    std::unique_ptr<ExprAST> ParseAwaitExpr();
     std::unique_ptr<ExprAST> ParseCornerExpr();
     std::unique_ptr<ExprAST> ParseMatchExpr();
     // Parse a match pattern: identifier, number, Enum.Variant, or Enum.Variant(binding_var)
@@ -245,7 +248,8 @@ private:
     int GetTokPrecedence();
 
     // Generics support
-    std::vector<std::string> ParseGenericParams();
+    std::vector<std::string> ParseGenericParams(
+        std::map<std::string, std::vector<std::string>>* outBounds = nullptr);
     std::vector<FluxType> ParseGenericTypeArgs();
 
     // Helper: parse a type name from the current token
@@ -263,6 +267,8 @@ private:
     // can recognize them and produce the correct FluxType for resolution at codegen time.
     std::unordered_set<std::string> m_knownStructTypeNames;
     std::unordered_set<std::string> m_knownEnumTypeNames;
+    // Trait type names known to the parser.
+    std::unordered_set<std::string> m_knownTraitNames;
 };
 
 } // namespace Flux

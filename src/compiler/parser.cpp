@@ -1225,6 +1225,9 @@ std::unique_ptr<ExprAST> Parser::ParsePrimary()
     case static_cast<int>(TokenType::tok_yield):
         Res = ParseYieldExpr();
         break;
+    case static_cast<int>(TokenType::tok_await):
+        Res = ParseAwaitExpr();
+        break;
     case static_cast<int>(TokenType::tok_corner):
         Res = ParseCornerExpr();
         break;
@@ -1563,10 +1566,11 @@ std::unique_ptr<PrototypeAST> Parser::ParsePrototype()
 
     std::string FnName = (CurTok == static_cast<int>(TokenType::tok_update)) ? "update" : m_lexer.IdentifierStr;
     getNextToken();
-    // Optional generic params: def foo[T](x: T) -> T
+    // Optional generic params: def foo[T](x: T) -> T  or def foo[T: Display](x: T) -> T
     std::vector<std::string> GenericParams;
+    std::map<std::string, std::vector<std::string>> GenericParamBounds;
     if (CurTok == '[') {
-        GenericParams = ParseGenericParams();
+        GenericParams = ParseGenericParams(&GenericParamBounds);
         if (hasError()) return nullptr;
         m_activeGenericParams = GenericParams;
     }
@@ -1685,6 +1689,11 @@ std::unique_ptr<PrototypeAST> Parser::ParsePrototype()
     auto proto = std::make_unique<PrototypeAST>(FnName, std::move(Args), RetType);
     if (!GenericParams.empty()) {
         proto->setGenericParams(GenericParams);
+        for (auto& [paramName, bounds] : GenericParamBounds) {
+            for (auto& traitName : bounds) {
+                proto->addGenericParamBound(paramName, traitName);
+            }
+        }
     }
     return proto;
 }
@@ -1701,6 +1710,30 @@ std::unique_ptr<FunctionAST> Parser::ParseDefinition()
     auto Proto = ParsePrototype();
     if (!Proto)
         return nullptr;
+    if (auto Body = ParseExpression()) {
+        if (dynamic_cast<ComplexExprAST*>(Body.get()))
+            Proto->setReturnType(FluxType(TypeKind::Complex));
+        else if (dynamic_cast<MatrixExprAST*>(Body.get()))
+            Proto->setReturnType(FluxType(TypeKind::Matrix));
+        else if (dynamic_cast<VectorExprAST*>(Body.get()))
+            Proto->setReturnType(FluxType(TypeKind::Vector));
+        return std::make_unique<FunctionAST>(std::move(Proto), std::move(Body));
+    }
+    return nullptr;
+}
+
+std::unique_ptr<FunctionAST> Parser::ParseAsyncDef()
+{
+    getNextToken(); // eat async
+    if (CurTok != static_cast<int>(TokenType::tok_def)) {
+        ReportError("expected 'def' after 'async'");
+        return nullptr;
+    }
+    getNextToken(); // eat def
+    auto Proto = ParsePrototype();
+    if (!Proto)
+        return nullptr;
+    Proto->setAsync(true);
     if (auto Body = ParseExpression()) {
         if (dynamic_cast<ComplexExprAST*>(Body.get()))
             Proto->setReturnType(FluxType(TypeKind::Complex));
@@ -3824,13 +3857,41 @@ std::unique_ptr<ExprAST> Parser::ParseHotSwap()
 
 /// ParseGenericParams — parse [T, U, V] after a generic declaration name.
 /// Expects CurTok == '['. Returns type parameter names.
-std::vector<std::string> Parser::ParseGenericParams()
+std::vector<std::string> Parser::ParseGenericParams(
+    std::map<std::string, std::vector<std::string>>* outBounds)
 {
     getNextToken(); // eat [
     std::vector<std::string> params;
     while (CurTok == static_cast<int>(TokenType::tok_identifier)) {
-        params.push_back(m_lexer.IdentifierStr);
+        std::string ParamName = m_lexer.IdentifierStr;
         getNextToken();
+
+        // Check for trait bound: T: Display
+        std::vector<std::string> bounds;
+        if (CurTok == static_cast<int>(TokenType::tok_colon)) {
+            getNextToken(); // eat :
+            if (CurTok != static_cast<int>(TokenType::tok_identifier)) {
+                ReportError("expected trait name in generic parameter bound");
+                return {};
+            }
+            bounds.push_back(m_lexer.IdentifierStr);
+            getNextToken();
+            // Support T: Trait1 + Trait2 syntax
+            while (CurTok == '+') {
+                getNextToken();
+                if (CurTok != static_cast<int>(TokenType::tok_identifier)) {
+                    ReportError("expected trait name after '+'");
+                    return {};
+                }
+                bounds.push_back(m_lexer.IdentifierStr);
+                getNextToken();
+            }
+        }
+
+        params.push_back(ParamName);
+        if (outBounds && !bounds.empty())
+            (*outBounds)[ParamName] = std::move(bounds);
+
         if (CurTok == ']')
             break;
         if (CurTok != ',') {
@@ -4245,9 +4306,135 @@ std::unique_ptr<EnumDeclAST> Parser::ParseEnumDecl(
     return result;
 }
 
+/// ParseTraitDecl — parse:
+///   trait Name
+///       def method1(self, arg: Type) -> RetType
+///       def method2(self) -> RetType
+///   end
+std::unique_ptr<TraitDeclAST> Parser::ParseTraitDecl()
+{
+    getNextToken(); // eat trait
+
+    if (CurTok != static_cast<int>(TokenType::tok_identifier)) {
+        ReportError("expected trait name after 'trait'");
+        return nullptr;
+    }
+    std::string Name = m_lexer.IdentifierStr;
+    getNextToken();
+
+    // Optional super-trait: trait Name: SuperTrait
+    std::vector<std::string> SuperTraits;
+    if (CurTok == static_cast<int>(TokenType::tok_colon)) {
+        getNextToken(); // eat :
+        if (CurTok != static_cast<int>(TokenType::tok_identifier)) {
+            ReportError("expected super-trait name");
+            return nullptr;
+        }
+        SuperTraits.push_back(m_lexer.IdentifierStr);
+        getNextToken();
+        while (CurTok == '+') {
+            getNextToken();
+            if (CurTok != static_cast<int>(TokenType::tok_identifier)) {
+                ReportError("expected super-trait name after '+'");
+                return nullptr;
+            }
+            SuperTraits.push_back(m_lexer.IdentifierStr);
+            getNextToken();
+        }
+    }
+
+    std::vector<TraitDeclAST::MethodProto> Methods;
+
+    // Support both brace-delimited { ... } and end-delimited block syntax
+    bool useBraceBlock = (CurTok == static_cast<int>(TokenType::tok_lbrace));
+    if (useBraceBlock)
+        getNextToken(); // eat {
+
+    auto isBlockEnd = [&]() {
+        if (useBraceBlock) return CurTok == static_cast<int>(TokenType::tok_rbrace);
+        return CurTok == static_cast<int>(TokenType::tok_end) ||
+               CurTok == static_cast<int>(TokenType::tok_eof);
+    };
+
+    while (!isBlockEnd()) {
+        if (CurTok == static_cast<int>(TokenType::tok_def)) {
+            getNextToken(); // eat def
+            if (CurTok != static_cast<int>(TokenType::tok_identifier)) {
+                ReportError("expected method name in trait");
+                return nullptr;
+            }
+            std::string MethodName = m_lexer.IdentifierStr;
+            getNextToken();
+
+            // Parse parameter list (name: Type, ...)
+            std::vector<std::pair<std::string, FluxType>> Args;
+            if (CurTok == '(') {
+                getNextToken(); // eat (
+                while (CurTok != ')' && CurTok != static_cast<int>(TokenType::tok_eof)) {
+                    if (CurTok != static_cast<int>(TokenType::tok_identifier)) {
+                        ReportError("expected parameter name in trait method");
+                        return nullptr;
+                    }
+                    std::string ArgName = m_lexer.IdentifierStr;
+                    getNextToken();
+                    FluxType ArgType(TypeKind::Double);
+                    if (CurTok == static_cast<int>(TokenType::tok_colon)) {
+                        getNextToken(); // eat :
+                        ArgType = parseTypeName(m_activeGenericParams);
+                    }
+                    Args.push_back({ArgName, ArgType});
+                    if (CurTok == ',')
+                        getNextToken();
+                    else if (CurTok != ')')
+                        break;
+                }
+                if (CurTok != ')') {
+                    ReportError("expected ')' in trait method parameter list");
+                    return nullptr;
+                }
+                getNextToken(); // eat )
+            }
+
+            // Optional return type
+            FluxType RetType(TypeKind::Void);
+            if (CurTok == static_cast<int>(TokenType::tok_arrow)) {
+                getNextToken();
+                RetType = parseTypeName(m_activeGenericParams);
+            }
+
+            Methods.push_back({MethodName, std::move(Args), RetType});
+        } else {
+            // Skip to synchronization point if not a def
+            getNextToken();
+        }
+    }
+
+    if (useBraceBlock) {
+        if (CurTok != static_cast<int>(TokenType::tok_rbrace)) {
+            ReportError("expected '}' to close trait declaration");
+            return nullptr;
+        }
+        getNextToken(); // eat }
+    } else {
+        if (CurTok != static_cast<int>(TokenType::tok_end)) {
+            ReportError("expected 'end' to close trait declaration");
+            return nullptr;
+        }
+        getNextToken(); // eat end
+    }
+
+    m_knownTraitNames.insert(Name);
+
+    return std::make_unique<TraitDeclAST>(Name, std::move(Methods), SuperTraits);
+}
+
 /// ParseImplDecl — parse:
 ///   impl TypeName
 ///       def method(...) ...
+///       def method(...) ...
+///   end
+/// Or:
+///   impl TraitName for TypeName
 ///       def method(...) ...
 ///   end
 std::unique_ptr<ImplDeclAST> Parser::ParseImplDecl()
@@ -4258,13 +4445,84 @@ std::unique_ptr<ImplDeclAST> Parser::ParseImplDecl()
         ReportError("expected type name after 'impl'");
         return nullptr;
     }
-    std::string TypeName = m_lexer.IdentifierStr;
+    std::string FirstName = m_lexer.IdentifierStr;
     getNextToken();
+
+    // Will be set when we detect brace vs end-delimited block
+    bool useBraceBlock = false;
+
+    // Helper lambda: check if at block terminator
+    auto isImplEnd = [&]() {
+        if (useBraceBlock) return CurTok == static_cast<int>(TokenType::tok_rbrace);
+        return CurTok == static_cast<int>(TokenType::tok_end) ||
+               CurTok == static_cast<int>(TokenType::tok_eof);
+    };
+
+    auto expectImplEnd = [&]() -> bool {
+        if (useBraceBlock) {
+            if (CurTok == static_cast<int>(TokenType::tok_rbrace)) {
+                getNextToken(); // eat }
+                return true;
+            }
+            ReportError("expected '}' to close impl block");
+        } else {
+            if (CurTok == static_cast<int>(TokenType::tok_end)) {
+                getNextToken(); // eat end
+                return true;
+            }
+            ReportError("expected 'end' to close impl block");
+        }
+        return false;
+    };
+
+    // Check for "impl TraitName for TypeName" syntax
+    if (CurTok == static_cast<int>(TokenType::tok_for)) {
+        // This is a trait impl: impl TraitName for TypeName
+        std::string TraitName = FirstName;
+        getNextToken(); // eat "for"
+        if (CurTok != static_cast<int>(TokenType::tok_identifier)) {
+            ReportError("expected type name after 'for' in trait impl");
+            return nullptr;
+        }
+        std::string TypeName = m_lexer.IdentifierStr;
+        getNextToken();
+
+        // Support both { } and end-delimited blocks
+        useBraceBlock = (CurTok == static_cast<int>(TokenType::tok_lbrace));
+        if (useBraceBlock)
+            getNextToken(); // eat {
+
+        std::vector<std::unique_ptr<FunctionAST>> Methods;
+        while (!isImplEnd()) {
+            if (CurTok == static_cast<int>(TokenType::tok_def)) {
+                auto Method = ParseDefinition();
+                if (!Method)
+                    return nullptr;
+                Methods.push_back(std::move(Method));
+            } else {
+                ReportError("expected 'def' or 'end' in impl block");
+                return nullptr;
+            }
+        }
+
+        if (!expectImplEnd()) return nullptr;
+
+        auto impl = std::make_unique<ImplDeclAST>(TypeName, std::move(Methods));
+        impl->setTraitName(TraitName);
+        return impl;
+    }
+
+    // Inherent impl: impl TypeName ... end or impl TypeName { ... }
+    std::string TypeName = FirstName;
+
+    // Support both { } and end-delimited blocks
+    useBraceBlock = (CurTok == static_cast<int>(TokenType::tok_lbrace));
+    if (useBraceBlock)
+        getNextToken(); // eat {
 
     std::vector<std::unique_ptr<FunctionAST>> Methods;
 
-    while (CurTok != static_cast<int>(TokenType::tok_end) &&
-           CurTok != static_cast<int>(TokenType::tok_eof)) {
+    while (!isImplEnd()) {
         if (CurTok == static_cast<int>(TokenType::tok_def)) {
             auto Method = ParseDefinition();
             if (!Method)
@@ -4276,11 +4534,7 @@ std::unique_ptr<ImplDeclAST> Parser::ParseImplDecl()
         }
     }
 
-    if (CurTok != static_cast<int>(TokenType::tok_end)) {
-        ReportError("expected 'end' to close impl block");
-        return nullptr;
-    }
-    getNextToken(); // eat end
+    if (!expectImplEnd()) return nullptr;
 
     return std::make_unique<ImplDeclAST>(TypeName, std::move(Methods));
 }

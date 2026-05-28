@@ -133,6 +133,19 @@ std::unique_ptr<ExprAST> Parser::ParseYieldExpr()
     return std::make_unique<YieldExprAST>(std::move(value));
 }
 
+// ============ Await Parser ============
+
+std::unique_ptr<ExprAST> Parser::ParseAwaitExpr()
+{
+    getNextToken(); // eat await
+
+    auto value = ParseExpression();
+    if (!value)
+        return nullptr;
+
+    return std::make_unique<AwaitExprAST>(std::move(value));
+}
+
 // ============ Corner Case Parser ============
 
 std::unique_ptr<ExprAST> Parser::ParseCornerExpr()

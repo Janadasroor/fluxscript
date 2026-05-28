@@ -447,7 +447,10 @@ bool CompilerInstance::collectImportFunctions(const std::string& moduleName,
             continue;
         }
 
-        if (parser.CurTok == static_cast<int>(TokenType::tok_def)) {
+        if (parser.CurTok == static_cast<int>(TokenType::tok_async)) {
+            if (auto func = parser.ParseAsyncDef())
+                localFunctions.push_back(std::move(func));
+        } else if (parser.CurTok == static_cast<int>(TokenType::tok_def)) {
             auto func = parser.ParseDefinition();
             if (func)
                 localFunctions.push_back(std::move(func));
@@ -484,6 +487,10 @@ bool CompilerInstance::collectImportFunctions(const std::string& moduleName,
                 context.FuncReturnTypes[proto->getName()] = proto->getReturnType();
                 proto->codegen(context);
             }
+        } else if (parser.CurTok == static_cast<int>(TokenType::tok_trait)) {
+            if (auto t = parser.ParseTraitDecl()) {
+                t->codegen(context);
+            }
         } else if (parser.CurTok == static_cast<int>(TokenType::tok_struct)) {
             auto structDecl = parser.ParseStructDecl();
             if (structDecl) {
@@ -517,16 +524,18 @@ bool CompilerInstance::collectImportFunctions(const std::string& moduleName,
             // (test code, no anon_expr needed)
             std::vector<std::unique_ptr<ExprAST>> exprs;
             while (parser.CurTok != static_cast<int>(TokenType::tok_eof) &&
+                   parser.CurTok != static_cast<int>(TokenType::tok_async) &&
                    parser.CurTok != static_cast<int>(TokenType::tok_def) &&
                    parser.CurTok != static_cast<int>(TokenType::tok_extern) &&
                    parser.CurTok != static_cast<int>(TokenType::tok_struct) &&
                    parser.CurTok != static_cast<int>(TokenType::tok_class) &&
                    parser.CurTok != static_cast<int>(TokenType::tok_enum) &&
-                   parser.CurTok != static_cast<int>(TokenType::tok_impl) &&
-                   parser.CurTok != static_cast<int>(TokenType::tok_import) &&
-                   parser.CurTok != static_cast<int>(TokenType::tok_from) &&
-                   parser.CurTok != static_cast<int>(TokenType::tok_update) &&
-                   parser.CurTok != static_cast<int>(TokenType::tok_rbrace)) {
+                    parser.CurTok != static_cast<int>(TokenType::tok_trait) &&
+                    parser.CurTok != static_cast<int>(TokenType::tok_impl) &&
+                    parser.CurTok != static_cast<int>(TokenType::tok_import) &&
+                    parser.CurTok != static_cast<int>(TokenType::tok_from) &&
+                    parser.CurTok != static_cast<int>(TokenType::tok_update) &&
+                    parser.CurTok != static_cast<int>(TokenType::tok_rbrace)) {
 
                 if (parser.CurTok == static_cast<int>(TokenType::tok_semicolon)) {
                     parser.getNextToken();
@@ -573,7 +582,11 @@ std::unique_ptr<ParsedAST> CompilerInstance::parse(const std::string& code, std:
             continue;
         }
 
-        if (parser.CurTok == static_cast<int>(TokenType::tok_def)) {
+        if (parser.CurTok == static_cast<int>(TokenType::tok_async)) {
+            if (auto fn = parser.ParseAsyncDef()) {
+                ast->functions.push_back(std::move(fn));
+            }
+        } else if (parser.CurTok == static_cast<int>(TokenType::tok_def)) {
             if (auto fn = parser.ParseDefinition()) {
                 ast->functions.push_back(std::move(fn));
             }
@@ -620,12 +633,17 @@ std::unique_ptr<ParsedAST> CompilerInstance::parse(const std::string& code, std:
             if (auto i = parser.ParseImplDecl()) {
                 ast->impls.push_back(std::move(i));
             }
+        } else if (parser.CurTok == static_cast<int>(TokenType::tok_trait)) {
+            if (auto t = parser.ParseTraitDecl()) {
+                ast->traits.push_back(std::move(t));
+            }
         } else if (parser.CurTok == static_cast<int>(TokenType::tok_semicolon)) {
             parser.getNextToken();
         } else {
             // Collect expressions into anonymous function
             std::vector<std::unique_ptr<ExprAST>> Exprs;
             while (parser.CurTok != static_cast<int>(TokenType::tok_eof) &&
+                    parser.CurTok != static_cast<int>(TokenType::tok_async) &&
                     parser.CurTok != static_cast<int>(TokenType::tok_def) &&
                     parser.CurTok != static_cast<int>(TokenType::tok_subckt) &&
                     parser.CurTok != static_cast<int>(TokenType::tok_model) &&
@@ -636,6 +654,7 @@ std::unique_ptr<ParsedAST> CompilerInstance::parse(const std::string& code, std:
                     parser.CurTok != static_cast<int>(TokenType::tok_class) &&
                     parser.CurTok != static_cast<int>(TokenType::tok_enum) &&
                     parser.CurTok != static_cast<int>(TokenType::tok_impl) &&
+                    parser.CurTok != static_cast<int>(TokenType::tok_trait) &&
                     parser.CurTok != static_cast<int>(TokenType::tok_import) &&
                     parser.CurTok != static_cast<int>(TokenType::tok_rbrace)) {
 
@@ -1283,7 +1302,11 @@ bool CompilerInstance::compileParser(Parser& parser, CodegenContext& context,
             continue;
         }
 
-        if (parser.CurTok == static_cast<int>(TokenType::tok_def)) {
+        if (parser.CurTok == static_cast<int>(TokenType::tok_async)) {
+            if (auto func = parser.ParseAsyncDef()) {
+                functions.push_back(std::move(func));
+            }
+        } else if (parser.CurTok == static_cast<int>(TokenType::tok_def)) {
             auto func = parser.ParseDefinition();
             if (func) {
                 functions.push_back(std::move(func));
@@ -1323,6 +1346,10 @@ bool CompilerInstance::compileParser(Parser& parser, CodegenContext& context,
                 context.FuncReturnTypes[proto->getName()] = proto->getReturnType();
                 proto->codegen(context);
             }
+        } else if (parser.CurTok == static_cast<int>(TokenType::tok_trait)) {
+            if (auto t = parser.ParseTraitDecl()) {
+                t->codegen(context);
+            }
         } else if (parser.CurTok == static_cast<int>(TokenType::tok_struct)) {
             if (auto s = parser.ParseStructDecl()) {
                 structs.push_back(std::move(s));
@@ -1352,16 +1379,18 @@ bool CompilerInstance::compileParser(Parser& parser, CodegenContext& context,
             // Collect consecutive expressions into a single anonymous function
             std::vector<std::unique_ptr<ExprAST>> Exprs;
             while (parser.CurTok != static_cast<int>(TokenType::tok_eof) &&
+                   parser.CurTok != static_cast<int>(TokenType::tok_async) &&
                    parser.CurTok != static_cast<int>(TokenType::tok_def) &&
                    parser.CurTok != static_cast<int>(TokenType::tok_extern) &&
                    parser.CurTok != static_cast<int>(TokenType::tok_struct) &&
                    parser.CurTok != static_cast<int>(TokenType::tok_class) &&
                    parser.CurTok != static_cast<int>(TokenType::tok_enum) &&
-                   parser.CurTok != static_cast<int>(TokenType::tok_impl) &&
-                   parser.CurTok != static_cast<int>(TokenType::tok_import) &&
-                   parser.CurTok != static_cast<int>(TokenType::tok_from) &&
-                   parser.CurTok != static_cast<int>(TokenType::tok_update) &&
-                   parser.CurTok != static_cast<int>(TokenType::tok_rbrace)) {
+                    parser.CurTok != static_cast<int>(TokenType::tok_trait) &&
+                    parser.CurTok != static_cast<int>(TokenType::tok_impl) &&
+                    parser.CurTok != static_cast<int>(TokenType::tok_import) &&
+                    parser.CurTok != static_cast<int>(TokenType::tok_from) &&
+                    parser.CurTok != static_cast<int>(TokenType::tok_update) &&
+                    parser.CurTok != static_cast<int>(TokenType::tok_rbrace)) {
 
                 if (parser.CurTok == static_cast<int>(TokenType::tok_semicolon)) {
                     parser.getNextToken();
@@ -1703,7 +1732,6 @@ bool CompilerInstance::compileParser(Parser& parser, CodegenContext& context,
             auto& func = functions[fi];
             if (!func->codegen(context)) {
                 error = "Code generation failed for function: " + func->getProto()->getName();
-                std::cerr << "DEBUG: Codegen failed for " << func->getProto()->getName() << std::endl;
                 context.importModuleFn = std::move(savedImportFn);
                 return false;
             }

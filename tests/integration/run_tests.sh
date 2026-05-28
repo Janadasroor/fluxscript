@@ -687,6 +687,293 @@ def verify_unified() -> Double {
 verify_unified()
 '
 
+# Test 48: Traits & Interfaces
+run_test "Traits & Interfaces" '
+trait HasArea {
+    def area(self) -> Double
+}
+
+trait Describe {
+    def describe(self) -> Double
+}
+
+struct Circle {
+    radius: Double
+}
+
+impl HasArea for Circle {
+    def area(self) -> Double {
+        3.14159 * self.radius * self.radius
+    }
+}
+
+impl Describe for Circle {
+    def describe(self) -> Double {
+        self.radius
+    }
+}
+
+struct Rectangle {
+    width: Double,
+    height: Double
+}
+
+impl HasArea for Rectangle {
+    def area(self) -> Double {
+        self.width * self.height
+    }
+}
+
+def print_area[T: HasArea](shape: T) -> Double {
+    shape.area()
+}
+
+def verify_traits() -> Double {
+    let c = Circle { radius: 2.0 };
+    let r = Rectangle { width: 3.0, height: 4.0 };
+
+    let circle_area = print_area[Circle](c);
+    let rect_area = print_area[Rectangle](r);
+
+    assert(abs(circle_area - 12.56636) < 0.001, "Circle area via trait wrong");
+    assert(abs(rect_area - 12.0) < 0.001, "Rectangle area via trait wrong");
+
+    1.0
+}
+
+verify_traits()
+'
+
+# Test 49: Operator Overloading
+run_test "Operator Overloading" '
+trait Add {
+    def add(self, rhs: Complex) -> Complex
+}
+
+trait Sub {
+    def sub(self, rhs: Complex) -> Complex
+}
+
+trait Mul {
+    def mul(self, rhs: Complex) -> Complex
+}
+
+trait Neg {
+    def neg(self) -> Complex
+}
+
+trait Eq {
+    def eq(self, other: Complex) -> Bool
+}
+
+struct Complex { re: Double, im: Double }
+
+impl Add for Complex {
+    def add(self, rhs: Complex) -> Complex {
+        Complex { re: self.re + rhs.re, im: self.im + rhs.im }
+    }
+}
+
+impl Sub for Complex {
+    def sub(self, rhs: Complex) -> Complex {
+        Complex { re: self.re - rhs.re, im: self.im - rhs.im }
+    }
+}
+
+impl Mul for Complex {
+    def mul(self, rhs: Complex) -> Complex {
+        let r1 = self.re * rhs.re;
+        let r2 = self.im * rhs.im;
+        let i1 = self.re * rhs.im;
+        let i2 = self.im * rhs.re;
+        Complex { re: r1 - r2, im: i1 + i2 }
+    }
+}
+
+impl Neg for Complex {
+    def neg(self) -> Complex {
+        Complex { re: -self.re, im: -self.im }
+    }
+}
+
+impl Eq for Complex {
+    def eq(self, other: Complex) -> Bool {
+        (abs(self.re - other.re) < 0.0001) && (abs(self.im - other.im) < 0.0001)
+    }
+}
+
+def verify_overloads() -> Double {
+    let a = Complex { re: 1.0, im: 2.0 };
+    let b = Complex { re: 3.0, im: 4.0 };
+    let sum = a + b;
+    let diff = a - b;
+    let prod = a * b;
+    let neg_a = -a;
+    let eq_check = a == a;
+    let ne_check = a == b;
+
+    assert(abs(sum.re - 4.0) < 0.0001, "sum.re");
+    assert(abs(sum.im - 6.0) < 0.0001, "sum.im");
+    assert(abs(diff.re + 2.0) < 0.0001, "diff.re");
+    assert(abs(diff.im + 2.0) < 0.0001, "diff.im");
+    assert(abs(prod.re + 5.0) < 0.0001, "prod.re");
+    assert(abs(prod.im - 10.0) < 0.0001, "prod.im");
+    assert(abs(neg_a.re + 1.0) < 0.0001, "neg_a.re");
+    assert(abs(neg_a.im + 2.0) < 0.0001, "neg_a.im");
+    assert(eq_check != 0.0, "eq");
+    assert(ne_check == 0.0, "ne");
+
+    1.0
+}
+
+verify_overloads()
+'
+
+# Test 50: Async/Await
+run_test "Async/Await" '
+async def fetch_data() -> Double {
+    await 0.5;
+    42.0
+}
+
+async def process_data(val: Double) -> Double {
+    let data = await fetch_data();
+    data + val
+}
+
+def verify_async() -> Double {
+    let result = process_data(1.0);
+    assert(abs(result - 43.0) < 0.0001, "async result");
+    1.0
+}
+
+verify_async()
+'
+
+# Test 51: Async - await outside async error check
+run_test "Async - await outside async (error)" '
+async def ok() -> Double { await 0.5; 1.0 }
+42.0
+'
+
+# Test 52: Async simple call without await
+run_test "Async - simple call" '
+async def make_val() -> Double { await 1.0; 7.0 }
+def check() -> Double {
+    let r = make_val();
+    assert(abs(r - 7.0) < 0.0001, "simple call");
+    1.0
+}
+check()
+'
+
+# Test 53: Async with conditional await
+run_test "Async - conditional await" '
+async def maybe_await(flag: Double) -> Double {
+    if flag > 0.5 {
+        await 0.5;
+        100.0
+    } else {
+        200.0
+    }
+}
+
+def run_check() -> Double {
+    let r1 = maybe_await(1.0);
+    assert(abs(r1 - 100.0) < 0.0001, "cond await true");
+    let r2 = maybe_await(0.0);
+    assert(abs(r2 - 200.0) < 0.0001, "cond await false");
+    1.0
+}
+run_check()
+'
+
+# Test 54: Async deeply nested (3 levels deep)
+run_test "Async - deep nesting" '
+async def level3() -> Double { await 0.5; 3.0 }
+async def level2() -> Double { let v = await level3(); v + 2.0 }
+async def level1() -> Double { let v = await level2(); v + 1.0 }
+
+def run_test() -> Double {
+    let r = level1();
+    assert(abs(r - 6.0) < 0.0001, "deep nested");
+    1.0
+}
+run_test()
+'
+
+# Test 55: Async calling multiple async functions
+run_test "Async - multiple async calls" '
+async def source_a() -> Double { await 0.5; 10.0 }
+async def source_b() -> Double { await 1.0; 20.0 }
+async def source_c() -> Double { await 1.5; 30.0 }
+
+async def combiner() -> Double {
+    source_a() + source_b() + source_c()
+}
+
+def run_check() -> Double {
+    let r = combiner();
+    assert(abs(r - 60.0) < 0.0001, "multi async calls");
+    1.0
+}
+run_check()
+'
+
+# Test 56: Async with nested await expressions
+run_test "Async - nested await expressions" '
+async def inner() -> Double { await 0.5; 5.0 }
+async def outer() -> Double { await inner() + 3.0 }
+
+def run_check() -> Double {
+    let r = outer();
+    assert(abs(r - 8.0) < 0.0001, "nested await expr");
+    1.0
+}
+run_check()
+'
+
+# Test 57: Async identity function
+run_test "Async - identity passthrough" '
+async def identity(x: Double) -> Double { await x; x }
+
+def run_check() -> Double {
+    let r = identity(99.0);
+    assert(abs(r - 99.0) < 0.0001, "identity");
+    1.0
+}
+run_check()
+'
+
+# Test 58: Async with multiple params
+run_test "Async - multi-param async" '
+async def sum3(a: Double, b: Double, c: Double) -> Double { await 1.0; a + b + c }
+
+def run_check() -> Double {
+    let r = sum3(10.0, 20.0, 30.0);
+    assert(abs(r - 60.0) < 0.0001, "multi-param");
+    1.0
+}
+run_check()
+'
+
+# Test 59: Async from async with let (no cross-await usage)
+run_test "Async - let before await" '
+async def helper() -> Double { await 1.0; 5.0 }
+async def user() -> Double {
+    let factor = 2.0;
+    let base = await helper();
+    factor * base
+}
+
+def run_check() -> Double {
+    let r = user();
+    assert(abs(r - 10.0) < 0.0001, "let before await");
+    1.0
+}
+run_check()
+'
+
 echo ""
 echo "========================================"  
 echo "  Results: $PASSED/$TOTAL passed"

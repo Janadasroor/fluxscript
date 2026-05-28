@@ -141,8 +141,10 @@ TypedValue TryCatchExprAST::codegen(CodegenContext& context)
 TypedValue ThrowExprAST::codegen(CodegenContext& context)
 {
     TypedValue ExTV = Exception->codegen(context);
-    if (!ExTV.Val)
+    if (!ExTV.Val) {
+        std::cerr << "[FLUX ERROR] throw expression sub-expression failed to codegen" << std::endl;
         return TypedValue();
+    }
 
     llvm::LLVMContext& Ctx = context.TheContext;
 
@@ -174,8 +176,10 @@ TypedValue AssertExprAST::codegen(CodegenContext& context)
 {
     // Generate condition check
     TypedValue CondTV = Condition->codegen(context);
-    if (!CondTV.Val)
+    if (!CondTV.Val) {
+        std::cerr << "[FLUX ERROR] assert condition failed to codegen" << std::endl;
         return TypedValue();
+    }
 
     // Create assertion check
     llvm::Function* TheFunction = context.Builder.GetInsertBlock()->getParent();
@@ -218,8 +222,10 @@ TypedValue YieldExprAST::codegen(CodegenContext& context)
 
     // 1. Generate value to yield
     TypedValue ValueTV = Value->codegen(context);
-    if (!ValueTV.Val)
+    if (!ValueTV.Val) {
+        std::cerr << "[FLUX ERROR] yield value expression failed to codegen" << std::endl;
         return TypedValue();
+    }
 
     // 2. Create resume block and record it
     int nextState = (int)context.YieldTargets.size();
@@ -243,6 +249,90 @@ TypedValue YieldExprAST::codegen(CodegenContext& context)
     context.Builder.SetInsertPoint(ResumeBB);
 
     return ValueTV;
+}
+
+// ============ Await Codegen ============
+
+TypedValue AwaitExprAST::codegen(CodegenContext& context)
+{
+    if (!context.AsyncStateAlloca) {
+        std::cerr << "[FLUX ERROR] await used outside of an async function." << std::endl;
+        return TypedValue();
+    }
+
+    llvm::Function* TheFunction = context.Builder.GetInsertBlock()->getParent();
+
+    // 1. Generate the awaited expression (e.g., a future)
+    TypedValue ValueTV = Value->codegen(context);
+    if (!ValueTV.Val) {
+        std::cerr << "[FLUX ERROR] await expression failed to codegen" << std::endl;
+        return TypedValue();
+    }
+
+    // 2. Store the value in the entry-block alloca (dominates all blocks)
+    context.Builder.CreateStore(ValueTV.Val, context.AsyncResultAlloca);
+
+    // 3. Create a continuation block (for when the value is immediately ready)
+    llvm::BasicBlock* ContBB = llvm::BasicBlock::Create(context.TheContext, "await_cont", TheFunction);
+
+    // 4. Compare the result against 0.0 to check if it's ready
+    auto ZeroVal = llvm::ConstantFP::get(context.TheContext, llvm::APFloat(0.0));
+    llvm::Value* IsReady = context.Builder.CreateFCmpONE(ValueTV.Val, ZeroVal, "await_ready");
+
+    // 5. If ready, branch to continuation; otherwise suspend
+    llvm::BasicBlock* SuspendBB = llvm::BasicBlock::Create(context.TheContext, "await_suspend", TheFunction);
+    context.Builder.CreateCondBr(IsReady, ContBB, SuspendBB);
+
+    // 5. Suspend block: save state and return 0.0 (Pending)
+    context.Builder.SetInsertPoint(SuspendBB);
+
+    // Store the value in the entry-block alloca for resume
+    context.Builder.CreateStore(ValueTV.Val, context.AsyncResultAlloca);
+
+    // Save next state index in the state struct
+    int nextState = (int)context.AwaitResumeTargets.size();
+    llvm::Type* Int32T = llvm::Type::getInt32Ty(context.TheContext);
+    llvm::SmallVector<llvm::Type*, 1> ElementTys = {Int32T};
+    llvm::Type* StateTy = llvm::StructType::get(context.TheContext, ElementTys);
+    llvm::Value* IndexPtr = context.Builder.CreateStructGEP(StateTy, context.AsyncStateAlloca, 0);
+    context.Builder.CreateStore(llvm::ConstantInt::get(llvm::Type::getInt32Ty(context.TheContext), nextState),
+                                IndexPtr);
+
+    // Return 0.0 (Pending) from the function
+    auto PendingVal = llvm::ConstantFP::get(context.TheContext, llvm::APFloat(0.0));
+    context.Builder.CreateRet(PendingVal);
+
+    // 6. Create resume block and record it
+    llvm::BasicBlock* ResumeBB = llvm::BasicBlock::Create(context.TheContext, "await_resume", TheFunction);
+    context.AwaitResumeTargets.push_back(ResumeBB);
+
+    // Resume block: re-poll the awaited expression
+    context.Builder.SetInsertPoint(ResumeBB);
+    TypedValue ResumeTV = Value->codegen(context);
+    if (!ResumeTV.Val) {
+        std::cerr << "[FLUX ERROR] await resume expression failed to codegen" << std::endl;
+        return TypedValue();
+    }
+    context.Builder.CreateStore(ResumeTV.Val, context.AsyncResultAlloca);
+    llvm::Value* ResumeReady = context.Builder.CreateFCmpONE(ResumeTV.Val, ZeroVal, "await_resume_ready");
+
+    llvm::BasicBlock* ReSuspendBB = llvm::BasicBlock::Create(context.TheContext, "await_resuspend", TheFunction);
+    context.Builder.CreateCondBr(ResumeReady, ContBB, ReSuspendBB);
+
+    // Re-suspend: save same state and return 0.0
+    context.Builder.SetInsertPoint(ReSuspendBB);
+    llvm::Value* ReIndexPtr = context.Builder.CreateStructGEP(StateTy, context.AsyncStateAlloca, 0);
+    context.Builder.CreateStore(llvm::ConstantInt::get(llvm::Type::getInt32Ty(context.TheContext), nextState),
+                                ReIndexPtr);
+    context.Builder.CreateRet(PendingVal);
+
+    // 7. Set insert point to continuation block
+    context.Builder.SetInsertPoint(ContBB);
+
+    // 8. Return the value (from the alloca, which dominates both paths)
+    llvm::Value* LoadedVal = context.Builder.CreateLoad(llvm::Type::getDoubleTy(context.TheContext),
+                                                         context.AsyncResultAlloca, "await_val");
+    return TypedValue(LoadedVal, ValueTV.Type);
 }
 
 // ============ Corner Case Codegen ============
@@ -276,8 +366,10 @@ TypedValue CornerExprAST::codegen(CodegenContext& context)
 
         // Generate case expression
         TypedValue CaseTV = CaseExpr->codegen(context);
-        if (!CaseTV.Val)
+        if (!CaseTV.Val) {
+            std::cerr << "[FLUX ERROR] corner case expression failed to codegen" << std::endl;
             return TypedValue();
+        }
 
         // Store result in array at index i
         llvm::Value* Indices[] = {llvm::ConstantInt::get(Ctx, llvm::APInt(32, 0)),
@@ -317,8 +409,10 @@ TypedValue MatchExprAST::codegen(CodegenContext& context)
     llvm::Type* DoubleTy = llvm::Type::getDoubleTy(Ctx);
 
     TypedValue MatchValTV = Value->codegen(context);
-    if (!MatchValTV.Val)
+    if (!MatchValTV.Val) {
+        std::cerr << "[FLUX ERROR] match value expression failed to codegen" << std::endl;
         return TypedValue();
+    }
 
     bool isEnumMatch = MatchValTV.Type.isEnum();
     bool isPayloadEnum = isEnumMatch && MatchValTV.Val->getType()->isStructTy();
@@ -341,7 +435,10 @@ TypedValue MatchExprAST::codegen(CodegenContext& context)
         // No arms — direct branch to merge/default
         if (DefaultArm) {
             TypedValue DefaultTV = DefaultArm->codegen(context);
-            if (!DefaultTV.Val) return TypedValue();
+            if (!DefaultTV.Val) {
+                std::cerr << "[FLUX ERROR] match default arm (no-arms path) failed to codegen" << std::endl;
+                return TypedValue();
+            }
             llvm::Value* DefaultV = DefaultTV.Val;
             if (DefaultV->getType()->isIntegerTy())
                 DefaultV = context.Builder.CreateSIToFP(DefaultV, DoubleTy, "default_cast");
@@ -416,8 +513,10 @@ TypedValue MatchExprAST::codegen(CodegenContext& context)
             // Fallback: codegen pattern normally (works for bindless patterns like Option.Some(5.0))
             if (!PatDiscVal) {
                 TypedValue PatternTV = Pattern->codegen(context);
-                if (!PatternTV.Val)
+                if (!PatternTV.Val) {
+                    std::cerr << "[FLUX ERROR] match pattern (payload enum) failed to codegen" << std::endl;
                     return TypedValue();
+                }
                 PatDiscVal = PatternTV.Val;
                 if (PatDiscVal->getType()->isStructTy()) {
                     PatDiscVal = context.Builder.CreateExtractValue(PatDiscVal, {0}, "pat_tag");
@@ -431,8 +530,10 @@ TypedValue MatchExprAST::codegen(CodegenContext& context)
         } else if (isEnumMatch) {
             // Simple enum (i32 discriminant) — or tagged union if payload enum exists
             TypedValue PatternTV = Pattern->codegen(context);
-            if (!PatternTV.Val)
+            if (!PatternTV.Val) {
+                std::cerr << "[FLUX ERROR] match pattern (simple enum) failed to codegen" << std::endl;
                 return TypedValue();
+            }
             llvm::Value* patVal = PatternTV.Val;
             // If pattern produced a struct, extract its tag (i32)
             if (patVal->getType()->isStructTy()) {
@@ -449,8 +550,10 @@ TypedValue MatchExprAST::codegen(CodegenContext& context)
         } else {
             // Non-enum match: use existing comparison logic
             TypedValue PatternTV = Pattern->codegen(context);
-            if (!PatternTV.Val)
+            if (!PatternTV.Val) {
+                std::cerr << "[FLUX ERROR] match pattern (non-enum) failed to codegen" << std::endl;
                 return TypedValue();
+            }
 
             llvm::Value*& PatternVal = PatternTV.Val;
             llvm::Value* MatchVal = MatchValTV.Val;
@@ -569,8 +672,10 @@ TypedValue MatchExprAST::codegen(CodegenContext& context)
         }
 
         TypedValue ResultTV = Result->codegen(context);
-        if (!ResultTV.Val)
+        if (!ResultTV.Val) {
+            std::cerr << "[FLUX ERROR] match arm result expression failed to codegen" << std::endl;
             return TypedValue();
+        }
 
         // Clean up binding variables if we added any
         if (!armBindings.empty() && isPayloadEnum) {
@@ -598,8 +703,10 @@ TypedValue MatchExprAST::codegen(CodegenContext& context)
             context.Builder.SetInsertPoint(DefaultBB);
         }
         TypedValue DefaultTV = DefaultArm->codegen(context);
-        if (!DefaultTV.Val)
+        if (!DefaultTV.Val) {
+            std::cerr << "[FLUX ERROR] match default arm result expression failed to codegen" << std::endl;
             return TypedValue();
+        }
         llvm::Value* DefaultV = DefaultTV.Val;
         if (DefaultV->getType() != ResultTy) {
             if (DefaultV->getType()->isIntegerTy())
@@ -695,8 +802,10 @@ TypedValue ForeachExprAST::codegen(CodegenContext& context)
 
     // Default: Vector iteration (existing implementation)
     TypedValue IterableTV = Iterable->codegen(context);
-    if (!IterableTV.Val)
+    if (!IterableTV.Val) {
+        std::cerr << "[FLUX ERROR] foreach iterable expression failed to codegen" << std::endl;
         return TypedValue();
+    }
 
     // Extract pointer and size from vector struct
     // Vector struct: { double*, i32 }
@@ -778,16 +887,20 @@ TypedValue RepeatUntilExprAST::codegen(CodegenContext& context)
     // Body
     context.Builder.SetInsertPoint(BodyBB);
     TypedValue BodyTV = Body->codegen(context);
-    if (!BodyTV.Val)
+    if (!BodyTV.Val) {
+        std::cerr << "[FLUX ERROR] repeat-until body expression failed to codegen" << std::endl;
         return TypedValue();
+    }
     context.Builder.CreateBr(CondBB);
 
     // Condition
     TheFunction->insert(TheFunction->end(), CondBB);
     context.Builder.SetInsertPoint(CondBB);
     TypedValue CondTV = Condition->codegen(context);
-    if (!CondTV.Val)
+    if (!CondTV.Val) {
+        std::cerr << "[FLUX ERROR] repeat-until condition expression failed to codegen" << std::endl;
         return TypedValue();
+    }
 
     llvm::Value* IsDone;
     if (CondTV.Val->getType()->isIntegerTy(1)) {
@@ -831,16 +944,20 @@ TypedValue DoWhileExprAST::codegen(CodegenContext& context)
     // Body
     context.Builder.SetInsertPoint(BodyBB);
     TypedValue BodyTV = Body->codegen(context);
-    if (!BodyTV.Val)
+    if (!BodyTV.Val) {
+        std::cerr << "[FLUX ERROR] do-while body expression failed to codegen" << std::endl;
         return TypedValue();
+    }
     context.Builder.CreateBr(CondBB);
 
     // Condition
     TheFunction->insert(TheFunction->end(), CondBB);
     context.Builder.SetInsertPoint(CondBB);
     TypedValue CondTV = Cond->codegen(context);
-    if (!CondTV.Val)
+    if (!CondTV.Val) {
+        std::cerr << "[FLUX ERROR] do-while condition expression failed to codegen" << std::endl;
         return TypedValue();
+    }
 
     llvm::Value* CondBool;
     if (CondTV.Val->getType()->isIntegerTy(1)) {

@@ -235,8 +235,9 @@ enum class TokenType
     tok_virtual_probe = -283, // virtual logic analyzer probe
     tok_hot_swap = -284,      // AI model hot-swapping
 
-    // Method dispatch
+    // Method dispatch & traits
     tok_impl = -285,          // impl block
+    tok_trait = -286,         // trait declaration
 
     // Analysis Control
     tok_analysis = -116, // analysis directive
@@ -382,6 +383,10 @@ enum class TokenType
 
     // Block terminator for user-defined types
     tok_end = -307,
+
+    // Async / Await
+    tok_async = -308,
+    tok_await = -309,
 };
 
 struct LexerDiagnostic
