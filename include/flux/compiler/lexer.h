@@ -73,6 +73,7 @@ enum class TokenType
     tok_bitwise_shl = -30,   // <<
     tok_bitwise_shr = -31,   // >>
     tok_bitwise_compl = -32, // ~ (alias for bitwise_not)
+    tok_pipe = -201,         // |>
 
     // Type keywords
     tok_type_float = -33,

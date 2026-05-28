@@ -11,12 +11,13 @@
  See the License for the specific language governing permissions and
  limitations under the License. */
 
-// Parallel for loop codegen - Actual parallel execution support
+// Parallel for loop codegen - True multi-threaded JIT execution
 #include "flux/compiler/ast.h"
 #include "flux/runtime/parallel_runtime.h"
 #include <llvm/IR/BasicBlock.h>
 #include <llvm/IR/Constants.h>
 #include <llvm/IR/Function.h>
+#include <llvm/IR/Verifier.h>
 
 namespace Flux {
 
@@ -28,13 +29,12 @@ TypedValue ParallelForExprAST::codegen(CodegenContext& context)
     llvm::Type* Int64Ty = llvm::Type::getInt64Ty(Ctx);
     llvm::Type* VoidPtrTy = llvm::PointerType::get(Ctx, 0);
 
-    // 1. Generate start and end values in the current function
+    // 1. Generate start and end values
     TypedValue StartTV = Start->codegen(context);
     TypedValue EndTV = End->codegen(context);
     if (!StartTV.Val || !EndTV.Val)
         return TypedValue();
 
-    // Promote int literals to double if needed
     auto ensureDouble = [&](TypedValue& TV) {
         if (TV.Type.Kind == TypeKind::Int)
             TV = TypedValue(context.Builder.CreateSIToFP(TV.Val, DoubleTy, "int2double"), TypeKind::Double);
@@ -42,11 +42,10 @@ TypedValue ParallelForExprAST::codegen(CodegenContext& context)
     ensureDouble(StartTV);
     ensureDouble(EndTV);
 
-    // Convert start/end to int64
     llvm::Value* StartIdx = context.Builder.CreateFPToSI(StartTV.Val, Int64Ty, "start_idx");
     llvm::Value* EndIdx = context.Builder.CreateFPToSI(EndTV.Val, Int64Ty, "end_idx");
 
-    // 2. Identify captured variables (all current NamedValues)
+    // 2. Capture all visible variables (except loop var)
     std::vector<std::string> CapturedNames;
     std::vector<llvm::Type*> CapturedTypes;
     for (auto const& [name, val] : context.NamedValues) {
@@ -56,63 +55,86 @@ TypedValue ParallelForExprAST::codegen(CodegenContext& context)
         }
     }
 
-    // Create a struct to hold captured variables
-    llvm::StructType* CaptureStructTy = llvm::StructType::get(Ctx, CapturedTypes);
-    llvm::Value* CaptureStruct = context.Builder.CreateAlloca(CaptureStructTy, nullptr, "par_capture");
-
-    for (size_t i = 0; i < CapturedNames.size(); i++) {
-        llvm::Value* MemberPtr = context.Builder.CreateStructGEP(CaptureStructTy, CaptureStruct, i);
-        context.Builder.CreateStore(context.NamedValues[CapturedNames[i]], MemberPtr);
+    llvm::StructType* CaptureStructTy = !CapturedNames.empty()
+        ? llvm::StructType::get(Ctx, CapturedTypes)
+        : nullptr;
+    llvm::Value* CaptureStruct = nullptr;
+    if (CaptureStructTy) {
+        CaptureStruct = context.Builder.CreateAlloca(CaptureStructTy, nullptr, "par_capture");
+        for (size_t i = 0; i < CapturedNames.size(); i++) {
+            llvm::Value* MemberPtr = context.Builder.CreateStructGEP(CaptureStructTy, CaptureStruct, i);
+            context.Builder.CreateStore(context.NamedValues[CapturedNames[i]], MemberPtr);
+        }
     }
 
-    // 3. Create the loop body function
-    // Signature: void body(int64_t index, void* user_data)
+    // 3. Create the micro-task callback function
+    // Signature: void par_body(int64_t index, void* user_data)
     llvm::FunctionType* BodyFuncTy = llvm::FunctionType::get(llvm::Type::getVoidTy(Ctx), {Int64Ty, VoidPtrTy}, false);
     llvm::Function* BodyFunc =
         llvm::Function::Create(BodyFuncTy, llvm::Function::InternalLinkage, "par_body", TheModule);
 
-    // Create entry block in body function
-    llvm::BasicBlock* EntryBB = llvm::BasicBlock::Create(Ctx, "entry", BodyFunc);
-    llvm::IRBuilder<> BodyBuilder(EntryBB);
+    // Save outer builder state
+    llvm::BasicBlock* SavedBB = context.Builder.GetInsertBlock();
+    auto SavedDebugLoc = context.Builder.getCurrentDebugLocation();
 
-    // Setup body context
-    CodegenContext BodyContext(context.TheContext, context.TheModule);
-    BodyContext.Builder.SetInsertPoint(EntryBB);
+    // Build body function
+    llvm::BasicBlock* BodyEntry = llvm::BasicBlock::Create(Ctx, "entry", BodyFunc);
+    llvm::IRBuilder<> BodyBuilder(BodyEntry);
 
-    // Extract loop index
+    // Loop index as double
     llvm::Value* RawIdx = BodyFunc->arg_begin();
-    llvm::Value* LoopVar = BodyBuilder.CreateSIToFP(RawIdx, DoubleTy, VarName.c_str());
-    BodyContext.NamedValues[VarName] = LoopVar;
+    BodyBuilder.CreateSIToFP(RawIdx, DoubleTy, VarName.c_str());
 
     // Extract captured variables
-    llvm::Value* UserDataPtr = (BodyFunc->arg_begin() + 1);
-    llvm::Value* CastUserData =
-        BodyBuilder.CreateBitCast(UserDataPtr, llvm::PointerType::get(CaptureStructTy->getContext(), 0));
+    CodegenContext BodyCtx(Ctx, TheModule);
+    BodyCtx.Builder.SetInsertPoint(BodyEntry);
+    BodyCtx.Builder.SetCurrentDebugLocation(llvm::DebugLoc());
 
-    for (size_t i = 0; i < CapturedNames.size(); i++) {
-        llvm::Value* MemberPtr = BodyBuilder.CreateStructGEP(CaptureStructTy, CastUserData, i);
-        BodyContext.NamedValues[CapturedNames[i]] = BodyBuilder.CreateLoad(CapturedTypes[i], MemberPtr);
+    llvm::Value* LoopVar = BodyBuilder.CreateSIToFP(RawIdx, DoubleTy, VarName.c_str());
+    BodyCtx.NamedValues[VarName] = LoopVar;
+
+    if (CaptureStructTy && CaptureStruct) {
+        llvm::Value* UserDataPtr = BodyFunc->arg_begin() + 1;
+        llvm::Value* CastData = BodyBuilder.CreateBitCast(UserDataPtr,
+            llvm::PointerType::get(CaptureStructTy, 0), "capture_ptr");
+        for (size_t i = 0; i < CapturedNames.size(); i++) {
+            llvm::Value* MemberPtr = BodyBuilder.CreateStructGEP(CaptureStructTy, CastData, i);
+            BodyCtx.NamedValues[CapturedNames[i]] = BodyBuilder.CreateLoad(CapturedTypes[i], MemberPtr);
+        }
     }
 
-    // Codegen the body expression into the new function
-    TypedValue BodyResult = Body->codegen(BodyContext);
+    // Codegen body expression into the micro-task function
+    TypedValue BodyResult = Body->codegen(BodyCtx);
     BodyBuilder.CreateRetVoid();
 
-    // 4. Call flux_parallel_for in the current function
-    llvm::Function* ParForFunc = TheModule->getFunction("flux_parallel_for");
-    if (!ParForFunc) {
-        ParForFunc = llvm::Function::Create(
-            llvm::FunctionType::get(llvm::Type::getVoidTy(Ctx), {Int64Ty, Int64Ty, Int64Ty, VoidPtrTy}, false),
-            llvm::Function::ExternalLinkage, "flux_parallel_for", TheModule);
+    // Finalize body function
+    if (llvm::verifyFunction(*BodyFunc, &llvm::errs())) {
+        std::cerr << "[FLUX ERROR] Parallel body function verification failed" << std::endl;
+        BodyFunc->eraseFromParent();
+        context.Builder.SetInsertPoint(SavedBB);
+        context.Builder.SetCurrentDebugLocation(SavedDebugLoc);
+        return TypedValue();
     }
 
-    llvm::Value* ChunkSize = llvm::ConstantInt::get(Int64Ty, 0); // Auto-calculate chunk size
-    llvm::Value* BodyFuncPtr = context.Builder.CreateBitCast(BodyFunc, VoidPtrTy);
-    llvm::Value* CapturePtr = context.Builder.CreateBitCast(CaptureStruct, VoidPtrTy);
+    // 4. Call flux_parallel_for in the parent function
+    llvm::Function* ParForFunc = TheModule->getFunction("flux_parallel_for");
+    if (!ParForFunc) {
+        llvm::FunctionType* ParForTy = llvm::FunctionType::get(
+            llvm::Type::getVoidTy(Ctx), {Int64Ty, Int64Ty, Int64Ty, VoidPtrTy, VoidPtrTy}, false);
+        ParForFunc = llvm::Function::Create(ParForTy, llvm::Function::ExternalLinkage,
+                                             "flux_parallel_for", TheModule);
+    }
 
-    context.Builder.CreateCall(ParForFunc, {StartIdx, EndIdx, ChunkSize, BodyFuncPtr});
+    context.Builder.SetInsertPoint(SavedBB);
+    context.Builder.SetCurrentDebugLocation(SavedDebugLoc);
 
-    std::cout << "[CodeGen] Generated TRUE parallel for loop: " << VarName << std::endl;
+    llvm::Value* ChunkSizeV = llvm::ConstantInt::get(Int64Ty, ChunkSize);
+    llvm::Value* BodyFuncPtr = context.Builder.CreateBitCast(BodyFunc, VoidPtrTy, "par_body_ptr");
+    llvm::Value* CapturePtr = CaptureStruct
+        ? context.Builder.CreateBitCast(CaptureStruct, VoidPtrTy, "par_capture_ptr")
+        : llvm::Constant::getNullValue(VoidPtrTy);
+
+    context.Builder.CreateCall(ParForFunc, {StartIdx, EndIdx, ChunkSizeV, BodyFuncPtr, CapturePtr});
 
     return TypedValue(llvm::ConstantFP::get(Ctx, llvm::APFloat(0.0)), TypeKind::Double);
 }

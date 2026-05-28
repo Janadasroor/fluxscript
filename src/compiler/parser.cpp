@@ -29,6 +29,7 @@ Parser::Parser(const std::string& input) : m_lexer(input), m_hasError(false)
     m_binopPrecedence[static_cast<int>(TokenType::tok_logical_and)] = 10;
     m_binopPrecedence['|'] = 11;
     m_binopPrecedence[static_cast<int>(TokenType::tok_bitwise_or)] = 11;
+    m_binopPrecedence[static_cast<int>(TokenType::tok_pipe)] = 1;
     m_binopPrecedence[static_cast<int>(TokenType::tok_bitwise_xor)] = 12;
     m_binopPrecedence['&'] = 13;
     m_binopPrecedence[static_cast<int>(TokenType::tok_bitwise_and)] = 13;
@@ -1541,6 +1542,28 @@ std::unique_ptr<ExprAST> Parser::ParseBinOpRHS(int ExprPrec, std::unique_ptr<Exp
                 LHS = std::make_unique<IndexExprAST>(std::move(LHS), std::move(rowIdx), std::move(colIdx));
             else
                 LHS = std::make_unique<IndexExprAST>(std::move(LHS), std::move(rowIdx));
+        } else if (BinOp == static_cast<int>(TokenType::tok_pipe)) {
+                // x |> f          → f(x)
+                // x |> f(y)       → f(x, y)
+                // x |> obj.meth   → obj.meth(x)
+                // x |> obj.m(y)   → obj.m(x, y)
+                auto* call = dynamic_cast<CallExprAST*>(RHS.get());
+                if (call) {
+                    call->prependArg(std::move(LHS));
+                    LHS = std::move(RHS);
+                } else if (dynamic_cast<VariableExprAST*>(RHS.get())) {
+                    auto calleeName = static_cast<VariableExprAST*>(RHS.get())->getName();
+                    std::vector<std::unique_ptr<ExprAST>> args;
+                    args.push_back(std::move(LHS));
+                    LHS = std::make_unique<CallExprAST>(calleeName, std::move(args));
+                } else if (dynamic_cast<MemberExprAST*>(RHS.get())) {
+                    std::vector<std::unique_ptr<ExprAST>> args;
+                    args.push_back(std::move(LHS));
+                    LHS = std::make_unique<CallExprAST>(std::move(RHS), std::move(args));
+                } else {
+                    ReportError("expected function call after |>");
+                    return nullptr;
+                }
         } else {
             LHS = std::make_unique<BinaryExprAST>(BinOp, std::move(LHS), std::move(RHS));
         }

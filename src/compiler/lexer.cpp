@@ -1169,6 +1169,10 @@ int Lexer::gettok()
             advance();
             return static_cast<int>(TokenType::tok_logical_or);
         }
+        if (m_lastChar == '>') {
+            advance();
+            return static_cast<int>(TokenType::tok_pipe);
+        }
         return static_cast<int>(TokenType::tok_bitwise_or);
     }
 

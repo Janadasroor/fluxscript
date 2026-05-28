@@ -122,9 +122,21 @@ run_test "For Loop" "
 for i in 1, 3 do i
 "
 
-# Test 2: Parallel For Loop (parser-only - JIT runtime symbols not registered)
-run_check_test "Parallel For" "
+# Test 2: Parallel For Loop (parser-only validation keeps both old check and adds new test)
+run_check_test "Parallel For Parse" "
 parallel for i in 1, 3 do i
+"
+run_test "Parallel For JIT" "
+let lo = 1.0;
+let hi = 10.0;
+parallel for i in lo, hi do i;
+0.0
+"
+run_test "Parallel For Captured Vars" "
+let x = 5.0;
+let y = 3.0;
+parallel for i in 0, 4 do i + x + y;
+0.0
 "
 
 # Test 3: Symbolic Declaration (parser-only - JIT runtime symbols not registered)
@@ -829,7 +841,27 @@ def verify_overloads() -> Double {
 verify_overloads()
 '
 
-# Test 50: Async/Await
+# Test 50: Pipe Operator
+run_test "Pipe Operator - basic" '
+def double_it(x: Double) -> Double { x * 2.0 }
+def add_one(x: Double) -> Double { x + 1.0 }
+3.0 |> double_it |> add_one
+'
+run_test "Pipe Operator - multi-arg" '
+def scale(s: Double, x: Double) -> Double { s * x }
+let mul = 2.5;
+10.0 |> scale(mul)
+'
+run_test "Pipe Operator - method call" '
+class Box { val: Double }
+impl Box {
+    def apply(self, f: Double) -> Double { self.val * f }
+}
+let b = Box { val: 3.0 };
+5.0 |> b.apply
+'
+
+# Test 53: Async/Await
 run_test "Async/Await" '
 async def fetch_data() -> Double {
     await 0.5;
@@ -957,7 +989,47 @@ def run_check() -> Double {
 run_check()
 '
 
-# Test 59: Async from async with let (no cross-await usage)
+# Test 60: Match exhaustiveness - all variants covered
+run_test "Match Exhaustiveness - all covered" '
+enum Color { Red, Green, Blue }
+def run_check() -> Double {
+    let c = Color.Red;
+    match c {
+        Color.Red -> 1.0,
+        Color.Green -> 2.0,
+        Color.Blue -> 3.0
+    }
+}
+run_check()
+'
+
+# Test 62: Match exhaustiveness - with default arm (ok)
+run_test "Match Exhaustiveness - default arm" '
+enum Color { Red, Green, Blue }
+def run_check() -> Double {
+    let c = Color.Red;
+    match c {
+        Color.Red -> 1.0,
+        default -> 0.0
+    }
+}
+run_check()
+'
+
+# Test 63: Match exhaustiveness - payload enum all covered
+run_test "Match Exhaustiveness - payload covered" '
+enum Option { Some(Double), None }
+def run_check() -> Double {
+    let opt = Option.Some(5.0);
+    match opt {
+        Option.Some(x) -> x,
+        Option.None -> 0.0
+    }
+}
+run_check()
+'
+
+# Test 65: Async from async with let (no cross-await usage)
 run_test "Async - let before await" '
 async def helper() -> Double { await 1.0; 5.0 }
 async def user() -> Double {

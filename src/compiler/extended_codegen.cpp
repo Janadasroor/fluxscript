@@ -14,6 +14,7 @@
 // Extended keyword codegen implementations
 #include "flux/compiler/ast.h"
 #include <iostream>
+#include <set>
 
 namespace Flux {
 
@@ -416,6 +417,33 @@ TypedValue MatchExprAST::codegen(CodegenContext& context)
 
     bool isEnumMatch = MatchValTV.Type.isEnum();
     bool isPayloadEnum = isEnumMatch && MatchValTV.Val->getType()->isStructTy();
+
+    // Exhaustiveness check: if matching on an enum without a default arm,
+    // verify that every variant is covered.
+    if (isEnumMatch && !DefaultArm) {
+        int enumTypeId = MatchValTV.Type.EnumTypeId;
+        if (enumTypeId >= 0 && enumTypeId < static_cast<int>(context.EnumTypes.size())) {
+            auto& enumInfo = context.EnumTypes[enumTypeId];
+            std::set<std::string> matchedVariants;
+            for (auto const& [Pattern, _] : Arms) {
+                if (auto* callPat = dynamic_cast<CallExprAST*>(Pattern.get())) {
+                    if (callPat->hasCalleeExpr()) {
+                        if (auto* memberPat = dynamic_cast<MemberExprAST*>(callPat->getCalleeExpr()))
+                            matchedVariants.insert(memberPat->getMemberName());
+                    }
+                } else if (auto* memberPat = dynamic_cast<MemberExprAST*>(Pattern.get())) {
+                    matchedVariants.insert(memberPat->getMemberName());
+                }
+            }
+            for (auto const& variant : enumInfo.Variants) {
+                if (matchedVariants.find(variant) == matchedVariants.end()) {
+                    std::cerr << "[FLUX ERROR] match on enum '" << enumInfo.Name
+                              << "' does not cover variant '" << variant << "'" << std::endl;
+                    return TypedValue();
+                }
+            }
+        }
+    }
 
     // Determine return type from result expressions (default to Double)
     llvm::Type* ResultTy = DoubleTy;

@@ -770,6 +770,7 @@ public:
     ExprAST* getCalleeExpr() const { return CalleeExpr.get(); }
     bool hasCalleeExpr() const { return CalleeExpr != nullptr; }
     const std::vector<std::unique_ptr<ExprAST>>& getArgs() const { return Args; }
+    void prependArg(std::unique_ptr<ExprAST> Arg) { Args.insert(Args.begin(), std::move(Arg)); }
     const std::vector<FluxType>& getGenericTypeArgs() const { return GenericTypeArgs; }
     void setGenericTypeArgs(const std::vector<FluxType>& TArgs) { GenericTypeArgs = TArgs; }
     bool hasGenericTypeArgs() const { return !GenericTypeArgs.empty(); }

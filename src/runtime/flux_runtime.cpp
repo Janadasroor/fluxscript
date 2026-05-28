@@ -1503,6 +1503,10 @@ extern "C" double flux_regex_match(double str_dbl, double pat_dbl);
 extern "C" double flux_regex_replace(double str_dbl, double pat_dbl, double repl_dbl);
 extern "C" double flux_set_diagnostic(double node_dbl, double type_dbl, double threshold);
 
+// Forward declarations for JIT-callable parallel runtime functions
+extern "C" void flux_parallel_for(int64_t start, int64_t end, int64_t chunk_size, void* body_func_ptr, void* user_data);
+extern "C" int64_t flux_get_num_threads();
+
 void registerRuntimeFunctions(FluxJIT& jit)
 {
     jit.registerFunction("flux_create_matrix", (void*)&flux_create_matrix);
@@ -1737,28 +1741,126 @@ void registerRuntimeFunctions(FluxJIT& jit)
     jit.registerFunction("least_squares", (void*)&flux_least_squares);
     jit.registerFunction("gradient_descent", (void*)&flux_gradient_descent);
     jit.registerFunction("flux_set_diagnostic", (void*)&flux_set_diagnostic);
+
+    // Parallel for
+    jit.registerFunction("flux_parallel_for", (void*)&flux_parallel_for);
+    jit.registerFunction("flux_get_num_threads", (void*)&flux_get_num_threads);
+}
+
+// Fixed-size worker thread pool with work-stealing for parallel for loops.
+// Threads are created once and reused across all parallel_for calls.
+class ParallelWorkerPool
+{
+    int m_numThreads;
+    std::vector<std::thread> m_workers;
+    std::mutex m_mutex;
+    std::condition_variable m_cv;
+    bool m_stop = false;
+
+    std::atomic<int64_t> m_current;
+    int64_t m_end = 0;
+    void (*m_body)(int64_t, void*) = nullptr;
+    void* m_userData = nullptr;
+    int m_doneCount = 0;
+    bool m_hasWork = false;
+
+    void workerLoop()
+    {
+        while (true) {
+            std::unique_lock<std::mutex> lock(m_mutex);
+            m_cv.wait(lock, [this] { return m_hasWork || m_stop; });
+            if (m_stop)
+                return;
+            lock.unlock();
+
+            // Work-stealing: atomically claim next iteration
+            while (true) {
+                int64_t i = m_current.fetch_add(1);
+                if (i >= m_end)
+                    break;
+                m_body(i, m_userData);
+            }
+
+            // Signal completion
+            lock.lock();
+            m_doneCount++;
+            if (m_doneCount >= m_numThreads) {
+                m_hasWork = false;
+                lock.unlock();
+                m_cv.notify_all();
+            }
+        }
+    }
+
+public:
+    ParallelWorkerPool() : m_numThreads(std::thread::hardware_concurrency())
+    {
+        for (int i = 0; i < m_numThreads; i++)
+            m_workers.emplace_back(&ParallelWorkerPool::workerLoop, this);
+    }
+
+    ~ParallelWorkerPool()
+    {
+        {
+            std::lock_guard<std::mutex> lock(m_mutex);
+            m_stop = true;
+        }
+        m_cv.notify_all();
+        for (auto& w : m_workers)
+            w.join();
+    }
+
+    int numThreads() const { return m_numThreads; }
+
+    void dispatch(int64_t start, int64_t end, void (*body)(int64_t, void*), void* userData)
+    {
+        if (start >= end || !body)
+            return;
+        {
+            std::lock_guard<std::mutex> lock(m_mutex);
+            m_current.store(start);
+            m_end = end;
+            m_body = body;
+            m_userData = userData;
+            m_doneCount = 0;
+            m_hasWork = true;
+        }
+        m_cv.notify_all();
+
+        // Main thread participates via work-stealing
+        while (true) {
+            int64_t i = m_current.fetch_add(1);
+            if (i >= end)
+                break;
+            body(i, userData);
+        }
+
+        // Wait for all workers
+        {
+            std::unique_lock<std::mutex> lock(m_mutex);
+            m_cv.wait(lock, [this] { return !m_hasWork; });
+        }
+    }
+};
+
+static ParallelWorkerPool& parallelPool()
+{
+    static ParallelWorkerPool pool;
+    return pool;
 }
 
 typedef void (*ParallelBodyFunc)(int64_t, void*);
-extern "C" void flux_parallel_for(int64_t start, int64_t end, int64_t chunk_size, void* body_func_ptr)
+
+extern "C" void flux_parallel_for(int64_t start, int64_t end, int64_t chunk_size, void* body_func_ptr, void* user_data)
 {
-    if (start >= end || !body_func_ptr)
-        return;
+    (void)chunk_size;
     auto body_func = reinterpret_cast<ParallelBodyFunc>(body_func_ptr);
-    std::atomic<int64_t> current(start);
-    std::vector<std::thread> threads;
-    for (unsigned t = 0; t < std::thread::hardware_concurrency(); t++) {
-        threads.emplace_back([&current, end, body_func]() {
-            while (true) {
-                int64_t i = current.fetch_add(1);
-                if (i >= end)
-                    break;
-                body_func(i, nullptr);
-            }
-        });
-    }
-    for (auto& t : threads)
-        t.join();
+    parallelPool().dispatch(start, end, body_func, user_data);
+}
+
+extern "C" int64_t flux_get_num_threads()
+{
+    return parallelPool().numThreads();
 }
 
 } // namespace Flux
