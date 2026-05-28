@@ -195,6 +195,73 @@ set_tests_properties(flux-test-integration PROPERTIES
 )
 
 # 
+#  Individual Integration Tests (.flux snippets)              
+# 
+# Each test case from run_tests.sh is registered as its own CTest test
+# for granular CI reporting. The .flux and .meta files are generated
+# by tests/integration/extract_tests.py.
+# 
+
+# Helper: register a single .flux integration test
+function(add_flux_integration_test test_name flux_file is_check)
+    set(flux_bin "$<TARGET_FILE:flux>")
+    if(NOT TARGET flux)
+        set(flux_bin "${CMAKE_BINARY_DIR}/flux")
+    endif()
+    if(is_check)
+        add_test(NAME ${test_name}
+            COMMAND ${CMAKE_BINARY_DIR}/flux --cache=0 --emit=check ${flux_file}
+            WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+        )
+    else()
+        add_test(NAME ${test_name}
+            COMMAND ${CMAKE_BINARY_DIR}/flux --cache=0 ${flux_file}
+            WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+        )
+    endif()
+    set_tests_properties(${test_name} PROPERTIES
+        LABELS "integration;fluxscript"
+        TIMEOUT 30
+    )
+endfunction()
+
+# Discover individual test files
+file(GLOB flux_test_files
+    "${CMAKE_SOURCE_DIR}/tests/integration/tests/test_*.flux"
+)
+
+foreach(f IN LISTS flux_test_files)
+    get_filename_component(basename ${f} NAME_WE)
+    get_filename_component(filename ${f} NAME)
+    set(meta_file "${CMAKE_SOURCE_DIR}/tests/integration/tests/${basename}.meta")
+
+    if(EXISTS ${meta_file})
+        file(STRINGS ${meta_file} meta_lines LIMIT_COUNT 2)
+        list(GET meta_lines 0 test_type)
+        list(GET meta_lines 1 display_name)
+
+        string(STRIP ${test_type} test_type)
+        string(STRIP ${display_name} display_name)
+
+        set(is_check FALSE)
+        if(test_type STREQUAL "check")
+            set(is_check TRUE)
+        endif()
+
+        add_flux_integration_test(
+            "flux-test-integration-${basename}"
+            "${f}"
+            ${is_check}
+        )
+
+        set_tests_properties("flux-test-integration-${basename}" PROPERTIES
+            LABELS "integration;fluxscript;individual"
+            TIMEOUT 30
+        )
+    endif()
+endforeach()
+
+# 
 #  FluxScript Feature Tests (runs all .flux script tests)     
 # 
 if(BASH_EXECUTABLE)

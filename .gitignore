@@ -1,6 +1,7 @@
 *.flux
 !tests/flux/*.flux
 !stdlib/*.flux
+!tests/integration/tests/*.flux
 !examples/fullcircuit/**/*.flux
 /build/
 /build_local/
