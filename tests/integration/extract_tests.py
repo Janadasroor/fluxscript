@@ -47,6 +47,10 @@ while i < len(lines):
 
         test_code = ''.join(code_lines).strip()
 
+        # Unescape bash double-quote escaping: \" -> "
+        if quote_char == '"':
+            test_code = test_code.replace('\\"', '"')
+
         # Sanitize name for filename
         fname = re.sub(r'[^a-zA-Z0-9._-]', '_', test_name)
         fname = re.sub(r'^_+|_+$', '', fname)
