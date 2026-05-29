@@ -916,6 +916,7 @@ class ArrayExprAST : public ExprAST
 
 public:
     ArrayExprAST(std::vector<std::unique_ptr<ExprAST>> Elements) : Elements(std::move(Elements)) {}
+    ~ArrayExprAST() = default;
     TypedValue codegen(CodegenContext& context) override;
     const std::vector<std::unique_ptr<ExprAST>>& getElements() const { return Elements; }
     bool containsYield() const override
@@ -1416,6 +1417,7 @@ public:
     AwaitExprAST(std::unique_ptr<ExprAST> Value) : Value(std::move(Value)) {}
     TypedValue codegen(CodegenContext& context) override;
     bool containsAwait() const override { return true; }
+    const ExprAST* getExpr() const { return Value.get(); }
 };
 
 // --- AI / Neural Network Nodes ---
@@ -1633,6 +1635,25 @@ public:
     bool containsYield() const override { return Body->containsYield(); }
 };
 
+struct LifetimeParam {
+    std::string Name;
+    std::vector<std::string> Outlives;
+
+    LifetimeParam() = default;
+    explicit LifetimeParam(std::string name) : Name(std::move(name)) {}
+    LifetimeParam(std::string name, std::vector<std::string> outlives)
+        : Name(std::move(name)), Outlives(std::move(outlives)) {}
+};
+
+inline std::vector<std::string> getLifetimeNames(const std::vector<LifetimeParam>& params)
+{
+    std::vector<std::string> names;
+    names.reserve(params.size());
+    for (const auto& p : params)
+        names.push_back(p.Name);
+    return names;
+}
+
 class PrototypeAST
 {
     std::string Name;
@@ -1643,6 +1664,7 @@ class PrototypeAST
     bool IsAsync = false;
     std::vector<std::string> GenericParams; // Generic type parameter names (e.g., [T, U])
     std::map<std::string, std::vector<std::string>> GenericParamBounds; // param name → trait bounds
+    std::vector<LifetimeParam> LifetimeParams;
 
 public:
     PrototypeAST(const std::string& Name, std::vector<std::pair<std::string, FluxType>> Args,
@@ -1677,6 +1699,11 @@ public:
     const std::vector<std::string>& getGenericParams() const { return GenericParams; }
     bool isGeneric() const { return !GenericParams.empty(); }
 
+    // Lifetime parameter support
+    void setLifetimeParams(const std::vector<LifetimeParam>& Params) { LifetimeParams = Params; }
+    const std::vector<LifetimeParam>& getLifetimeParams() const { return LifetimeParams; }
+    bool hasLifetimeParams() const { return !LifetimeParams.empty(); }
+
     // Trait bounds on generic params
     void addGenericParamBound(const std::string& paramName, const std::string& traitName)
     {
@@ -1707,6 +1734,7 @@ public:
         auto ConcreteProto = std::make_unique<PrototypeAST>(
             Name + suffix, std::move(ConcreteArgs), substitute(ReturnType));
         ConcreteProto->setLocation(Line);
+        ConcreteProto->setLifetimeParams(LifetimeParams);
         if (IsGenerator)
             ConcreteProto->setGenerator(true);
         if (IsAsync)
@@ -1746,7 +1774,7 @@ class StructDeclAST
     std::vector<std::pair<std::string, FluxType>> Fields;
     int StructTypeId;
     std::vector<std::string> GenericParams;
-    std::vector<std::string> LifetimeParams;
+    std::vector<LifetimeParam> LifetimeParams;
 
 public:
     StructDeclAST(const std::string& Name,
@@ -1766,8 +1794,8 @@ public:
     void setGenericParams(const std::vector<std::string>& Params) { GenericParams = Params; }
     const std::vector<std::string>& getGenericParams() const { return GenericParams; }
     bool isGeneric() const { return !GenericParams.empty(); }
-    void setLifetimeParams(const std::vector<std::string>& Params) { LifetimeParams = Params; }
-    const std::vector<std::string>& getLifetimeParams() const { return LifetimeParams; }
+    void setLifetimeParams(const std::vector<LifetimeParam>& Params) { LifetimeParams = Params; }
+    const std::vector<LifetimeParam>& getLifetimeParams() const { return LifetimeParams; }
     bool hasLifetimeParams() const { return !LifetimeParams.empty(); }
     void codegen(CodegenContext& context);
 };
@@ -1860,7 +1888,7 @@ class ImplDeclAST
     std::string TraitName;  // Empty for inherent impl, set for trait impl
     std::string ParentName;
     std::vector<std::unique_ptr<FunctionAST>> Methods;
-    std::vector<std::string> LifetimeParams;
+    std::vector<LifetimeParam> LifetimeParams;
 
 public:
     ImplDeclAST(const std::string& TypeName, std::vector<std::unique_ptr<FunctionAST>> Methods, const std::string& ParentName = "")
@@ -1874,8 +1902,8 @@ public:
     bool isTraitImpl() const { return !TraitName.empty(); }
     const std::string& getParentName() const { return ParentName; }
     void setParentName(const std::string& parent) { ParentName = parent; }
-    void setLifetimeParams(const std::vector<std::string>& Params) { LifetimeParams = Params; }
-    const std::vector<std::string>& getLifetimeParams() const { return LifetimeParams; }
+    void setLifetimeParams(const std::vector<LifetimeParam>& Params) { LifetimeParams = Params; }
+    const std::vector<LifetimeParam>& getLifetimeParams() const { return LifetimeParams; }
     bool hasLifetimeParams() const { return !LifetimeParams.empty(); }
     const std::vector<std::unique_ptr<FunctionAST>>& getMethods() const { return Methods; }
     std::vector<std::unique_ptr<FunctionAST>>& getMethods() { return Methods; }

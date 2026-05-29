@@ -28,15 +28,16 @@ private:
 
     // Collect constraints from the body expression
     void collectFromExpr(const ExprAST* expr,
-                         const std::set<std::string>& lifetimeParams);
+                         const std::set<std::string>& lifetimeParamNames);
 
     // Collect constraints from type annotations (recursive)
     void collectFromType(const FluxType& type,
                          const std::string& containingLifetime,
-                         const std::set<std::string>& lifetimeParams);
+                         const std::set<std::string>& lifetimeParamNames);
 
     // Check consistency: return true if valid
-    bool checkConsistency(const std::set<std::string>& lifetimeParams,
+    bool checkConsistency(const std::set<std::string>& lifetimeParamNames,
+                          const std::vector<LifetimeParam>& lifetimeParams,
                           const std::vector<std::pair<std::string, FluxType>>& args,
                           const FluxType& returnType);
 };

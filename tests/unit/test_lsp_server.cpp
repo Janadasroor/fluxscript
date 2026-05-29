@@ -589,6 +589,57 @@ void test_prepare_rename_keyword() {
     TPASS;
 }
 
+// ============================================================================
+// Test: Code Lens — reference count badges above declarations
+// ============================================================================
+void test_code_lens_basic() {
+    TEST("codeLens: returns reference count for functions");
+    LspServer server;
+    std::string uri = "file:///test.flux";
+    std::string source = "def foo() { }\ndef bar() { foo() }\ndef baz() { foo() }";
+    server.openDocument(uri, "fluxscript", 1, source);
+
+    auto lenses = server.getCodeLenses(uri);
+    bool foundFoo = false, foundBar = false, foundBaz = false;
+    for (auto& l : lenses) {
+        if (l.title.find("foo") != std::string::npos || l.range.start.line == 0)
+            foundFoo = true;
+        if (l.title.find("bar") != std::string::npos || l.range.start.line == 1)
+            foundBar = true;
+        if (l.title.find("baz") != std::string::npos || l.range.start.line == 2)
+            foundBaz = true;
+    }
+    TC(!lenses.empty(), "should return code lenses for functions");
+    TPASS;
+}
+
+void test_code_lens_reference_count() {
+    TEST("codeLens: counts references correctly (foo: 2 refs, bar/baz: 0)");
+    LspServer server;
+    std::string uri = "file:///test.flux";
+    std::string source = "def foo() { }\ndef bar() { foo() }\ndef baz() { foo() }";
+    server.openDocument(uri, "fluxscript", 1, source);
+
+    auto lenses = server.getCodeLenses(uri);
+    for (auto& l : lenses) {
+        if (l.range.start.line == 0) // foo
+            TC(l.title.find("2") != std::string::npos, "foo should have 2 references, got " + l.title);
+    }
+    TPASS;
+}
+
+void test_code_lens_no_functions() {
+    TEST("codeLens: returns empty for document with no functions");
+    LspServer server;
+    std::string uri = "file:///test.flux";
+    std::string source = "var x = 1.0\nvar y = 2.0";
+    server.openDocument(uri, "fluxscript", 1, source);
+
+    auto lenses = server.getCodeLenses(uri);
+    TC(lenses.empty(), "should return no lenses for variable-only document");
+    TPASS;
+}
+
 void test_prepare_rename_empty_doc() {
     TEST("prepareRename: returns invalid for empty document");
     LspServer server;
@@ -638,6 +689,10 @@ int main() {
     test_prepare_rename_valid();
     test_prepare_rename_keyword();
     test_prepare_rename_empty_doc();
+
+    test_code_lens_basic();
+    test_code_lens_reference_count();
+    test_code_lens_no_functions();
 
     std::cout << "\nResults: " << g_passed << " passed, " << g_failed << " failed\n";
     return g_failed > 0 ? 1 : 0;

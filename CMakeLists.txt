@@ -96,6 +96,7 @@ set(FLUXSCRIPT_SOURCES
     src/compiler/compiler_instance.cpp
     src/compiler/lexer.cpp
     src/compiler/parser.cpp
+    src/compiler/lifetime_inference.cpp
     src/compiler/codegen.cpp
     src/compiler/module_loader.cpp
     src/compiler/preprocessor.cpp
@@ -165,6 +166,7 @@ set(FLUXSCRIPT_SOURCES
     src/ai/surrogate.cpp
     src/phase3_stubs.cpp
     src/phase4a_stubs.cpp
+
     src/package/http_client.cpp
     src/package/toml_parser.cpp
     src/package/package_manager.cpp

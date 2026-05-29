@@ -423,8 +423,8 @@ TypedValue PhasorExprAST::codegen(CodegenContext& context)
     llvm::Value* PhaseRad = context.Builder.CreateFMul(Phase, Deg2Rad, "phase_rad");
 
     // Get cos and sin intrinsics
-    llvm::Function* CosF = llvm::Intrinsic::getOrInsertDeclaration(context.TheModule, llvm::Intrinsic::cos, {DoubleTy});
-    llvm::Function* SinF = llvm::Intrinsic::getOrInsertDeclaration(context.TheModule, llvm::Intrinsic::sin, {DoubleTy});
+    llvm::Function* CosF = llvm::Intrinsic::getDeclaration(context.TheModule, llvm::Intrinsic::cos, {DoubleTy});
+    llvm::Function* SinF = llvm::Intrinsic::getDeclaration(context.TheModule, llvm::Intrinsic::sin, {DoubleTy});
 
     llvm::Value* CosVal = context.Builder.CreateCall(CosF, {PhaseRad}, "cos_phase");
     llvm::Value* SinVal = context.Builder.CreateCall(SinF, {PhaseRad}, "sin_phase");
@@ -2659,25 +2659,25 @@ TypedValue CallExprAST::codegen(CodegenContext& context)
             }
         } else if (Arg.Type.Kind == TypeKind::Double) {
             if (Name == "abs") {
-                llvm::Function* FabsF = llvm::Intrinsic::getOrInsertDeclaration(
+                llvm::Function* FabsF = llvm::Intrinsic::getDeclaration(
                     context.TheModule, llvm::Intrinsic::fabs, {llvm::Type::getDoubleTy(context.TheContext)});
                 return TypedValue(context.Builder.CreateCall(FabsF, {Arg.Val}, "abstmp"),
                                   FluxType(TypeKind::Double, Arg.Type.Dimensions));
             }
             if (Name == "floor") {
-                llvm::Function* FloorF = llvm::Intrinsic::getOrInsertDeclaration(
+                llvm::Function* FloorF = llvm::Intrinsic::getDeclaration(
                     context.TheModule, llvm::Intrinsic::floor, {llvm::Type::getDoubleTy(context.TheContext)});
                 return TypedValue(context.Builder.CreateCall(FloorF, {Arg.Val}, "floortmp"),
                                   FluxType(TypeKind::Double, Arg.Type.Dimensions));
             }
             if (Name == "ceil") {
-                llvm::Function* CeilF = llvm::Intrinsic::getOrInsertDeclaration(
+                llvm::Function* CeilF = llvm::Intrinsic::getDeclaration(
                     context.TheModule, llvm::Intrinsic::ceil, {llvm::Type::getDoubleTy(context.TheContext)});
                 return TypedValue(context.Builder.CreateCall(CeilF, {Arg.Val}, "ceiltmp"),
                                   FluxType(TypeKind::Double, Arg.Type.Dimensions));
             }
             if (Name == "round") {
-                llvm::Function* RoundF = llvm::Intrinsic::getOrInsertDeclaration(
+                llvm::Function* RoundF = llvm::Intrinsic::getDeclaration(
                     context.TheModule, llvm::Intrinsic::round, {llvm::Type::getDoubleTy(context.TheContext)});
                 return TypedValue(context.Builder.CreateCall(RoundF, {Arg.Val}, "roundtmp"),
                                   FluxType(TypeKind::Double, Arg.Type.Dimensions));
@@ -2694,17 +2694,17 @@ TypedValue CallExprAST::codegen(CodegenContext& context)
             llvm::Type* DoubleTy = llvm::Type::getDoubleTy(context.TheContext);
             if (Name == "sin") {
                 llvm::Function* F =
-                    llvm::Intrinsic::getOrInsertDeclaration(context.TheModule, llvm::Intrinsic::sin, {DoubleTy});
+                    llvm::Intrinsic::getDeclaration(context.TheModule, llvm::Intrinsic::sin, {DoubleTy});
                 return TypedValue(context.Builder.CreateCall(F, {Arg0.Val}, "sintmp"), TypeKind::Double);
             }
             if (Name == "cos") {
                 llvm::Function* F =
-                    llvm::Intrinsic::getOrInsertDeclaration(context.TheModule, llvm::Intrinsic::cos, {DoubleTy});
+                    llvm::Intrinsic::getDeclaration(context.TheModule, llvm::Intrinsic::cos, {DoubleTy});
                 return TypedValue(context.Builder.CreateCall(F, {Arg0.Val}, "costmp"), TypeKind::Double);
             }
             if (Name == "sqrt") {
                 llvm::Function* F =
-                    llvm::Intrinsic::getOrInsertDeclaration(context.TheModule, llvm::Intrinsic::sqrt, {DoubleTy});
+                    llvm::Intrinsic::getDeclaration(context.TheModule, llvm::Intrinsic::sqrt, {DoubleTy});
                 UnitDimensions dims = Arg0.Type.Dimensions;
                 dims.mass /= 2;
                 dims.length /= 2;
@@ -2718,17 +2718,17 @@ TypedValue CallExprAST::codegen(CodegenContext& context)
             }
             if (Name == "exp") {
                 llvm::Function* F =
-                    llvm::Intrinsic::getOrInsertDeclaration(context.TheModule, llvm::Intrinsic::exp, {DoubleTy});
+                    llvm::Intrinsic::getDeclaration(context.TheModule, llvm::Intrinsic::exp, {DoubleTy});
                 return TypedValue(context.Builder.CreateCall(F, {Arg0.Val}, "exptmp"), TypeKind::Double);
             }
             if (Name == "log" || Name == "ln") {
                 llvm::Function* F =
-                    llvm::Intrinsic::getOrInsertDeclaration(context.TheModule, llvm::Intrinsic::log, {DoubleTy});
+                    llvm::Intrinsic::getDeclaration(context.TheModule, llvm::Intrinsic::log, {DoubleTy});
                 return TypedValue(context.Builder.CreateCall(F, {Arg0.Val}, "logtmp"), TypeKind::Double);
             }
             if (Name == "log10") {
                 llvm::Function* F =
-                    llvm::Intrinsic::getOrInsertDeclaration(context.TheModule, llvm::Intrinsic::log10, {DoubleTy});
+                    llvm::Intrinsic::getDeclaration(context.TheModule, llvm::Intrinsic::log10, {DoubleTy});
                 return TypedValue(context.Builder.CreateCall(F, {Arg0.Val}, "log10tmp"), TypeKind::Double);
             }
         }

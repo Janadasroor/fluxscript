@@ -126,6 +126,51 @@ extern "C" double flux_str_concat(double a_ptr, double b_ptr)
 extern "C" {
 
 /* ------------------------------------------------------------------ */
+/*  Collector (thread-local array builder for C-array params)         */
+/* ------------------------------------------------------------------ */
+
+double flux_llvm_call_arg_push(double val)
+{
+    g_call_args.push_back(dbl_to_ptr<LLVMOpaqueValue>(val));
+    return 0.0;
+}
+double flux_llvm_call_arg_reset()
+{
+    g_call_args.clear();
+    return 0.0;
+}
+double flux_llvm_type_arg_push(double ty)
+{
+    g_type_args.push_back(dbl_to_ptr<LLVMOpaqueType>(ty));
+    return 0.0;
+}
+double flux_llvm_type_arg_reset()
+{
+    g_type_args.clear();
+    return 0.0;
+}
+double flux_llvm_index_arg_push(double idx)
+{
+    g_index_args.push_back(dbl_to_ptr<LLVMOpaqueValue>(idx));
+    return 0.0;
+}
+double flux_llvm_index_arg_reset()
+{
+    g_index_args.clear();
+    return 0.0;
+}
+double flux_llvm_const_arg_push(double val)
+{
+    g_const_args.push_back(dbl_to_ptr<LLVMOpaqueValue>(val));
+    return 0.0;
+}
+double flux_llvm_const_arg_reset()
+{
+    g_const_args.clear();
+    return 0.0;
+}
+
+/* ------------------------------------------------------------------ */
 /*  Context                                                           */
 /* ------------------------------------------------------------------ */
 
@@ -171,7 +216,7 @@ double flux_llvm_print_module_to_string(double module)
 }
 double flux_llvm_dispose_message(double msg)
 {
-    LLVMDisposeMessage(dbl_to_cstr(msg));
+    LLVMDisposeMessage(const_cast<char*>(dbl_to_cstr(msg)));
     return 0.0;
 }
 
@@ -255,8 +300,8 @@ double flux_llvm_get_type_kind(double ty)
 }
 double flux_llvm_struct_get_type_index(double struct_ty, double i)
 {
-    return static_cast<double>(LLVMStructGetTypeIndex(dbl_to_ptr<LLVMOpaqueType>(struct_ty),
-                                                       static_cast<unsigned>(dbl_as_u64(i))));
+    return ptr_to_dbl(LLVMStructGetTypeAtIndex(dbl_to_ptr<LLVMOpaqueType>(struct_ty),
+                                               static_cast<unsigned>(dbl_as_u64(i))));
 }
 
 /* ------------------------------------------------------------------ */
@@ -610,9 +655,9 @@ double flux_llvm_build_select(double builder, double cond, double then_v, double
 }
 double flux_llvm_add_incoming(double phi, double val, double block)
 {
-    LLVMAddIncoming(dbl_to_ptr<LLVMOpaqueValue>(phi),
-                    const_cast<LLVMValueRef*>(&dbl_to_ptr<LLVMOpaqueValue>(val)),
-                    const_cast<LLVMBasicBlockRef*>(&dbl_to_ptr<LLVMOpaqueBasicBlock>(block)), 1);
+    LLVMValueRef vals[] = { dbl_to_ptr<LLVMOpaqueValue>(val) };
+    LLVMBasicBlockRef blocks[] = { dbl_to_ptr<LLVMOpaqueBasicBlock>(block) };
+    LLVMAddIncoming(dbl_to_ptr<LLVMOpaqueValue>(phi), vals, blocks, 1);
     return 0.0;
 }
 

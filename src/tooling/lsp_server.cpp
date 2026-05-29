@@ -155,6 +155,8 @@ std::string LspServer::processRequest(const std::string& jsonRequest)
         return makeResponse(id, handleTextDocumentDocumentSymbol(params));
     } else if (method == "textDocument/prepareRename") {
         return makeResponse(id, handleTextDocumentPrepareRename(params));
+    } else if (method == "textDocument/codeLens") {
+        return makeResponse(id, handleTextDocumentCodeLens(params));
     } else if (method == "workspace/symbol") {
         return makeResponse(id, handleWorkspaceSymbol(params));
     } else if (method == "$/cancelRequest") {
@@ -353,6 +355,9 @@ std::string LspServer::handleInitialize(const std::string& params)
             },
             "documentSymbolProvider": true,
             "renameProvider": true,
+            "codeLensProvider": {
+                "resolveProvider": false
+            },
             "workspaceSymbolProvider": true
         },
         "serverInfo": {
@@ -1225,6 +1230,79 @@ std::string LspServer::handleTextDocumentPrepareRename(const std::string& params
     oss << R"("end":{"line":)" << result.range.end.line;
     oss << R"(,"character":)" << result.range.end.character << "},";
     oss << R"("placeholder":")" << jsonEscape(result.placeholder) << "\"}";
+    return oss.str();
+}
+
+// ============================================================================
+// Code Lens — reference count badges above declarations
+// ============================================================================
+std::vector<LspServer::CodeLensItem> LspServer::getCodeLenses(const std::string& uri)
+{
+    std::vector<CodeLensItem> result;
+    auto* doc = getDocument(uri);
+    if (!doc)
+        return result;
+
+    auto symbols = m_symbolTables.count(uri) ? m_symbolTables[uri] : buildSymbolTable(uri);
+
+    for (auto& sym : symbols) {
+        if (sym.kind != SymbolEntry::Function)
+            continue;
+        if (sym.name.empty())
+            continue;
+
+        // Count whole-word occurrences in document
+        int count = 0;
+        size_t pos = 0;
+        while ((pos = doc->text.find(sym.name, pos)) != std::string::npos) {
+            // Check word boundaries
+            bool leftOk = pos == 0 || (!isalnum(doc->text[pos - 1]) && doc->text[pos - 1] != '_');
+            bool rightOk = (pos + sym.name.size() >= doc->text.size()) ||
+                           (!isalnum(doc->text[pos + sym.name.size()]) && doc->text[pos + sym.name.size()] != '_');
+            if (leftOk && rightOk)
+                count++;
+            pos += sym.name.size();
+        }
+
+        // Subtract 1 for the declaration itself
+        int refCount = count - 1;
+        if (refCount < 0)
+            refCount = 0;
+
+        std::string title = std::to_string(refCount) + " reference";
+        if (refCount != 1)
+            title += "s";
+
+        CodeLensItem item;
+        item.range = sym.range;
+        item.title = title;
+        item.command = "";
+        result.push_back(item);
+    }
+
+    return result;
+}
+
+std::string LspServer::handleTextDocumentCodeLens(const std::string& params)
+{
+    std::string uri = jsonGet(params, "textDocument.uri");
+
+    auto lenses = getCodeLenses(uri);
+
+    std::ostringstream oss;
+    oss << "[";
+    for (size_t i = 0; i < lenses.size(); ++i) {
+        if (i > 0)
+            oss << ",";
+        oss << R"({"range":{"start":{"line":)" << lenses[i].range.start.line;
+        oss << R"(,"character":)" << lenses[i].range.start.character << "},";
+        oss << R"("end":{"line":)" << lenses[i].range.end.line;
+        oss << R"(,"character":)" << lenses[i].range.end.character << "},";
+        oss << R"("command":{"title":")" << jsonEscape(lenses[i].title) << "\",";
+        oss << R"("command":")" << jsonEscape(lenses[i].command) << "\"";
+        oss << "}}";
+    }
+    oss << "]";
     return oss.str();
 }
 

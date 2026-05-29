@@ -213,6 +213,7 @@ public:
     std::string handleTextDocumentSignatureHelp(const std::string& params);
     std::string handleTextDocumentDocumentSymbol(const std::string& params);
     std::string handleTextDocumentPrepareRename(const std::string& params);
+    std::string handleTextDocumentCodeLens(const std::string& params);
     std::string handleWorkspaceSymbol(const std::string& params);
 
     // Completion engine
@@ -266,6 +267,15 @@ public:
         bool valid = false;
     };
     PrepareRenameResult getPrepareRename(const std::string& uri, Position pos);
+
+    // Code Lens
+    struct CodeLensItem
+    {
+        Range range;
+        std::string title;
+        std::string command; // command identifier
+    };
+    std::vector<CodeLensItem> getCodeLenses(const std::string& uri);
 
 private:
     // JSON helpers

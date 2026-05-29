@@ -1046,6 +1046,75 @@ def run_check() -> Double {
 run_check()
 '
 
+# ==============================================================================
+# Outlives Bounds ('a: 'b) Tests
+# ==============================================================================
+
+# Test 66: Struct with outlives bounds (parser validation)
+run_check_test "Struct Outlives Bounds" "
+struct Foo<'a, 'b: 'a> {
+    x: &'a Double,
+    y: &'b Double
+}
+def test() -> Double { 1.0 }
+test()
+"
+
+# Test 67: Impl with outlives bounds (parser validation)
+run_check_test "Impl Outlives Bounds" "
+struct Foo<'a, 'b> {
+    x: &'a Double,
+    y: &'b Double
+}
+impl<'a, 'b: 'a> Foo<'a, 'b>
+    def get_x(self) -> &'a Double { self.x }
+end
+def test() -> Double { 1.0 }
+test()
+"
+
+# Test 68: Struct with multiple outlives bounds
+run_check_test "Multi Outlives Bounds" "
+struct Foo<'a, 'b: 'a, 'c: 'b> {
+    a: &'a Double,
+    b: &'b Double,
+    c: &'c Double
+}
+def test() -> Double { 1.0 }
+test()
+"
+
+# Test 69: Function with outlives bounds (parser validation)
+run_check_test "Fn Outlives Bounds" "
+def foo<'a, 'b: 'a>(x: &'a Double) -> &'b Double { x }
+def test() -> Double { 1.0 }
+test()
+"
+
+# Test 70: Lifetime bound error - undeclared lifetime in bound
+run_check_test "Undeclared Lifetime Bound" "
+struct Foo<'a: 'b> { x: &'a Double }
+def test() -> Double { 1.0 }
+test()
+"
+
+# Test 71: Lifetime bound error - undeclared lifetime in reference
+run_check_test "Undeclared Lifetime Ref" "
+struct Foo<'a> { x: &'b Double }
+def test() -> Double { 1.0 }
+test()
+"
+
+# Test 72: Single lifetime param (no bounds) still works
+run_check_test "Single Lifetime Param" "
+struct Foo<'a> { x: &'a Double }
+impl<'a> Foo<'a>
+    def get(self) -> &'a Double { self.x }
+end
+def test() -> Double { 1.0 }
+test()
+"
+
 echo ""
 echo "========================================"  
 echo "  Results: $PASSED/$TOTAL passed"

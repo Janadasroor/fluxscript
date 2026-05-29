@@ -1597,6 +1597,41 @@ std::unique_ptr<PrototypeAST> Parser::ParsePrototype()
         if (hasError()) return nullptr;
         m_activeGenericParams = GenericParams;
     }
+
+    // Optional lifetime params: def foo<'a, 'b: 'a>(x: &'a T) -> &'b T
+    std::vector<LifetimeParam> LifetimeParamsList;
+    if (CurTok == '<') {
+        getNextToken();
+        while (CurTok == static_cast<int>(TokenType::tok_lifetime)) {
+            std::string lt = m_lexer.IdentifierStr;
+            if (!lt.empty() && lt[0] == '\'')
+                lt = lt.substr(1);
+            std::vector<std::string> outlives;
+            getNextToken();
+            while (CurTok == static_cast<int>(TokenType::tok_colon)) {
+                getNextToken(); // eat :
+                if (CurTok == static_cast<int>(TokenType::tok_lifetime)) {
+                    std::string bound = m_lexer.IdentifierStr;
+                    if (!bound.empty() && bound[0] == '\'')
+                        bound = bound.substr(1);
+                    outlives.push_back(bound);
+                    getNextToken();
+                } else {
+                    break;
+                }
+            }
+            LifetimeParamsList.emplace_back(lt, outlives);
+            if (CurTok == ',')
+                getNextToken();
+            else
+                break;
+        }
+        if (CurTok != '>') {
+            ReportError("expected '>' to close lifetime parameters in function prototype");
+            return nullptr;
+        }
+        getNextToken(); // eat >
+    }
     if (CurTok != '(')
         return nullptr;
     getNextToken();
@@ -1718,6 +1753,8 @@ std::unique_ptr<PrototypeAST> Parser::ParsePrototype()
             }
         }
     }
+    if (!LifetimeParamsList.empty())
+        proto->setLifetimeParams(std::move(LifetimeParamsList));
     return proto;
 }
 
@@ -3981,16 +4018,29 @@ std::unique_ptr<StructDeclAST> Parser::ParseStructDecl()
         if (hasError()) return nullptr;
     }
 
-    // Optional lifetime params: struct Foo<'a, 'b>
-    std::vector<std::string> LifetimeParams;
+    // Optional lifetime params: struct Foo<'a, 'b: 'a>
+    std::vector<LifetimeParam> LifetimeParams;
     if (CurTok == '<') {
         getNextToken();
         while (CurTok == static_cast<int>(TokenType::tok_lifetime)) {
             std::string lt = m_lexer.IdentifierStr;
             if (!lt.empty() && lt[0] == '\'')
                 lt = lt.substr(1);
-            LifetimeParams.push_back(lt);
+            std::vector<std::string> outlives;
             getNextToken();
+            while (CurTok == static_cast<int>(TokenType::tok_colon)) {
+                getNextToken(); // eat :
+                if (CurTok == static_cast<int>(TokenType::tok_lifetime)) {
+                    std::string bound = m_lexer.IdentifierStr;
+                    if (!bound.empty() && bound[0] == '\'')
+                        bound = bound.substr(1);
+                    outlives.push_back(bound);
+                    getNextToken();
+                } else {
+                    break;
+                }
+            }
+            LifetimeParams.emplace_back(lt, outlives);
             if (CurTok == ',')
                 getNextToken();
             else
@@ -4071,7 +4121,7 @@ std::unique_ptr<StructDeclAST> Parser::ParseStructDecl()
 /// unit type names (Voltage, Current, etc.),
 /// generic type parameters, and lifetime parameters.
 FluxType Parser::parseTypeName(const std::vector<std::string>& genericParams,
-                               const std::vector<std::string>& lifetimeParams)
+                               const std::vector<LifetimeParam>& lifetimeParams)
 {
     // Reference type: &T or &mut T or &'a T or &'a mut T
     if (CurTok == static_cast<int>(TokenType::tok_bitwise_and)) {
@@ -4088,7 +4138,7 @@ FluxType Parser::parseTypeName(const std::vector<std::string>& genericParams,
             if (!lifetimeParams.empty()) {
                 bool found = false;
                 for (const auto& lp : lifetimeParams) {
-                    if (lp == lifetime) { found = true; break; }
+                    if (lp.Name == lifetime) { found = true; break; }
                 }
                 if (!found) {
                     ReportError("lifetime '" + lifetime + "' is not declared in this scope");
@@ -4507,16 +4557,29 @@ std::unique_ptr<ImplDeclAST> Parser::ParseImplDecl()
 {
     getNextToken(); // eat impl
 
-    // Optional lifetime params: impl<'a, 'b>
-    std::vector<std::string> LifetimeParams;
+    // Optional lifetime params: impl<'a, 'b: 'a>
+    std::vector<LifetimeParam> LifetimeParams;
     if (CurTok == '<') {
         getNextToken();
         while (CurTok == static_cast<int>(TokenType::tok_lifetime)) {
             std::string lt = m_lexer.IdentifierStr;
             if (!lt.empty() && lt[0] == '\'')
                 lt = lt.substr(1);
-            LifetimeParams.push_back(lt);
+            std::vector<std::string> outlives;
             getNextToken();
+            while (CurTok == static_cast<int>(TokenType::tok_colon)) {
+                getNextToken(); // eat :
+                if (CurTok == static_cast<int>(TokenType::tok_lifetime)) {
+                    std::string bound = m_lexer.IdentifierStr;
+                    if (!bound.empty() && bound[0] == '\'')
+                        bound = bound.substr(1);
+                    outlives.push_back(bound);
+                    getNextToken();
+                } else {
+                    break;
+                }
+            }
+            LifetimeParams.emplace_back(lt, outlives);
             if (CurTok == ',')
                 getNextToken();
             else
@@ -4529,7 +4592,7 @@ std::unique_ptr<ImplDeclAST> Parser::ParseImplDecl()
         getNextToken(); // eat >
     }
     // Save and restore previous active lifetime params (for nested parsing)
-    std::vector<std::string> savedLifetimeParams = std::move(m_activeLifetimeParams);
+    std::vector<LifetimeParam> savedLifetimeParams = std::move(m_activeLifetimeParams);
     m_activeLifetimeParams = LifetimeParams;
 
     if (CurTok != static_cast<int>(TokenType::tok_identifier)) {
