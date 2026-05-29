@@ -141,6 +141,10 @@ std::string LspServer::processRequest(const std::string& jsonRequest)
         return makeResponse(id, handleTextDocumentDefinition(params));
     } else if (method == "textDocument/references") {
         return makeResponse(id, handleTextDocumentReferences(params));
+    } else if (method == "textDocument/implementation") {
+        return makeResponse(id, handleTextDocumentImplementation(params));
+    } else if (method == "textDocument/typeDefinition") {
+        return makeResponse(id, handleTextDocumentTypeDefinition(params));
     } else if (method == "textDocument/codeAction") {
         return makeResponse(id, handleTextDocumentCodeAction(params));
     } else if (method == "textDocument/formatting") {
@@ -149,6 +153,8 @@ std::string LspServer::processRequest(const std::string& jsonRequest)
         return makeResponse(id, handleTextDocumentSignatureHelp(params));
     } else if (method == "textDocument/documentSymbol") {
         return makeResponse(id, handleTextDocumentDocumentSymbol(params));
+    } else if (method == "textDocument/prepareRename") {
+        return makeResponse(id, handleTextDocumentPrepareRename(params));
     } else if (method == "workspace/symbol") {
         return makeResponse(id, handleWorkspaceSymbol(params));
     } else if (method == "$/cancelRequest") {
@@ -338,12 +344,15 @@ std::string LspServer::handleInitialize(const std::string& params)
             "hoverProvider": true,
             "definitionProvider": true,
             "referencesProvider": true,
+            "implementationProvider": true,
+            "typeDefinitionProvider": true,
             "codeActionProvider": true,
             "documentFormattingProvider": true,
             "signatureHelpProvider": {
                 "triggerCharacters": ["(", ","]
             },
             "documentSymbolProvider": true,
+            "renameProvider": true,
             "workspaceSymbolProvider": true
         },
         "serverInfo": {
@@ -568,6 +577,52 @@ std::string LspServer::handleTextDocumentReferences(const std::string& params)
         oss << R"("character":)" << refs[i].range.start.character << "},";
         oss << R"("end":{"line":)" << refs[i].range.end.line << ",";
         oss << R"("character":)" << refs[i].range.end.character << "}}";
+    }
+    oss << "]";
+    return oss.str();
+}
+
+std::string LspServer::handleTextDocumentImplementation(const std::string& params)
+{
+    std::string uri = jsonGet(params, "textDocument.uri");
+    int line = jsonGetInt(params, "position.line");
+    int col = jsonGetInt(params, "position.character");
+
+    auto locs = getImplementation(uri, {line, col});
+
+    std::ostringstream oss;
+    oss << "[";
+    for (size_t i = 0; i < locs.size(); ++i) {
+        if (i > 0)
+            oss << ",";
+        oss << R"({"uri":")" << jsonEscape(locs[i].uri) << "\",";
+        oss << R"("range":{"start":{"line":)" << locs[i].range.start.line << ",";
+        oss << R"("character":)" << locs[i].range.start.character << "},";
+        oss << R"("end":{"line":)" << locs[i].range.end.line << ",";
+        oss << R"("character":)" << locs[i].range.end.character << "}}";
+    }
+    oss << "]";
+    return oss.str();
+}
+
+std::string LspServer::handleTextDocumentTypeDefinition(const std::string& params)
+{
+    std::string uri = jsonGet(params, "textDocument.uri");
+    int line = jsonGetInt(params, "position.line");
+    int col = jsonGetInt(params, "position.character");
+
+    auto locs = getTypeDefinition(uri, {line, col});
+
+    std::ostringstream oss;
+    oss << "[";
+    for (size_t i = 0; i < locs.size(); ++i) {
+        if (i > 0)
+            oss << ",";
+        oss << R"({"uri":")" << jsonEscape(locs[i].uri) << "\",";
+        oss << R"("range":{"start":{"line":)" << locs[i].range.start.line << ",";
+        oss << R"("character":)" << locs[i].range.start.character << "},";
+        oss << R"("end":{"line":)" << locs[i].range.end.line << ",";
+        oss << R"("character":)" << locs[i].range.end.character << "}}";
     }
     oss << "]";
     return oss.str();
@@ -967,6 +1022,210 @@ Location LspServer::getDefinition(const std::string& uri, Position pos)
     }
 
     return loc;
+}
+
+std::vector<Location> LspServer::getImplementation(const std::string& uri, Position pos)
+{
+    std::vector<Location> result;
+    auto* doc = getDocument(uri);
+    if (!doc)
+        return result;
+
+    std::string word = doc->getWordAtPosition(pos);
+    if (word.empty())
+        return result;
+
+    // Scan for `impl <word> for` patterns (trait implementations)
+    std::string searchStr = "impl " + word + " for";
+    size_t searchPos = 0;
+    while ((searchPos = doc->text.find(searchStr, searchPos)) != std::string::npos) {
+        int implLine = 0;
+        for (size_t k = 0; k < searchPos; ++k) {
+            if (doc->text[k] == '\n')
+                implLine++;
+        }
+
+        size_t lineStart = searchPos;
+        while (lineStart > 0 && doc->text[lineStart - 1] != '\n')
+            lineStart--;
+        size_t lineEnd = doc->text.find('\n', searchPos);
+        if (lineEnd == std::string::npos)
+            lineEnd = doc->text.size();
+        int colEnd = static_cast<int>(lineEnd - lineStart);
+        if (colEnd > 0 && doc->text[lineEnd - 1] == '\r')
+            colEnd--;
+
+        Location loc;
+        loc.uri = uri;
+        loc.range.start = {implLine, 0};
+        loc.range.end = {implLine, colEnd};
+        result.push_back(loc);
+
+        searchPos = lineEnd;
+    }
+
+    return result;
+}
+
+std::vector<Location> LspServer::getTypeDefinition(const std::string& uri, Position pos)
+{
+    std::vector<Location> result;
+    auto* doc = getDocument(uri);
+    if (!doc)
+        return result;
+
+    std::string word = doc->getWordAtPosition(pos);
+    if (word.empty())
+        return result;
+
+    // Try direct keyword search first (word is already a type name).
+    // If that fails, check if word is a variable with `: TypeName` annotation
+    // and redirect the search to that type.
+    size_t wordOffset = doc->positionToOffset(pos);
+    bool foundDirect = false;
+
+    // Phase 1: search for `struct <word>`, `enum <word>`, `trait <word>`, `class <word>`
+    std::vector<std::string> keywords = {"struct ", "enum ", "trait ", "class "};
+    for (auto& kw : keywords) {
+        std::string searchStr = kw + word;
+        size_t searchPos = 0;
+        while ((searchPos = doc->text.find(searchStr, searchPos)) != std::string::npos) {
+            int declLine = 0;
+            for (size_t k = 0; k < searchPos; ++k) {
+                if (doc->text[k] == '\n')
+                    declLine++;
+            }
+
+            size_t lineStart = searchPos;
+            while (lineStart > 0 && doc->text[lineStart - 1] != '\n')
+                lineStart--;
+            size_t lineEnd = doc->text.find('\n', searchPos);
+            if (lineEnd == std::string::npos)
+                lineEnd = doc->text.size();
+            int colEnd = static_cast<int>(lineEnd - lineStart);
+            if (colEnd > 0 && doc->text[lineEnd - 1] == '\r')
+                colEnd--;
+
+            Location loc;
+            loc.uri = uri;
+            loc.range.start = {declLine, 0};
+            loc.range.end = {declLine, colEnd};
+            result.push_back(loc);
+            break; // One result per keyword
+        }
+        if (!result.empty())
+            break;
+    }
+
+    // Phase 2: if direct search failed, check if word is a variable with `: TypeName`
+    if (result.empty() && wordOffset < doc->text.size()) {
+        size_t ls = wordOffset;
+        while (ls > 0 && doc->text[ls - 1] != '\n')
+            ls--;
+        size_t le = doc->text.find('\n', ls);
+        if (le == std::string::npos)
+            le = doc->text.size();
+        std::string line = doc->text.substr(ls, le - ls);
+
+        size_t colonPos = line.find(':');
+        while (colonPos != std::string::npos) {
+            size_t ts = colonPos + 1;
+            while (ts < line.size() && line[ts] == ' ')
+                ts++;
+            std::string tn;
+            while (ts < line.size() && (isalnum(line[ts]) || line[ts] == '_'))
+                tn += line[ts++];
+            if (!tn.empty()) {
+                size_t wp = line.rfind(word, colonPos);
+                if (wp != std::string::npos && colonPos > wp &&
+                    (wp == 0 || !isalnum(line[wp - 1]))) {
+                    // word is a variable, tn is its type — redirect search
+                    word = tn;
+                    for (auto& kw : keywords) {
+                        std::string ss = kw + word;
+                        size_t sp = 0;
+                        while ((sp = doc->text.find(ss, sp)) != std::string::npos) {
+                            int dl = 0;
+                            for (size_t k = 0; k < sp; ++k)
+                                if (doc->text[k] == '\n') dl++;
+                            size_t lls = sp;
+                            while (lls > 0 && doc->text[lls - 1] != '\n') lls--;
+                            size_t lle = doc->text.find('\n', sp);
+                            if (lle == std::string::npos) lle = doc->text.size();
+                            int ce = static_cast<int>(lle - lls);
+                            if (ce > 0 && doc->text[lle - 1] == '\r') ce--;
+                            Location loc;
+                            loc.uri = uri;
+                            loc.range.start = {dl, 0};
+                            loc.range.end = {dl, ce};
+                            result.push_back(loc);
+                            break;
+                        }
+                        if (!result.empty()) break;
+                    }
+                    break;
+                }
+            }
+            colonPos = line.find(':', colonPos + 1);
+        }
+    }
+
+    return result;
+}
+
+// ============================================================================
+// Prepare Rename — validates rename is possible at cursor position
+// ============================================================================
+LspServer::PrepareRenameResult LspServer::getPrepareRename(const std::string& uri, Position pos)
+{
+    PrepareRenameResult result;
+    auto* doc = getDocument(uri);
+    if (!doc)
+        return result;
+
+    std::string word = doc->getWordAtPosition(pos);
+    if (word.empty())
+        return result;
+
+    // Find the range of the word at position
+    size_t offset = doc->positionToOffset(pos);
+    if (offset >= doc->text.size())
+        return result;
+
+    // Expand outward to capture full word boundaries
+    size_t wordStart = offset;
+    while (wordStart > 0 && (isalnum(doc->text[wordStart - 1]) || doc->text[wordStart - 1] == '_'))
+        wordStart--;
+    size_t wordEnd = offset;
+    while (wordEnd < doc->text.size() && (isalnum(doc->text[wordEnd]) || doc->text[wordEnd] == '_'))
+        wordEnd++;
+
+    Position start = doc->offsetToPosition(wordStart);
+    Position end = doc->offsetToPosition(wordEnd);
+
+    result.range = {start, end};
+    result.placeholder = word;
+    result.valid = true;
+    return result;
+}
+
+std::string LspServer::handleTextDocumentPrepareRename(const std::string& params)
+{
+    std::string uri = jsonGet(params, "textDocument.uri");
+    int line = jsonGetInt(params, "position.line");
+    int col = jsonGetInt(params, "position.character");
+
+    auto result = getPrepareRename(uri, {line, col});
+    if (!result.valid)
+        return "null";
+
+    std::ostringstream oss;
+    oss << R"({"range":{"start":{"line":)" << result.range.start.line;
+    oss << R"(,"character":)" << result.range.start.character << "},";
+    oss << R"("end":{"line":)" << result.range.end.line;
+    oss << R"(,"character":)" << result.range.end.character << "},";
+    oss << R"("placeholder":")" << jsonEscape(result.placeholder) << "\"}";
+    return oss.str();
 }
 
 // ============================================================================

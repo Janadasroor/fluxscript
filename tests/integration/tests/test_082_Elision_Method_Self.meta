@@ -1,0 +1,2 @@
+expect_error
+Method returning &T borrows from self, blocks assignment to self

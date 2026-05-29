@@ -1,0 +1,2 @@
+expect_error
+Ref field access: use of x at line 9 fails because w still borrows x (struct ref-field persistence)

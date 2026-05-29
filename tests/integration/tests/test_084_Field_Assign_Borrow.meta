@@ -1,0 +1,2 @@
+expect_error
+f.x = val rejected while f is borrowed

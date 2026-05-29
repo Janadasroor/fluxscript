@@ -1,0 +1,2 @@
+run
+Multi-ref-field struct: each ref field borrows its own target

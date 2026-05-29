@@ -1,0 +1,2 @@
+expect_error
+&f.x borrows f, blocks assignment

@@ -3981,6 +3981,28 @@ std::unique_ptr<StructDeclAST> Parser::ParseStructDecl()
         if (hasError()) return nullptr;
     }
 
+    // Optional lifetime params: struct Foo<'a, 'b>
+    std::vector<std::string> LifetimeParams;
+    if (CurTok == '<') {
+        getNextToken();
+        while (CurTok == static_cast<int>(TokenType::tok_lifetime)) {
+            std::string lt = m_lexer.IdentifierStr;
+            if (!lt.empty() && lt[0] == '\'')
+                lt = lt.substr(1);
+            LifetimeParams.push_back(lt);
+            getNextToken();
+            if (CurTok == ',')
+                getNextToken();
+            else
+                break;
+        }
+        if (CurTok != '>') {
+            ReportError("expected '>' to close lifetime parameters in struct declaration");
+            return nullptr;
+        }
+        getNextToken(); // eat >
+    }
+
     // Support both brace-delimited { ... } and end-delimited block syntax
     bool useBraceBlock = (CurTok == static_cast<int>(TokenType::tok_lbrace));
     if (useBraceBlock)
@@ -4011,7 +4033,7 @@ std::unique_ptr<StructDeclAST> Parser::ParseStructDecl()
         }
         getNextToken();
 
-        Fields.push_back({FieldName, parseTypeName(GenericParams)});
+        Fields.push_back({FieldName, parseTypeName(GenericParams, LifetimeParams)});
 
         if (useBraceBlock && CurTok == ',')
             getNextToken();
@@ -4038,6 +4060,8 @@ std::unique_ptr<StructDeclAST> Parser::ParseStructDecl()
     auto result = std::make_unique<StructDeclAST>(Name, std::move(Fields));
     if (!GenericParams.empty())
         result->setGenericParams(std::move(GenericParams));
+    if (!LifetimeParams.empty())
+        result->setLifetimeParams(std::move(LifetimeParams));
     return result;
 }
 
@@ -4045,22 +4069,41 @@ std::unique_ptr<StructDeclAST> Parser::ParseStructDecl()
 /// Handles built-in type keywords (double, int, bool, etc.),
 /// capitalized type names (Double, Int, Bool, etc.),
 /// unit type names (Voltage, Current, etc.),
-/// and generic type parameters.
-FluxType Parser::parseTypeName(const std::vector<std::string>& genericParams)
+/// generic type parameters, and lifetime parameters.
+FluxType Parser::parseTypeName(const std::vector<std::string>& genericParams,
+                               const std::vector<std::string>& lifetimeParams)
 {
-    // Built-in type keywords (lowercase)
-    if (CurTok == static_cast<int>(TokenType::tok_type_float) ||
-        CurTok == static_cast<int>(TokenType::tok_type_double) ||
-        CurTok == static_cast<int>(TokenType::tok_type_int) ||
-        CurTok == static_cast<int>(TokenType::tok_type_bool) ||
-        CurTok == static_cast<int>(TokenType::tok_type_void) ||
-        CurTok == static_cast<int>(TokenType::tok_type_complex) ||
-        CurTok == static_cast<int>(TokenType::tok_type_string) ||
-        CurTok == static_cast<int>(TokenType::tok_type_matrix) ||
-        CurTok == static_cast<int>(TokenType::tok_type_vector)) {
-        FluxType t = FluxType::fromToken(CurTok);
+    // Reference type: &T or &mut T or &'a T or &'a mut T
+    if (CurTok == static_cast<int>(TokenType::tok_bitwise_and)) {
         getNextToken();
-        return t;
+        std::string lifetime;
+        bool isMut = false;
+        // Check for lifetime annotation: &'a T
+        if (CurTok == static_cast<int>(TokenType::tok_lifetime)) {
+            lifetime = m_lexer.IdentifierStr;
+            // Remove the leading ' from the lifetime string
+            if (!lifetime.empty() && lifetime[0] == '\'')
+                lifetime = lifetime.substr(1);
+            // Validate lifetime is declared (if we are in a context with lifetime params)
+            if (!lifetimeParams.empty()) {
+                bool found = false;
+                for (const auto& lp : lifetimeParams) {
+                    if (lp == lifetime) { found = true; break; }
+                }
+                if (!found) {
+                    ReportError("lifetime '" + lifetime + "' is not declared in this scope");
+                    return FluxType(TypeKind::Double);
+                }
+            }
+            getNextToken();
+        }
+        // Check for mut: &'a mut T or &mut T
+        if (CurTok == static_cast<int>(TokenType::tok_identifier) && m_lexer.IdentifierStr == "mut") {
+            isMut = true;
+            getNextToken();
+        }
+        FluxType inner = parseTypeName(genericParams, lifetimeParams);
+        return FluxType::reference(inner, isMut, lifetime);
     }
 
     // Identifier — could be built-in type name (capitalized), unit type, or generic param
@@ -4464,8 +4507,34 @@ std::unique_ptr<ImplDeclAST> Parser::ParseImplDecl()
 {
     getNextToken(); // eat impl
 
+    // Optional lifetime params: impl<'a, 'b>
+    std::vector<std::string> LifetimeParams;
+    if (CurTok == '<') {
+        getNextToken();
+        while (CurTok == static_cast<int>(TokenType::tok_lifetime)) {
+            std::string lt = m_lexer.IdentifierStr;
+            if (!lt.empty() && lt[0] == '\'')
+                lt = lt.substr(1);
+            LifetimeParams.push_back(lt);
+            getNextToken();
+            if (CurTok == ',')
+                getNextToken();
+            else
+                break;
+        }
+        if (CurTok != '>') {
+            ReportError("expected '>' to close lifetime parameters in impl declaration");
+            return nullptr;
+        }
+        getNextToken(); // eat >
+    }
+    // Save and restore previous active lifetime params (for nested parsing)
+    std::vector<std::string> savedLifetimeParams = std::move(m_activeLifetimeParams);
+    m_activeLifetimeParams = LifetimeParams;
+
     if (CurTok != static_cast<int>(TokenType::tok_identifier)) {
         ReportError("expected type name after 'impl'");
+        m_activeLifetimeParams = std::move(savedLifetimeParams);
         return nullptr;
     }
     std::string FirstName = m_lexer.IdentifierStr;
@@ -4505,6 +4574,7 @@ std::unique_ptr<ImplDeclAST> Parser::ParseImplDecl()
         getNextToken(); // eat "for"
         if (CurTok != static_cast<int>(TokenType::tok_identifier)) {
             ReportError("expected type name after 'for' in trait impl");
+            m_activeLifetimeParams = std::move(savedLifetimeParams);
             return nullptr;
         }
         std::string TypeName = m_lexer.IdentifierStr;
@@ -4519,19 +4589,28 @@ std::unique_ptr<ImplDeclAST> Parser::ParseImplDecl()
         while (!isImplEnd()) {
             if (CurTok == static_cast<int>(TokenType::tok_def)) {
                 auto Method = ParseDefinition();
-                if (!Method)
+                if (!Method) {
+                    m_activeLifetimeParams = std::move(savedLifetimeParams);
                     return nullptr;
+                }
                 Methods.push_back(std::move(Method));
             } else {
                 ReportError("expected 'def' or 'end' in impl block");
+                m_activeLifetimeParams = std::move(savedLifetimeParams);
                 return nullptr;
             }
         }
 
-        if (!expectImplEnd()) return nullptr;
+        if (!expectImplEnd()) {
+            m_activeLifetimeParams = std::move(savedLifetimeParams);
+            return nullptr;
+        }
 
         auto impl = std::make_unique<ImplDeclAST>(TypeName, std::move(Methods));
         impl->setTraitName(TraitName);
+        if (!LifetimeParams.empty())
+            impl->setLifetimeParams(std::move(LifetimeParams));
+        m_activeLifetimeParams = std::move(savedLifetimeParams);
         return impl;
     }
 
@@ -4548,18 +4627,28 @@ std::unique_ptr<ImplDeclAST> Parser::ParseImplDecl()
     while (!isImplEnd()) {
         if (CurTok == static_cast<int>(TokenType::tok_def)) {
             auto Method = ParseDefinition();
-            if (!Method)
+            if (!Method) {
+                m_activeLifetimeParams = std::move(savedLifetimeParams);
                 return nullptr;
+            }
             Methods.push_back(std::move(Method));
         } else {
             ReportError("expected 'def' or 'end' in impl block");
+            m_activeLifetimeParams = std::move(savedLifetimeParams);
             return nullptr;
         }
     }
 
-    if (!expectImplEnd()) return nullptr;
+    if (!expectImplEnd()) {
+        m_activeLifetimeParams = std::move(savedLifetimeParams);
+        return nullptr;
+    }
 
-    return std::make_unique<ImplDeclAST>(TypeName, std::move(Methods));
+    auto impl = std::make_unique<ImplDeclAST>(TypeName, std::move(Methods));
+    if (!LifetimeParams.empty())
+        impl->setLifetimeParams(std::move(LifetimeParams));
+    m_activeLifetimeParams = std::move(savedLifetimeParams);
+    return impl;
 }
 
 bool Parser::ParseClassDecl(std::unique_ptr<StructDeclAST>* classStruct, std::unique_ptr<ImplDeclAST>* classImpl)
@@ -4618,7 +4707,7 @@ bool Parser::ParseClassDecl(std::unique_ptr<StructDeclAST>* classStruct, std::un
             }
             getNextToken();
 
-            Fields.push_back({FieldName, parseTypeName(GenericParams)});
+        Fields.emplace_back(FieldName, parseTypeName(GenericParams));
 
             if (CurTok == ';') {
                 getNextToken(); // optional semicolon

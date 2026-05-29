@@ -206,10 +206,13 @@ public:
     std::string handleTextDocumentHover(const std::string& params);
     std::string handleTextDocumentDefinition(const std::string& params);
     std::string handleTextDocumentReferences(const std::string& params);
+    std::string handleTextDocumentImplementation(const std::string& params);
+    std::string handleTextDocumentTypeDefinition(const std::string& params);
     std::string handleTextDocumentCodeAction(const std::string& params);
     std::string handleTextDocumentFormatting(const std::string& params);
     std::string handleTextDocumentSignatureHelp(const std::string& params);
     std::string handleTextDocumentDocumentSymbol(const std::string& params);
+    std::string handleTextDocumentPrepareRename(const std::string& params);
     std::string handleWorkspaceSymbol(const std::string& params);
 
     // Completion engine
@@ -227,6 +230,12 @@ public:
 
     // References provider
     std::vector<Location> getReferences(const std::string& uri, Position pos);
+
+    // Implementation provider (go to impl for traits/interfaces)
+    std::vector<Location> getImplementation(const std::string& uri, Position pos);
+
+    // Type definition provider (go to definition of the type)
+    std::vector<Location> getTypeDefinition(const std::string& uri, Position pos);
 
     // Code actions
     struct CodeAction
@@ -248,6 +257,15 @@ public:
         int activeParameter = 0;
     };
     SignatureHelpResult getSignatureHelp(const std::string& uri, Position pos);
+
+    // Prepare rename (validates rename is possible at position)
+    struct PrepareRenameResult
+    {
+        Range range;
+        std::string placeholder;
+        bool valid = false;
+    };
+    PrepareRenameResult getPrepareRename(const std::string& uri, Position pos);
 
 private:
     // JSON helpers

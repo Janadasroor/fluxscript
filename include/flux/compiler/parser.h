@@ -253,7 +253,8 @@ private:
     std::vector<FluxType> ParseGenericTypeArgs();
 
     // Helper: parse a type name from the current token
-    FluxType parseTypeName(const std::vector<std::string>& genericParams = {});
+    FluxType parseTypeName(const std::vector<std::string>& genericParams = {},
+                           const std::vector<std::string>& lifetimeParams = {});
 
     Lexer m_lexer;
     std::map<int, int> m_binopPrecedence;
@@ -262,6 +263,10 @@ private:
     // Populated by ParsePrototype() so ParseIdentifierExpr() and type
     // parsing can detect generic type references.
     std::vector<std::string> m_activeGenericParams;
+    // Active lifetime parameter names during impl block method parsing.
+    // Populated by ParseImplDecl() so parseTypeName() can validate lifetimes
+    // in method signatures without requiring each method to redeclare them.
+    std::vector<std::string> m_activeLifetimeParams;
     // User-defined struct and enum type names known to the parser.
     // Populated by ParseStructDecl() / ParseEnumDecl() so parseTypeName()
     // can recognize them and produce the correct FluxType for resolution at codegen time.

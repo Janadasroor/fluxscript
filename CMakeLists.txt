@@ -133,6 +133,7 @@ set(FLUXSCRIPT_SOURCES
     src/jit/zero_copy_data.cpp
     src/jit_engine.cpp
     src/runtime/flux_runtime.cpp
+    src/runtime/flux_llvm_bridge.cpp
     src/runtime/advanced_runtime.cpp
     src/runtime/time_domain_api.cpp
     src/runtime/model_quality_engine.cpp

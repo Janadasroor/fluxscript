@@ -97,7 +97,8 @@ enum class TypeKind
     ComplexMatrix, // Complex Matrix { std::complex<double>*, i32, i32 }
     Generic,      // Generic type parameter placeholder (e.g., T in def foo[T](x: T))
     UserStruct,   // User-defined struct type (e.g., struct Vec2 { x: Double, y: Double })
-    UserEnum      // User-defined enum type (e.g., enum Color { Red, Green, Blue })
+    UserEnum,     // User-defined enum type (e.g., enum Color { Red, Green, Blue })
+    Ref           // Reference type: &T, &'a T, &mut T
 };
 
 class FluxType
@@ -113,9 +114,53 @@ public:
     int EnumTypeId = 0;      // Enum type ID for TypeKind::UserEnum (index into CodegenContext.EnumTypes)
     llvm::Type* EnumLLVMType = nullptr; // LLVM tagged union type for UserEnum with payload
 
+    // Reference type fields (TypeKind::Ref)
+    FluxType* RefInnerType = nullptr;
+    bool RefIsMut = false;
+    std::string Lifetime;   // e.g., "a" for &'a T (empty = elided)
+
     FluxType(TypeKind K = TypeKind::Double, UnitDimensions D = {}) : Kind(K), Dimensions(D) {}
 
     FluxType(TypeKind K, int bits, int fract) : Kind(K), Bits(bits), Fract(fract) {}
+
+    // Destructor, copy/move for RefInnerType management
+    ~FluxType() { delete RefInnerType; }
+    FluxType(const FluxType& other)
+        : Kind(other.Kind), Dimensions(other.Dimensions), Bits(other.Bits), Fract(other.Fract),
+          GenericName(other.GenericName), StructTypeId(other.StructTypeId), StructLLVMType(other.StructLLVMType),
+          EnumTypeId(other.EnumTypeId), EnumLLVMType(other.EnumLLVMType),
+          RefIsMut(other.RefIsMut), Lifetime(other.Lifetime)
+    {
+        if (other.RefInnerType)
+            RefInnerType = new FluxType(*other.RefInnerType);
+    }
+    FluxType& operator=(const FluxType& other)
+    {
+        if (this != &other) {
+            Kind = other.Kind; Dimensions = other.Dimensions; Bits = other.Bits; Fract = other.Fract;
+            GenericName = other.GenericName; StructTypeId = other.StructTypeId; StructLLVMType = other.StructLLVMType;
+            EnumTypeId = other.EnumTypeId; EnumLLVMType = other.EnumLLVMType;
+            RefIsMut = other.RefIsMut; Lifetime = other.Lifetime;
+            delete RefInnerType;
+            RefInnerType = other.RefInnerType ? new FluxType(*other.RefInnerType) : nullptr;
+        }
+        return *this;
+    }
+
+    // Create a reference type: &T, &'a T, &mut T
+    static FluxType reference(const FluxType& Inner, bool isMut = false, const std::string& Lifetime = "")
+    {
+        FluxType T(TypeKind::Ref);
+        T.RefInnerType = new FluxType(Inner);
+        T.RefIsMut = isMut;
+        T.Lifetime = Lifetime;
+        return T;
+    }
+
+    bool isRef() const { return Kind == TypeKind::Ref; }
+    bool isMutRef() const { return Kind == TypeKind::Ref && RefIsMut; }
+    const FluxType& getRefInnerType() const { return *RefInnerType; }
+    const std::string& getRefLifetime() const { return Lifetime; }
 
     // Create a Generic type parameter placeholder
     static FluxType generic(const std::string& Name)
@@ -179,6 +224,9 @@ public:
             // Generic type parameters should be substituted before codegen.
             // Fall back to Double as a safe default.
             return llvm::Type::getDoubleTy(Context);
+        case TypeKind::Ref:
+            // &T is a pointer to the inner type
+            return llvm::PointerType::get(Context, 0);
         case TypeKind::UserStruct:
             // Fall back to Double if the struct type hasn't been resolved yet.
             return StructLLVMType ? StructLLVMType : llvm::Type::getDoubleTy(Context);
@@ -1698,6 +1746,7 @@ class StructDeclAST
     std::vector<std::pair<std::string, FluxType>> Fields;
     int StructTypeId;
     std::vector<std::string> GenericParams;
+    std::vector<std::string> LifetimeParams;
 
 public:
     StructDeclAST(const std::string& Name,
@@ -1717,6 +1766,9 @@ public:
     void setGenericParams(const std::vector<std::string>& Params) { GenericParams = Params; }
     const std::vector<std::string>& getGenericParams() const { return GenericParams; }
     bool isGeneric() const { return !GenericParams.empty(); }
+    void setLifetimeParams(const std::vector<std::string>& Params) { LifetimeParams = Params; }
+    const std::vector<std::string>& getLifetimeParams() const { return LifetimeParams; }
+    bool hasLifetimeParams() const { return !LifetimeParams.empty(); }
     void codegen(CodegenContext& context);
 };
 
@@ -1808,6 +1860,7 @@ class ImplDeclAST
     std::string TraitName;  // Empty for inherent impl, set for trait impl
     std::string ParentName;
     std::vector<std::unique_ptr<FunctionAST>> Methods;
+    std::vector<std::string> LifetimeParams;
 
 public:
     ImplDeclAST(const std::string& TypeName, std::vector<std::unique_ptr<FunctionAST>> Methods, const std::string& ParentName = "")
@@ -1821,6 +1874,9 @@ public:
     bool isTraitImpl() const { return !TraitName.empty(); }
     const std::string& getParentName() const { return ParentName; }
     void setParentName(const std::string& parent) { ParentName = parent; }
+    void setLifetimeParams(const std::vector<std::string>& Params) { LifetimeParams = Params; }
+    const std::vector<std::string>& getLifetimeParams() const { return LifetimeParams; }
+    bool hasLifetimeParams() const { return !LifetimeParams.empty(); }
     const std::vector<std::unique_ptr<FunctionAST>>& getMethods() const { return Methods; }
     std::vector<std::unique_ptr<FunctionAST>>& getMethods() { return Methods; }
     void codegen(CodegenContext& context);

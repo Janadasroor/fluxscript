@@ -245,6 +245,8 @@ std::string Lexer::tokenSpelling(int token)
     // Member access, transpose, namespace
     case TokenType::tok_transpose:
         return "'";
+    case TokenType::tok_lifetime:
+        return "'lifetime";
     case TokenType::tok_dot:
         return ".";
     case TokenType::tok_namespace_sep:
@@ -1229,8 +1231,19 @@ int Lexer::gettok()
         return static_cast<int>(TokenType::tok_bitwise_not);
     }
 
-    // Handle transpose operator
+    // Handle transpose operator or lifetime annotation
     if (m_lastChar == '\'') {
+        // ' followed by alpha = lifetime ('a, 'b), otherwise transpose
+        if (m_pos < m_input.size() && isalpha(m_input[m_pos])) {
+            std::string lifetime = "'";
+            advance(); // consume '
+            while (isalnum(m_lastChar) || m_lastChar == '_') {
+                lifetime += m_lastChar;
+                advance();
+            }
+            IdentifierStr = lifetime;
+            return static_cast<int>(TokenType::tok_lifetime);
+        }
         advance();
         return static_cast<int>(TokenType::tok_transpose);
     }

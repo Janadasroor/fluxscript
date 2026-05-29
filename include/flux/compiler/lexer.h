@@ -239,6 +239,7 @@ enum class TokenType
     // Method dispatch & traits
     tok_impl = -285,          // impl block
     tok_trait = -286,         // trait declaration
+    tok_lifetime = -310,      // lifetime annotation: 'a, 'b
 
     // Analysis Control
     tok_analysis = -116, // analysis directive

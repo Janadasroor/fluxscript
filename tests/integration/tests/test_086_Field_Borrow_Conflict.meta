@@ -1,0 +1,2 @@
+expect_error
+&f.x after &mut f.x rejected while f is immutably borrowed

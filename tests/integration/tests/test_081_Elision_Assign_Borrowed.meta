@@ -1,0 +1,2 @@
+expect_error
+Cannot assign to borrowed variable via ref-returning function

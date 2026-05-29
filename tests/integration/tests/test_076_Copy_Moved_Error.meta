@@ -1,0 +1,2 @@
+expect_error
+Copy Moved Error: use-after-move of ~Copy struct
