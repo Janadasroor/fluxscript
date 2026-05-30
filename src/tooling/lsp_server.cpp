@@ -173,6 +173,8 @@ std::string LspServer::processRequest(const std::string& jsonRequest)
         return makeResponse(id, handleTextDocumentLinkedEditingRange(params));
     } else if (method == "textDocument/foldingRange") {
         return makeResponse(id, handleTextDocumentFoldingRange(params));
+    } else if (method == "textDocument/documentLink") {
+        return makeResponse(id, handleTextDocumentDocumentLink(params));
     } else if (method == "workspace/symbol") {
         return makeResponse(id, handleWorkspaceSymbol(params));
     } else if (method == "$/cancelRequest") {
@@ -378,6 +380,9 @@ std::string LspServer::handleInitialize(const std::string& params)
             "typeHierarchyProvider": true,
             "linkedEditingRangeProvider": true,
             "foldingRangeProvider": true,
+            "documentLinkProvider": {
+                "resolveProvider": false
+            },
             "workspaceSymbolProvider": true
         },
         "serverInfo": {
@@ -2345,6 +2350,98 @@ std::vector<LspServer::FoldingRange> LspServer::getFoldingRanges(const std::stri
             range.kind = "comment";
             result.push_back(range);
         }
+    }
+
+    return result;
+}
+
+// ============================================================================
+// Document Link — clickable URLs in comments
+// ============================================================================
+
+std::string LspServer::handleTextDocumentDocumentLink(const std::string& params)
+{
+    std::string uri = jsonGet(params, "textDocument.uri");
+
+    auto links = getDocumentLinks(uri);
+
+    std::ostringstream oss;
+    oss << "[";
+    for (size_t i = 0; i < links.size(); ++i) {
+        if (i > 0)
+            oss << ",";
+        oss << "{";
+        oss << R"("range":{"start":{"line":)" << links[i].range.start.line;
+        oss << R"(,"character":)" << links[i].range.start.character << "},";
+        oss << R"("end":{"line":)" << links[i].range.end.line;
+        oss << R"(,"character":)" << links[i].range.end.character << "},";
+        oss << R"("target":")" << jsonEscape(links[i].target) << "\"";
+        if (!links[i].tooltip.empty()) {
+            oss << R"(,"tooltip":")" << jsonEscape(links[i].tooltip) << "\"";
+        }
+        oss << "}";
+    }
+    oss << "]";
+    return oss.str();
+}
+
+std::vector<LspServer::DocumentLink> LspServer::getDocumentLinks(const std::string& uri)
+{
+    std::vector<DocumentLink> result;
+    auto* doc = getDocument(uri);
+    if (!doc)
+        return result;
+
+    const std::string& text = doc->text;
+
+    // Scan for URLs: http://, https://, ftp://, file://
+    // Simple approach: find "://" and expand backward/forward to capture the full URL
+    std::vector<std::string> protocols = {"http://", "https://", "ftp://", "file://"};
+
+    size_t pos = 0;
+    while (pos < text.size()) {
+        // Find the next protocol prefix
+        size_t nearestPos = std::string::npos;
+        std::string foundProtocol;
+        for (auto& proto : protocols) {
+            size_t p = text.find(proto, pos);
+            if (p != std::string::npos && (nearestPos == std::string::npos || p < nearestPos)) {
+                nearestPos = p;
+                foundProtocol = proto;
+            }
+        }
+
+        if (nearestPos == std::string::npos)
+            break;
+
+        // Expand backward to find the start of the URL (handle markdown links)
+        size_t urlStart = nearestPos;
+        // If preceded by "(" (markdown), include it? No, just start from the protocol
+
+        // Expand forward to find end of URL (stop at whitespace, closing paren/bracket/quote)
+        size_t urlEnd = nearestPos + foundProtocol.size();
+        while (urlEnd < text.size() &&
+               text[urlEnd] != ' ' && text[urlEnd] != '\t' &&
+               text[urlEnd] != '\n' && text[urlEnd] != '\r' &&
+               text[urlEnd] != '"' && text[urlEnd] != '\'' &&
+               text[urlEnd] != '>' && text[urlEnd] != ']' &&
+               text[urlEnd] != ')' && text[urlEnd] != '|')
+        {
+            urlEnd++;
+        }
+
+        std::string url = text.substr(urlStart, urlEnd - urlStart);
+
+        if (!url.empty()) {
+            DocumentLink link;
+            link.range.start = doc->offsetToPosition(urlStart);
+            link.range.end = doc->offsetToPosition(urlEnd);
+            link.target = url;
+            link.tooltip = "Open " + url;
+            result.push_back(link);
+        }
+
+        pos = urlEnd;
     }
 
     return result;

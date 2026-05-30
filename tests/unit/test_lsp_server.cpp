@@ -898,6 +898,53 @@ void test_folding_range_empty() {
 }
 
 // ============================================================================
+// Test: Document Link
+// ============================================================================
+void test_document_link_https() {
+    TEST("documentLink: finds https URL in comment");
+    LspServer server;
+    std::string uri = "file:///test.flux";
+    std::string source = "// See https://example.com/docs for details";
+    server.openDocument(uri, "fluxscript", 1, source);
+
+    auto links = server.getDocumentLinks(uri);
+    TC(!links.empty(), "should find at least 1 link");
+    bool found = false;
+    for (auto& l : links) {
+        if (l.target.find("example.com") != std::string::npos) {
+            found = true;
+            break;
+        }
+    }
+    TC(found, "should find URL with example.com");
+    TPASS;
+}
+
+void test_document_link_multiple() {
+    TEST("documentLink: finds multiple URLs");
+    LspServer server;
+    std::string uri = "file:///test.flux";
+    std::string source = "// Docs: https://docs.example.com\n// API: https://api.example.com";
+    server.openDocument(uri, "fluxscript", 1, source);
+
+    auto links = server.getDocumentLinks(uri);
+    TC(links.size() >= 2, "should find at least 2 links, got " + std::to_string(links.size()));
+    TPASS;
+}
+
+void test_document_link_none() {
+    TEST("documentLink: returns empty for code with no URLs");
+    LspServer server;
+    std::string uri = "file:///test.flux";
+    std::string source = "def main() { var x = 1.0 }";
+    server.openDocument(uri, "fluxscript", 1, source);
+
+    auto links = server.getDocumentLinks(uri);
+    TC(links.empty(), "should find no links");
+    TPASS;
+}
+
+// ============================================================================
 // Test: Call Hierarchy — prepareCallHierarchy finds function at position
 // ============================================================================
 void test_call_hierarchy_prepare() {
@@ -1073,6 +1120,10 @@ int main() {
     test_folding_range_nested();
     test_folding_range_comments();
     test_folding_range_empty();
+
+    test_document_link_https();
+    test_document_link_multiple();
+    test_document_link_none();
 
     test_call_hierarchy_prepare();
     test_call_hierarchy_prepare_unknown();

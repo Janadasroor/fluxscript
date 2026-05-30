@@ -222,6 +222,7 @@ public:
     std::string handleTypeHierarchySubtypes(const std::string& params);
     std::string handleTextDocumentLinkedEditingRange(const std::string& params);
     std::string handleTextDocumentFoldingRange(const std::string& params);
+    std::string handleTextDocumentDocumentLink(const std::string& params);
     std::string handleWorkspaceSymbol(const std::string& params);
 
     // Completion engine
@@ -345,6 +346,15 @@ public:
         std::string kind; // "comment", "imports", "region"
     };
     std::vector<FoldingRange> getFoldingRanges(const std::string& uri);
+
+    // Document Link
+    struct DocumentLink
+    {
+        Range range;
+        std::string target;
+        std::string tooltip;
+    };
+    std::vector<DocumentLink> getDocumentLinks(const std::string& uri);
 
 private:
     // JSON helpers

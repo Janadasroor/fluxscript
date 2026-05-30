@@ -1115,6 +1115,77 @@ def test() -> Double { 1.0 }
 test()
 "
 
+# Test 73: Associated Types in Traits
+run_test "Associated Types" '
+trait Container {
+    type Item;
+    def get(self, index: Double) -> Item
+}
+
+struct MyBox {
+    value: Double
+}
+
+impl Container for MyBox {
+    type Item = Double;
+    def get(self, index: Double) -> Double {
+        self.value
+    }
+}
+
+def test() -> Double {
+    let b = MyBox { value: 42.0 };
+    let v = b.get(0.0);
+    assert(abs(v - 42.0) < 0.001, "associated type basic failed");
+    1.0
+}
+test()
+'
+
+# Test 74: Associated Types - multiple associated types
+run_test "Associated Types (multi)" '
+trait Pair {
+    type First;
+    type Second;
+    def first(self) -> First
+    def second(self) -> Second
+}
+
+struct TwoValues {
+    a: Double,
+    b: Double
+}
+
+impl Pair for TwoValues {
+    type First = Double;
+    type Second = Double;
+    def first(self) -> Double { self.a }
+    def second(self) -> Double { self.b }
+}
+
+def test() -> Double {
+    let t = TwoValues { a: 10.0, b: 20.0 };
+    let f = t.first();
+    let s = t.second();
+    assert(abs(f - 10.0) < 0.001, "assoc type first failed");
+    assert(abs(s - 20.0) < 0.001, "assoc type second failed");
+    1.0
+}
+test()
+'
+
+# Test 75: Associated Types - missing binding (error)
+run_check_test "Associated Types (missing)" "
+trait Container {
+    type Item;
+    def get(self, index: Double) -> Item
+}
+struct MyBox { value: Double }
+impl Container for MyBox {
+    def get(self, index: Double) -> Double { self.value }
+}
+"
+
 echo ""
 echo "========================================"  
 echo "  Results: $PASSED/$TOTAL passed"
