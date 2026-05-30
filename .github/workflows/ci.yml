@@ -166,7 +166,6 @@ jobs:
             -DClang_DIR="$(brew --prefix llvm@21)/lib/cmake/clang" \
             -DLLD_DIR="$(brew --prefix llvm@21)/lib/cmake/lld" \
             -DCMAKE_PREFIX_PATH="$(brew --prefix eigen)" \
-            -DEIGEN3_INCLUDE_DIR="$(brew --prefix)/include" \
             -DFLUX_BUILD_TESTS=ON
           cmake --build build -j$(sysctl -n hw.logicalcpu)
 
@@ -243,7 +242,7 @@ jobs:
         id: cache-eigen
         uses: actions/cache@v4
         with:
-          path: third_party/eigen
+          path: third_party/eigen-3.4.0
           key: eigen-3.4.0-win-v1
 
       - name: Download Eigen
@@ -251,11 +250,11 @@ jobs:
         shell: pwsh
         run: |
           curl -L -o eigen.zip https://gitlab.com/libeigen/eigen/-/archive/3.4.0/eigen-3.4.0.zip
-          New-Item -ItemType Directory -Force -Path third_party/eigen | Out-Null
-          & "C:\Program Files\7-Zip\7z.exe" x eigen.zip -othird_party/eigen -y | Out-Null
+          New-Item -ItemType Directory -Force -Path third_party | Out-Null
+          & "C:\Program Files\7-Zip\7z.exe" x eigen.zip -othird_party -y | Out-Null
 
       - name: Build
-        run: cmake -B build -DCMAKE_BUILD_TYPE=Release -DLLVM_DIR="$env:LLVM_DIR" -DEIGEN3_INCLUDE_DIR="${{ github.workspace }}\third_party\eigen" -DFLUX_BUILD_TESTS=ON
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Release -DLLVM_DIR="$env:LLVM_DIR" -DEIGEN3_INCLUDE_DIR="${{ github.workspace }}\third_party\eigen-3.4.0" -DFLUX_BUILD_TESTS=ON
 
       - name: Build
         run: cmake --build build --config Release

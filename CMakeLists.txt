@@ -60,23 +60,37 @@ else()
 endif()
 
 # Use system-installed Eigen (header-only)
-find_package(Eigen3 QUIET)
-if(NOT Eigen3_FOUND)
-    find_package(Eigen QUIET) # Eigen >= 5 renamed the config
-endif()
-if(Eigen3_FOUND OR Eigen_FOUND)
-    if(Eigen3_INCLUDE_DIRS)
-        set(EIGEN3_INCLUDE_DIR ${Eigen3_INCLUDE_DIRS})
-    elseif(Eigen_INCLUDE_DIRS)
-        set(EIGEN3_INCLUDE_DIR ${Eigen_INCLUDE_DIRS})
-    else()
-        set(EIGEN3_INCLUDE_DIR ${EIGEN3_INCLUDE_DIR})
+set(EIGEN3_INCLUDE_DIR "" CACHE PATH "Path to Eigen3 include directory (parent of Eigen/ directory)")
+if(EIGEN3_INCLUDE_DIR STREQUAL "")
+    find_package(Eigen3 QUIET)
+    if(NOT Eigen3_FOUND)
+        find_package(Eigen QUIET) # Eigen >= 5 renamed the config
     endif()
+    if(Eigen3_FOUND)
+        if(Eigen3_INCLUDE_DIRS)
+            set(EIGEN3_INCLUDE_DIR ${Eigen3_INCLUDE_DIRS})
+        elseif(Eigen3_INCLUDE_DIR)
+            set(EIGEN3_INCLUDE_DIR ${Eigen3_INCLUDE_DIR})
+        endif()
+    elseif(Eigen_FOUND)
+        if(Eigen_INCLUDE_DIRS)
+            set(EIGEN3_INCLUDE_DIR ${Eigen_INCLUDE_DIRS})
+        endif()
+    endif()
+endif()
+# Fallback: search for Eigen/Dense header
+if(EIGEN3_INCLUDE_DIR STREQUAL "")
+    find_path(EIGEN3_INCLUDE_DIR Eigen/Dense
+        HINTS /usr/include/eigen3 /usr/local/include/eigen3
+              /opt/homebrew/include/eigen3 /opt/homebrew/include
+              /opt/homebrew/opt/eigen/include
+        PATH_SUFFIXES eigen3)
+endif()
+if(EIGEN3_INCLUDE_DIR STREQUAL "")
+    message(WARNING "Eigen3 not found - Eigen-dependent features disabled")
+else()
     add_definitions(-DFLUX_HAVE_EIGEN)
     message(STATUS "Eigen found: ${EIGEN3_INCLUDE_DIR}")
-else()
-    message(WARNING "Eigen3 not found - Eigen-dependent features disabled")
-    set(EIGEN3_INCLUDE_DIR "")
 endif()
 
 # Use monolithic LLVM shared library on desktop Linux, component libs elsewhere
