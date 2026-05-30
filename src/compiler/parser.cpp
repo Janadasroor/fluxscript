@@ -4476,14 +4476,14 @@ std::unique_ptr<TraitDeclAST> Parser::ParseTraitDecl()
 
     while (!isBlockEnd()) {
         if (CurTok == static_cast<int>(TokenType::tok_identifier) && m_lexer.IdentifierStr == "type") {
-            getNextToken(); // eat type
-            if (CurTok != static_cast<int>(TokenType::tok_identifier)) {
-                ReportError("expected associated type name after 'type' in trait");
-                return nullptr;
-            }
-            AssociatedTypeNames.push_back(m_lexer.IdentifierStr);
-            getNextToken();
-        } else if (CurTok == static_cast<int>(TokenType::tok_def)) {
+                getNextToken(); // eat type
+                if (CurTok != static_cast<int>(TokenType::tok_identifier)) {
+                    ReportError("expected associated type name after 'type' in trait");
+                    return nullptr;
+                }
+                AssociatedTypeNames.push_back(m_lexer.IdentifierStr);
+                getNextToken();
+            } else if (CurTok == static_cast<int>(TokenType::tok_def)) {
             getNextToken(); // eat def
             if (CurTok != static_cast<int>(TokenType::tok_identifier)) {
                 ReportError("expected method name in trait");
@@ -4692,6 +4692,8 @@ std::unique_ptr<ImplDeclAST> Parser::ParseImplDecl()
                     FluxType concreteType = parseTypeName(std::vector<std::string>{});
                     assocTypeMappings[assocName] = concreteType;
                 }
+                if (CurTok == static_cast<int>(TokenType::tok_semicolon))
+                    getNextToken();
             } else {
                 ReportError("expected 'def', 'type', or 'end' in impl block");
                 m_activeLifetimeParams = std::move(savedLifetimeParams);

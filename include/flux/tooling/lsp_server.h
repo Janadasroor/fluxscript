@@ -224,6 +224,8 @@ public:
     std::string handleTextDocumentFoldingRange(const std::string& params);
     std::string handleTextDocumentDocumentLink(const std::string& params);
     std::string handleTextDocumentSelectionRange(const std::string& params);
+    std::string handleTextDocumentDocumentColor(const std::string& params);
+    std::string handleTextDocumentColorPresentation(const std::string& params);
     std::string handleWorkspaceSymbol(const std::string& params);
 
     // Completion engine
@@ -364,6 +366,27 @@ public:
         int parentIndex = -1;
     };
     std::vector<SelectionRangeItem> getSelectionRanges(const std::string& uri, const std::vector<Position>& positions);
+
+    // Document Color
+    struct Color
+    {
+        double red = 0.0;
+        double green = 0.0;
+        double blue = 0.0;
+        double alpha = 1.0;
+    };
+    struct ColorInformation
+    {
+        Range range;
+        Color color;
+    };
+    struct ColorPresentation
+    {
+        std::string label;
+        std::string textEdit; // JSON TextEdit if replacing
+    };
+    std::vector<ColorInformation> getDocumentColors(const std::string& uri);
+    std::vector<ColorPresentation> getColorPresentations(const std::string& uri, const Color& color, const Range& range);
 
 private:
     // JSON helpers

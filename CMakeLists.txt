@@ -59,16 +59,9 @@ else()
     set(NGSPICE_FOUND FALSE)
 endif()
 
-# Fetch Eigen via FetchContent (header-only, no build needed)
-include(FetchContent)
-FetchContent_Declare(
-    eigen
-    GIT_REPOSITORY https://gitlab.com/libeigen/eigen.git
-    GIT_TAG        3.4.0
-)
-set(EIGEN_MPL2_ONLY TRUE)
-FetchContent_MakeAvailable(eigen)
-set(EIGEN3_INCLUDE_DIR ${eigen_SOURCE_DIR})
+# Use system-installed Eigen (header-only)
+find_package(Eigen3 REQUIRED)
+set(EIGEN3_INCLUDE_DIR ${EIGEN3_INCLUDE_DIR})
 
 # Use monolithic LLVM shared library on desktop Linux, component libs elsewhere
 if(UNIX AND NOT ANDROID)

@@ -177,6 +177,10 @@ std::string LspServer::processRequest(const std::string& jsonRequest)
         return makeResponse(id, handleTextDocumentDocumentLink(params));
     } else if (method == "textDocument/selectionRange") {
         return makeResponse(id, handleTextDocumentSelectionRange(params));
+    } else if (method == "textDocument/documentColor") {
+        return makeResponse(id, handleTextDocumentDocumentColor(params));
+    } else if (method == "textDocument/colorPresentation") {
+        return makeResponse(id, handleTextDocumentColorPresentation(params));
     } else if (method == "workspace/symbol") {
         return makeResponse(id, handleWorkspaceSymbol(params));
     } else if (method == "$/cancelRequest") {
@@ -386,6 +390,7 @@ std::string LspServer::handleInitialize(const std::string& params)
                 "resolveProvider": false
             },
             "selectionRangeProvider": true,
+            "colorProvider": true,
             "workspaceSymbolProvider": true
         },
         "serverInfo": {
@@ -2710,6 +2715,185 @@ LspServer::SignatureHelpResult LspServer::getSignatureHelp(const std::string& ur
             return result;
         }
     }
+
+    return result;
+}
+
+// ============================================================================
+// Document Color — color picker for hex color literals
+// ============================================================================
+
+std::string LspServer::handleTextDocumentDocumentColor(const std::string& params)
+{
+    std::string uri = jsonGet(params, "textDocument.uri");
+
+    auto colors = getDocumentColors(uri);
+
+    std::ostringstream oss;
+    oss << "[";
+    for (size_t i = 0; i < colors.size(); ++i) {
+        if (i > 0)
+            oss << ",";
+        oss << R"({"range":{"start":{"line":)" << colors[i].range.start.line;
+        oss << R"(,"character":)" << colors[i].range.start.character << "},";
+        oss << R"("end":{"line":)" << colors[i].range.end.line;
+        oss << R"(,"character":)" << colors[i].range.end.character << "},";
+        oss << R"("color":{"red":)" << colors[i].color.red;
+        oss << R"(,"green":)" << colors[i].color.green;
+        oss << R"(,"blue":)" << colors[i].color.blue;
+        oss << R"(,"alpha":)" << colors[i].color.alpha << "}}";
+    }
+    oss << "]";
+    return oss.str();
+}
+
+std::string LspServer::handleTextDocumentColorPresentation(const std::string& params)
+{
+    std::string uri = jsonGet(params, "textDocument.uri");
+
+    double red = std::stod(jsonGet(params, "color.red"));
+    double green = std::stod(jsonGet(params, "color.green"));
+    double blue = std::stod(jsonGet(params, "color.blue"));
+    double alpha = std::stod(jsonGet(params, "color.alpha"));
+
+    int rangeStartLine = jsonGetInt(params, "range.start.line");
+    int rangeStartChar = jsonGetInt(params, "range.start.character");
+    int rangeEndLine = jsonGetInt(params, "range.end.line");
+    int rangeEndChar = jsonGetInt(params, "range.end.character");
+
+    Color color{red, green, blue, alpha};
+    Range range{{rangeStartLine, rangeStartChar}, {rangeEndLine, rangeEndChar}};
+
+    auto presentations = getColorPresentations(uri, color, range);
+
+    std::ostringstream oss;
+    oss << "[";
+    for (size_t i = 0; i < presentations.size(); ++i) {
+        if (i > 0)
+            oss << ",";
+        oss << R"({"label":")" << jsonEscape(presentations[i].label) << "\"";
+        if (!presentations[i].textEdit.empty()) {
+            oss << R"(,"textEdit":)" << presentations[i].textEdit;
+        }
+        oss << "}";
+    }
+    oss << "]";
+    return oss.str();
+}
+
+static bool parseHexColor(const std::string& str, LspServer::Color& color)
+{
+    if (str.empty() || str[0] != '#') return false;
+    std::string hex = str.substr(1);
+    if (hex.size() != 6 && hex.size() != 8) return false;
+
+    auto hexVal = [](char c) -> int {
+        if (c >= '0' && c <= '9') return c - '0';
+        if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+        if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+        return -1;
+    };
+
+    int r1 = hexVal(hex[0]), r2 = hexVal(hex[1]);
+    int g1 = hexVal(hex[2]), g2 = hexVal(hex[3]);
+    int b1 = hexVal(hex[4]), b2 = hexVal(hex[5]);
+    if (r1 < 0 || r2 < 0 || g1 < 0 || g2 < 0 || b1 < 0 || b2 < 0) return false;
+
+    color.red = (r1 * 16 + r2) / 255.0;
+    color.green = (g1 * 16 + g2) / 255.0;
+    color.blue = (b1 * 16 + b2) / 255.0;
+    color.alpha = 1.0;
+
+    if (hex.size() == 8) {
+        int a1 = hexVal(hex[6]), a2 = hexVal(hex[7]);
+        if (a1 >= 0 && a2 >= 0) {
+            color.alpha = (a1 * 16 + a2) / 255.0;
+        }
+    }
+
+    return true;
+}
+
+std::vector<LspServer::ColorInformation> LspServer::getDocumentColors(const std::string& uri)
+{
+    std::vector<ColorInformation> result;
+    auto* doc = getDocument(uri);
+    if (!doc)
+        return result;
+
+    const std::string& text = doc->text;
+
+    size_t pos = 0;
+    while (pos < text.size()) {
+        if (text[pos] == '#' && pos + 7 <= text.size()) {
+            std::string candidate = text.substr(pos, 7);
+            Color c;
+            if (parseHexColor(candidate, c)) {
+                ColorInformation info;
+                info.range.start = doc->offsetToPosition(pos);
+                info.range.end = doc->offsetToPosition(pos + 7);
+                info.color = c;
+                result.push_back(info);
+                pos += 7;
+                continue;
+            }
+            if (pos + 9 <= text.size()) {
+                candidate = text.substr(pos, 9);
+                if (parseHexColor(candidate, c)) {
+                    ColorInformation info;
+                    info.range.start = doc->offsetToPosition(pos);
+                    info.range.end = doc->offsetToPosition(pos + 9);
+                    info.color = c;
+                    result.push_back(info);
+                    pos += 9;
+                    continue;
+                }
+            }
+        }
+        pos++;
+    }
+
+    return result;
+}
+
+std::vector<LspServer::ColorPresentation> LspServer::getColorPresentations(
+    const std::string& uri, const Color& color, const Range& range)
+{
+    std::vector<ColorPresentation> result;
+    (void)uri;
+
+    int r = static_cast<int>(color.red * 255.0 + 0.5);
+    int g = static_cast<int>(color.green * 255.0 + 0.5);
+    int b = static_cast<int>(color.blue * 255.0 + 0.5);
+    int a = static_cast<int>(color.alpha * 255.0 + 0.5);
+
+    char hexBuf[10];
+    if (a < 255) {
+        snprintf(hexBuf, sizeof(hexBuf), "#%02X%02X%02X%02X", r, g, b, a);
+    } else {
+        snprintf(hexBuf, sizeof(hexBuf), "#%02X%02X%02X", r, g, b);
+    }
+
+    ColorPresentation hexPresentation;
+    hexPresentation.label = std::string(hexBuf);
+    std::ostringstream oss;
+    oss << R"({"range":{"start":{"line":)" << range.start.line;
+    oss << R"(,"character":)" << range.start.character << "},";
+    oss << R"("end":{"line":)" << range.end.line;
+    oss << R"(,"character":)" << range.end.character << "},";
+    oss << R"("newText":")" << hexBuf << "\"}";
+    hexPresentation.textEdit = oss.str();
+    result.push_back(hexPresentation);
+
+    char rgbBuf[64];
+    if (a < 255) {
+        snprintf(rgbBuf, sizeof(rgbBuf), "rgba(%d, %d, %d, %.2f)", r, g, b, color.alpha);
+    } else {
+        snprintf(rgbBuf, sizeof(rgbBuf), "rgb(%d, %d, %d)", r, g, b);
+    }
+    ColorPresentation rgbPresentation;
+    rgbPresentation.label = std::string(rgbBuf);
+    result.push_back(rgbPresentation);
 
     return result;
 }

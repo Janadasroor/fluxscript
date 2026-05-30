@@ -1006,6 +1006,68 @@ void test_selection_range_document() {
 }
 
 // ============================================================================
+// Test: Document Color
+// ============================================================================
+void test_document_color_hex() {
+    TEST("documentColor: finds #RRGGBB hex colors");
+    LspServer server;
+    std::string uri = "file:///test.flux";
+    std::string source = "// Color: #FF0000 and #00FF00";
+    server.openDocument(uri, "fluxscript", 1, source);
+
+    auto colors = server.getDocumentColors(uri);
+    TC(colors.size() >= 2, "should find at least 2 colors, got " + std::to_string(colors.size()));
+    TPASS;
+}
+
+void test_document_color_hex_values() {
+    TEST("documentColor: parses hex color values correctly");
+    LspServer server;
+    std::string uri = "file:///test.flux";
+    std::string source = "// Red: #FF0000";
+    server.openDocument(uri, "fluxscript", 1, source);
+
+    auto colors = server.getDocumentColors(uri);
+    TC(!colors.empty(), "should find the red color");
+    TC(colors[0].color.red > 0.99, "red channel should be ~1.0");
+    TC(colors[0].color.green < 0.01, "green channel should be ~0.0");
+    TC(colors[0].color.blue < 0.01, "blue channel should be ~0.0");
+    TPASS;
+}
+
+void test_document_color_none() {
+    TEST("documentColor: returns empty for code with no color values");
+    LspServer server;
+    std::string uri = "file:///test.flux";
+    std::string source = "def main() { var x = 42.0 }";
+    server.openDocument(uri, "fluxscript", 1, source);
+
+    auto colors = server.getDocumentColors(uri);
+    TC(colors.empty(), "should find no colors");
+    TPASS;
+}
+
+void test_document_color_presentation() {
+    TEST("documentColor: colorPresentation returns hex and rgb formats");
+    LspServer server;
+    std::string uri = "file:///test.flux";
+    LspServer::Color color{1.0, 0.5, 0.0, 1.0};
+    Range range{{0, 0}, {0, 7}};
+
+    auto presentations = server.getColorPresentations(uri, color, range);
+    TC(!presentations.empty(), "should return at least 1 presentation");
+    bool foundHex = false;
+    for (auto& p : presentations) {
+        if (p.label.find("#FF") != std::string::npos) {
+            foundHex = true;
+            break;
+        }
+    }
+    TC(foundHex, "should include hex format starting with #FF");
+    TPASS;
+}
+
+// ============================================================================
 // Test: Call Hierarchy — prepareCallHierarchy finds function at position
 // ============================================================================
 void test_call_hierarchy_prepare() {
@@ -1189,6 +1251,11 @@ int main() {
     test_selection_range_word();
     test_selection_range_line();
     test_selection_range_document();
+
+    test_document_color_hex();
+    test_document_color_hex_values();
+    test_document_color_none();
+    test_document_color_presentation();
 
     test_call_hierarchy_prepare();
     test_call_hierarchy_prepare_unknown();
