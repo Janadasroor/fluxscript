@@ -155,7 +155,12 @@ jobs:
 
       - name: Install deps
         run: |
-          brew install llvm@21 eigen
+          brew install llvm@21
+          # Download Eigen 3.4 (compatible header layout) instead of brew's Eigen 5
+          curl -L -o /tmp/eigen.tar.bz2 https://gitlab.com/libeigen/eigen/-/archive/3.4.0/eigen-3.4.0.tar.bz2
+          mkdir -p /tmp/eigen
+          tar xf /tmp/eigen.tar.bz2 -C /tmp/eigen --strip-components=1
+          echo "EIGEN3_INCLUDE_DIR=/tmp/eigen" >> $GITHUB_ENV
           brew link --overwrite llvm@21
 
       - name: Build
@@ -165,7 +170,7 @@ jobs:
             -DLLVM_DIR="$(brew --prefix llvm@21)/lib/cmake/llvm" \
             -DClang_DIR="$(brew --prefix llvm@21)/lib/cmake/clang" \
             -DLLD_DIR="$(brew --prefix llvm@21)/lib/cmake/lld" \
-            -DCMAKE_PREFIX_PATH="$(brew --prefix eigen)" \
+            -DEIGEN3_INCLUDE_DIR="$EIGEN3_INCLUDE_DIR" \
             -DFLUX_BUILD_TESTS=ON
           cmake --build build -j$(sysctl -n hw.logicalcpu)
 
@@ -251,7 +256,11 @@ jobs:
         run: |
           curl -L -o eigen.zip https://gitlab.com/libeigen/eigen/-/archive/3.4.0/eigen-3.4.0.zip
           New-Item -ItemType Directory -Force -Path third_party | Out-Null
-          & "C:\Program Files\7-Zip\7z.exe" x eigen.zip -othird_party -y | Out-Null
+          & "C:\Program Files\7-Zip\7z.exe" x eigen.zip -othird_party -y
+
+      - name: Show Eigen dir
+        shell: pwsh
+        run: Get-ChildItem -Path third_party -Recurse -Depth 2 | Select-Object -First 20
 
       - name: Build
         run: cmake -B build -DCMAKE_BUILD_TYPE=Release -DLLVM_DIR="$env:LLVM_DIR" -DEIGEN3_INCLUDE_DIR="${{ github.workspace }}\third_party\eigen-3.4.0" -DFLUX_BUILD_TESTS=ON

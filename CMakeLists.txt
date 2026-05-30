@@ -86,6 +86,18 @@ if(EIGEN3_INCLUDE_DIR STREQUAL "")
               /opt/homebrew/opt/eigen/include
         PATH_SUFFIXES eigen3)
 endif()
+# macOS brew fallback: Eigen 5 may be keg-only in Cellar
+if(EIGEN3_INCLUDE_DIR STREQUAL "")
+    execute_process(COMMAND brew --prefix eigen
+        OUTPUT_VARIABLE BREW_EIGEN_PREFIX
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+        ERROR_QUIET)
+    if(BREW_EIGEN_PREFIX)
+        find_path(EIGEN3_INCLUDE_DIR Eigen/Dense
+            HINTS ${BREW_EIGEN_PREFIX}/include
+            NO_DEFAULT_PATH)
+    endif()
+endif()
 if(EIGEN3_INCLUDE_DIR STREQUAL "")
     message(WARNING "Eigen3 not found - Eigen-dependent features disabled")
 else()
