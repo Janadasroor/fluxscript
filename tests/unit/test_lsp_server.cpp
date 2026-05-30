@@ -640,6 +640,109 @@ void test_code_lens_no_functions() {
     TPASS;
 }
 
+// ============================================================================
+// Test: Call Hierarchy — prepareCallHierarchy finds function at position
+// ============================================================================
+void test_call_hierarchy_prepare() {
+    TEST("callHierarchy: prepareCallHierarchy finds function definition");
+    LspServer server;
+    std::string uri = "file:///test.flux";
+    std::string source = "def foo() { }\ndef bar() { foo() }\ndef baz() { foo() }";
+    server.openDocument(uri, "fluxscript", 1, source);
+
+    auto item = server.getPrepareCallHierarchy(uri, {0, 5}); // cursor on 'foo'
+    TC(!item.name.empty(), "should return item for foo, got empty");
+    TC(item.name == "foo", "item name should be 'foo', got '" + item.name + "'");
+    TC(item.uri == uri, "item URI should match document");
+    TPASS;
+}
+
+void test_call_hierarchy_prepare_unknown() {
+    TEST("callHierarchy: prepareCallHierarchy returns empty for unknown word");
+    LspServer server;
+    std::string uri = "file:///test.flux";
+    server.openDocument(uri, "fluxscript", 1, "");
+
+    auto item = server.getPrepareCallHierarchy(uri, {0, 0});
+    TC(item.name.empty(), "should return empty item for unknown position");
+    TPASS;
+}
+
+void test_call_hierarchy_incoming() {
+    TEST("callHierarchy: incomingCalls finds callers");
+    LspServer server;
+    std::string uri = "file:///test.flux";
+    std::string source = "def foo() { }\ndef bar() { foo() }\ndef baz() { foo() }";
+    server.openDocument(uri, "fluxscript", 1, source);
+
+    auto item = server.getPrepareCallHierarchy(uri, {0, 5}); // cursor on 'foo'
+    TC(!item.name.empty(), "prepareCallHierarchy should find foo");
+
+    auto incoming = server.getCallHierarchyIncomingCalls(item);
+    TC(incoming.size() == 2, "foo should have 2 callers (bar, baz), got " + std::to_string(incoming.size()));
+
+    bool foundBar = false, foundBaz = false;
+    for (auto& c : incoming) {
+        if (c.from.name == "bar") foundBar = true;
+        if (c.from.name == "baz") foundBaz = true;
+        TC(!c.fromRanges.empty(), "each caller should have at least one fromRange");
+    }
+    TC(foundBar, "should find 'bar' as a caller");
+    TC(foundBaz, "should find 'baz' as a caller");
+    TPASS;
+}
+
+void test_call_hierarchy_outgoing() {
+    TEST("callHierarchy: outgoingCalls finds callees");
+    LspServer server;
+    std::string uri = "file:///test.flux";
+    std::string source = "def foo() { }\ndef bar() { foo() }\ndef baz() { bar() }";
+    server.openDocument(uri, "fluxscript", 1, source);
+
+    // Prepare bar to see its outgoing calls (should call foo)
+    auto item = server.getPrepareCallHierarchy(uri, {1, 5}); // cursor on 'bar'
+    TC(!item.name.empty(), "prepareCallHierarchy should find bar");
+
+    auto outgoing = server.getCallHierarchyOutgoingCalls(item);
+    TC(outgoing.size() >= 1, "bar should have at least 1 outgoing call, got " + std::to_string(outgoing.size()));
+    if (!outgoing.empty()) {
+        TC(outgoing[0].to.name == "foo", "bar should call 'foo', got '" + outgoing[0].to.name + "'");
+        TC(!outgoing[0].fromRanges.empty(), "should have at least one fromRange");
+    }
+    TPASS;
+}
+
+void test_call_hierarchy_incoming_none() {
+    TEST("callHierarchy: incomingCalls returns empty for uncalled function");
+    LspServer server;
+    std::string uri = "file:///test.flux";
+    std::string source = "def foo() { }\ndef bar() { }";
+    server.openDocument(uri, "fluxscript", 1, source);
+
+    auto item = server.getPrepareCallHierarchy(uri, {0, 5}); // cursor on 'foo'
+    TC(!item.name.empty(), "prepareCallHierarchy should find foo");
+
+    auto incoming = server.getCallHierarchyIncomingCalls(item);
+    TC(incoming.empty(), "foo should have no callers, got " + std::to_string(incoming.size()));
+    TPASS;
+}
+
+void test_call_hierarchy_outgoing_none() {
+    TEST("callHierarchy: outgoingCalls returns empty for leaf function");
+    LspServer server;
+    std::string uri = "file:///test.flux";
+    std::string source = "def foo() { }\ndef bar() { foo() }";
+    server.openDocument(uri, "fluxscript", 1, source);
+
+    // Foo is a leaf (calls nothing)
+    auto item = server.getPrepareCallHierarchy(uri, {0, 5}); // cursor on 'foo'
+    TC(!item.name.empty(), "prepareCallHierarchy should find foo");
+
+    auto outgoing = server.getCallHierarchyOutgoingCalls(item);
+    TC(outgoing.empty(), "foo should have no outgoing calls, got " + std::to_string(outgoing.size()));
+    TPASS;
+}
+
 void test_prepare_rename_empty_doc() {
     TEST("prepareRename: returns invalid for empty document");
     LspServer server;
@@ -693,6 +796,13 @@ int main() {
     test_code_lens_basic();
     test_code_lens_reference_count();
     test_code_lens_no_functions();
+
+    test_call_hierarchy_prepare();
+    test_call_hierarchy_prepare_unknown();
+    test_call_hierarchy_incoming();
+    test_call_hierarchy_outgoing();
+    test_call_hierarchy_incoming_none();
+    test_call_hierarchy_outgoing_none();
 
     std::cout << "\nResults: " << g_passed << " passed, " << g_failed << " failed\n";
     return g_failed > 0 ? 1 : 0;

@@ -60,10 +60,10 @@ run_test() {
     local cmd_status
     local test_output
     if [ -n "$TIMEOUT_CMD" ]; then
-        test_output=$($TIMEOUT_CMD 5 "$FLUX_BIN" flux_test.flux 2>&1)
+        test_output=$($TIMEOUT_CMD 5 "$FLUX_BIN" --cache=0 flux_test.flux 2>&1)
         cmd_status=$?
     else
-        test_output=$("$FLUX_BIN" flux_test.flux 2>&1)
+        test_output=$("$FLUX_BIN" --cache=0 flux_test.flux 2>&1)
         cmd_status=$?
     fi
 
@@ -94,11 +94,11 @@ run_check_test() {
     local cmd_status
     local test_output
     if [ -n "$TIMEOUT_CMD" ]; then
-        test_output=$($TIMEOUT_CMD 5 "$FLUX_BIN" --emit=check flux_test.flux 2>&1)
+        test_output=$($TIMEOUT_CMD 5 "$FLUX_BIN" --emit=check --cache=0 flux_test.flux 2>&1)
         echo "$test_output" | grep -q "OK"
         cmd_status=$?
     else
-        test_output=$("$FLUX_BIN" --emit=check flux_test.flux 2>&1)
+        test_output=$("$FLUX_BIN" --emit=check --cache=0 flux_test.flux 2>&1)
         echo "$test_output" | grep -q "OK"
         cmd_status=$?
     fi

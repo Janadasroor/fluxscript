@@ -157,6 +157,12 @@ std::string LspServer::processRequest(const std::string& jsonRequest)
         return makeResponse(id, handleTextDocumentPrepareRename(params));
     } else if (method == "textDocument/codeLens") {
         return makeResponse(id, handleTextDocumentCodeLens(params));
+    } else if (method == "textDocument/prepareCallHierarchy") {
+        return makeResponse(id, handleTextDocumentPrepareCallHierarchy(params));
+    } else if (method == "callHierarchy/incomingCalls") {
+        return makeResponse(id, handleCallHierarchyIncomingCalls(params));
+    } else if (method == "callHierarchy/outgoingCalls") {
+        return makeResponse(id, handleCallHierarchyOutgoingCalls(params));
     } else if (method == "workspace/symbol") {
         return makeResponse(id, handleWorkspaceSymbol(params));
     } else if (method == "$/cancelRequest") {
@@ -358,6 +364,7 @@ std::string LspServer::handleInitialize(const std::string& params)
             "codeLensProvider": {
                 "resolveProvider": false
             },
+            "callHierarchyProvider": true,
             "workspaceSymbolProvider": true
         },
         "serverInfo": {
@@ -1304,6 +1311,427 @@ std::string LspServer::handleTextDocumentCodeLens(const std::string& params)
     }
     oss << "]";
     return oss.str();
+}
+
+// ============================================================================
+// Call Hierarchy
+// ============================================================================
+
+std::string LspServer::handleTextDocumentPrepareCallHierarchy(const std::string& params)
+{
+    std::string uri = jsonGet(params, "textDocument.uri");
+    int line = jsonGetInt(params, "position.line");
+    int col = jsonGetInt(params, "position.character");
+
+    auto item = getPrepareCallHierarchy(uri, {line, col});
+    if (item.name.empty())
+        return "null";
+
+    std::ostringstream oss;
+    oss << R"({"name":")" << jsonEscape(item.name) << "\",";
+    oss << R"("kind":)" << item.kind << ",";
+    oss << R"("detail":")" << jsonEscape(item.detail) << "\",";
+    oss << R"("uri":")" << jsonEscape(item.uri) << "\",";
+    oss << R"("range":{"start":{"line":)" << item.range.start.line << ",";
+    oss << R"("character":)" << item.range.start.character << "},";
+    oss << R"("end":{"line":)" << item.range.end.line << ",";
+    oss << R"("character":)" << item.range.end.character << "},";
+    oss << R"("selectionRange":{"start":{"line":)" << item.selectionRange.start.line << ",";
+    oss << R"("character":)" << item.selectionRange.start.character << "},";
+    oss << R"("end":{"line":)" << item.selectionRange.end.line << ",";
+    oss << R"("character":)" << item.selectionRange.end.character << "}})";
+    return oss.str();
+}
+
+std::string LspServer::handleCallHierarchyIncomingCalls(const std::string& params)
+{
+    // Parse the item from params (sent by client in the request)
+    std::string name = jsonGet(params, "item.name");
+    std::string uri = jsonGet(params, "item.uri");
+    std::string detail = jsonGet(params, "item.detail");
+    int kind = jsonGetInt(params, "item.kind", 12);
+
+    // Parse range
+    int rangeStartLine = jsonGetInt(params, "item.range.start.line");
+    int rangeStartChar = jsonGetInt(params, "item.range.start.character");
+    int rangeEndLine = jsonGetInt(params, "item.range.end.line");
+    int rangeEndChar = jsonGetInt(params, "item.range.end.character");
+
+    // Parse selectionRange
+    int selStartLine = jsonGetInt(params, "item.selectionRange.start.line");
+    int selStartChar = jsonGetInt(params, "item.selectionRange.start.character");
+    int selEndLine = jsonGetInt(params, "item.selectionRange.end.line");
+    int selEndChar = jsonGetInt(params, "item.selectionRange.end.character");
+
+    CallHierarchyItem item;
+    item.name = name;
+    item.kind = kind;
+    item.detail = detail;
+    item.uri = uri;
+    item.range = {{rangeStartLine, rangeStartChar}, {rangeEndLine, rangeEndChar}};
+    item.selectionRange = {{selStartLine, selStartChar}, {selEndLine, selEndChar}};
+
+    auto calls = getCallHierarchyIncomingCalls(item);
+
+    std::ostringstream oss;
+    oss << "[";
+    for (size_t i = 0; i < calls.size(); ++i) {
+        if (i > 0)
+            oss << ",";
+        auto& call = calls[i];
+        oss << R"({"from":{"name":")" << jsonEscape(call.from.name) << "\",";
+        oss << R"("kind":)" << call.from.kind << ",";
+        oss << R"("detail":")" << jsonEscape(call.from.detail) << "\",";
+        oss << R"("uri":")" << jsonEscape(call.from.uri) << "\",";
+        oss << R"("range":{"start":{"line":)" << call.from.range.start.line << ",";
+        oss << R"("character":)" << call.from.range.start.character << "},";
+        oss << R"("end":{"line":)" << call.from.range.end.line << ",";
+        oss << R"("character":)" << call.from.range.end.character << "},";
+        oss << R"("selectionRange":{"start":{"line":)" << call.from.selectionRange.start.line << ",";
+        oss << R"("character":)" << call.from.selectionRange.start.character << "},";
+        oss << R"("end":{"line":)" << call.from.selectionRange.end.line << ",";
+        oss << R"("character":)" << call.from.selectionRange.end.character << "}},";
+        oss << R"("fromRanges":[)";
+        for (size_t j = 0; j < call.fromRanges.size(); ++j) {
+            if (j > 0)
+                oss << ",";
+            oss << R"({"start":{"line":)" << call.fromRanges[j].start.line;
+            oss << R"(,"character":)" << call.fromRanges[j].start.character << "},";
+            oss << R"("end":{"line":)" << call.fromRanges[j].end.line;
+            oss << R"(,"character":)" << call.fromRanges[j].end.character << "}}";
+        }
+        oss << "]}";
+    }
+    oss << "]";
+    return oss.str();
+}
+
+std::string LspServer::handleCallHierarchyOutgoingCalls(const std::string& params)
+{
+    // Parse the item from params
+    std::string name = jsonGet(params, "item.name");
+    std::string uri = jsonGet(params, "item.uri");
+    std::string detail = jsonGet(params, "item.detail");
+    int kind = jsonGetInt(params, "item.kind", 12);
+
+    int rangeStartLine = jsonGetInt(params, "item.range.start.line");
+    int rangeStartChar = jsonGetInt(params, "item.range.start.character");
+    int rangeEndLine = jsonGetInt(params, "item.range.end.line");
+    int rangeEndChar = jsonGetInt(params, "item.range.end.character");
+
+    int selStartLine = jsonGetInt(params, "item.selectionRange.start.line");
+    int selStartChar = jsonGetInt(params, "item.selectionRange.start.character");
+    int selEndLine = jsonGetInt(params, "item.selectionRange.end.line");
+    int selEndChar = jsonGetInt(params, "item.selectionRange.end.character");
+
+    CallHierarchyItem item;
+    item.name = name;
+    item.kind = kind;
+    item.detail = detail;
+    item.uri = uri;
+    item.range = {{rangeStartLine, rangeStartChar}, {rangeEndLine, rangeEndChar}};
+    item.selectionRange = {{selStartLine, selStartChar}, {selEndLine, selEndChar}};
+
+    auto calls = getCallHierarchyOutgoingCalls(item);
+
+    std::ostringstream oss;
+    oss << "[";
+    for (size_t i = 0; i < calls.size(); ++i) {
+        if (i > 0)
+            oss << ",";
+        auto& call = calls[i];
+        oss << R"({"to":{"name":")" << jsonEscape(call.to.name) << "\",";
+        oss << R"("kind":)" << call.to.kind << ",";
+        oss << R"("detail":")" << jsonEscape(call.to.detail) << "\",";
+        oss << R"("uri":")" << jsonEscape(call.to.uri) << "\",";
+        oss << R"("range":{"start":{"line":)" << call.to.range.start.line << ",";
+        oss << R"("character":)" << call.to.range.start.character << "},";
+        oss << R"("end":{"line":)" << call.to.range.end.line << ",";
+        oss << R"("character":)" << call.to.range.end.character << "},";
+        oss << R"("selectionRange":{"start":{"line":)" << call.to.selectionRange.start.line << ",";
+        oss << R"("character":)" << call.to.selectionRange.start.character << "},";
+        oss << R"("end":{"line":)" << call.to.selectionRange.end.line << ",";
+        oss << R"("character":)" << call.to.selectionRange.end.character << "}},";
+        oss << R"("fromRanges":[)";
+        for (size_t j = 0; j < call.fromRanges.size(); ++j) {
+            if (j > 0)
+                oss << ",";
+            oss << R"({"start":{"line":)" << call.fromRanges[j].start.line;
+            oss << R"(,"character":)" << call.fromRanges[j].start.character << "},";
+            oss << R"("end":{"line":)" << call.fromRanges[j].end.line;
+            oss << R"(,"character":)" << call.fromRanges[j].end.character << "}}";
+        }
+        oss << "]}";
+    }
+    oss << "]";
+    return oss.str();
+}
+
+LspServer::CallHierarchyItem LspServer::getPrepareCallHierarchy(const std::string& uri, Position pos)
+{
+    CallHierarchyItem result;
+    auto* doc = getDocument(uri);
+    if (!doc) return result;
+
+    std::string word = doc->getWordAtPosition(pos);
+    if (word.empty()) return result;
+
+    // Check if word is a function definition by scanning for `def <word>` pattern
+    std::string searchStr = "def " + word;
+    size_t searchPos = 0;
+    while ((searchPos = doc->text.find(searchStr, searchPos)) != std::string::npos) {
+        // Check word boundary after `def `
+        size_t nameStart = searchPos + 4;
+        size_t nameEnd = nameStart + word.size();
+        if (nameEnd <= doc->text.size()) {
+            std::string candidate = doc->text.substr(nameStart, word.size());
+            if (candidate == word) {
+                // Check that it's a whole word (followed by '(' or whitespace)
+                if (nameEnd < doc->text.size() &&
+                    (doc->text[nameEnd] == '(' || doc->text[nameEnd] == ' ' || doc->text[nameEnd] == '\n' ||
+                     doc->text[nameEnd] == '\t' || doc->text[nameEnd] == '\r' || doc->text[nameEnd] == '{')) {
+                    // Found the definition
+                    Position defStart = doc->offsetToPosition(searchPos);
+                    Position defEnd = doc->offsetToPosition(nameEnd);
+                    result.name = word;
+                    result.kind = 12; // Function
+                    result.detail = "function";
+                    result.uri = uri;
+                    result.range = {defStart, defEnd};
+                    result.selectionRange = {defStart, defEnd};
+                    return result;
+                }
+            }
+        }
+        searchPos += searchStr.size();
+    }
+
+    return result;
+}
+
+std::vector<LspServer::CallHierarchyIncomingCall> LspServer::getCallHierarchyIncomingCalls(
+    const CallHierarchyItem& item)
+{
+    std::vector<CallHierarchyIncomingCall> result;
+    auto* doc = getDocument(item.uri);
+    if (!doc || item.name.empty()) return result;
+
+    if (item.name.empty()) return result;
+
+    // Build a map of function name -> function definition location
+    // (for the "from" field of incoming calls)
+    std::map<std::string, CallHierarchyItem> funcDefs;
+    size_t pos = 0;
+    while ((pos = doc->text.find("def ", pos)) != std::string::npos) {
+        size_t nameStart = pos + 4;
+        size_t nameEnd = nameStart;
+        while (nameEnd < doc->text.size() && (isalnum(doc->text[nameEnd]) || doc->text[nameEnd] == '_'))
+            nameEnd++;
+
+        std::string funcName = doc->text.substr(nameStart, nameEnd - nameStart);
+        if (!funcName.empty() && funcName != item.name) {
+            CallHierarchyItem ci;
+            ci.name = funcName;
+            ci.kind = 12;
+            ci.detail = "function";
+            ci.uri = item.uri;
+            Position start = doc->offsetToPosition(pos);
+            Position end = doc->offsetToPosition(nameEnd);
+            ci.range = {start, end};
+            ci.selectionRange = {start, end};
+            funcDefs[funcName] = ci;
+        }
+        pos = nameEnd;
+    }
+
+    // Find all calls to item.name in the document
+    // Skip the definition itself
+    std::string defPattern = "def " + item.name;
+    size_t defPos = doc->text.find(defPattern);
+    size_t defEnd = defPos != std::string::npos ? defPos + defPattern.size() : 0;
+
+    std::map<std::string, std::vector<Range>> callers; // caller func name -> ranges
+
+    size_t searchPos = 0;
+    while ((searchPos = doc->text.find(item.name, searchPos)) != std::string::npos) {
+        // Skip the definition line
+        if (defPos != std::string::npos && searchPos >= defPos - 4 &&
+            searchPos < defEnd)
+        {
+            searchPos += item.name.size();
+            continue;
+        }
+
+        // Check word boundaries
+        bool leftOk = searchPos == 0 ||
+                      (!isalnum(doc->text[searchPos - 1]) && doc->text[searchPos - 1] != '_');
+        bool rightOk = (searchPos + item.name.size() >= doc->text.size()) ||
+                       (!isalnum(doc->text[searchPos + item.name.size()]) &&
+                        doc->text[searchPos + item.name.size()] != '_');
+        if (leftOk && rightOk) {
+            Range callRange = {doc->offsetToPosition(searchPos),
+                               doc->offsetToPosition(searchPos + item.name.size())};
+
+            // Find which function this call is inside
+            // Scan backward to find the nearest `def ... (` before this position
+            int callLine = callRange.start.line;
+            // Simple approach: scan backward to find the nearest `def` before this line
+            size_t backtrack = searchPos;
+            std::string callerName;
+            while (backtrack > 0) {
+                // Find `def ` going backward
+                size_t prevDef = doc->text.rfind("def ", backtrack);
+                if (prevDef == std::string::npos || prevDef < 10) break;
+                size_t cnStart = prevDef + 4;
+                size_t cnEnd = cnStart;
+                while (cnEnd < doc->text.size() &&
+                       (isalnum(doc->text[cnEnd]) || doc->text[cnEnd] == '_'))
+                    cnEnd++;
+                callerName = doc->text.substr(cnStart, cnEnd - cnStart);
+                if (!callerName.empty()) {
+                    // Check this def isn't the target itself
+                    if (callerName != item.name) {
+                        break;
+                    }
+                }
+                if (backtrack < 10) break;
+                backtrack = prevDef - 1;
+            }
+
+            if (!callerName.empty() && callerName != item.name) {
+                callers[callerName].push_back(callRange);
+            }
+        }
+        searchPos += item.name.size();
+    }
+
+    // Build result
+    for (auto& [callerName, ranges] : callers) {
+        CallHierarchyIncomingCall call;
+        if (funcDefs.count(callerName)) {
+            call.from = funcDefs[callerName];
+        } else {
+            call.from.name = callerName;
+            call.from.kind = 12;
+            call.from.detail = "function";
+            call.from.uri = item.uri;
+        }
+        call.fromRanges = ranges;
+        result.push_back(call);
+    }
+
+    return result;
+}
+
+std::vector<LspServer::CallHierarchyOutgoingCall> LspServer::getCallHierarchyOutgoingCalls(
+    const CallHierarchyItem& item)
+{
+    std::vector<CallHierarchyOutgoingCall> result;
+    auto* doc = getDocument(item.uri);
+    if (!doc || item.name.empty()) return result;
+
+    // Find the definition range of this function
+    std::string defPattern = "def " + item.name;
+    size_t defPos = doc->text.find(defPattern);
+    if (defPos == std::string::npos) return result;
+
+    // Find the body start -- scan for `{` after `def name`
+    size_t bodyStart = defPos + defPattern.size();
+    size_t bracePos = doc->text.find('{', bodyStart);
+    if (bracePos == std::string::npos) return result;
+
+    // Find matching closing brace (simple depth count)
+    size_t bodyEnd = bracePos + 1;
+    int depth = 1;
+    while (bodyEnd < doc->text.size() && depth > 0) {
+        if (doc->text[bodyEnd] == '{') depth++;
+        else if (doc->text[bodyEnd] == '}') depth--;
+        bodyEnd++;
+    }
+
+    // Build a map of function name -> definition item for all functions
+    std::map<std::string, CallHierarchyItem> funcDefs;
+    // Also track def positions to exclude them from call detection
+    std::map<std::string, Position> defPositions;
+
+    size_t scanPos = 0;
+    while ((scanPos = doc->text.find("def ", scanPos)) != std::string::npos) {
+        size_t ns = scanPos + 4;
+        size_t ne = ns;
+        while (ne < doc->text.size() && (isalnum(doc->text[ne]) || doc->text[ne] == '_'))
+            ne++;
+        std::string fn = doc->text.substr(ns, ne - ns);
+        if (!fn.empty()) {
+            CallHierarchyItem ci;
+            ci.name = fn;
+            ci.kind = 12;
+            ci.detail = "function";
+            ci.uri = item.uri;
+            Position s = doc->offsetToPosition(scanPos);
+            Position e = doc->offsetToPosition(ne);
+            ci.range = {s, e};
+            ci.selectionRange = {s, e};
+            funcDefs[fn] = ci;
+            defPositions[fn] = s;
+        }
+        scanPos = ne;
+    }
+
+    // Scan the body for function calls (identifier followed by '(')
+    std::map<std::string, std::vector<Range>> callees;
+
+    size_t i = bracePos;
+    while (i < bodyEnd) {
+        // Skip string literals
+        if (doc->text[i] == '"') {
+            i++;
+            while (i < doc->text.size() && doc->text[i] != '"') {
+                if (doc->text[i] == '\\') i++;
+                i++;
+            }
+            i++;
+            continue;
+        }
+
+        // Check for identifier pattern: word followed by '('
+        if (isalpha(doc->text[i]) || doc->text[i] == '_') {
+            size_t ws = i;
+            while (i < doc->text.size() && (isalnum(doc->text[i]) || doc->text[i] == '_'))
+                i++;
+            std::string callee = doc->text.substr(ws, i - ws);
+
+            // After identifier, check for '(' — indicates a function call
+            size_t j = i;
+            while (j < doc->text.size() && (doc->text[j] == ' ' || doc->text[j] == '\t'))
+                j++;
+            if (j < doc->text.size() && doc->text[j] == '(') {
+                // It's a function call
+                if (!callee.empty() && callee != item.name && funcDefs.count(callee)) {
+                    Range callRange = {doc->offsetToPosition(ws), doc->offsetToPosition(i)};
+                    callees[callee].push_back(callRange);
+                }
+            }
+        } else {
+            i++;
+        }
+    }
+
+    // Build result
+    for (auto& [calleeName, ranges] : callees) {
+        CallHierarchyOutgoingCall call;
+        if (funcDefs.count(calleeName)) {
+            call.to = funcDefs[calleeName];
+        } else {
+            call.to.name = calleeName;
+            call.to.kind = 12;
+            call.to.detail = "function";
+            call.to.uri = item.uri;
+        }
+        call.fromRanges = ranges;
+        result.push_back(call);
+    }
+
+    return result;
 }
 
 // ============================================================================

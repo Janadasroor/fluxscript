@@ -214,6 +214,9 @@ public:
     std::string handleTextDocumentDocumentSymbol(const std::string& params);
     std::string handleTextDocumentPrepareRename(const std::string& params);
     std::string handleTextDocumentCodeLens(const std::string& params);
+    std::string handleTextDocumentPrepareCallHierarchy(const std::string& params);
+    std::string handleCallHierarchyIncomingCalls(const std::string& params);
+    std::string handleCallHierarchyOutgoingCalls(const std::string& params);
     std::string handleWorkspaceSymbol(const std::string& params);
 
     // Completion engine
@@ -276,6 +279,33 @@ public:
         std::string command; // command identifier
     };
     std::vector<CodeLensItem> getCodeLenses(const std::string& uri);
+
+    // Call Hierarchy
+    struct CallHierarchyItem
+    {
+        std::string name;
+        int kind = 12; // 12 = Function
+        std::string detail;
+        std::string uri;
+        Range range;
+        Range selectionRange;
+    };
+
+    struct CallHierarchyIncomingCall
+    {
+        CallHierarchyItem from;
+        std::vector<Range> fromRanges;
+    };
+
+    struct CallHierarchyOutgoingCall
+    {
+        CallHierarchyItem to;
+        std::vector<Range> fromRanges;
+    };
+
+    CallHierarchyItem getPrepareCallHierarchy(const std::string& uri, Position pos);
+    std::vector<CallHierarchyIncomingCall> getCallHierarchyIncomingCalls(const CallHierarchyItem& item);
+    std::vector<CallHierarchyOutgoingCall> getCallHierarchyOutgoingCalls(const CallHierarchyItem& item);
 
 private:
     // JSON helpers
