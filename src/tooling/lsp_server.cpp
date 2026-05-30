@@ -175,6 +175,8 @@ std::string LspServer::processRequest(const std::string& jsonRequest)
         return makeResponse(id, handleTextDocumentFoldingRange(params));
     } else if (method == "textDocument/documentLink") {
         return makeResponse(id, handleTextDocumentDocumentLink(params));
+    } else if (method == "textDocument/selectionRange") {
+        return makeResponse(id, handleTextDocumentSelectionRange(params));
     } else if (method == "workspace/symbol") {
         return makeResponse(id, handleWorkspaceSymbol(params));
     } else if (method == "$/cancelRequest") {
@@ -383,6 +385,7 @@ std::string LspServer::handleInitialize(const std::string& params)
             "documentLinkProvider": {
                 "resolveProvider": false
             },
+            "selectionRangeProvider": true,
             "workspaceSymbolProvider": true
         },
         "serverInfo": {
@@ -2442,6 +2445,187 @@ std::vector<LspServer::DocumentLink> LspServer::getDocumentLinks(const std::stri
         }
 
         pos = urlEnd;
+    }
+
+    return result;
+}
+
+// ============================================================================
+// Selection Range — smart selection expansion
+// ============================================================================
+
+std::string LspServer::handleTextDocumentSelectionRange(const std::string& params)
+{
+    std::string uri = jsonGet(params, "textDocument.uri");
+
+    // Parse positions array from params
+    std::vector<Position> positions;
+    size_t arrStart = params.find("\"positions\"");
+    if (arrStart != std::string::npos) {
+        size_t bracketPos = params.find('[', arrStart);
+        if (bracketPos != std::string::npos) {
+            size_t endBracket = params.find(']', bracketPos);
+            std::string arrContent = params.substr(bracketPos + 1, endBracket - bracketPos - 1);
+
+            size_t linePos = 0;
+            while ((linePos = arrContent.find("\"line\"", linePos)) != std::string::npos) {
+                size_t colon = arrContent.find(':', linePos);
+                size_t numStart = colon + 1;
+                while (numStart < arrContent.size() && arrContent[numStart] == ' ') numStart++;
+                int line = std::stoi(arrContent.substr(numStart));
+
+                size_t charPos = arrContent.find("\"character\"", linePos);
+                int ch = 0;
+                if (charPos != std::string::npos) {
+                    size_t charColon = arrContent.find(':', charPos);
+                    size_t charNumStart = charColon + 1;
+                    while (charNumStart < arrContent.size() && arrContent[charNumStart] == ' ')
+                        charNumStart++;
+                    ch = std::stoi(arrContent.substr(charNumStart));
+                }
+                positions.push_back({line, ch});
+                linePos = charPos + 10;
+            }
+        }
+    }
+
+    if (positions.empty())
+        return "null";
+
+    auto result = getSelectionRanges(uri, positions);
+
+    std::ostringstream oss;
+    oss << "[";
+    for (size_t i = 0; i < result.size(); ++i) {
+        if (i > 0)
+            oss << ",";
+        oss << R"({"range":{"start":{"line":)" << result[i].range.start.line;
+        oss << R"(,"character":)" << result[i].range.start.character << "},";
+        oss << R"("end":{"line":)" << result[i].range.end.line;
+        oss << R"(,"character":)" << result[i].range.end.character << "},";
+        oss << R"("parentIndex":)" << result[i].parentIndex << "}";
+    }
+    oss << "]";
+    return oss.str();
+}
+
+std::vector<LspServer::SelectionRangeItem> LspServer::getSelectionRanges(
+    const std::string& uri, const std::vector<Position>& positions)
+{
+    std::vector<SelectionRangeItem> result;
+    auto* doc = getDocument(uri);
+    if (!doc)
+        return result;
+
+    for (auto& pos : positions) {
+        // Build a hierarchy from smallest to largest
+        std::vector<Range> hierarchy;
+
+        std::string word = doc->getWordAtPosition(pos);
+        if (word.empty()) {
+            // No word — just use the cursor position as a single point range
+            hierarchy.push_back({pos, pos});
+        } else {
+            // Level 1: Word range
+            size_t offset = doc->positionToOffset(pos);
+            size_t wordStart = offset;
+            while (wordStart > 0 &&
+                   (isalnum(doc->text[wordStart - 1]) || doc->text[wordStart - 1] == '_'))
+                wordStart--;
+            size_t wordEnd = offset;
+            while (wordEnd < doc->text.size() &&
+                   (isalnum(doc->text[wordEnd]) || doc->text[wordEnd] == '_'))
+                wordEnd++;
+            hierarchy.push_back({doc->offsetToPosition(wordStart),
+                                 doc->offsetToPosition(wordEnd)});
+        }
+
+        // Level 2: Current line
+        size_t lineStart = 0;
+        int lineNum = 0;
+        for (size_t k = 0; k < doc->text.size(); ++k) {
+            if (lineNum == pos.line) {
+                lineStart = k;
+                break;
+            }
+            if (doc->text[k] == '\n')
+                lineNum++;
+        }
+        size_t lineEnd = doc->text.find('\n', lineStart);
+        if (lineEnd == std::string::npos)
+            lineEnd = doc->text.size();
+        // Trim trailing whitespace
+        size_t trimmedEnd = lineEnd;
+        while (trimmedEnd > lineStart &&
+               (doc->text[trimmedEnd - 1] == ' ' || doc->text[trimmedEnd - 1] == '\t' ||
+                doc->text[trimmedEnd - 1] == '\r'))
+            trimmedEnd--;
+        hierarchy.push_back({doc->offsetToPosition(lineStart),
+                             doc->offsetToPosition(trimmedEnd)});
+
+        // Level 3: Nearest enclosing brace block
+        // Scan backward for { and forward for matching }
+        int braceStartLine = -1;
+        int braceEndLine = -1;
+        size_t offset = doc->positionToOffset(pos);
+        size_t searchBack = offset;
+        while (searchBack > 0) {
+            searchBack--;
+            if (doc->text[searchBack] == '{') {
+                // Found opening brace — count lines
+                int bl = 0;
+                for (size_t k = 0; k < searchBack; ++k)
+                    if (doc->text[k] == '\n') bl++;
+                braceStartLine = bl;
+                break;
+            }
+            if (doc->text[searchBack] == '}')
+                break; // Don't cross brace boundaries
+        }
+
+        if (braceStartLine >= 0) {
+            // Find matching closing brace
+            size_t searchForward = searchBack + 1;
+            int depth = 1;
+            while (searchForward < doc->text.size() && depth > 0) {
+                if (doc->text[searchForward] == '{') depth++;
+                else if (doc->text[searchForward] == '}') depth--;
+                searchForward++;
+            }
+            if (depth == 0) {
+                int el = 0;
+                for (size_t k = 0; k < searchForward; ++k)
+                    if (doc->text[k] == '\n') el++;
+                braceEndLine = el - 1; // end brace line
+                if (braceEndLine > braceStartLine) {
+                    hierarchy.push_back({{braceStartLine, 0}, {braceEndLine, 0}});
+                }
+            }
+        }
+
+        // Level 4: Whole document
+        int lastLine = 0;
+        for (size_t k = 0; k < doc->text.size(); ++k)
+            if (doc->text[k] == '\n') lastLine++;
+        hierarchy.push_back({{0, 0}, {lastLine, 0}});
+
+        // Build SelectionRange items with parent links (parent = larger one, i.e. next in array)
+        // The LSP spec: array where each element has range + parentIndex.
+        // parentIndex points to the parent (larger range) in the array.
+        // We'll add them smallest-first and link parent to the next.
+        std::vector<SelectionRangeItem> items;
+        for (size_t i = 0; i < hierarchy.size(); ++i) {
+            SelectionRangeItem item;
+            item.range = hierarchy[i];
+            // Parent is the next (larger) range, unless this is the last
+            if (i + 1 < hierarchy.size())
+                item.parentIndex = static_cast<int>(items.size() + 1);
+            else
+                item.parentIndex = -1;
+            items.push_back(item);
+        }
+
+        result.insert(result.end(), items.begin(), items.end());
     }
 
     return result;

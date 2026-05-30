@@ -223,6 +223,7 @@ public:
     std::string handleTextDocumentLinkedEditingRange(const std::string& params);
     std::string handleTextDocumentFoldingRange(const std::string& params);
     std::string handleTextDocumentDocumentLink(const std::string& params);
+    std::string handleTextDocumentSelectionRange(const std::string& params);
     std::string handleWorkspaceSymbol(const std::string& params);
 
     // Completion engine
@@ -355,6 +356,14 @@ public:
         std::string tooltip;
     };
     std::vector<DocumentLink> getDocumentLinks(const std::string& uri);
+
+    // Selection Range
+    struct SelectionRangeItem
+    {
+        Range range;
+        int parentIndex = -1;
+    };
+    std::vector<SelectionRangeItem> getSelectionRanges(const std::string& uri, const std::vector<Position>& positions);
 
 private:
     // JSON helpers

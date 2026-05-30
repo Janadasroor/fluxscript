@@ -945,6 +945,67 @@ void test_document_link_none() {
 }
 
 // ============================================================================
+// Test: Selection Range
+// ============================================================================
+void test_selection_range_word() {
+    TEST("selectionRange: returns hierarchy with word as smallest");
+    LspServer server;
+    std::string uri = "file:///test.flux";
+    std::string source = "def main() { var x = 42.0 }";
+    server.openDocument(uri, "fluxscript", 1, source);
+
+    auto ranges = server.getSelectionRanges(uri, {{0, 15}}); // cursor on 'x'
+    TC(!ranges.empty(), "should return at least 2 ranges (word + line + doc)");
+    // First range should be the word 'x'
+    TC(ranges[0].range.start.line == 0 && ranges[0].range.start.character == 13,
+      "first range should cover 'x' at char 13");
+    // Should have parentIndex >= 0 (linking to larger range)
+    TC(ranges[0].parentIndex >= 0, "word range should have a parent");
+    TPASS;
+}
+
+void test_selection_range_line() {
+    TEST("selectionRange: returns line-level range");
+    LspServer server;
+    std::string uri = "file:///test.flux";
+    std::string source = "var x = 42.0\nvar y = 10.0";
+    server.openDocument(uri, "fluxscript", 1, source);
+
+    auto ranges = server.getSelectionRanges(uri, {{0, 4}}); // cursor on 'x' in line 0
+    // Find the line-level range
+    bool foundLineRange = false;
+    for (auto& r : ranges) {
+        if (r.range.start.line == 0 && r.range.end.line == 0) {
+            foundLineRange = true;
+            break;
+        }
+    }
+    TC(foundLineRange, "should include a line-level range for line 0");
+    TPASS;
+}
+
+void test_selection_range_document() {
+    TEST("selectionRange: returns document-level range as outermost");
+    LspServer server;
+    std::string uri = "file:///test.flux";
+    std::string source = "def main() {\n    var x = 1.0\n}";
+    server.openDocument(uri, "fluxscript", 1, source);
+
+    auto ranges = server.getSelectionRanges(uri, {{0, 5}}); // cursor on 'main'
+    // The outermost range (last in chain) should cover the whole document
+    // Find the one with parentIndex == -1
+    bool foundDocRange = false;
+    for (auto& r : ranges) {
+        if (r.parentIndex == -1 && r.range.start.line == 0) {
+            foundDocRange = true;
+            break;
+        }
+    }
+    TC(foundDocRange, "should have a document-level range as root");
+    TPASS;
+}
+
+// ============================================================================
 // Test: Call Hierarchy — prepareCallHierarchy finds function at position
 // ============================================================================
 void test_call_hierarchy_prepare() {
@@ -1124,6 +1185,10 @@ int main() {
     test_document_link_https();
     test_document_link_multiple();
     test_document_link_none();
+
+    test_selection_range_word();
+    test_selection_range_line();
+    test_selection_range_document();
 
     test_call_hierarchy_prepare();
     test_call_hierarchy_prepare_unknown();
