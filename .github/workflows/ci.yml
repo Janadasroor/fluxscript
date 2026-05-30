@@ -44,7 +44,7 @@ jobs:
   # Linux x86_64 — Docker for glibc 2.31 compatibility (ubuntu:20.04)
   # ------------------------------------------------------------------
   linux-x86_64:
-    if: github.event_name != 'workflow_dispatch' || inputs['linux-x86_64'] == 'true'
+    if: github.event_name != 'workflow_dispatch' || inputs['linux-x86_64']
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
@@ -106,7 +106,7 @@ jobs:
   # Linux ARM64 — native arm runner
   # ------------------------------------------------------------------
   linux-arm64:
-    if: github.event_name != 'workflow_dispatch' || inputs['linux-arm64'] == 'true'
+    if: github.event_name != 'workflow_dispatch' || inputs['linux-arm64']
     runs-on: ubuntu-24.04-arm
     steps:
       - uses: actions/checkout@v4
@@ -148,7 +148,7 @@ jobs:
   # macOS ARM64
   # ------------------------------------------------------------------
   macos-arm64:
-    if: github.event_name != 'workflow_dispatch' || inputs['macos-arm64'] == 'true'
+    if: github.event_name != 'workflow_dispatch' || inputs['macos-arm64']
     runs-on: macos-14
     steps:
       - uses: actions/checkout@v4
@@ -201,7 +201,7 @@ jobs:
   # Windows x86_64
   # ------------------------------------------------------------------
   windows-x86_64:
-    if: github.event_name != 'workflow_dispatch' || inputs['windows'] == 'true'
+    if: github.event_name != 'workflow_dispatch' || inputs['windows']
     runs-on: windows-2022
     steps:
       - uses: actions/checkout@v4
@@ -281,7 +281,7 @@ jobs:
   # Android arm64
   # ------------------------------------------------------------------
   android-arm64:
-    if: github.event_name != 'workflow_dispatch' || inputs['android-arm'] == 'true'
+    if: github.event_name != 'workflow_dispatch' || inputs['android-arm']
     runs-on: ubuntu-22.04
     env:
       ANDROID_ABI: arm64-v8a
@@ -360,7 +360,7 @@ jobs:
   # Android x86_64
   # ------------------------------------------------------------------
   android-x86_64:
-    if: github.event_name != 'workflow_dispatch' || inputs['android-x86'] == 'true'
+    if: github.event_name != 'workflow_dispatch' || inputs['android-x86']
     runs-on: ubuntu-22.04
     env:
       ANDROID_ABI: x86_64
