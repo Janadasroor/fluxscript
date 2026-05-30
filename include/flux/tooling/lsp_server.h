@@ -220,6 +220,7 @@ public:
     std::string handleTextDocumentPrepareTypeHierarchy(const std::string& params);
     std::string handleTypeHierarchySupertypes(const std::string& params);
     std::string handleTypeHierarchySubtypes(const std::string& params);
+    std::string handleTextDocumentLinkedEditingRange(const std::string& params);
     std::string handleWorkspaceSymbol(const std::string& params);
 
     // Completion engine
@@ -324,6 +325,14 @@ public:
     TypeHierarchyItem getPrepareTypeHierarchy(const std::string& uri, Position pos);
     std::vector<TypeHierarchyItem> getTypeHierarchySupertypes(const TypeHierarchyItem& item);
     std::vector<TypeHierarchyItem> getTypeHierarchySubtypes(const TypeHierarchyItem& item);
+
+    // Linked Editing Range
+    struct LinkedEditingRanges
+    {
+        std::vector<Range> ranges;
+        std::string wordPattern; // optional regex pattern
+    };
+    LinkedEditingRanges getLinkedEditingRanges(const std::string& uri, Position pos);
 
 private:
     // JSON helpers

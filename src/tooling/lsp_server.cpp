@@ -169,6 +169,8 @@ std::string LspServer::processRequest(const std::string& jsonRequest)
         return makeResponse(id, handleTypeHierarchySupertypes(params));
     } else if (method == "typeHierarchy/subtypes") {
         return makeResponse(id, handleTypeHierarchySubtypes(params));
+    } else if (method == "textDocument/linkedEditingRange") {
+        return makeResponse(id, handleTextDocumentLinkedEditingRange(params));
     } else if (method == "workspace/symbol") {
         return makeResponse(id, handleWorkspaceSymbol(params));
     } else if (method == "$/cancelRequest") {
@@ -372,6 +374,7 @@ std::string LspServer::handleInitialize(const std::string& params)
             },
             "callHierarchyProvider": true,
             "typeHierarchyProvider": true,
+            "linkedEditingRangeProvider": true,
             "workspaceSymbolProvider": true
         },
         "serverInfo": {
@@ -2130,6 +2133,72 @@ std::vector<LspServer::TypeHierarchyItem> LspServer::getTypeHierarchySubtypes(
         }
     }
 
+    return result;
+}
+
+// ============================================================================
+// Linked Editing Range
+// ============================================================================
+
+std::string LspServer::handleTextDocumentLinkedEditingRange(const std::string& params)
+{
+    std::string uri = jsonGet(params, "textDocument.uri");
+    int line = jsonGetInt(params, "position.line");
+    int col = jsonGetInt(params, "position.character");
+
+    auto result = getLinkedEditingRanges(uri, {line, col});
+    if (result.ranges.empty())
+        return "null";
+
+    std::ostringstream oss;
+    oss << R"({"ranges":[)";
+    for (size_t i = 0; i < result.ranges.size(); ++i) {
+        if (i > 0)
+            oss << ",";
+        oss << R"({"start":{"line":)" << result.ranges[i].start.line;
+        oss << R"(,"character":)" << result.ranges[i].start.character << "},";
+        oss << R"("end":{"line":)" << result.ranges[i].end.line;
+        oss << R"(,"character":)" << result.ranges[i].end.character << "}";
+    }
+    oss << R"(],"wordPattern":")" << jsonEscape(result.wordPattern) << "\"}";
+    return oss.str();
+}
+
+LspServer::LinkedEditingRanges LspServer::getLinkedEditingRanges(const std::string& uri, Position pos)
+{
+    LinkedEditingRanges result;
+    auto* doc = getDocument(uri);
+    if (!doc)
+        return result;
+
+    std::string word = doc->getWordAtPosition(pos);
+    if (word.empty())
+        return result;
+
+    // Find all whole-word occurrences of this identifier
+    size_t searchPos = 0;
+    while ((searchPos = doc->text.find(word, searchPos)) != std::string::npos) {
+        // Check word boundaries
+        bool leftOk = searchPos == 0 ||
+                      (!isalnum(doc->text[searchPos - 1]) && doc->text[searchPos - 1] != '_');
+        bool rightOk = (searchPos + word.size() >= doc->text.size()) ||
+                       (!isalnum(doc->text[searchPos + word.size()]) &&
+                        doc->text[searchPos + word.size()] != '_');
+        if (leftOk && rightOk) {
+            result.ranges.push_back({doc->offsetToPosition(searchPos),
+                                     doc->offsetToPosition(searchPos + word.size())});
+        }
+        searchPos += word.size();
+    }
+
+    // Only return if there are multiple occurrences (linked editing makes sense with 2+)
+    if (result.ranges.size() < 2) {
+        result.ranges.clear();
+        return result;
+    }
+
+    // Word pattern: match identifiers of this form
+    result.wordPattern = "[a-zA-Z_][a-zA-Z0-9_]*";
     return result;
 }
 

@@ -795,6 +795,45 @@ void test_type_hierarchy_subtypes_none() {
 }
 
 // ============================================================================
+// Test: Linked Editing Range
+// ============================================================================
+void test_linked_editing_range() {
+    TEST("linkedEditingRange: returns ranges for identifier with multiple occurrences");
+    LspServer server;
+    std::string uri = "file:///test.flux";
+    std::string source = "def foo() {\n    var x = foo()\n    foo()\n}";
+    server.openDocument(uri, "fluxscript", 1, source);
+
+    auto result = server.getLinkedEditingRanges(uri, {0, 5}); // cursor on 'foo' def
+    TC(!result.ranges.empty(), "should return ranges for 'foo'");
+    TC(result.ranges.size() >= 3, "foo should appear at least 3 times, got " + std::to_string(result.ranges.size()));
+    TPASS;
+}
+
+void test_linked_editing_range_single() {
+    TEST("linkedEditingRange: returns empty for identifier with single occurrence");
+    LspServer server;
+    std::string uri = "file:///test.flux";
+    std::string source = "var x = 42.0";
+    server.openDocument(uri, "fluxscript", 1, source);
+
+    auto result = server.getLinkedEditingRanges(uri, {0, 4}); // cursor on 'x'
+    TC(result.ranges.empty(), "single-occurrence 'x' should return no ranges");
+    TPASS;
+}
+
+void test_linked_editing_range_empty() {
+    TEST("linkedEditingRange: returns empty at invalid position");
+    LspServer server;
+    std::string uri = "file:///test.flux";
+    server.openDocument(uri, "fluxscript", 1, "");
+
+    auto result = server.getLinkedEditingRanges(uri, {0, 0});
+    TC(result.ranges.empty(), "empty doc should return no ranges");
+    TPASS;
+}
+
+// ============================================================================
 // Test: Call Hierarchy — prepareCallHierarchy finds function at position
 // ============================================================================
 void test_call_hierarchy_prepare() {
@@ -961,6 +1000,10 @@ int main() {
     test_type_hierarchy_subtypes_class();
     test_type_hierarchy_supertypes_none();
     test_type_hierarchy_subtypes_none();
+
+    test_linked_editing_range();
+    test_linked_editing_range_single();
+    test_linked_editing_range_empty();
 
     test_call_hierarchy_prepare();
     test_call_hierarchy_prepare_unknown();
