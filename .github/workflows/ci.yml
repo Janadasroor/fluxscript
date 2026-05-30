@@ -57,7 +57,7 @@ jobs:
               apt-get update -qq &&
               apt-get install -y -qq wget lsb-release software-properties-common gnupg &&
               wget -q https://apt.llvm.org/llvm.sh && chmod +x llvm.sh && ./llvm.sh 21 all &&
-              apt-get install -y -qq libclang-21-dev liblld-21-dev cmake libcurl4-openssl-dev patchelf g++ &&
+              apt-get install -y -qq libclang-21-dev liblld-21-dev cmake libcurl4-openssl-dev patchelf g++ libeigen3-dev &&
               cmake -B build -DCMAKE_BUILD_TYPE=Release \
                 -DLLVM_DIR=/usr/lib/llvm-21/lib/cmake/llvm \
                 -DClang_DIR=/usr/lib/llvm-21/lib/cmake/clang \
@@ -116,7 +116,7 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y -qq wget lsb-release software-properties-common gnupg
           wget -q https://apt.llvm.org/llvm.sh && chmod +x llvm.sh && sudo ./llvm.sh 21 all
-          sudo apt-get install -y -qq libclang-21-dev liblld-21-dev cmake libcurl4-openssl-dev g++
+          sudo apt-get install -y -qq libclang-21-dev liblld-21-dev cmake libcurl4-openssl-dev g++ libeigen3-dev
 
       - name: Build
         run: |
@@ -166,6 +166,7 @@ jobs:
             -DClang_DIR="$(brew --prefix llvm@21)/lib/cmake/clang" \
             -DLLD_DIR="$(brew --prefix llvm@21)/lib/cmake/lld" \
             -DCMAKE_PREFIX_PATH="$(brew --prefix eigen)" \
+            -DEIGEN3_INCLUDE_DIR="$(brew --prefix)/include" \
             -DFLUX_BUILD_TESTS=ON
           cmake --build build -j$(sysctl -n hw.logicalcpu)
 
@@ -238,8 +239,23 @@ jobs:
             echo "Bridged DIA SDK from VS 2022 to VS 2019 path"
           }
 
+      - name: Cache Eigen
+        id: cache-eigen
+        uses: actions/cache@v4
+        with:
+          path: third_party/eigen
+          key: eigen-3.4.0-win-v1
+
+      - name: Download Eigen
+        if: steps.cache-eigen.outputs.cache-hit != 'true'
+        shell: pwsh
+        run: |
+          curl -L -o eigen.zip https://gitlab.com/libeigen/eigen/-/archive/3.4.0/eigen-3.4.0.zip
+          New-Item -ItemType Directory -Force -Path third_party/eigen | Out-Null
+          & "C:\Program Files\7-Zip\7z.exe" x eigen.zip -othird_party/eigen -y | Out-Null
+
       - name: Build
-        run: cmake -B build -DCMAKE_BUILD_TYPE=Release -DLLVM_DIR="$env:LLVM_DIR" -DFLUX_BUILD_TESTS=ON
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Release -DLLVM_DIR="$env:LLVM_DIR" -DEIGEN3_INCLUDE_DIR="${{ github.workspace }}\third_party\eigen" -DFLUX_BUILD_TESTS=ON
 
       - name: Build
         run: cmake --build build --config Release
@@ -339,6 +355,7 @@ jobs:
             -DANDROID_PLATFORM=android-24 \
             -DCMAKE_BUILD_TYPE=Release \
             -DLLVM_DIR="${{ github.workspace }}/llvm-android/lib/cmake/llvm" \
+            -DEIGEN3_INCLUDE_DIR="${{ github.workspace }}/third_party" \
             -DFLUX_VIO_MATRIXC_LIB_DIR=""
           cmake --build build -j$(nproc)
 
@@ -418,6 +435,7 @@ jobs:
             -DANDROID_PLATFORM=android-24 \
             -DCMAKE_BUILD_TYPE=Release \
             -DLLVM_DIR="${{ github.workspace }}/llvm-android/lib/cmake/llvm" \
+            -DEIGEN3_INCLUDE_DIR="${{ github.workspace }}/third_party" \
             -DFLUX_VIO_MATRIXC_LIB_DIR=""
           cmake --build build -j$(nproc)
 
