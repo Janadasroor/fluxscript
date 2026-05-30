@@ -272,8 +272,9 @@ private:
     // can recognize them and produce the correct FluxType for resolution at codegen time.
     std::unordered_set<std::string> m_knownStructTypeNames;
     std::unordered_set<std::string> m_knownEnumTypeNames;
-    // Trait type names known to the parser.
+    // Also store known trait names for trait bound validation
     std::unordered_set<std::string> m_knownTraitNames;
+    std::map<std::string, int> m_knownTraitNameToIndex; // trait name → index for dyn resolution
 };
 
 } // namespace Flux

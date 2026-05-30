@@ -98,7 +98,8 @@ enum class TypeKind
     Generic,      // Generic type parameter placeholder (e.g., T in def foo[T](x: T))
     UserStruct,   // User-defined struct type (e.g., struct Vec2 { x: Double, y: Double })
     UserEnum,     // User-defined enum type (e.g., enum Color { Red, Green, Blue })
-    Ref           // Reference type: &T, &'a T, &mut T
+    Ref,          // Reference type: &T, &'a T, &mut T
+    TraitObject   // Trait object type: dyn TraitName (fat pointer: data_ptr + vtable_ptr)
 };
 
 class FluxType
@@ -113,6 +114,8 @@ public:
     llvm::Type* StructLLVMType = nullptr; // LLVM struct type pointer for UserStruct (cached)
     int EnumTypeId = 0;      // Enum type ID for TypeKind::UserEnum (index into CodegenContext.EnumTypes)
     llvm::Type* EnumLLVMType = nullptr; // LLVM tagged union type for UserEnum with payload
+    int TraitObjectTypeId = 0;     // Trait ID for TypeKind::TraitObject (index into CodegenContext.Traits)
+    llvm::Type* TraitObjectVTableTy = nullptr; // LLVM vtable struct type for this trait object
 
     // Reference type fields (TypeKind::Ref)
     FluxType* RefInnerType = nullptr;
@@ -129,6 +132,7 @@ public:
         : Kind(other.Kind), Dimensions(other.Dimensions), Bits(other.Bits), Fract(other.Fract),
           GenericName(other.GenericName), StructTypeId(other.StructTypeId), StructLLVMType(other.StructLLVMType),
           EnumTypeId(other.EnumTypeId), EnumLLVMType(other.EnumLLVMType),
+          TraitObjectTypeId(other.TraitObjectTypeId), TraitObjectVTableTy(other.TraitObjectVTableTy),
           RefIsMut(other.RefIsMut), Lifetime(other.Lifetime)
     {
         if (other.RefInnerType)
@@ -140,6 +144,7 @@ public:
             Kind = other.Kind; Dimensions = other.Dimensions; Bits = other.Bits; Fract = other.Fract;
             GenericName = other.GenericName; StructTypeId = other.StructTypeId; StructLLVMType = other.StructLLVMType;
             EnumTypeId = other.EnumTypeId; EnumLLVMType = other.EnumLLVMType;
+            TraitObjectTypeId = other.TraitObjectTypeId; TraitObjectVTableTy = other.TraitObjectVTableTy;
             RefIsMut = other.RefIsMut; Lifetime = other.Lifetime;
             delete RefInnerType;
             RefInnerType = other.RefInnerType ? new FluxType(*other.RefInnerType) : nullptr;
@@ -182,6 +187,15 @@ public:
     bool isGeneric() const { return Kind == TypeKind::Generic; }
     bool isStruct() const { return Kind == TypeKind::UserStruct; }
     bool isEnum() const { return Kind == TypeKind::UserEnum; }
+    bool isTraitObject() const { return Kind == TypeKind::TraitObject; }
+
+    // Create a Trait Object type: dyn TraitName
+    static FluxType traitObject(int traitId)
+    {
+        FluxType T(TypeKind::TraitObject);
+        T.TraitObjectTypeId = traitId;
+        return T;
+    }
 
     // Create a User-defined enum type
     static FluxType userEnum(int enumTypeId, llvm::Type* llvmType = nullptr)
@@ -232,6 +246,10 @@ public:
             return StructLLVMType ? StructLLVMType : llvm::Type::getDoubleTy(Context);
         case TypeKind::UserEnum:
             return EnumLLVMType ? EnumLLVMType : llvm::Type::getInt32Ty(Context);
+        case TypeKind::TraitObject:
+            // Fat pointer: { i8* (data), i8* (vtable) } — two pointers
+            return llvm::StructType::get(Context,
+                {llvm::PointerType::get(Context, 0), llvm::PointerType::get(Context, 0)});
         case TypeKind::Double:
         default:
             return llvm::Type::getDoubleTy(Context);
@@ -476,6 +494,17 @@ public:
 
     // Track trait implementations: (trait name, type name) pair
     std::set<std::pair<std::string, std::string>> TraitImplementations;
+
+    // VTable infrastructure for trait objects
+    struct VTableEntry {
+        std::string TraitName;
+        std::string TypeName;
+        llvm::GlobalVariable* VTableGlobal = nullptr; // the vtable instance
+        llvm::StructType* VTableType = nullptr;       // the vtable struct type
+    };
+    std::vector<VTableEntry> VTables;
+    // Map: (trait_name, type_name) → index into VTables
+    std::map<std::pair<std::string, std::string>, int> VTableIndex;
 
     // Already-specialized struct/enum type suffixes
     std::set<std::string> CompiledStructSpecializations;

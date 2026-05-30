@@ -1068,6 +1068,70 @@ void test_document_color_presentation() {
 }
 
 // ============================================================================
+// Test: Semantic Tokens
+// ============================================================================
+void test_semantic_tokens_keywords() {
+    TEST("semanticTokens: returns tokens for keywords");
+    LspServer server;
+    std::string uri = "file:///test.flux";
+    std::string source = "def main() { }";
+    server.openDocument(uri, "fluxscript", 1, source);
+
+    auto tokens = server.getSemanticTokens(uri);
+    TC(!tokens.data.empty(), "should return at least some tokens");
+    // Each token is 5 integers: deltaLine, deltaCol, length, type, mod
+    TC(tokens.data.size() % 5 == 0, "token data should be multiple of 5");
+    TPASS;
+}
+
+void test_semantic_tokens_types() {
+    TEST("semanticTokens: returns tokens for type keywords");
+    LspServer server;
+    std::string uri = "file:///test.flux";
+    std::string source = "struct Point { x: Double }";
+    server.openDocument(uri, "fluxscript", 1, source);
+
+    auto tokens = server.getSemanticTokens(uri);
+    TC(!tokens.data.empty(), "should return tokens for struct declaration");
+    TPASS;
+}
+
+void test_semantic_tokens_numbers() {
+    TEST("semanticTokens: returns tokens for numeric literals");
+    LspServer server;
+    std::string uri = "file:///test.flux";
+    std::string source = "var x = 42.0";
+    server.openDocument(uri, "fluxscript", 1, source);
+
+    auto tokens = server.getSemanticTokens(uri);
+    TC(!tokens.data.empty(), "should return tokens for number");
+    TPASS;
+}
+
+void test_semantic_tokens_empty() {
+    TEST("semanticTokens: returns empty for empty document");
+    LspServer server;
+    std::string uri = "file:///test.flux";
+    server.openDocument(uri, "fluxscript", 1, "");
+
+    auto tokens = server.getSemanticTokens(uri);
+    TC(tokens.data.empty(), "empty doc should have no tokens");
+    TPASS;
+}
+
+void test_semantic_tokens_legend() {
+    TEST("semanticTokens: legend includes expected types");
+    LspServer server;
+
+    std::string legend = server.getSemanticTokensLegend();
+    TC(legend.find("keyword") != std::string::npos, "legend should include 'keyword'");
+    TC(legend.find("string") != std::string::npos, "legend should include 'string'");
+    TC(legend.find("number") != std::string::npos, "legend should include 'number'");
+    TC(legend.find("operator") != std::string::npos, "legend should include 'operator'");
+    TPASS;
+}
+
+// ============================================================================
 // Test: Call Hierarchy — prepareCallHierarchy finds function at position
 // ============================================================================
 void test_call_hierarchy_prepare() {
@@ -1256,6 +1320,12 @@ int main() {
     test_document_color_hex_values();
     test_document_color_none();
     test_document_color_presentation();
+
+    test_semantic_tokens_keywords();
+    test_semantic_tokens_types();
+    test_semantic_tokens_numbers();
+    test_semantic_tokens_empty();
+    test_semantic_tokens_legend();
 
     test_call_hierarchy_prepare();
     test_call_hierarchy_prepare_unknown();

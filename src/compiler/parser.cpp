@@ -4156,6 +4156,24 @@ FluxType Parser::parseTypeName(const std::vector<std::string>& genericParams,
         return FluxType::reference(inner, isMut, lifetime);
     }
 
+    // Trait object type: dyn TraitName
+    if (CurTok == static_cast<int>(TokenType::tok_identifier) && m_lexer.IdentifierStr == "dyn") {
+        getNextToken(); // eat dyn
+        if (CurTok != static_cast<int>(TokenType::tok_identifier)) {
+            ReportError("expected trait name after 'dyn'");
+            return FluxType(TypeKind::Double);
+        }
+        std::string traitName = m_lexer.IdentifierStr;
+        getNextToken();
+        // Look up trait index
+        auto traitIdxIt = m_knownTraitNameToIndex.find(traitName);
+        if (traitIdxIt != m_knownTraitNameToIndex.end()) {
+            return FluxType::traitObject(traitIdxIt->second);
+        }
+        ReportError("unknown trait '" + traitName + "' in dyn type");
+        return FluxType(TypeKind::Double);
+    }
+
     // Identifier — could be built-in type name (capitalized), unit type, or generic param
     if (CurTok == static_cast<int>(TokenType::tok_identifier)) {
         std::string typeName = m_lexer.IdentifierStr;
@@ -4556,6 +4574,8 @@ std::unique_ptr<TraitDeclAST> Parser::ParseTraitDecl()
     }
 
     m_knownTraitNames.insert(Name);
+    int traitIdx = static_cast<int>(m_knownTraitNameToIndex.size());
+    m_knownTraitNameToIndex[Name] = traitIdx;
 
     auto trait = std::make_unique<TraitDeclAST>(Name, std::move(Methods), SuperTraits);
     if (!AssociatedTypeNames.empty())

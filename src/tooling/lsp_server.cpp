@@ -181,6 +181,10 @@ std::string LspServer::processRequest(const std::string& jsonRequest)
         return makeResponse(id, handleTextDocumentDocumentColor(params));
     } else if (method == "textDocument/colorPresentation") {
         return makeResponse(id, handleTextDocumentColorPresentation(params));
+    } else if (method == "textDocument/semanticTokens/full") {
+        return makeResponse(id, handleTextDocumentSemanticTokensFull(params));
+    } else if (method == "textDocument/semanticTokens/range") {
+        return makeResponse(id, handleTextDocumentSemanticTokensRange(params));
     } else if (method == "workspace/symbol") {
         return makeResponse(id, handleWorkspaceSymbol(params));
     } else if (method == "$/cancelRequest") {
@@ -391,6 +395,16 @@ std::string LspServer::handleInitialize(const std::string& params)
             },
             "selectionRangeProvider": true,
             "colorProvider": true,
+            "semanticTokensProvider": {
+                "legend": {
+                    "tokenTypes": ["namespace","type","class","enum","interface","struct","typeParameter","parameter","variable","property","enumMember","function","method","keyword","modifier","comment","string","number","operator"],
+                    "tokenModifiers": ["declaration","definition","readonly","static","deprecated","abstract","async","modification","documentation"]
+                },
+                "range": true,
+                "full": {
+                    "delta": false
+                }
+            },
             "workspaceSymbolProvider": true
         },
         "serverInfo": {
@@ -2896,6 +2910,198 @@ std::vector<LspServer::ColorPresentation> LspServer::getColorPresentations(
     result.push_back(rgbPresentation);
 
     return result;
+}
+
+// ============================================================================
+// Semantic Tokens — syntax highlighting via LSP
+// ============================================================================
+
+std::string LspServer::handleTextDocumentSemanticTokensFull(const std::string& params)
+{
+    std::string uri = jsonGet(params, "textDocument.uri");
+
+    auto tokens = getSemanticTokens(uri);
+
+    std::ostringstream oss;
+    oss << R"({"data":[)";
+    for (size_t i = 0; i < tokens.data.size(); ++i) {
+        if (i > 0)
+            oss << ",";
+        oss << tokens.data[i];
+    }
+    oss << "]}";
+    return oss.str();
+}
+
+std::string LspServer::handleTextDocumentSemanticTokensRange(const std::string& params)
+{
+    std::string uri = jsonGet(params, "textDocument.uri");
+
+    int startLine = jsonGetInt(params, "range.start.line");
+    int startChar = jsonGetInt(params, "range.start.character");
+    int endLine = jsonGetInt(params, "range.end.line");
+    int endChar = jsonGetInt(params, "range.end.character");
+
+    Range range{{startLine, startChar}, {endLine, endChar}};
+    auto tokens = getSemanticTokensRange(uri, range);
+
+    std::ostringstream oss;
+    oss << R"({"data":[)";
+    for (size_t i = 0; i < tokens.data.size(); ++i) {
+        if (i > 0)
+            oss << ",";
+        oss << tokens.data[i];
+    }
+    oss << "]}";
+    return oss.str();
+}
+
+std::string LspServer::getSemanticTokensLegend()
+{
+    return R"({"tokenTypes":["namespace","type","class","enum","interface","struct","typeParameter","parameter","variable","property","enumMember","function","method","keyword","modifier","comment","string","number","operator"],"tokenModifiers":["declaration","definition","readonly","static","deprecated","abstract","async","modification","documentation"]})";
+}
+
+// Token type indices matching the legend
+namespace {
+    const int TOK_TYPE = 1;
+    const int TOK_CLASS = 2;
+    const int TOK_ENUM = 3;
+    const int TOK_INTERFACE = 4;
+    const int TOK_STRUCT = 5;
+    const int TOK_PARAMETER = 7;
+    const int TOK_VARIABLE = 8;
+    const int TOK_FUNCTION = 11;
+    const int TOK_METHOD = 12;
+    const int TOK_KEYWORD = 13;
+    const int TOK_COMMENT = 16;
+    const int TOK_STRING = 17;
+    const int TOK_NUMBER = 18;
+    const int TOK_OPERATOR = 19;
+
+    const int MOD_DECLARATION = 1;
+    const int MOD_DEFINITION = 2;
+}
+
+LspServer::SemanticTokensResult LspServer::getSemanticTokens(const std::string& uri)
+{
+    SemanticTokensResult result;
+    auto* doc = getDocument(uri);
+    if (!doc)
+        return result;
+
+    std::vector<unsigned int> data;
+    int prevLine = 0;
+    int prevCol = 0;
+
+    // Use Lexer to tokenize
+    Flux::Lexer lexer(doc->text);
+
+    while (lexer.getNextToken() != static_cast<int>(Flux::TokenType::tok_eof)) {
+        int token = lexer.CurTok;
+        int line = lexer.getCurrentLine() - 1;
+        int col = lexer.getCurrentColumn() - 1;
+        int len = static_cast<int>(lexer.IdentifierStr.size());
+
+        if (token == static_cast<int>(Flux::TokenType::tok_identifier)) {
+            len = static_cast<int>(lexer.IdentifierStr.size());
+        } else if (token == static_cast<int>(Flux::TokenType::tok_string)) {
+            len = static_cast<int>(lexer.StringVal.size()) + 2;
+        } else {
+            // Compute length from source text for numbers and other tokens
+            std::string lineText = lexer.getCurrentLineText();
+            int startCol = lexer.getCurrentColumn() - 1;
+            len = 1;
+            if (startCol >= 0 && static_cast<size_t>(startCol) < lineText.size()) {
+                size_t end = static_cast<size_t>(startCol);
+                while (end < lineText.size() && !isspace(lineText[end]) &&
+                       lineText[end] != ')' && lineText[end] != '}' && lineText[end] != ']' &&
+                       lineText[end] != ';' && lineText[end] != ',' && lineText[end] != ':')
+                    end++;
+                len = static_cast<int>(end - startCol);
+                if (len < 1) len = 1;
+            }
+        }
+
+        int typeIdx = -1;
+        int modBits = 0;
+
+        // Classify token
+        if (token == static_cast<int>(Flux::TokenType::tok_def) ||
+            token == static_cast<int>(Flux::TokenType::tok_let) ||
+            token == static_cast<int>(Flux::TokenType::tok_var) ||
+            token == static_cast<int>(Flux::TokenType::tok_extern) ||
+            token == static_cast<int>(Flux::TokenType::tok_if) ||
+            token == static_cast<int>(Flux::TokenType::tok_then) ||
+            token == static_cast<int>(Flux::TokenType::tok_else) ||
+            token == static_cast<int>(Flux::TokenType::tok_for) ||
+            token == static_cast<int>(Flux::TokenType::tok_while) ||
+            token == static_cast<int>(Flux::TokenType::tok_do) ||
+            token == static_cast<int>(Flux::TokenType::tok_in) ||
+            token == static_cast<int>(Flux::TokenType::tok_return) ||
+            token == static_cast<int>(Flux::TokenType::tok_match) ||
+            token == static_cast<int>(Flux::TokenType::tok_case) ||
+            token == static_cast<int>(Flux::TokenType::tok_break) ||
+            token == static_cast<int>(Flux::TokenType::tok_continue) ||
+            token == static_cast<int>(Flux::TokenType::tok_import) ||
+            token == static_cast<int>(Flux::TokenType::tok_from) ||
+            token == static_cast<int>(Flux::TokenType::tok_yield) ||
+            token == static_cast<int>(Flux::TokenType::tok_async) ||
+            token == static_cast<int>(Flux::TokenType::tok_await)) {
+            typeIdx = TOK_KEYWORD;
+        } else if (token == static_cast<int>(Flux::TokenType::tok_identifier)) {
+            std::string id = lexer.IdentifierStr;
+            // Check if it's a type keyword
+            if (id == "struct") typeIdx = TOK_STRUCT;
+            else if (id == "class") typeIdx = TOK_CLASS;
+            else if (id == "enum") typeIdx = TOK_ENUM;
+            else if (id == "trait") typeIdx = TOK_INTERFACE;
+            else if (id == "impl") typeIdx = TOK_KEYWORD;
+            else if (id == "fn") typeIdx = TOK_KEYWORD;
+            else if (id == "true" || id == "false") typeIdx = TOK_KEYWORD;
+            else if (id == "public" || id == "private" || id == "protected") {
+                typeIdx = TOK_KEYWORD;
+                modBits |= MOD_DECLARATION;
+            } else {
+                typeIdx = TOK_VARIABLE;
+            }
+        } else if (token == static_cast<int>(Flux::TokenType::tok_number)) {
+            typeIdx = TOK_NUMBER;
+        } else if (token == static_cast<int>(Flux::TokenType::tok_string)) {
+            typeIdx = TOK_STRING;
+        } else if (token == '+' || token == '-' || token == '*' || token == '/' ||
+                   token == '%' || token == '=' || token == '<' || token == '>' ||
+                   token == '!' || token == '&' || token == '|' || token == '^' ||
+                   token == '~') {
+            typeIdx = TOK_OPERATOR;
+        }
+
+        if (typeIdx >= 0) {
+            // Encode as relative (delta) to previous
+            int deltaLine = line - prevLine;
+            int deltaCol = (deltaLine == 0) ? (col - prevCol) : col;
+            data.push_back(static_cast<unsigned int>(deltaLine));
+            data.push_back(static_cast<unsigned int>(deltaCol));
+            data.push_back(static_cast<unsigned int>(len));
+            data.push_back(static_cast<unsigned int>(typeIdx));
+            data.push_back(static_cast<unsigned int>(modBits));
+            prevLine = line;
+            prevCol = col + len;
+        }
+    }
+
+    result.data = data;
+    return result;
+}
+
+LspServer::SemanticTokensResult LspServer::getSemanticTokensRange(const std::string& uri, Range range)
+{
+    // For simplicity, get full tokens and filter by range
+    auto full = getSemanticTokens(uri);
+
+    // We'd need to decode the delta-encoded data to filter by range.
+    // For now, return full tokens (the client can ignore out-of-range if needed).
+    (void)range;
+    return full;
 }
 
 // ============================================================================

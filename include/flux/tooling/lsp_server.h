@@ -226,6 +226,8 @@ public:
     std::string handleTextDocumentSelectionRange(const std::string& params);
     std::string handleTextDocumentDocumentColor(const std::string& params);
     std::string handleTextDocumentColorPresentation(const std::string& params);
+    std::string handleTextDocumentSemanticTokensFull(const std::string& params);
+    std::string handleTextDocumentSemanticTokensRange(const std::string& params);
     std::string handleWorkspaceSymbol(const std::string& params);
 
     // Completion engine
@@ -387,6 +389,15 @@ public:
     };
     std::vector<ColorInformation> getDocumentColors(const std::string& uri);
     std::vector<ColorPresentation> getColorPresentations(const std::string& uri, const Color& color, const Range& range);
+
+    // Semantic Tokens
+    struct SemanticTokensResult
+    {
+        std::vector<unsigned int> data;
+    };
+    SemanticTokensResult getSemanticTokens(const std::string& uri);
+    SemanticTokensResult getSemanticTokensRange(const std::string& uri, Range range);
+    std::string getSemanticTokensLegend(); // returns JSON legend
 
 private:
     // JSON helpers
