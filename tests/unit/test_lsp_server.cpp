@@ -641,6 +641,160 @@ void test_code_lens_no_functions() {
 }
 
 // ============================================================================
+// Test: Type Hierarchy — prepareTypeHierarchy finds type definition
+// ============================================================================
+void test_type_hierarchy_prepare_struct() {
+    TEST("typeHierarchy: prepare finds struct definition");
+    LspServer server;
+    std::string uri = "file:///test.flux";
+    std::string source = "struct Point { x: Double, y: Double }\nstruct Line { a: Point, b: Point }";
+    server.openDocument(uri, "fluxscript", 1, source);
+
+    auto item = server.getPrepareTypeHierarchy(uri, {0, 8}); // cursor on 'Point'
+    TC(!item.name.empty(), "should return item for Point");
+    TC(item.name == "Point", "item name should be 'Point'");
+    TC(item.kind == 22, "Point should be kind 22 (struct)");
+    TPASS;
+}
+
+void test_type_hierarchy_prepare_class() {
+    TEST("typeHierarchy: prepare finds class definition");
+    LspServer server;
+    std::string uri = "file:///test.flux";
+    std::string source = "class Animal { age: Double }\nclass Dog : Animal { breed: Double }";
+    server.openDocument(uri, "fluxscript", 1, source);
+
+    auto item = server.getPrepareTypeHierarchy(uri, {0, 7}); // cursor on 'Animal'
+    TC(!item.name.empty(), "should return item for Animal");
+    TC(item.name == "Animal", "item name should be 'Animal'");
+    TC(item.kind == 5, "Animal should be kind 5 (class)");
+    TPASS;
+}
+
+void test_type_hierarchy_prepare_trait() {
+    TEST("typeHierarchy: prepare finds trait definition");
+    LspServer server;
+    std::string uri = "file:///test.flux";
+    std::string source = "trait Shape { }\nstruct Circle { }";
+    server.openDocument(uri, "fluxscript", 1, source);
+
+    auto item = server.getPrepareTypeHierarchy(uri, {0, 7}); // cursor on 'Shape'
+    TC(!item.name.empty(), "should return item for Shape");
+    TC(item.name == "Shape", "item name should be 'Shape'");
+    TC(item.kind == 6, "Shape should be kind 6 (trait)");
+    TPASS;
+}
+
+void test_type_hierarchy_prepare_unknown() {
+    TEST("typeHierarchy: prepare returns empty for unknown word");
+    LspServer server;
+    std::string uri = "file:///test.flux";
+    server.openDocument(uri, "fluxscript", 1, "");
+
+    auto item = server.getPrepareTypeHierarchy(uri, {0, 0});
+    TC(item.name.empty(), "should return empty item for unknown position");
+    TPASS;
+}
+
+void test_type_hierarchy_supertypes_trait() {
+    TEST("typeHierarchy: supertypes finds trait implementations");
+    LspServer server;
+    std::string uri = "file:///test.flux";
+    std::string source = "trait Shape { }\nstruct Circle { }\nimpl Shape for Circle { }";
+    server.openDocument(uri, "fluxscript", 1, source);
+
+    auto item = server.getPrepareTypeHierarchy(uri, {1, 8}); // cursor on 'Circle'
+    TC(!item.name.empty(), "prepare should find Circle");
+
+    auto supertypes = server.getTypeHierarchySupertypes(item);
+    TC(!supertypes.empty(), "Circle should have at least 1 supertype (Shape)");
+    bool foundShape = false;
+    for (auto& t : supertypes) {
+        if (t.name == "Shape") { foundShape = true; break; }
+    }
+    TC(foundShape, "should find 'Shape' as supertype of Circle");
+    TPASS;
+}
+
+void test_type_hierarchy_supertypes_class() {
+    TEST("typeHierarchy: supertypes finds parent class");
+    LspServer server;
+    std::string uri = "file:///test.flux";
+    std::string source = "class Animal { age: Double }\nclass Dog : Animal { breed: Double }";
+    server.openDocument(uri, "fluxscript", 1, source);
+
+    auto item = server.getPrepareTypeHierarchy(uri, {1, 7}); // cursor on 'Dog'
+    TC(!item.name.empty(), "prepare should find Dog");
+
+    auto supertypes = server.getTypeHierarchySupertypes(item);
+    TC(!supertypes.empty(), "Dog should have at least 1 supertype (Animal)");
+    bool foundAnimal = false;
+    for (auto& t : supertypes) {
+        if (t.name == "Animal") { foundAnimal = true; break; }
+    }
+    TC(foundAnimal, "should find 'Animal' as supertype of Dog");
+    TPASS;
+}
+
+void test_type_hierarchy_subtypes_trait() {
+    TEST("typeHierarchy: subtypes finds trait implementors");
+    LspServer server;
+    std::string uri = "file:///test.flux";
+    std::string source = "trait Shape { }\nstruct Circle { }\nstruct Line { }\nimpl Shape for Circle { }\nimpl Shape for Line { }";
+    server.openDocument(uri, "fluxscript", 1, source);
+
+    auto item = server.getPrepareTypeHierarchy(uri, {0, 7}); // cursor on 'Shape'
+    TC(!item.name.empty(), "prepare should find Shape");
+
+    auto subtypes = server.getTypeHierarchySubtypes(item);
+    TC(subtypes.size() == 2, "Shape should have 2 subtypes (Circle, Line), got " + std::to_string(subtypes.size()));
+    TPASS;
+}
+
+void test_type_hierarchy_subtypes_class() {
+    TEST("typeHierarchy: subtypes finds class children");
+    LspServer server;
+    std::string uri = "file:///test.flux";
+    std::string source = "class Animal { }\nclass Dog : Animal { }\nclass Cat : Animal { }";
+    server.openDocument(uri, "fluxscript", 1, source);
+
+    auto item = server.getPrepareTypeHierarchy(uri, {0, 7}); // cursor on 'Animal'
+    TC(!item.name.empty(), "prepare should find Animal");
+
+    auto subtypes = server.getTypeHierarchySubtypes(item);
+    TC(subtypes.size() == 2, "Animal should have 2 subtypes (Dog, Cat), got " + std::to_string(subtypes.size()));
+    TPASS;
+}
+
+void test_type_hierarchy_supertypes_none() {
+    TEST("typeHierarchy: supertypes returns empty for type with no supertypes");
+    LspServer server;
+    std::string uri = "file:///test.flux";
+    std::string source = "struct Foo { }";
+    server.openDocument(uri, "fluxscript", 1, source);
+
+    auto item = server.getPrepareTypeHierarchy(uri, {0, 8}); // cursor on 'Foo'
+
+    auto supertypes = server.getTypeHierarchySupertypes(item);
+    TC(supertypes.empty(), "Foo should have no supertypes");
+    TPASS;
+}
+
+void test_type_hierarchy_subtypes_none() {
+    TEST("typeHierarchy: subtypes returns empty for type with no subtypes");
+    LspServer server;
+    std::string uri = "file:///test.flux";
+    std::string source = "struct Foo { }";
+    server.openDocument(uri, "fluxscript", 1, source);
+
+    auto item = server.getPrepareTypeHierarchy(uri, {0, 8}); // cursor on 'Foo'
+
+    auto subtypes = server.getTypeHierarchySubtypes(item);
+    TC(subtypes.empty(), "Foo should have no subtypes");
+    TPASS;
+}
+
+// ============================================================================
 // Test: Call Hierarchy — prepareCallHierarchy finds function at position
 // ============================================================================
 void test_call_hierarchy_prepare() {
@@ -796,6 +950,17 @@ int main() {
     test_code_lens_basic();
     test_code_lens_reference_count();
     test_code_lens_no_functions();
+
+    test_type_hierarchy_prepare_struct();
+    test_type_hierarchy_prepare_class();
+    test_type_hierarchy_prepare_trait();
+    test_type_hierarchy_prepare_unknown();
+    test_type_hierarchy_supertypes_trait();
+    test_type_hierarchy_supertypes_class();
+    test_type_hierarchy_subtypes_trait();
+    test_type_hierarchy_subtypes_class();
+    test_type_hierarchy_supertypes_none();
+    test_type_hierarchy_subtypes_none();
 
     test_call_hierarchy_prepare();
     test_call_hierarchy_prepare_unknown();

@@ -4472,8 +4472,18 @@ std::unique_ptr<TraitDeclAST> Parser::ParseTraitDecl()
                CurTok == static_cast<int>(TokenType::tok_eof);
     };
 
+    std::vector<std::string> AssociatedTypeNames;
+
     while (!isBlockEnd()) {
-        if (CurTok == static_cast<int>(TokenType::tok_def)) {
+        if (CurTok == static_cast<int>(TokenType::tok_identifier) && m_lexer.IdentifierStr == "type") {
+            getNextToken(); // eat type
+            if (CurTok != static_cast<int>(TokenType::tok_identifier)) {
+                ReportError("expected associated type name after 'type' in trait");
+                return nullptr;
+            }
+            AssociatedTypeNames.push_back(m_lexer.IdentifierStr);
+            getNextToken();
+        } else if (CurTok == static_cast<int>(TokenType::tok_def)) {
             getNextToken(); // eat def
             if (CurTok != static_cast<int>(TokenType::tok_identifier)) {
                 ReportError("expected method name in trait");
@@ -4481,6 +4491,11 @@ std::unique_ptr<TraitDeclAST> Parser::ParseTraitDecl()
             }
             std::string MethodName = m_lexer.IdentifierStr;
             getNextToken();
+
+            // Temporarily add associated types as valid generic params for method signatures
+            std::vector<std::string> savedGenericParams = m_activeGenericParams;
+            m_activeGenericParams.insert(m_activeGenericParams.end(),
+                AssociatedTypeNames.begin(), AssociatedTypeNames.end());
 
             // Parse parameter list (name: Type, ...)
             std::vector<std::pair<std::string, FluxType>> Args;
@@ -4518,9 +4533,10 @@ std::unique_ptr<TraitDeclAST> Parser::ParseTraitDecl()
                 RetType = parseTypeName(m_activeGenericParams);
             }
 
+            m_activeGenericParams = std::move(savedGenericParams);
+
             Methods.push_back({MethodName, std::move(Args), RetType});
         } else {
-            // Skip to synchronization point if not a def
             getNextToken();
         }
     }
@@ -4541,7 +4557,10 @@ std::unique_ptr<TraitDeclAST> Parser::ParseTraitDecl()
 
     m_knownTraitNames.insert(Name);
 
-    return std::make_unique<TraitDeclAST>(Name, std::move(Methods), SuperTraits);
+    auto trait = std::make_unique<TraitDeclAST>(Name, std::move(Methods), SuperTraits);
+    if (!AssociatedTypeNames.empty())
+        trait->setAssociatedTypes(std::move(AssociatedTypeNames));
+    return trait;
 }
 
 /// ParseImplDecl — parse:
@@ -4649,6 +4668,7 @@ std::unique_ptr<ImplDeclAST> Parser::ParseImplDecl()
             getNextToken(); // eat {
 
         std::vector<std::unique_ptr<FunctionAST>> Methods;
+        std::map<std::string, FluxType> assocTypeMappings;
         while (!isImplEnd()) {
             if (CurTok == static_cast<int>(TokenType::tok_def)) {
                 auto Method = ParseDefinition();
@@ -4657,8 +4677,23 @@ std::unique_ptr<ImplDeclAST> Parser::ParseImplDecl()
                     return nullptr;
                 }
                 Methods.push_back(std::move(Method));
+            } else if (CurTok == static_cast<int>(TokenType::tok_identifier) &&
+                       m_lexer.IdentifierStr == "type") {
+                getNextToken(); // eat type
+                if (CurTok != static_cast<int>(TokenType::tok_identifier)) {
+                    ReportError("expected associated type name after 'type' in impl");
+                    m_activeLifetimeParams = std::move(savedLifetimeParams);
+                    return nullptr;
+                }
+                std::string assocName = m_lexer.IdentifierStr;
+                getNextToken();
+                if (CurTok == '=') {
+                    getNextToken(); // eat =
+                    FluxType concreteType = parseTypeName(std::vector<std::string>{});
+                    assocTypeMappings[assocName] = concreteType;
+                }
             } else {
-                ReportError("expected 'def' or 'end' in impl block");
+                ReportError("expected 'def', 'type', or 'end' in impl block");
                 m_activeLifetimeParams = std::move(savedLifetimeParams);
                 return nullptr;
             }
@@ -4671,6 +4706,8 @@ std::unique_ptr<ImplDeclAST> Parser::ParseImplDecl()
 
         auto impl = std::make_unique<ImplDeclAST>(TypeName, std::move(Methods));
         impl->setTraitName(TraitName);
+        for (auto& [name, type] : assocTypeMappings)
+            impl->setAssociatedTypeMapping(name, type);
         if (!LifetimeParams.empty())
             impl->setLifetimeParams(std::move(LifetimeParams));
         m_activeLifetimeParams = std::move(savedLifetimeParams);

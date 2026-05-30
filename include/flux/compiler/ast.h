@@ -463,7 +463,7 @@ public:
     struct TraitInfo {
         std::string Name;
         std::vector<std::string> SuperTraits;
-        // Method signatures: (name, args, returnType)
+        std::vector<std::string> AssociatedTypes;
         struct MethodSig {
             std::string Name;
             std::vector<std::pair<std::string, FluxType>> Args;
@@ -1889,6 +1889,7 @@ class ImplDeclAST
     std::string ParentName;
     std::vector<std::unique_ptr<FunctionAST>> Methods;
     std::vector<LifetimeParam> LifetimeParams;
+    std::map<std::string, FluxType> AssociatedTypeMappings;
 
 public:
     ImplDeclAST(const std::string& TypeName, std::vector<std::unique_ptr<FunctionAST>> Methods, const std::string& ParentName = "")
@@ -1905,6 +1906,8 @@ public:
     void setLifetimeParams(const std::vector<LifetimeParam>& Params) { LifetimeParams = Params; }
     const std::vector<LifetimeParam>& getLifetimeParams() const { return LifetimeParams; }
     bool hasLifetimeParams() const { return !LifetimeParams.empty(); }
+    const std::map<std::string, FluxType>& getAssociatedTypeMappings() const { return AssociatedTypeMappings; }
+    void setAssociatedTypeMapping(const std::string& name, const FluxType& type) { AssociatedTypeMappings[name] = type; }
     const std::vector<std::unique_ptr<FunctionAST>>& getMethods() const { return Methods; }
     std::vector<std::unique_ptr<FunctionAST>>& getMethods() { return Methods; }
     void codegen(CodegenContext& context);
@@ -1928,6 +1931,7 @@ private:
     std::string Name;
     std::vector<std::string> SuperTraits;
     std::vector<MethodProto> Methods;
+    std::vector<std::string> AssociatedTypes;
 
 public:
     TraitDeclAST(const std::string& Name, std::vector<MethodProto> Methods,
@@ -1939,6 +1943,8 @@ public:
     const std::string& getName() const { return Name; }
     const std::vector<std::string>& getSuperTraits() const { return SuperTraits; }
     const std::vector<MethodProto>& getMethods() const { return Methods; }
+    const std::vector<std::string>& getAssociatedTypes() const { return AssociatedTypes; }
+    void setAssociatedTypes(const std::vector<std::string>& types) { AssociatedTypes = types; }
     void codegen(CodegenContext& context);
 };
 

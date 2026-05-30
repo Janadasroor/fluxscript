@@ -217,6 +217,9 @@ public:
     std::string handleTextDocumentPrepareCallHierarchy(const std::string& params);
     std::string handleCallHierarchyIncomingCalls(const std::string& params);
     std::string handleCallHierarchyOutgoingCalls(const std::string& params);
+    std::string handleTextDocumentPrepareTypeHierarchy(const std::string& params);
+    std::string handleTypeHierarchySupertypes(const std::string& params);
+    std::string handleTypeHierarchySubtypes(const std::string& params);
     std::string handleWorkspaceSymbol(const std::string& params);
 
     // Completion engine
@@ -306,6 +309,21 @@ public:
     CallHierarchyItem getPrepareCallHierarchy(const std::string& uri, Position pos);
     std::vector<CallHierarchyIncomingCall> getCallHierarchyIncomingCalls(const CallHierarchyItem& item);
     std::vector<CallHierarchyOutgoingCall> getCallHierarchyOutgoingCalls(const CallHierarchyItem& item);
+
+    // Type Hierarchy
+    struct TypeHierarchyItem
+    {
+        std::string name;
+        int kind = 22; // 22 = Struct
+        std::string detail;
+        std::string uri;
+        Range range;
+        Range selectionRange;
+    };
+
+    TypeHierarchyItem getPrepareTypeHierarchy(const std::string& uri, Position pos);
+    std::vector<TypeHierarchyItem> getTypeHierarchySupertypes(const TypeHierarchyItem& item);
+    std::vector<TypeHierarchyItem> getTypeHierarchySubtypes(const TypeHierarchyItem& item);
 
 private:
     // JSON helpers

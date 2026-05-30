@@ -4580,6 +4580,15 @@ void ImplDeclAST::codegen(CodegenContext& context)
                     return;
                 }
             }
+            // Validate that all associated types are bound
+            for (const auto& assocType : traitInfo.AssociatedTypes) {
+                if (AssociatedTypeMappings.find(assocType) == AssociatedTypeMappings.end()) {
+                    llvm::errs() << "error: missing associated type '" << assocType
+                                 << "' in implementation of trait '" << TraitName
+                                 << "' for type '" << TypeName << "'\n";
+                    return;
+                }
+            }
         }
         context.TraitImplementations.insert({TraitName, TypeName});
     }
@@ -4598,6 +4607,7 @@ void TraitDeclAST::codegen(CodegenContext& context)
     CodegenContext::TraitInfo info;
     info.Name = Name;
     info.SuperTraits = SuperTraits;
+    info.AssociatedTypes = AssociatedTypes;
 
     for (const auto& m : Methods) {
         CodegenContext::TraitInfo::MethodSig sig;
