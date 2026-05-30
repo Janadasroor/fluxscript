@@ -171,6 +171,8 @@ std::string LspServer::processRequest(const std::string& jsonRequest)
         return makeResponse(id, handleTypeHierarchySubtypes(params));
     } else if (method == "textDocument/linkedEditingRange") {
         return makeResponse(id, handleTextDocumentLinkedEditingRange(params));
+    } else if (method == "textDocument/foldingRange") {
+        return makeResponse(id, handleTextDocumentFoldingRange(params));
     } else if (method == "workspace/symbol") {
         return makeResponse(id, handleWorkspaceSymbol(params));
     } else if (method == "$/cancelRequest") {
@@ -375,6 +377,7 @@ std::string LspServer::handleInitialize(const std::string& params)
             "callHierarchyProvider": true,
             "typeHierarchyProvider": true,
             "linkedEditingRangeProvider": true,
+            "foldingRangeProvider": true,
             "workspaceSymbolProvider": true
         },
         "serverInfo": {
@@ -2199,6 +2202,151 @@ LspServer::LinkedEditingRanges LspServer::getLinkedEditingRanges(const std::stri
 
     // Word pattern: match identifiers of this form
     result.wordPattern = "[a-zA-Z_][a-zA-Z0-9_]*";
+    return result;
+}
+
+// ============================================================================
+// Folding Range — code folding regions
+// ============================================================================
+
+std::string LspServer::handleTextDocumentFoldingRange(const std::string& params)
+{
+    std::string uri = jsonGet(params, "textDocument.uri");
+
+    auto ranges = getFoldingRanges(uri);
+
+    std::ostringstream oss;
+    oss << "[";
+    for (size_t i = 0; i < ranges.size(); ++i) {
+        if (i > 0)
+            oss << ",";
+        oss << "{";
+        oss << R"("startLine":)" << ranges[i].startLine << ",";
+        oss << R"("endLine":)" << ranges[i].endLine;
+        if (!ranges[i].kind.empty()) {
+            oss << R"(,"kind":")" << jsonEscape(ranges[i].kind) << "\"";
+        }
+        oss << "}";
+    }
+    oss << "]";
+    return oss.str();
+}
+
+std::vector<LspServer::FoldingRange> LspServer::getFoldingRanges(const std::string& uri)
+{
+    std::vector<FoldingRange> result;
+    auto* doc = getDocument(uri);
+    if (!doc)
+        return result;
+
+    const std::string& text = doc->text;
+
+    // Scan for brace-delimited blocks: { ... }
+    // Use a stack-based approach to find matching brace pairs
+    std::vector<int> braceStack; // stores line numbers of opening braces
+
+    for (size_t i = 0; i < text.size(); ++i) {
+        // Skip string literals
+        if (text[i] == '"') {
+            i++;
+            while (i < text.size() && text[i] != '"') {
+                if (text[i] == '\\') i++;
+                i++;
+            }
+            continue;
+        }
+
+        // Skip single-line comments
+        if (i + 1 < text.size() && text[i] == '/' && text[i + 1] == '/') {
+            size_t commentStart = i;
+            while (i < text.size() && text[i] != '\n') i++;
+            // Check for region folding for comment blocks (3+ consecutive comment lines)
+            // Handled below
+            continue;
+        }
+
+        if (text[i] == '{') {
+            int line = 0;
+            for (size_t k = 0; k < i; ++k) {
+                if (text[k] == '\n') line++;
+            }
+            braceStack.push_back(line);
+        } else if (text[i] == '}') {
+            if (!braceStack.empty()) {
+                int startLine = braceStack.back();
+                braceStack.pop_back();
+                int endLine = 0;
+                for (size_t k = 0; k < i; ++k) {
+                    if (text[k] == '\n') endLine++;
+                }
+                // Only fold blocks that span at least 2 lines
+                if (endLine - startLine >= 1) {
+                    FoldingRange range;
+                    range.startLine = startLine;
+                    range.startCharacter = 0;
+                    range.endLine = endLine;
+                    range.endCharacter = 0;
+                    result.push_back(range);
+                }
+            }
+        }
+    }
+
+    // Scan for comment regions (3+ consecutive single-line comments)
+    // Simplified: find runs of lines starting with optional whitespace followed by //
+    size_t commentRunStart = std::string::npos;
+    for (size_t i = 0; i < text.size();) {
+        size_t lineStart = i;
+        size_t lineEnd = text.find('\n', i);
+        if (lineEnd == std::string::npos)
+            lineEnd = text.size();
+
+        std::string line = text.substr(lineStart, lineEnd - lineStart);
+        // Trim leading whitespace
+        size_t firstNonSpace = line.find_first_not_of(" \t\r");
+        bool isComment = firstNonSpace != std::string::npos &&
+                         line.size() >= firstNonSpace + 2 &&
+                         line[firstNonSpace] == '/' && line[firstNonSpace + 1] == '/';
+
+        int lineNum = 0;
+        for (size_t k = 0; k < i; ++k) {
+            if (text[k] == '\n') lineNum++;
+        }
+
+        if (isComment) {
+            if (commentRunStart == std::string::npos)
+                commentRunStart = lineNum;
+        } else {
+            if (commentRunStart != std::string::npos) {
+                int runEnd = lineNum - 1;
+                if (runEnd - static_cast<int>(commentRunStart) >= 2) {
+                    FoldingRange range;
+                    range.startLine = static_cast<int>(commentRunStart);
+                    range.endLine = runEnd;
+                    range.kind = "comment";
+                    result.push_back(range);
+                }
+                commentRunStart = std::string::npos;
+            }
+        }
+
+        i = lineEnd + 1;
+    }
+    // Handle trailing comment run
+    if (commentRunStart != std::string::npos) {
+        int lastLine = 0;
+        for (size_t k = 0; k < text.size(); ++k) {
+            if (text[k] == '\n') lastLine++;
+        }
+        if (lastLine - static_cast<int>(commentRunStart) >= 2) {
+            FoldingRange range;
+            range.startLine = static_cast<int>(commentRunStart);
+            range.endLine = lastLine;
+            range.kind = "comment";
+            result.push_back(range);
+        }
+    }
+
     return result;
 }
 

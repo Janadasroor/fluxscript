@@ -834,6 +834,70 @@ void test_linked_editing_range_empty() {
 }
 
 // ============================================================================
+// Test: Folding Range
+// ============================================================================
+void test_folding_range_function() {
+    TEST("foldingRange: returns regions for function blocks");
+    LspServer server;
+    std::string uri = "file:///test.flux";
+    std::string source = "def main() {\n    var x = 1.0\n}";
+    server.openDocument(uri, "fluxscript", 1, source);
+
+    auto ranges = server.getFoldingRanges(uri);
+    bool foundFuncFold = false;
+    for (auto& r : ranges) {
+        if (r.startLine == 0 && r.endLine == 2) {
+            foundFuncFold = true;
+            break;
+        }
+    }
+    TC(foundFuncFold, "should find folding range for function body {0,2}");
+    TPASS;
+}
+
+void test_folding_range_nested() {
+    TEST("foldingRange: returns regions for nested blocks");
+    LspServer server;
+    std::string uri = "file:///test.flux";
+    std::string source = "def main() {\n    if 1 then {\n        var x = 1.0\n    }\n}";
+    server.openDocument(uri, "fluxscript", 1, source);
+
+    auto ranges = server.getFoldingRanges(uri);
+    TC(ranges.size() >= 2, "should find at least 2 folding ranges (outer + inner), got " + std::to_string(ranges.size()));
+    TPASS;
+}
+
+void test_folding_range_comments() {
+    TEST("foldingRange: returns region for comment blocks");
+    LspServer server;
+    std::string uri = "file:///test.flux";
+    std::string source = "// line1\n// line2\n// line3\ndef main() { }";
+    server.openDocument(uri, "fluxscript", 1, source);
+
+    auto ranges = server.getFoldingRanges(uri);
+    bool foundComment = false;
+    for (auto& r : ranges) {
+        if (r.kind == "comment") {
+            foundComment = true;
+            break;
+        }
+    }
+    TC(foundComment, "should find comment folding region");
+    TPASS;
+}
+
+void test_folding_range_empty() {
+    TEST("foldingRange: returns empty for empty document");
+    LspServer server;
+    std::string uri = "file:///test.flux";
+    server.openDocument(uri, "fluxscript", 1, "");
+
+    auto ranges = server.getFoldingRanges(uri);
+    TC(ranges.empty(), "empty doc should have no folding ranges");
+    TPASS;
+}
+
+// ============================================================================
 // Test: Call Hierarchy — prepareCallHierarchy finds function at position
 // ============================================================================
 void test_call_hierarchy_prepare() {
@@ -1004,6 +1068,11 @@ int main() {
     test_linked_editing_range();
     test_linked_editing_range_single();
     test_linked_editing_range_empty();
+
+    test_folding_range_function();
+    test_folding_range_nested();
+    test_folding_range_comments();
+    test_folding_range_empty();
 
     test_call_hierarchy_prepare();
     test_call_hierarchy_prepare_unknown();

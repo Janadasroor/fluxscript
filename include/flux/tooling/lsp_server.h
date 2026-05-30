@@ -221,6 +221,7 @@ public:
     std::string handleTypeHierarchySupertypes(const std::string& params);
     std::string handleTypeHierarchySubtypes(const std::string& params);
     std::string handleTextDocumentLinkedEditingRange(const std::string& params);
+    std::string handleTextDocumentFoldingRange(const std::string& params);
     std::string handleWorkspaceSymbol(const std::string& params);
 
     // Completion engine
@@ -333,6 +334,17 @@ public:
         std::string wordPattern; // optional regex pattern
     };
     LinkedEditingRanges getLinkedEditingRanges(const std::string& uri, Position pos);
+
+    // Folding Range
+    struct FoldingRange
+    {
+        int startLine;
+        int startCharacter = 0;
+        int endLine;
+        int endCharacter = 0;
+        std::string kind; // "comment", "imports", "region"
+    };
+    std::vector<FoldingRange> getFoldingRanges(const std::string& uri);
 
 private:
     // JSON helpers
