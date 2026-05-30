@@ -1132,6 +1132,104 @@ void test_semantic_tokens_legend() {
 }
 
 // ============================================================================
+// Test: Inlay Hint
+// ============================================================================
+void test_inlay_hint_var_number() {
+    TEST("inlayHint: shows type hint for var number declaration");
+    LspServer server;
+    std::string uri = "file:///test.flux";
+    std::string source = "var x = 42.0\nvar y = 10.0";
+    server.openDocument(uri, "fluxscript", 1, source);
+    auto hints = server.getInlayHints(uri, {{0, 0}, {0, 999}});
+    TC(!hints.empty(), "should return hints for var declarations");
+    bool foundDouble = false;
+    for (auto& h : hints) {
+        if (h.label.find("double") != std::string::npos) {
+            foundDouble = true; break;
+        }
+    }
+    TC(foundDouble, "should infer 'double' type for number literal");
+    TPASS;
+}
+void test_inlay_hint_var_string() {
+    TEST("inlayHint: shows type hint for var string declaration");
+    LspServer server;
+    std::string uri = "file:///test.flux";
+    std::string source = "var name = \"hello\"";
+    server.openDocument(uri, "fluxscript", 1, source);
+    auto hints = server.getInlayHints(uri, {{0, 0}, {0, 999}});
+    bool foundString = false;
+    for (auto& h : hints) {
+        if (h.label.find("string") != std::string::npos) { foundString = true; break; }
+    }
+    TC(foundString, "should infer 'string' type for string literal");
+    TPASS;
+}
+void test_inlay_hint_kind_type() {
+    TEST("inlayHint: kind field is 1 for type hints");
+    LspServer server;
+    std::string uri = "file:///test.flux";
+    std::string source = "var x = 42.0";
+    server.openDocument(uri, "fluxscript", 1, source);
+    auto hints = server.getInlayHints(uri, {{0, 0}, {0, 999}});
+    bool foundTypeKind = false;
+    for (auto& h : hints) {
+        if (h.kind == 1) { foundTypeKind = true; break; }
+    }
+    TC(foundTypeKind, "type hints should have kind=1");
+    TPASS;
+}
+void test_inlay_hint_empty() {
+    TEST("inlayHint: returns empty for document with no variables");
+    LspServer server;
+    std::string uri = "file:///test.flux";
+    std::string source = "def main() { }";
+    server.openDocument(uri, "fluxscript", 1, source);
+    auto hints = server.getInlayHints(uri, {{0, 0}, {0, 999}});
+    TC(hints.empty(), "no var declarations should produce no hints");
+    TPASS;
+}
+
+// ============================================================================
+// Test: Moniker
+// ============================================================================
+void test_moniker_function_export() {
+    TEST("moniker: returns flux scheme with export kind for function");
+    LspServer server;
+    std::string uri = "file:///test.flux";
+    std::string source = "def add(a: double, b: double) -> double { return a + b; }";
+    server.openDocument(uri, "fluxscript", 1, source);
+    auto monikers = server.getMonikers(uri, {0, 4});
+    TC(!monikers.empty(), "should return monikers for function symbol");
+    TC(monikers[0].scheme == "flux", "scheme should be 'flux'");
+    TC(monikers[0].identifier == "add", "identifier should be function name");
+    TC(monikers[0].kind == 2, "function should have kind=2 (export)");
+    TPASS;
+}
+void test_moniker_variable_local() {
+    TEST("moniker: returns local kind for variable");
+    LspServer server;
+    std::string uri = "file:///test.flux";
+    std::string source = "var x = 42.0";
+    server.openDocument(uri, "fluxscript", 1, source);
+    auto monikers = server.getMonikers(uri, {0, 4});
+    TC(!monikers.empty(), "should return monikers for variable symbol");
+    TC(monikers[0].identifier == "x", "identifier should be variable name");
+    TC(monikers[0].kind == 3, "variable should have kind=3 (local)");
+    TPASS;
+}
+void test_moniker_no_symbol_empty() {
+    TEST("moniker: returns empty for cursor on non-symbol position");
+    LspServer server;
+    std::string uri = "file:///test.flux";
+    std::string source = "def foo() { }";
+    server.openDocument(uri, "fluxscript", 1, source);
+    auto monikers = server.getMonikers(uri, {0, 0});
+    TC(monikers.empty(), "cursor on 'd' of 'def' should yield no moniker (keyword)");
+    TPASS;
+}
+
+// ============================================================================
 // Test: Call Hierarchy — prepareCallHierarchy finds function at position
 // ============================================================================
 void test_call_hierarchy_prepare() {
@@ -1287,6 +1385,15 @@ int main() {
     test_code_lens_basic();
     test_code_lens_reference_count();
     test_code_lens_no_functions();
+
+    test_inlay_hint_var_number();
+    test_inlay_hint_var_string();
+    test_inlay_hint_kind_type();
+    test_inlay_hint_empty();
+
+    test_moniker_function_export();
+    test_moniker_variable_local();
+    test_moniker_no_symbol_empty();
 
     test_type_hierarchy_prepare_struct();
     test_type_hierarchy_prepare_class();

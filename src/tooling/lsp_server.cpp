@@ -185,6 +185,10 @@ std::string LspServer::processRequest(const std::string& jsonRequest)
         return makeResponse(id, handleTextDocumentSemanticTokensFull(params));
     } else if (method == "textDocument/semanticTokens/range") {
         return makeResponse(id, handleTextDocumentSemanticTokensRange(params));
+    } else if (method == "textDocument/inlayHint") {
+        return makeResponse(id, handleTextDocumentInlayHint(params));
+    } else if (method == "textDocument/moniker") {
+        return makeResponse(id, handleTextDocumentMoniker(params));
     } else if (method == "workspace/symbol") {
         return makeResponse(id, handleWorkspaceSymbol(params));
     } else if (method == "$/cancelRequest") {
@@ -395,6 +399,8 @@ std::string LspServer::handleInitialize(const std::string& params)
             },
             "selectionRangeProvider": true,
             "colorProvider": true,
+            "inlayHintProvider": true,
+            "monikerProvider": true,
             "semanticTokensProvider": {
                 "legend": {
                     "tokenTypes": ["namespace","type","class","enum","interface","struct","typeParameter","parameter","variable","property","enumMember","function","method","keyword","modifier","comment","string","number","operator"],
@@ -3102,6 +3108,156 @@ LspServer::SemanticTokensResult LspServer::getSemanticTokensRange(const std::str
     // For now, return full tokens (the client can ignore out-of-range if needed).
     (void)range;
     return full;
+}
+
+// ============================================================================
+// Inlay Hint — inline type hints
+// ============================================================================
+
+std::string LspServer::handleTextDocumentInlayHint(const std::string& params)
+{
+    std::string uri = jsonGet(params, "textDocument.uri");
+    int rangeStartLine = jsonGetInt(params, "range.start.line");
+    int rangeStartChar = jsonGetInt(params, "range.start.character");
+    int rangeEndLine = jsonGetInt(params, "range.end.line");
+    int rangeEndChar = jsonGetInt(params, "range.end.character");
+    Range range{{rangeStartLine, rangeStartChar}, {rangeEndLine, rangeEndChar}};
+    auto hints = getInlayHints(uri, range);
+
+    std::ostringstream oss;
+    oss << "[";
+    for (size_t i = 0; i < hints.size(); ++i) {
+        if (i > 0) oss << ",";
+        oss << R"({"position":{"line":)" << hints[i].position.line;
+        oss << R"(,"character":)" << hints[i].position.character << "},";
+        oss << R"("label":")" << jsonEscape(hints[i].label) << "\"";
+        if (hints[i].kind > 0) {
+            oss << R"(,"kind":)" << hints[i].kind;
+        }
+        if (!hints[i].tooltip.empty()) {
+            oss << R"(,"tooltip":")" << jsonEscape(hints[i].tooltip) << "\"";
+        }
+        oss << "}";
+    }
+    oss << "]";
+    return oss.str();
+}
+
+std::vector<LspServer::InlayHint> LspServer::getInlayHints(const std::string& uri, Range range)
+{
+    std::vector<InlayHint> result;
+    auto* doc = getDocument(uri);
+    if (!doc) return result;
+
+    const std::string& text = doc->text;
+    int startLine = range.start.line;
+    int endLine = range.end.line;
+    if (startLine == 0 && endLine == 0 && range.start.character == 0 && range.end.character == 0) {
+        endLine = 999999;
+    }
+
+    int currentLine = 0;
+    size_t lineStart = 0;
+    for (size_t i = 0; i <= text.size(); ++i) {
+        if (i == text.size() || text[i] == '\n') {
+            if (currentLine >= startLine && currentLine <= endLine) {
+                std::string line = text.substr(lineStart, i - lineStart);
+                while (!line.empty() && (line.back() == ' ' || line.back() == '\t' || line.back() == '\r'))
+                    line.pop_back();
+                if (!line.empty()) {
+                    size_t varPos = line.find("var ");
+                    if (varPos != std::string::npos && varPos < 4) {
+                        size_t eqPos = line.find(" = ", varPos);
+                        if (eqPos != std::string::npos) {
+                            std::string rhs = line.substr(eqPos + 3);
+                            while (!rhs.empty() && rhs[0] == ' ') rhs.erase(0, 1);
+                            std::string inferredType;
+                            if (!rhs.empty() && (isdigit((unsigned char)rhs[0]) || rhs[0] == '.')) {
+                                inferredType = "double";
+                            } else if (rhs.size() >= 2 && rhs[0] == '"') {
+                                inferredType = "string";
+                            } else if (rhs.size() >= 4 && rhs.substr(0, 4) == "true") {
+                                inferredType = "bool";
+                            } else if (rhs.size() >= 5 && rhs.substr(0, 5) == "false") {
+                                inferredType = "bool";
+                            } else if ((rhs.size() >= 3 && rhs.substr(0, 3) == "sin") ||
+                                       (rhs.size() >= 3 && rhs.substr(0, 3) == "cos") ||
+                                       (rhs.size() >= 4 && rhs.substr(0, 4) == "sqrt")) {
+                                inferredType = "double";
+                            } else {
+                                inferredType = "auto";
+                            }
+                            if (!inferredType.empty()) {
+                                Position hintPos{currentLine, static_cast<int>(line.size())};
+                                InlayHint hint;
+                                hint.position = hintPos;
+                                hint.label = ": " + inferredType;
+                                hint.kind = 1;
+                                hint.tooltip = "Inferred type: " + inferredType;
+                                result.push_back(hint);
+                            }
+                        }
+                    }
+                }
+            }
+            currentLine++;
+            lineStart = i + 1;
+        }
+    }
+    return result;
+}
+
+// ============================================================================
+// Moniker — stable identifiers
+// ============================================================================
+
+std::string LspServer::handleTextDocumentMoniker(const std::string& params)
+{
+    std::string uri = jsonGet(params, "textDocument.uri");
+    Position pos;
+    pos.line = jsonGetInt(params, "position.line");
+    pos.character = jsonGetInt(params, "position.character");
+
+    auto monikers = getMonikers(uri, pos);
+
+    std::ostringstream oss;
+    oss << "[";
+    for (size_t i = 0; i < monikers.size(); ++i) {
+        if (i > 0) oss << ",";
+        oss << R"({"scheme":")" << jsonEscape(monikers[i].scheme) << "\"";
+        oss << R"(,"identifier":")" << jsonEscape(monikers[i].identifier) << "\"";
+        if (monikers[i].kind > 0) {
+            oss << R"(,"kind":)" << monikers[i].kind;
+        }
+        oss << "}";
+    }
+    oss << "]";
+    return oss.str();
+}
+
+std::vector<LspServer::Moniker> LspServer::getMonikers(const std::string& uri, Position pos)
+{
+    std::vector<Moniker> result;
+    auto* doc = getDocument(uri);
+    if (!doc) return result;
+
+    std::string word = doc->getWordAtPosition(pos);
+    if (word.empty()) return result;
+
+    auto& symbols = m_symbolTables[uri];
+    if (symbols.empty()) symbols = buildSymbolTable(uri);
+
+    for (const auto& sym : symbols) {
+        if (sym.name != word) continue;
+        if (pos.line < sym.range.start.line || pos.line > sym.range.end.line) continue;
+        Moniker m;
+        m.scheme = "flux";
+        m.identifier = sym.name;
+        m.kind = (sym.kind == SymbolEntry::Function || sym.kind == SymbolEntry::Type) ? 2 : 3;
+        result.push_back(m);
+        break;
+    }
+    return result;
 }
 
 // ============================================================================

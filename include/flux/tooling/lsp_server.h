@@ -228,6 +228,8 @@ public:
     std::string handleTextDocumentColorPresentation(const std::string& params);
     std::string handleTextDocumentSemanticTokensFull(const std::string& params);
     std::string handleTextDocumentSemanticTokensRange(const std::string& params);
+    std::string handleTextDocumentInlayHint(const std::string& params);
+    std::string handleTextDocumentMoniker(const std::string& params);
     std::string handleWorkspaceSymbol(const std::string& params);
 
     // Completion engine
@@ -398,6 +400,25 @@ public:
     SemanticTokensResult getSemanticTokens(const std::string& uri);
     SemanticTokensResult getSemanticTokensRange(const std::string& uri, Range range);
     std::string getSemanticTokensLegend(); // returns JSON legend
+
+    // Inlay Hint
+    struct InlayHint
+    {
+        Position position;
+        std::string label;
+        int kind = 0; // 1=Type, 2=Parameter
+        std::string tooltip;
+    };
+    std::vector<InlayHint> getInlayHints(const std::string& uri, Range range);
+
+    // Moniker
+    struct Moniker
+    {
+        std::string scheme;     // e.g. "flux"
+        std::string identifier; // unique stable identifier
+        int kind = 0;           // 1=Import, 2=Export, 3=Local
+    };
+    std::vector<Moniker> getMonikers(const std::string& uri, Position pos);
 
 private:
     // JSON helpers
