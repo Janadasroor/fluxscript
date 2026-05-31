@@ -84,6 +84,7 @@ public:
     bool getDefine(const std::string& name) const;
     void registerFunction(const std::string& name, void* funcPtr);
     void setOptimizationLevelForModules(OptimizationLevel level);
+    void setInputName(const std::string& inputName) { m_compilerOptions.inputName = inputName; }
 
     // std::string overloads (for minimal CLI)
     bool executeString(const std::string& code, std::string* error = nullptr);

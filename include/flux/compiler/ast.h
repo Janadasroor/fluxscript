@@ -138,6 +138,16 @@ public:
         if (other.RefInnerType)
             RefInnerType = new FluxType(*other.RefInnerType);
     }
+    FluxType(FluxType&& other) noexcept
+        : Kind(other.Kind), Dimensions(other.Dimensions), Bits(other.Bits), Fract(other.Fract),
+          GenericName(std::move(other.GenericName)), StructTypeId(other.StructTypeId),
+          StructLLVMType(other.StructLLVMType),
+          EnumTypeId(other.EnumTypeId), EnumLLVMType(other.EnumLLVMType),
+          TraitObjectTypeId(other.TraitObjectTypeId), TraitObjectVTableTy(other.TraitObjectVTableTy),
+          RefInnerType(other.RefInnerType), RefIsMut(other.RefIsMut), Lifetime(std::move(other.Lifetime))
+    {
+        other.RefInnerType = nullptr;
+    }
     FluxType& operator=(const FluxType& other)
     {
         if (this != &other) {
@@ -148,6 +158,21 @@ public:
             RefIsMut = other.RefIsMut; Lifetime = other.Lifetime;
             delete RefInnerType;
             RefInnerType = other.RefInnerType ? new FluxType(*other.RefInnerType) : nullptr;
+        }
+        return *this;
+    }
+    FluxType& operator=(FluxType&& other) noexcept
+    {
+        if (this != &other) {
+            Kind = other.Kind; Dimensions = other.Dimensions; Bits = other.Bits; Fract = other.Fract;
+            GenericName = std::move(other.GenericName); StructTypeId = other.StructTypeId;
+            StructLLVMType = other.StructLLVMType;
+            EnumTypeId = other.EnumTypeId; EnumLLVMType = other.EnumLLVMType;
+            TraitObjectTypeId = other.TraitObjectTypeId; TraitObjectVTableTy = other.TraitObjectVTableTy;
+            RefIsMut = other.RefIsMut; Lifetime = std::move(other.Lifetime);
+            delete RefInnerType;
+            RefInnerType = other.RefInnerType;
+            other.RefInnerType = nullptr;
         }
         return *this;
     }
@@ -232,8 +257,8 @@ public:
             return llvm::StructType::get(Context,
                                          {llvm::PointerType::get(Context, 0), llvm::Type::getInt32Ty(Context)});
         case TypeKind::String:
-            // Strings are represented as i8* (pointer to char)
-            return llvm::PointerType::get(Context, 0);
+            // Strings are represented as double (opaque handle)
+            return llvm::Type::getDoubleTy(Context);
         case TypeKind::Generic:
             // Generic type parameters should be substituted before codegen.
             // Fall back to Double as a safe default.
@@ -2865,6 +2890,35 @@ public:
     const std::string& getFilePath() const { return FilePath; }
     int getChannel() const { return Channel; }
     bool isCurrentSource() const { return IsCurrent; }
+};
+
+// --- Threading Primitives ---
+
+class SpawnExprAST : public ExprAST
+{
+    std::string Callee;
+    std::vector<std::unique_ptr<ExprAST>> Args;
+
+public:
+    SpawnExprAST(const std::string& callee, std::vector<std::unique_ptr<ExprAST>> args)
+        : Callee(callee), Args(std::move(args)) {}
+
+    TypedValue codegen(CodegenContext& context) override;
+
+    const std::string& getCallee() const { return Callee; }
+    const std::vector<std::unique_ptr<ExprAST>>& getArgs() const { return Args; }
+};
+
+class JoinExprAST : public ExprAST
+{
+    std::unique_ptr<ExprAST> Handle;
+
+public:
+    JoinExprAST(std::unique_ptr<ExprAST> handle) : Handle(std::move(handle)) {}
+
+    TypedValue codegen(CodegenContext& context) override;
+
+    const ExprAST* getHandle() const { return Handle.get(); }
 };
 
 // ============================================================================

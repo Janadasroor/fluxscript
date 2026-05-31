@@ -389,6 +389,10 @@ enum class TokenType
     // Async / Await
     tok_async = -308,
     tok_await = -309,
+
+    // Threading primitives
+    tok_spawn = -310,
+    tok_join = -311,
 };
 
 struct LexerDiagnostic

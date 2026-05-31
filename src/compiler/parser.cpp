@@ -821,7 +821,8 @@ std::unique_ptr<ExprAST> Parser::ParseLetExpr()
         CurTok != static_cast<int>(TokenType::tok_state) &&
         CurTok != static_cast<int>(TokenType::tok_ic) &&
         CurTok != static_cast<int>(TokenType::tok_dt_var) &&
-        CurTok != static_cast<int>(TokenType::tok_analysis)) {
+        CurTok != static_cast<int>(TokenType::tok_analysis) &&
+        CurTok != static_cast<int>(TokenType::tok_dc)) {
         ReportError("expected identifier after let/var");
         return nullptr;
     }
@@ -830,17 +831,24 @@ std::unique_ptr<ExprAST> Parser::ParseLetExpr()
     FluxType Type(TypeKind::Auto);
     if (CurTok == static_cast<int>(TokenType::tok_colon)) {
         getNextToken(); // eat :
-        Type = FluxType::fromToken(CurTok);
-        // Check if the token is a unit type name (e.g., Voltage, Current, Ohm)
-        if (Type.Kind == TypeKind::Double && CurTok == static_cast<int>(TokenType::tok_identifier)) {
-            FluxType unitType = FluxType::fromUnitName(m_lexer.IdentifierStr);
-            if (unitType.Dimensions.mass != 0 || unitType.Dimensions.length != 0 || unitType.Dimensions.time != 0 ||
-                unitType.Dimensions.current != 0 || unitType.Dimensions.temperature != 0 ||
-                unitType.Dimensions.amount != 0 || unitType.Dimensions.luminous != 0) {
-                Type = unitType;
+        // Check for complex type expressions: dyn TraitName, &T, etc.
+        if (CurTok == static_cast<int>(TokenType::tok_identifier) && m_lexer.IdentifierStr == "dyn") {
+            Type = parseTypeName({}, {});
+        } else if (CurTok == static_cast<int>(TokenType::tok_bitwise_and)) {
+            Type = parseTypeName({}, {});
+        } else {
+            Type = FluxType::fromToken(CurTok);
+            // Check if the token is a unit type name (e.g., Voltage, Current, Ohm)
+            if (Type.Kind == TypeKind::Double && CurTok == static_cast<int>(TokenType::tok_identifier)) {
+                FluxType unitType = FluxType::fromUnitName(m_lexer.IdentifierStr);
+                if (unitType.Dimensions.mass != 0 || unitType.Dimensions.length != 0 || unitType.Dimensions.time != 0 ||
+                    unitType.Dimensions.current != 0 || unitType.Dimensions.temperature != 0 ||
+                    unitType.Dimensions.amount != 0 || unitType.Dimensions.luminous != 0) {
+                    Type = unitType;
+                }
             }
+            getNextToken(); // eat type keyword
         }
-        getNextToken(); // eat type keyword
     }
     if (CurTok != '=') {
         ReportError("expected '=' after let/var");
@@ -1002,6 +1010,61 @@ std::unique_ptr<ExprAST> Parser::ParseBlockExpr()
     }
     getNextToken();
     return std::make_unique<BlockExprAST>(std::move(Stmts));
+}
+
+// Parse: spawn f(args)
+std::unique_ptr<ExprAST> Parser::ParseSpawnExpr()
+{
+    getNextToken(); // consume 'spawn'
+    if (CurTok != static_cast<int>(TokenType::tok_identifier)) {
+        ReportError("expected function name after 'spawn'");
+        return nullptr;
+    }
+    std::string callee = m_lexer.IdentifierStr;
+    getNextToken();
+    if (CurTok != '(') {
+        ReportError("expected '(' after spawn function name");
+        return nullptr;
+    }
+    getNextToken();
+    std::vector<std::unique_ptr<ExprAST>> args;
+    if (CurTok != ')') {
+        while (true) {
+            if (auto arg = ParseExpression())
+                args.push_back(std::move(arg));
+            else
+                return nullptr;
+            if (CurTok == ')')
+                break;
+            if (CurTok != ',') {
+                ReportError("expected ')' or ',' in spawn argument list");
+                return nullptr;
+            }
+            getNextToken();
+        }
+    }
+    getNextToken(); // consume ')'
+    return std::make_unique<SpawnExprAST>(callee, std::move(args));
+}
+
+// Parse: join(expr)
+std::unique_ptr<ExprAST> Parser::ParseJoinExpr()
+{
+    getNextToken(); // consume 'join'
+    if (CurTok != '(') {
+        ReportError("expected '(' after 'join'");
+        return nullptr;
+    }
+    getNextToken();
+    auto handle = ParseExpression();
+    if (!handle)
+        return nullptr;
+    if (CurTok != ')') {
+        ReportError("expected ')' after join expression");
+        return nullptr;
+    }
+    getNextToken(); // consume ')'
+    return std::make_unique<JoinExprAST>(std::move(handle));
 }
 
 std::unique_ptr<ExprAST> Parser::ParsePrimary()
@@ -1260,6 +1323,12 @@ std::unique_ptr<ExprAST> Parser::ParsePrimary()
         break;
     case static_cast<int>(TokenType::tok_parallel):
         Res = ParseParallelForExpr();
+        break;
+    case static_cast<int>(TokenType::tok_spawn):
+        Res = ParseSpawnExpr();
+        break;
+    case static_cast<int>(TokenType::tok_join):
+        Res = ParseJoinExpr();
         break;
 
     // Schematic generation
@@ -1655,44 +1724,54 @@ std::unique_ptr<PrototypeAST> Parser::ParsePrototype()
         FluxType Type(TypeKind::Double);
         if (CurTok == static_cast<int>(TokenType::tok_colon)) {
             getNextToken(); // eat :
-            Type = FluxType::fromToken(CurTok);
-            // Check for unit type names (e.g., Voltage, Current)
-            if (Type.Kind == TypeKind::Double && CurTok == static_cast<int>(TokenType::tok_identifier)) {
-                std::string typeName = m_lexer.IdentifierStr;
-                // Check if it matches an active generic parameter
-                bool isGeneric = false;
-                for (auto& gp : m_activeGenericParams) {
-                    if (gp == typeName) {
-                        Type = FluxType::generic(typeName);
-                        isGeneric = true;
-                        break;
-                    }
-                }
-                if (!isGeneric) {
-                    // Check user-defined struct types
-                    if (m_knownStructTypeNames.count(typeName)) {
-                        Type = FluxType(TypeKind::UserStruct);
-                        Type.StructTypeId = -1;
-                        Type.StructLLVMType = nullptr;
-                        Type.GenericName = typeName;
-                    } else if (m_knownEnumTypeNames.count(typeName)) {
-                        Type = FluxType(TypeKind::UserEnum);
-                        Type.EnumTypeId = -1;
-                        Type.EnumLLVMType = nullptr;
-                        Type.GenericName = typeName;
-                    } else {
-                        FluxType unitType = FluxType::fromUnitName(typeName);
-                        if (unitType.Dimensions.mass != 0 || unitType.Dimensions.length != 0 || unitType.Dimensions.time != 0 ||
-                            unitType.Dimensions.current != 0 || unitType.Dimensions.temperature != 0 ||
-                            unitType.Dimensions.amount != 0 || unitType.Dimensions.luminous != 0) {
-                            Type = unitType;
+            if (CurTok == static_cast<int>(TokenType::tok_identifier) && m_lexer.IdentifierStr == "dyn") {
+                Type = parseTypeName(m_activeGenericParams);
+                // parseTypeName already consumed the type name, so don't eat again
+            } else if (CurTok == static_cast<int>(TokenType::tok_bitwise_and)) {
+                Type = parseTypeName(m_activeGenericParams, LifetimeParamsList);
+            } else {
+                Type = FluxType::fromToken(CurTok);
+                // Check for unit type names (e.g., Voltage, Current)
+                if (Type.Kind == TypeKind::Double && CurTok == static_cast<int>(TokenType::tok_identifier)) {
+                    std::string typeName = m_lexer.IdentifierStr;
+                    // Check if it matches an active generic parameter
+                    bool isGeneric = false;
+                    for (auto& gp : m_activeGenericParams) {
+                        if (gp == typeName) {
+                            Type = FluxType::generic(typeName);
+                            isGeneric = true;
+                            break;
                         }
                     }
+                    if (!isGeneric) {
+                        // Check user-defined struct types
+                        if (m_knownStructTypeNames.count(typeName)) {
+                            Type = FluxType(TypeKind::UserStruct);
+                            Type.StructTypeId = -1;
+                            Type.StructLLVMType = nullptr;
+                            Type.GenericName = typeName;
+                        } else if (m_knownEnumTypeNames.count(typeName)) {
+                            Type = FluxType(TypeKind::UserEnum);
+                            Type.EnumTypeId = -1;
+                            Type.EnumLLVMType = nullptr;
+                            Type.GenericName = typeName;
+                        } else {
+                            FluxType unitType = FluxType::fromUnitName(typeName);
+                            if (unitType.Dimensions.mass != 0 || unitType.Dimensions.length != 0 || unitType.Dimensions.time != 0 ||
+                                unitType.Dimensions.current != 0 || unitType.Dimensions.temperature != 0 ||
+                                unitType.Dimensions.amount != 0 || unitType.Dimensions.luminous != 0) {
+                                Type = unitType;
+                            }
+                        }
+                    }
+                    getNextToken(); // eat type keyword (identifier)
+                } else if (Type.Kind == TypeKind::Double && CurTok == static_cast<int>(TokenType::tok_type_double)) {
+                    // Explicit "Double" keyword — keep as Double
+                    getNextToken(); // eat type keyword
+                } else {
+                    getNextToken(); // eat type keyword
                 }
-            } else if (Type.Kind == TypeKind::Double && CurTok == static_cast<int>(TokenType::tok_type_double)) {
-                // Explicit "Double" keyword — keep as Double
             }
-            getNextToken(); // eat type keyword
         }
         Args.push_back({Name, Type});
         if (CurTok == ')')
@@ -1707,42 +1786,48 @@ std::unique_ptr<PrototypeAST> Parser::ParsePrototype()
     FluxType RetType(TypeKind::Double);
     if (CurTok == static_cast<int>(TokenType::tok_arrow)) {
         getNextToken();
-        RetType = FluxType::fromToken(CurTok);
-        // Check for unit type names or generic type params in return type annotation
-        if (RetType.Kind == TypeKind::Double && CurTok == static_cast<int>(TokenType::tok_identifier)) {
-            std::string typeName = m_lexer.IdentifierStr;
-            // Check if it matches an active generic parameter
-            bool isGeneric = false;
-            for (auto& gp : m_activeGenericParams) {
-                if (gp == typeName) {
-                    RetType = FluxType::generic(typeName);
-                    isGeneric = true;
-                    break;
+        if (CurTok == static_cast<int>(TokenType::tok_identifier) && m_lexer.IdentifierStr == "dyn") {
+            RetType = parseTypeName(m_activeGenericParams, LifetimeParamsList);
+        } else if (CurTok == static_cast<int>(TokenType::tok_bitwise_and)) {
+            RetType = parseTypeName(m_activeGenericParams, LifetimeParamsList);
+        } else {
+            RetType = FluxType::fromToken(CurTok);
+            // Check for unit type names or generic type params in return type annotation
+            if (RetType.Kind == TypeKind::Double && CurTok == static_cast<int>(TokenType::tok_identifier)) {
+                std::string typeName = m_lexer.IdentifierStr;
+                // Check if it matches an active generic parameter
+                bool isGeneric = false;
+                for (auto& gp : m_activeGenericParams) {
+                    if (gp == typeName) {
+                        RetType = FluxType::generic(typeName);
+                        isGeneric = true;
+                        break;
+                    }
                 }
-            }
-            if (!isGeneric) {
-                // Check user-defined struct types
-                if (m_knownStructTypeNames.count(typeName)) {
-                    RetType = FluxType(TypeKind::UserStruct);
-                    RetType.StructTypeId = -1;
-                    RetType.StructLLVMType = nullptr;
-                    RetType.GenericName = typeName;
-                } else if (m_knownEnumTypeNames.count(typeName)) {
-                    RetType = FluxType(TypeKind::UserEnum);
-                    RetType.EnumTypeId = -1;
-                    RetType.EnumLLVMType = nullptr;
-                    RetType.GenericName = typeName;
-                } else {
-                    FluxType unitType = FluxType::fromUnitName(typeName);
-                    if (unitType.Dimensions.mass != 0 || unitType.Dimensions.length != 0 || unitType.Dimensions.time != 0 ||
-                        unitType.Dimensions.current != 0 || unitType.Dimensions.temperature != 0 ||
-                        unitType.Dimensions.amount != 0 || unitType.Dimensions.luminous != 0) {
-                        RetType = unitType;
+                if (!isGeneric) {
+                    // Check user-defined struct types
+                    if (m_knownStructTypeNames.count(typeName)) {
+                        RetType = FluxType(TypeKind::UserStruct);
+                        RetType.StructTypeId = -1;
+                        RetType.StructLLVMType = nullptr;
+                        RetType.GenericName = typeName;
+                    } else if (m_knownEnumTypeNames.count(typeName)) {
+                        RetType = FluxType(TypeKind::UserEnum);
+                        RetType.EnumTypeId = -1;
+                        RetType.EnumLLVMType = nullptr;
+                        RetType.GenericName = typeName;
+                    } else {
+                        FluxType unitType = FluxType::fromUnitName(typeName);
+                        if (unitType.Dimensions.mass != 0 || unitType.Dimensions.length != 0 || unitType.Dimensions.time != 0 ||
+                            unitType.Dimensions.current != 0 || unitType.Dimensions.temperature != 0 ||
+                            unitType.Dimensions.amount != 0 || unitType.Dimensions.luminous != 0) {
+                            RetType = unitType;
+                        }
                     }
                 }
             }
+            getNextToken();
         }
-        getNextToken();
     }
     auto proto = std::make_unique<PrototypeAST>(FnName, std::move(Args), RetType);
     if (!GenericParams.empty()) {

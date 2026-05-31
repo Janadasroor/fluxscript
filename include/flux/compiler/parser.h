@@ -70,6 +70,12 @@ public:
     // Access parser errors (for LSP diagnostics)
     const std::vector<LexerDiagnostic>& getErrors() const { return m_lexer.getErrors(); }
 
+    // Access known struct/enum type names (needed for import propagation)
+    const std::unordered_set<std::string>& getKnownStructTypeNames() const { return m_knownStructTypeNames; }
+    const std::unordered_set<std::string>& getKnownEnumTypeNames() const { return m_knownEnumTypeNames; }
+    std::unordered_set<std::string>& getKnownStructTypeNames() { return m_knownStructTypeNames; }
+    std::unordered_set<std::string>& getKnownEnumTypeNames() { return m_knownEnumTypeNames; }
+
 private:
     std::unique_ptr<ExprAST> ParseNumberExpr();
     std::unique_ptr<ExprAST> ParseFixedExpr();
@@ -118,6 +124,8 @@ private:
     std::unique_ptr<ExprAST> ParseRepeatUntil();
     std::unique_ptr<ExprAST> ParseDoWhile();
     std::unique_ptr<ExprAST> ParseParallelForExpr();
+    std::unique_ptr<ExprAST> ParseSpawnExpr();
+    std::unique_ptr<ExprAST> ParseJoinExpr();
 
     // Schematic generation
     std::unique_ptr<ExprAST> ParseSchematicExpr();

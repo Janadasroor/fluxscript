@@ -81,6 +81,37 @@ run_test() {
     rm -f flux_test.flux
 }
 
+# Self-hosting compiler test: generate IR via src/fluxc/main.flux, verify with opt-21
+run_selfhost_test() {
+    local test_name="$1"
+    local test_code="$2"
+
+    TOTAL=$((TOTAL + 1))
+    echo -n "$test_name... "
+
+    echo "$test_code" > /tmp/flux_selfhost.flux
+
+    local test_output
+    local cmd_status
+    test_output=$(FLUX_INPUT=/tmp/flux_selfhost.flux "$FLUX_BIN" --cache=0 "$PROJECT_DIR/src/fluxc/main.flux" 2>/dev/null | \
+        awk '/^; ModuleID/ {found=1} found && !/^(Compiled|JIT cache|Result)/' | \
+        opt-21 -passes=verify -S 2>&1)
+    cmd_status=$?
+
+    if [ $cmd_status -eq 0 ]; then
+        echo -e "${GREEN} PASSED${NC}"
+        PASSED=$((PASSED + 1))
+    else
+        echo -e "${RED} FAILED${NC}"
+        echo "=== TEST OUTPUT FOR $test_name ==="
+        echo "$test_output"
+        echo "=================================="
+        FAILED=$((FAILED + 1))
+    fi
+
+    rm -f /tmp/flux_selfhost.flux
+}
+
 # Modified run_test for parser-only validation (uses --emit=check)
 run_check_test() {
     local test_name="$1"
@@ -756,6 +787,92 @@ def verify_traits() -> Double {
 verify_traits()
 '
 
+# Test 49a: dyn Trait - let binding (fat pointer dispatch)
+run_test "dyn Trait - let binding" '
+trait Draw {
+    def draw(self) -> Double
+}
+
+struct Circle { r: Double }
+struct Square { s: Double }
+
+impl Draw for Circle {
+    def draw(self) -> Double { 3.14159 * self.r * self.r }
+}
+impl Draw for Square {
+    def draw(self) -> Double { self.s * self.s }
+}
+
+let c = Circle { r: 2.0 };
+let s = Square { s: 3.0 };
+let dc: dyn Draw = c;
+let ds: dyn Draw = s;
+let result = dc.draw() + ds.draw();
+assert(abs(result - 21.56636) < 0.001, "dyn Draw area sum wrong");
+result
+'
+
+# Test 49b: dyn Trait - function parameter (upcast from concrete struct)
+run_test "dyn Trait - function parameter" '
+trait Greeter {
+    def greet(self) -> Double
+}
+
+struct Hello { val: Double }
+struct Goodbye { }
+
+impl Greeter for Hello {
+    def greet(self) -> Double { self.val }
+}
+impl Greeter for Goodbye {
+    def greet(self) -> Double { 0.0 }
+}
+
+def process(g: dyn Greeter) -> Double {
+    g.greet()
+}
+
+let a = Hello { val: 5.0 };
+let b = Goodbye {};
+let r1 = process(a);
+let r2 = process(b);
+assert(abs(r1 - 5.0) < 0.001, "Hello greet via dyn param wrong");
+assert(abs(r2 - 0.0) < 0.001, "Goodbye greet via dyn param wrong");
+r1 + r2
+'
+
+# Test 49c: dyn Trait - multi-method dispatch via function parameter
+run_test "dyn Trait - multi-method dispatch" '
+trait Shape {
+    def area(self) -> Double
+    def perimeter(self) -> Double
+}
+
+struct Rect { w: Double, h: Double }
+struct Circle2 { r: Double }
+
+impl Shape for Rect {
+    def area(self) -> Double { self.w * self.h }
+    def perimeter(self) -> Double { 2.0 * (self.w + self.h) }
+}
+impl Shape for Circle2 {
+    def area(self) -> Double { 3.14159 * self.r * self.r }
+    def perimeter(self) -> Double { 2.0 * 3.14159 * self.r }
+}
+
+def describe(s: dyn Shape) -> Double {
+    s.area() + s.perimeter()
+}
+
+let r = Rect { w: 3.0, h: 4.0 };
+let c = Circle2 { r: 2.0 };
+let rd = describe(r);
+let cd = describe(c);
+assert(abs(rd - 26.0) < 0.001, "Rect describe wrong");
+assert(abs(cd - 18.84954) < 0.001, "Circle describe wrong");
+rd + cd
+'
+
 # Test 49: Operator Overloading
 run_test "Operator Overloading" '
 trait Add {
@@ -1185,6 +1302,339 @@ impl Container for MyBox {
     def get(self, index: Double) -> Double { self.value }
 }
 "
+
+# Test 76: Threading - spawn/join
+run_test "Spawn/Join" '
+def worker(x: Double) -> Double {
+    x * 2.0
+}
+
+def main() -> Double {
+    let t = spawn worker(21.0);
+    assert(join(t) == 42.0, "spawn/join failed");
+    1.0
+}
+
+main()
+'
+
+# Test 77: Threading - channel send/recv
+run_test "Channel Send/Recv" '
+def main() -> Double {
+    let ch = flux_chan_create();
+    flux_chan_send(ch, 42.0);
+    let val = flux_chan_recv(ch);
+    flux_chan_destroy(ch);
+    assert(val == 42.0, "channel send/recv failed");
+    1.0
+}
+
+main()
+'
+
+# Test 78: Threading - spawn with channel
+run_test "Spawn + Channel" '
+def producer(ch: Double) -> Double {
+    flux_chan_send(ch, 99.0);
+    1.0
+}
+
+def main() -> Double {
+    let ch = flux_chan_create();
+    spawn producer(ch);
+    let val = flux_chan_recv(ch);
+    flux_chan_destroy(ch);
+    assert(val == 99.0, "spawn+channel failed");
+    1.0
+}
+
+main()
+'
+
+# Test 79: Threading - spawn multiple args
+run_test "Spawn Multi-Arg" '
+def add(a: Double, b: Double, c: Double) -> Double {
+    a + b + c
+}
+
+def main() -> Double {
+    let t = spawn add(10.0, 20.0, 30.0);
+    assert(join(t) == 60.0, "spawn multi-arg failed");
+    1.0
+}
+
+main()
+'
+
+# Test 80: Threading - Mutex
+run_test "Mutex Lock/Unlock" '
+def main() -> Double {
+    let mtx = flux_mutex_create();
+    flux_mutex_lock(mtx);
+    flux_mutex_unlock(mtx);
+    flux_mutex_destroy(mtx);
+    1.0
+}
+
+main()
+'
+
+# Test 81: Threading - RwLock
+run_test "RwLock Read/Write" '
+def main() -> Double {
+    let rw = flux_rwlock_create();
+    flux_rwlock_read_lock(rw);
+    flux_rwlock_unlock(rw);
+    flux_rwlock_write_lock(rw);
+    flux_rwlock_unlock(rw);
+    flux_rwlock_destroy(rw);
+    1.0
+}
+
+main()
+'
+
+# ==============================================================================
+# Self-Hosting Compiler Tests (src/fluxc/) — IR generation via opt-21 verify
+# ==============================================================================
+
+# Test S1: String concatenation
+run_selfhost_test "SelfHost: string concat" '
+extern def flux_print_string(s: string)
+def greet(name: string) -> string { "hello " + name }
+def main() -> Double { flux_print_string(greet("world")); 0.0 }
+'
+
+# Test S2: String equality
+run_selfhost_test "SelfHost: string eq" '
+def eq(a: string, b: string) -> double { a == b }
+def main() -> Double { 0.0 }
+'
+
+# Test S3: String inequality
+run_selfhost_test "SelfHost: string neq" '
+def neq(a: string, b: string) -> double { a != b }
+def main() -> Double { 0.0 }
+'
+
+# Test S4: Numeric comparisons
+run_selfhost_test "SelfHost: numeric cmp" '
+def lt(a: double, b: double) -> double { a < b }
+def gt(a: double, b: double) -> double { a > b }
+def le(a: double, b: double) -> double { a <= b }
+def ge(a: double, b: double) -> double { a >= b }
+def main() -> Double { 0.0 }
+'
+
+# Test S5: If-else with comparison
+run_selfhost_test "SelfHost: if-else" '
+def max(a: double, b: double) -> double {
+    if (a > b) { a } else { b }
+}
+def main() -> Double { max(3.0, 5.0) }
+'
+
+# Test S6: Logical not
+run_selfhost_test "SelfHost: logical not" '
+def is_zero(x: double) -> double { if (!x) { 1.0 } else { 0.0 } }
+def main() -> Double { is_zero(0.0) }
+'
+
+run_selfhost_test "SelfHost: enum match" '
+enum Color { Red, Green, Blue }
+def pick(c: Double) -> Double {
+    match c {
+        Color.Red -> 1.0,
+        Color.Green -> 2.0,
+        Color.Blue -> 3.0
+    }
+}
+def main() -> Double { pick(Color.Green) }
+'
+
+run_selfhost_test "SelfHost: payload enum match" '
+enum Option { Some(value: Double), None }
+def main() -> Double {
+    let x = Option.Some(42.0);
+    match x {
+        Option.Some(v) -> v,
+        Option.None -> 0.0
+    }
+}
+'
+
+run_selfhost_test "SelfHost: var reassign" '
+def main() -> Double {
+    var x = 10.0;
+    x = 42.0;
+    x
+}
+'
+
+run_selfhost_test "SelfHost: var payload" '
+enum Option { Some(value: Double), None }
+def main() -> Double {
+    var x = Option.Some(10.0);
+    x = Option.Some(42.0);
+    match x {
+        Option.Some(v) -> v,
+        Option.None -> 0.0
+    }
+}
+'
+
+run_selfhost_test "SelfHost: multi-field payload" '
+enum Person { Named { age: Double, score: Double }, Empty }
+def main() -> Double {
+    let p = Person.Named { age: 25.0, score: 98.0 };
+    match p {
+        Person.Named(pl) -> pl.score,
+        Person.Empty -> 0.0
+    }
+}
+'
+
+run_selfhost_test "SelfHost: impl with method" '
+impl MyMath {
+    def double_it(self: MyMath, x: Double) -> Double { x * 2.0 }
+}
+def main() -> Double { MyMath_double_it(0.0, 21.0) }
+'
+
+run_selfhost_test "SelfHost: method call syntax" '
+impl MyMath {
+    def double_it(self: MyMath, x: Double) -> Double { x * 2.0 }
+}
+def main() -> Double {
+    let m: MyMath = 0.0;
+    m.double_it(21.0)
+}
+'
+
+run_selfhost_test "SelfHost: trait impl vtable" '
+trait Math {
+    def add(a: Double, b: Double) -> Double;
+    def mul(a: Double, b: Double) -> Double;
+}
+struct Calc { }
+impl Math for Calc {
+    def add(a: Double, b: Double) -> Double { a + b }
+    def mul(a: Double, b: Double) -> Double { a * b }
+}
+def main() -> Double { 0.0 }
+'
+
+run_selfhost_test "SelfHost: dyn trait dispatch" '
+trait Doubler {
+    def double_it(self) -> Double;
+}
+impl Doubler for Double {
+    def double_it(self) -> Double { self * 2.0 }
+}
+def test(x: Double) -> Double {
+    let d: dyn Doubler = x;
+    d.double_it()
+}
+def main() -> Double { test(21.0) }
+'
+
+run_selfhost_test "SelfHost: struct constructor" '
+struct Pair { x: Double, y: Double }
+def main() -> Double {
+    let p: Pair = Pair { x: 3.0, y: 4.0 };
+    p.x
+}
+'
+
+run_selfhost_test "SelfHost: struct constructor method" '
+struct Pair { x: Double, y: Double }
+impl Pair {
+    def sum(self: Pair) -> Double { self.x + self.y }
+}
+def main() -> Double {
+    let p: Pair = Pair { x: 3.0, y: 4.0 };
+    p.sum()
+}
+'
+
+run_selfhost_test "SelfHost: for loop" '
+def main() -> Double {
+    for i in 1, 3 do i
+}
+'
+
+run_selfhost_test "SelfHost: for loop block" '
+def main() -> Double {
+    let s = 0.0;
+    for i in 1, 4 do { s = s + i };
+    s
+}
+'
+
+run_selfhost_test "SelfHost: vector literal" '
+def main() -> Double {
+    [1.0, 2.0, 3.0][1]
+}
+'
+
+run_selfhost_test "SelfHost: vector index expr" '
+def main() -> Double {
+    [1.0, 2.0, 3.0][2] * 2.0
+}
+'
+
+run_selfhost_test "SelfHost: vector comparison" '
+def main() -> Double {
+    [10.0, 20.0, 30.0][0] == 10.0
+}
+'
+
+run_selfhost_test "SelfHost: pipe basic" '
+def double_it(x: Double) -> Double { x * 2.0 }
+def add_one(x: Double) -> Double { x + 1.0 }
+def main() -> Double {
+    3.0 |> double_it |> add_one
+}
+'
+
+run_selfhost_test "SelfHost: pipe multi-arg" '
+def scale(s: Double, x: Double) -> Double { s * x }
+def main() -> Double {
+    let mul = 2.5;
+    10.0 |> scale(mul)
+}
+'
+
+run_selfhost_test "SelfHost: pipe method call" '
+struct Box { val: Double }
+impl Box {
+    def apply(self: Box, f: Double) -> Double { self.val * f }
+}
+def main() -> Double {
+    let b: Box = Box { val: 3.0 };
+    5.0 |> b.apply
+}
+'
+
+run_selfhost_test "SelfHost: lambda" '
+def main() -> Double {
+    let f = fn(x) -> x + 1.0;
+    f
+}
+'
+
+run_selfhost_test "SelfHost: lambda multi-param" '
+def main() -> Double {
+    let f = fn(a, b) -> a + b;
+    f
+}
+'
+
+run_selfhost_test "SelfHost: lambda no body" '
+def main() -> Double {
+    fn() -> 42.0
+}
+'
 
 echo ""
 echo "========================================"  

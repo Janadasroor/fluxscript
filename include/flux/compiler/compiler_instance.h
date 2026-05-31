@@ -118,7 +118,9 @@ private:
                                 std::vector<std::unique_ptr<FunctionAST>>& outFunctions,
                                 CodegenContext& context, std::map<std::string, FluxType>& returnTypes,
                                 std::string* error, std::map<std::string, bool>& importedModules,
-                                const std::vector<std::string>& symbols = {}) const;
+                                const std::vector<std::string>& symbols = {},
+                                std::unordered_set<std::string>* knownStructTypeNames = nullptr,
+                                std::unordered_set<std::string>* knownEnumTypeNames = nullptr) const;
     std::string resolveImportPath(const std::string& moduleName) const;
     bool loadAndLinkBitcodeModule(const std::string& bcPath, CodegenContext& context,
                                   std::map<std::string, FluxType>& returnTypes,

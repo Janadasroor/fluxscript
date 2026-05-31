@@ -1405,7 +1405,8 @@ TypedValue BinaryExprAST::codegen(CodegenContext& context)
                 std::cerr << "Type error: cannot compare different enum types" << std::endl;
                 return TypedValue();
             }
-        } else if (!isNumeric(L.Type.Kind) || !isNumeric(R.Type.Kind)) {
+        } else if (L.Type.Kind != TypeKind::String && R.Type.Kind != TypeKind::String &&
+                   (!isNumeric(L.Type.Kind) || !isNumeric(R.Type.Kind))) {
             std::cerr << "Type error: invalid operand types for operator '" << (char)Op << "' ("
                       << static_cast<int>(L.Type.Kind) << " and " << static_cast<int>(R.Type.Kind) << ")" << std::endl;
             return TypedValue();
@@ -1710,8 +1711,8 @@ TypedValue BinaryExprAST::codegen(CodegenContext& context)
         }
     }
 
-    // String operations
-    if (L.Type.Kind == TypeKind::String && R.Type.Kind == TypeKind::String) {
+    // String operations (either side may be String — other side is a string handle at ABI level)
+    if (L.Type.Kind == TypeKind::String || R.Type.Kind == TypeKind::String) {
         llvm::Type* DoubleTy = llvm::Type::getDoubleTy(context.TheContext);
         llvm::Value* StrL = L.Val;
         llvm::Value* StrR = R.Val;
@@ -2325,10 +2326,113 @@ TypedValue CallExprAST::codegen(CodegenContext& context)
             }
 
             // Method call: obj.method(args)
+            ExprAST* objExpr = member->getObject();
+            bool selfIsVariable = false;
+            bool passSelfByPtr = false;
+            llvm::Value* selfAllocaPtr = nullptr;
+            if (auto* varExpr = dynamic_cast<VariableExprAST*>(objExpr)) {
+                auto nameIt = context.NamedValues.find(varExpr->getName());
+                if (nameIt != context.NamedValues.end()) {
+                    selfAllocaPtr = nameIt->second;
+                    // If the alloca holds a pointer (e.g. self param inside method body),
+                    // load the actual pointer value instead of passing the alloca address
+                    if (auto* allocaInst = llvm::dyn_cast<llvm::AllocaInst>(selfAllocaPtr)) {
+                        if (allocaInst->getAllocatedType()->isPointerTy()) {
+                            selfAllocaPtr = context.Builder.CreateLoad(
+                                allocaInst->getAllocatedType(), allocaInst, "self_loaded_ptr");
+                        }
+                    }
+                    selfIsVariable = true;
+                }
+            }
             TypedValue objVal = member->getObject()->codegen(context);
             if (!objVal.Val) {
                 std::cerr << "[FLUX ERROR] Method call: object expression failed to codegen" << std::endl;
                 return TypedValue();
+            }
+            passSelfByPtr = shouldPassByPointer(objVal.Type, context);
+
+            // Trait object dispatch: extract vtable/data from fat pointer and dispatch dynamically
+            if (objVal.Type.isTraitObject()) {
+                int traitId = objVal.Type.TraitObjectTypeId;
+                if (traitId < 0 || traitId >= static_cast<int>(context.Traits.size())) {
+                    std::cerr << "Invalid trait object type ID" << std::endl;
+                    return TypedValue();
+                }
+                const auto& traitInfo = context.Traits[traitId];
+                const std::string& methodName = member->getMemberName();
+
+                // Find method index in trait
+                int methodIdx = -1;
+                for (size_t mi = 0; mi < traitInfo.Methods.size(); ++mi) {
+                    if (traitInfo.Methods[mi].Name == methodName) {
+                        methodIdx = static_cast<int>(mi);
+                        break;
+                    }
+                }
+                if (methodIdx < 0) {
+                    std::cerr << "Method '" << methodName << "' not found in trait '" << traitInfo.Name << "'" << std::endl;
+                    return TypedValue();
+                }
+
+                llvm::PointerType* i8PtrTy = llvm::PointerType::get(context.TheContext, 0);
+                llvm::Type* fatPtrTy = objVal.Type.getLLVMType(context.TheContext);
+
+                // Extract data and vtable pointers from fat pointer
+                llvm::Value* fatPtrAlloca = context.Builder.CreateAlloca(fatPtrTy, nullptr, "fat_ptr");
+                context.Builder.CreateStore(objVal.Val, fatPtrAlloca);
+                llvm::Value* dataPtr = context.Builder.CreateLoad(
+                    i8PtrTy, context.Builder.CreateStructGEP(fatPtrTy, fatPtrAlloca, 0, "data_gep"), "data");
+                llvm::Value* vtablePtrLoaded = context.Builder.CreateLoad(
+                    i8PtrTy, context.Builder.CreateStructGEP(fatPtrTy, fatPtrAlloca, 1, "vtable_gep"), "vtable");
+
+                // Load function pointer from vtable (slot = 1 + methodIdx, slot 0 reserved)
+                llvm::Value* fnPtrPtr = context.Builder.CreateGEP(
+                    i8PtrTy, vtablePtrLoaded,
+                    llvm::ConstantInt::get(llvm::Type::getInt32Ty(context.TheContext), 1 + methodIdx),
+                    "fn_ptr_gep");
+                llvm::Value* fnPtr = context.Builder.CreateLoad(i8PtrTy, fnPtrPtr, "fn_ptr");
+
+                // Bitcast fn ptr to the correct function type
+                const auto& sig = traitInfo.Methods[methodIdx];
+                std::vector<llvm::Type*> fnArgTypes = {i8PtrTy};
+                for (size_t ai = 1; ai < sig.Args.size(); ++ai) {
+                    FluxType argType = sig.Args[ai].second;
+                    resolveUserStructType(argType, context);
+                    resolveUserEnumType(argType, context);
+                    fnArgTypes.push_back(argType.getLLVMType(context.TheContext));
+                }
+                llvm::Type* fnRetTy = sig.ReturnType.getLLVMType(context.TheContext);
+                llvm::FunctionType* fnFT = llvm::FunctionType::get(fnRetTy, fnArgTypes, false);
+                llvm::Value* typedFnPtr = context.Builder.CreatePointerCast(fnPtr,
+                    llvm::PointerType::get(fnFT, 0), "typed_fn");
+
+                // Build call arguments
+                std::vector<llvm::Value*> callArgs;
+                bool isSret = fnRetTy->isVoidTy();
+                llvm::Value* sretAlloca = nullptr;
+                if (isSret) {
+                    sretAlloca = context.Builder.CreateAlloca(
+                        sig.ReturnType.getLLVMType(context.TheContext), nullptr, "sret_tmp");
+                    callArgs.push_back(sretAlloca);
+                    callArgs.push_back(dataPtr);
+                } else {
+                    callArgs.push_back(dataPtr);
+                }
+
+                for (auto& Arg : Args) {
+                    TypedValue argVal = Arg->codegen(context);
+                    if (!argVal.Val) return TypedValue();
+                    callArgs.push_back(argVal.Val);
+                }
+
+                llvm::CallInst* call = context.Builder.CreateCall(fnFT, typedFnPtr, callArgs, methodName);
+                if (isSret) {
+                    llvm::Value* result = context.Builder.CreateLoad(
+                        sig.ReturnType.getLLVMType(context.TheContext), sretAlloca, "sret_val");
+                    return TypedValue(result, sig.ReturnType);
+                }
+                return TypedValue(call, sig.ReturnType);
             }
 
             // Determine the object's type name from its FluxType
@@ -2387,8 +2491,10 @@ TypedValue CallExprAST::codegen(CodegenContext& context)
 
             {
                 llvm::Value* selfVal = objVal.Val;
-                if (shouldPassByPointer(objVal.Type, context)) {
-                    if (!selfVal->getType()->isPointerTy()) {
+                if (passSelfByPtr) {
+                    if (selfIsVariable && selfAllocaPtr) {
+                        selfVal = selfAllocaPtr;
+                    } else if (!selfVal->getType()->isPointerTy()) {
                         llvm::Value* tempAlloca = context.Builder.CreateAlloca(selfVal->getType(), nullptr, "self_temp");
                         context.Builder.CreateStore(selfVal, tempAlloca);
                         selfVal = tempAlloca;
@@ -2414,6 +2520,7 @@ TypedValue CallExprAST::codegen(CodegenContext& context)
             }
 
             size_t calleeIdx = isSretCall ? 2 : 1;
+            size_t argIdx = 0;
             for (auto& Arg : Args) {
                 TypedValue argVal = Arg->codegen(context);
                 if (!argVal.Val) {
@@ -2443,6 +2550,58 @@ TypedValue CallExprAST::codegen(CodegenContext& context)
                         }
                     }
                     
+                    // Dyn trait argument upcast for method calls
+                    if (argVal.Val->getType() != expectedTy && expectedTy->isStructTy() &&
+                        argVal.Type.Kind == TypeKind::UserStruct) {
+                        auto* ST = llvm::cast<llvm::StructType>(expectedTy);
+                        if (ST->getNumElements() == 2 &&
+                            ST->getElementType(0)->isPointerTy() &&
+                            ST->getElementType(1)->isPointerTy()) {
+                            std::string fnName = calleeFn->getName().str();
+                            const std::vector<FluxType>* paramTypes = nullptr;
+                            auto pmit = context.CrossModuleParamTypes.find(fnName);
+                            if (pmit != context.CrossModuleParamTypes.end())
+                                paramTypes = &pmit->second;
+                            if (paramTypes && argIdx < paramTypes->size() && (*paramTypes)[argIdx].isTraitObject()) {
+                                int traitId = (*paramTypes)[argIdx].TraitObjectTypeId;
+                                if (traitId >= 0 && traitId < static_cast<int>(context.Traits.size())) {
+                                    const auto& traitInfo = context.Traits[traitId];
+                                    int structId = argVal.Type.StructTypeId;
+                                    if (structId >= 0 && structId < static_cast<int>(context.StructTypes.size())) {
+                                        std::string structName = context.StructTypes[structId].Name;
+                                        auto vtableIdxIt = context.VTableIndex.find({traitInfo.Name, structName});
+                                        if (vtableIdxIt != context.VTableIndex.end()) {
+                                            int vtableIdx = vtableIdxIt->second;
+                                            if (vtableIdx >= 0 && vtableIdx < static_cast<int>(context.VTables.size())) {
+                                                auto& vtableEntry = context.VTables[vtableIdx];
+                                                llvm::PointerType* i8PtrTy = llvm::PointerType::get(context.TheContext, 0);
+                                                llvm::Value* dataPtr = argVal.Val;
+                                                if (!dataPtr->getType()->isPointerTy()) {
+                                                    dataPtr = context.Builder.CreateAlloca(dataPtr->getType(), nullptr, "tmp");
+                                                    context.Builder.CreateStore(argVal.Val, dataPtr);
+                                                }
+                                                if (dataPtr->getType() != i8PtrTy)
+                                                    dataPtr = context.Builder.CreatePointerCast(dataPtr, i8PtrTy, "data_ptr");
+                                                llvm::Value* vtablePtr = context.Builder.CreatePointerCast(
+                                                    vtableEntry.VTableGlobal, i8PtrTy, "vtable_ptr");
+                                                llvm::Value* fatPtrAlloca = context.Builder.CreateAlloca(
+                                                    expectedTy, nullptr, "fat_arg");
+                                                llvm::Value* dataFieldPtr = context.Builder.CreateStructGEP(
+                                                    expectedTy, fatPtrAlloca, 0, "data_field");
+                                                llvm::Value* vtableFieldPtr = context.Builder.CreateStructGEP(
+                                                    expectedTy, fatPtrAlloca, 1, "vtable_field");
+                                                context.Builder.CreateStore(dataPtr, dataFieldPtr);
+                                                context.Builder.CreateStore(vtablePtr, vtableFieldPtr);
+                                                argVal.Val = context.Builder.CreateLoad(
+                                                    expectedTy, fatPtrAlloca, "fat_arg_val");
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
                     if (argVal.Val->getType() != expectedTy) {
                         if (expectedTy->isPointerTy() && argVal.Val->getType()->isPointerTy())
                             argVal.Val = context.Builder.CreatePointerCast(argVal.Val, expectedTy);
@@ -2454,6 +2613,7 @@ TypedValue CallExprAST::codegen(CodegenContext& context)
                 }
                 callArgs.push_back(argVal.Val);
                 ++calleeIdx;
+                ++argIdx;
             }
 
             if (isSretCall) {
@@ -3066,6 +3226,66 @@ TypedValue CallExprAST::codegen(CodegenContext& context)
                 ArgV = context.Builder.CreateLoad(structTy, ArgV, "arg_loaded");
             }
         }
+
+        // Dyn trait argument upcast: if the parameter expects a trait object
+        // (fat pointer {ptr,ptr}) and the arg is a concrete struct, build the
+        // fat pointer by looking up the vtable for the struct/trait pair.
+        if (ArgV->getType() != ExpectedTy && ExpectedTy->isStructTy() &&
+            ArgTVs[i].Type.Kind == TypeKind::UserStruct) {
+            auto* ST = llvm::cast<llvm::StructType>(ExpectedTy);
+            if (ST->getNumElements() == 2 &&
+                ST->getElementType(0)->isPointerTy() &&
+                ST->getElementType(1)->isPointerTy()) {
+                // Look up the parameter's FluxType from CrossModuleParamTypes
+                const std::vector<FluxType>* paramTypes = nullptr;
+                auto pmit = context.CrossModuleParamTypes.find(Name);
+                if (pmit != context.CrossModuleParamTypes.end())
+                    paramTypes = &pmit->second;
+                else {
+                    pmit = context.CrossModuleParamTypes.find(Callee);
+                    if (pmit != context.CrossModuleParamTypes.end())
+                        paramTypes = &pmit->second;
+                }
+                if (paramTypes && i < paramTypes->size() && (*paramTypes)[i].isTraitObject()) {
+                    int traitId = (*paramTypes)[i].TraitObjectTypeId;
+                    if (traitId >= 0 && traitId < static_cast<int>(context.Traits.size())) {
+                        const auto& traitInfo = context.Traits[traitId];
+                        int structId = ArgTVs[i].Type.StructTypeId;
+                        if (structId >= 0 && structId < static_cast<int>(context.StructTypes.size())) {
+                            std::string structName = context.StructTypes[structId].Name;
+                            auto vtableIdxIt = context.VTableIndex.find({traitInfo.Name, structName});
+                            if (vtableIdxIt != context.VTableIndex.end()) {
+                                int vtableIdx = vtableIdxIt->second;
+                                if (vtableIdx >= 0 && vtableIdx < static_cast<int>(context.VTables.size())) {
+                                    auto& vtableEntry = context.VTables[vtableIdx];
+                                    llvm::PointerType* i8PtrTy = llvm::PointerType::get(context.TheContext, 0);
+                                    llvm::Value* dataPtr = ArgV;
+                                    if (!dataPtr->getType()->isPointerTy()) {
+                                        dataPtr = context.Builder.CreateAlloca(dataPtr->getType(), nullptr, "tmp");
+                                        context.Builder.CreateStore(ArgV, dataPtr);
+                                    }
+                                    if (dataPtr->getType() != i8PtrTy)
+                                        dataPtr = context.Builder.CreatePointerCast(dataPtr, i8PtrTy, "data_ptr");
+                                    llvm::Value* vtablePtr = context.Builder.CreatePointerCast(
+                                        vtableEntry.VTableGlobal, i8PtrTy, "vtable_ptr");
+                                    llvm::Value* fatPtrAlloca = context.Builder.CreateAlloca(
+                                        ExpectedTy, nullptr, "fat_arg");
+                                    llvm::Value* dataFieldPtr = context.Builder.CreateStructGEP(
+                                        ExpectedTy, fatPtrAlloca, 0, "data_field");
+                                    llvm::Value* vtableFieldPtr = context.Builder.CreateStructGEP(
+                                        ExpectedTy, fatPtrAlloca, 1, "vtable_field");
+                                    context.Builder.CreateStore(dataPtr, dataFieldPtr);
+                                    context.Builder.CreateStore(vtablePtr, vtableFieldPtr);
+                                    ArgV = context.Builder.CreateLoad(
+                                        ExpectedTy, fatPtrAlloca, "fat_arg_val");
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         if (ArgV->getType() != ExpectedTy) {
             if (ExpectedTy->isPointerTy() && ArgV->getType()->isPointerTy()) {
                 ArgV = context.Builder.CreatePointerCast(ArgV, ExpectedTy);
@@ -3484,6 +3704,52 @@ TypedValue LetExprAST::codegen(CodegenContext& context)
     }
 
     FluxType ActualType = (Type.Kind == TypeKind::Auto) ? InitTV.Type : Type;
+
+    // If the declared type is a trait object (dyn Trait), create a fat pointer
+    if (Type.isTraitObject() && InitTV.Type.isStruct()) {
+        int traitId = Type.TraitObjectTypeId;
+        if (traitId >= 0 && traitId < static_cast<int>(context.Traits.size())) {
+            const auto& traitInfo = context.Traits[traitId];
+            std::string initTypeName = (InitTV.Type.StructTypeId >= 0 &&
+                InitTV.Type.StructTypeId < static_cast<int>(context.StructTypes.size()))
+                ? context.StructTypes[InitTV.Type.StructTypeId].Name : "";
+
+            if (!initTypeName.empty()) {
+                auto vtableIdxIt = context.VTableIndex.find({traitInfo.Name, initTypeName});
+                if (vtableIdxIt != context.VTableIndex.end()) {
+                    int vtableIdx = vtableIdxIt->second;
+                    if (vtableIdx >= 0 && vtableIdx < static_cast<int>(context.VTables.size())) {
+                        auto& vtableEntry = context.VTables[vtableIdx];
+                        llvm::PointerType* i8PtrTy = llvm::PointerType::get(context.TheContext, 0);
+
+                        llvm::Value* dataPtr = InitTV.Val;
+                        if (!dataPtr->getType()->isPointerTy()) {
+                            dataPtr = context.Builder.CreateAlloca(dataPtr->getType(), nullptr, "tmp");
+                            context.Builder.CreateStore(InitTV.Val, dataPtr);
+                        }
+                        if (dataPtr->getType() != i8PtrTy)
+                            dataPtr = context.Builder.CreatePointerCast(dataPtr, i8PtrTy, "data_ptr");
+
+                        llvm::Value* vtablePtr = context.Builder.CreatePointerCast(
+                            vtableEntry.VTableGlobal, i8PtrTy, "vtable_ptr");
+
+                        llvm::Value* fatPtrAlloca = context.Builder.CreateAlloca(
+                            Type.getLLVMType(context.TheContext), nullptr, VarName + "_fat");
+                        llvm::Value* dataFieldPtr = context.Builder.CreateStructGEP(
+                            Type.getLLVMType(context.TheContext), fatPtrAlloca, 0, "data_field");
+                        llvm::Value* vtableFieldPtr = context.Builder.CreateStructGEP(
+                            Type.getLLVMType(context.TheContext), fatPtrAlloca, 1, "vtable_field");
+                        context.Builder.CreateStore(dataPtr, dataFieldPtr);
+                        context.Builder.CreateStore(vtablePtr, vtableFieldPtr);
+                        InitTV.Val = context.Builder.CreateLoad(
+                            Type.getLLVMType(context.TheContext), fatPtrAlloca, VarName + "_fat_val");
+                        InitTV.Type = Type;
+                        ActualType = Type;
+                    }
+                }
+            }
+        }
+    }
 
     // Compile-time dimensional analysis: check that the initializer's
     // unit dimensions match the declared type's dimensions.
@@ -4092,7 +4358,7 @@ llvm::Function* PrototypeAST::codegen(CodegenContext& context)
         F->addParamAttr(0, llvm::Attribute::get(context.TheContext, llvm::Attribute::NoAlias));
     }
 
-    // Mark large parameters with readonly attribute
+    // Mark non-self large parameters with readonly attribute
     unsigned AttrIdx = 0;
     if (useSRet) {
         AttrIdx++; // skip sret
@@ -4104,7 +4370,8 @@ llvm::Function* PrototypeAST::codegen(CodegenContext& context)
         AttrIdx++; // skip async state
     }
     for (size_t i = 0; i < Args.size(); ++i) {
-        if (shouldPassByPointer(Args[i].second, context)) {
+        // Skip readonly for the self parameter (first arg) to allow mutation
+        if (shouldPassByPointer(Args[i].second, context) && i > 0) {
             F->addParamAttr(AttrIdx, llvm::Attribute::get(context.TheContext, llvm::Attribute::ReadOnly));
         }
         AttrIdx++;
@@ -4544,7 +4811,18 @@ void ImplDeclAST::codegen(CodegenContext& context)
         }
     }
 
-    // Generate code for each method (second pass — prototypes already emitted)
+    // Register all method function pointers (so forward references between methods work)
+    for (auto& method : Methods) {
+        auto* proto = method->getProto();
+        std::string mangledName = proto->getName();
+        auto func = context.TheModule->getFunction(mangledName);
+        if (func) {
+            std::string unmangledName = mangledName.substr(TypeName.length() + 1);
+            context.TypeMethods[TypeName][unmangledName] = func;
+        }
+    }
+
+    // Generate code for each method (third pass — function bodies)
     for (auto& method : Methods) {
         auto* proto = method->getProto();
         std::string mangledName = proto->getName();
@@ -4552,7 +4830,6 @@ void ImplDeclAST::codegen(CodegenContext& context)
 
         auto func = context.TheModule->getFunction(mangledName);
         if (func) {
-            context.TypeMethods[TypeName][unmangledName] = func;
             llvm::Function* newFunc = method->codegen(context);
             if (newFunc) {
                 context.TypeMethods[TypeName][unmangledName] = newFunc;
@@ -4592,6 +4869,213 @@ void ImplDeclAST::codegen(CodegenContext& context)
         }
         context.TraitImplementations.insert({TraitName, TypeName});
     }
+
+    // Generate vtable + thunks for this trait implementation
+    if (isTraitImpl() && !TraitName.empty() && !TypeName.empty()) {
+        auto traitIdxIt = context.TraitIndex.find(TraitName);
+        if (traitIdxIt != context.TraitIndex.end()) {
+            int traitId = traitIdxIt->second;
+            if (traitId >= 0 && traitId < static_cast<int>(context.Traits.size())) {
+                const auto& traitInfo = context.Traits[traitId];
+
+                auto typeMethIt = context.TypeMethods.find(TypeName);
+                if (typeMethIt == context.TypeMethods.end() || typeMethIt->second.empty()) {
+                    llvm::errs() << "DEBUG: vtable skip " << TraitName << " for " << TypeName << " (no methods)\n";
+                    goto end_vtable;
+                }
+
+                {
+                std::vector<llvm::Type*> vtableFieldTypes;
+                llvm::PointerType* i8PtrTy = llvm::PointerType::get(context.TheContext, 0);
+                vtableFieldTypes.push_back(i8PtrTy);
+                std::vector<llvm::Constant*> vtableInitValues;
+                vtableInitValues.push_back(llvm::ConstantPointerNull::get(i8PtrTy));
+
+                for (const auto& sig : traitInfo.Methods) {
+                    auto mIt = typeMethIt->second.find(sig.Name);
+                    llvm::Function* realFn = (mIt != typeMethIt->second.end()) ? mIt->second : nullptr;
+                    if (!realFn) {
+                        vtableFieldTypes.push_back(i8PtrTy);
+                        vtableInitValues.push_back(llvm::ConstantPointerNull::get(i8PtrTy));
+                        continue;
+                    }
+
+                    // Build a thunk function: takes i8* (data ptr) + extra args (from trait sig), calls realFn
+                    std::string thunkName = "__thunk_" + TypeName + "_" + TraitName + "_" + sig.Name;
+                    llvm::Function* existingThunk = context.TheModule->getFunction(thunkName);
+                    if (existingThunk) {
+                        llvm::Constant* thunkPtr = llvm::ConstantExpr::getPointerBitCastOrAddrSpaceCast(
+                            existingThunk, i8PtrTy);
+                        vtableFieldTypes.push_back(i8PtrTy);
+                        vtableInitValues.push_back(thunkPtr);
+                        continue;
+                    }
+
+                    llvm::Type* selfLLVMTy = selfType.getLLVMType(context.TheContext);
+                    bool passSelfByPointer = shouldPassByPointer(selfType, context);
+                    bool realIsSret = realFn->getReturnType()->isVoidTy() && realFn->arg_size() > 0 &&
+                                      realFn->hasParamAttribute(0, llvm::Attribute::StructRet);
+
+                    // Thunk: takes i8* self + trait-sig args, calls realFn with correct struct types
+                    std::vector<llvm::Type*> thunkArgTypes;
+                    thunkArgTypes.push_back(i8PtrTy);
+                    for (size_t ai = 1; ai < sig.Args.size(); ++ai) {
+                        FluxType argType = sig.Args[ai].second;
+                        resolveUserStructType(argType, context);
+                        resolveUserEnumType(argType, context);
+                        thunkArgTypes.push_back(argType.getLLVMType(context.TheContext));
+                    }
+                    llvm::Type* traitRetTy = sig.ReturnType.getLLVMType(context.TheContext);
+                    llvm::FunctionType* thunkFT = llvm::FunctionType::get(traitRetTy, thunkArgTypes, false);
+
+                    llvm::Function* thunk = llvm::Function::Create(thunkFT,
+                        llvm::Function::InternalLinkage, thunkName, context.TheModule);
+                    thunk->setGC("shadow-stack");
+
+                    auto thunkBB = llvm::BasicBlock::Create(context.TheContext, "entry", thunk);
+                    llvm::IRBuilder<> thunkBuilder(thunkBB);
+
+                    // Load self from i8* data ptr, cast to struct type
+                    auto thArgIt = thunk->arg_begin();
+                    llvm::Value* dataPtr = thArgIt;
+                    llvm::Value* selfPtr = thunkBuilder.CreatePointerCast(dataPtr,
+                        llvm::PointerType::get(selfLLVMTy, 0), "self_ptr");
+                    llvm::Value* selfVal;
+                    if (passSelfByPointer) {
+                        selfVal = selfPtr;
+                    } else {
+                        selfVal = thunkBuilder.CreateLoad(selfLLVMTy, selfPtr, "self_loaded");
+                    }
+
+                    // Build call to realFn, casting args to realFn's expected types
+                    std::vector<llvm::Value*> callArgs;
+                    llvm::Value* sretAlloca = nullptr;
+                    if (realIsSret) {
+                        sretAlloca = thunkBuilder.CreateAlloca(selfLLVMTy, nullptr, "sret_tmp");
+                        callArgs.push_back(sretAlloca);
+                    }
+                    callArgs.push_back(selfVal);
+
+                    unsigned thunkArgIdx = 1;
+                    unsigned realArgIdx = (realIsSret ? 1 : 0) + 1; // skip sret + self
+                    for (++thArgIt; thArgIt != thunk->arg_end(); ++thArgIt, ++thunkArgIdx, ++realArgIdx) {
+                        llvm::Value* thArg = thArgIt;
+                        if (realArgIdx < realFn->arg_size()) {
+                            llvm::Type* expectedTy = realFn->getArg(realArgIdx)->getType();
+                            if (thArg->getType() != expectedTy) {
+                                if (thArg->getType()->isPointerTy() && expectedTy->isPointerTy())
+                                    thArg = thunkBuilder.CreatePointerCast(thArg, expectedTy);
+                                else if (thArg->getType()->isVectorTy() && expectedTy->isStructTy()) {
+                                    // Convert <2 x double> to { double, double }
+                                    llvm::Value* v0 = thunkBuilder.CreateExtractElement(thArg, (uint64_t)0, "ext0");
+                                    llvm::Value* v1 = thunkBuilder.CreateExtractElement(thArg, (uint64_t)1, "ext1");
+                                    llvm::Value* st = llvm::UndefValue::get(expectedTy);
+                                    st = thunkBuilder.CreateInsertValue(st, v0, 0, "ins0");
+                                    st = thunkBuilder.CreateInsertValue(st, v1, 1, "ins1");
+                                    thArg = st;
+                                } else if (thArg->getType()->isStructTy() && expectedTy->isVectorTy()) {
+                                    // Convert { double, double } to <2 x double>
+                                    llvm::Value* v0 = thunkBuilder.CreateExtractValue(thArg, 0, "ext0");
+                                    llvm::Value* v1 = thunkBuilder.CreateExtractValue(thArg, 1, "ext1");
+                                    llvm::Value* vec = llvm::UndefValue::get(expectedTy);
+                                    vec = thunkBuilder.CreateInsertElement(vec, v0, (uint64_t)0, "ins0");
+                                    vec = thunkBuilder.CreateInsertElement(vec, v1, (uint64_t)1, "ins1");
+                                    thArg = vec;
+                                }
+                            }
+                        }
+                        callArgs.push_back(thArg);
+                    }
+
+                    if (realIsSret) {
+                        thunkBuilder.CreateCall(realFn, callArgs);
+                        llvm::Value* result = thunkBuilder.CreateLoad(selfLLVMTy, sretAlloca, "sret_val");
+                        if (result->getType() != thunk->getReturnType()) {
+                            if (result->getType()->isStructTy() && thunk->getReturnType()->isVectorTy()) {
+                                llvm::Value* v0 = thunkBuilder.CreateExtractValue(result, 0, "ext0");
+                                llvm::Value* v1 = thunkBuilder.CreateExtractValue(result, 1, "ext1");
+                                llvm::Value* vec = llvm::UndefValue::get(thunk->getReturnType());
+                                vec = thunkBuilder.CreateInsertElement(vec, v0, (uint64_t)0, "ins0");
+                                vec = thunkBuilder.CreateInsertElement(vec, v1, (uint64_t)1, "ins1");
+                                result = vec;
+                            } else if (result->getType()->isVectorTy() && thunk->getReturnType()->isStructTy()) {
+                                llvm::Value* v0 = thunkBuilder.CreateExtractElement(result, (uint64_t)0, "ext0");
+                                llvm::Value* v1 = thunkBuilder.CreateExtractElement(result, (uint64_t)1, "ext1");
+                                llvm::Value* st = llvm::UndefValue::get(thunk->getReturnType());
+                                st = thunkBuilder.CreateInsertValue(st, v0, 0, "ins0");
+                                st = thunkBuilder.CreateInsertValue(st, v1, 1, "ins1");
+                                result = st;
+                            } else if (result->getType()->isIntegerTy(1) && thunk->getReturnType()->isDoubleTy()) {
+                                result = thunkBuilder.CreateUIToFP(result, thunk->getReturnType(), "ret_cast");
+                            } else if (result->getType()->isDoubleTy() && thunk->getReturnType()->isIntegerTy(1)) {
+                                llvm::Value* zero = llvm::ConstantFP::get(result->getType(), 0.0);
+                                llvm::Value* cmp = thunkBuilder.CreateFCmpONE(result, zero, "ret_cast");
+                                result = cmp;
+                            } else {
+                                result = thunkBuilder.CreateBitCast(result, thunk->getReturnType(), "ret_cast");
+                            }
+                        }
+                        thunkBuilder.CreateRet(result);
+                    } else {
+                        llvm::Value* result = thunkBuilder.CreateCall(realFn, callArgs, "thunk_result");
+                        if (result->getType() != thunk->getReturnType()) {
+                            if (result->getType()->isStructTy() && thunk->getReturnType()->isVectorTy()) {
+                                // Convert { double, double } to <2 x double>
+                                llvm::Value* v0 = thunkBuilder.CreateExtractValue(result, 0, "ext0");
+                                llvm::Value* v1 = thunkBuilder.CreateExtractValue(result, 1, "ext1");
+                                llvm::Value* vec = llvm::UndefValue::get(thunk->getReturnType());
+                                vec = thunkBuilder.CreateInsertElement(vec, v0, (uint64_t)0, "ins0");
+                                vec = thunkBuilder.CreateInsertElement(vec, v1, (uint64_t)1, "ins1");
+                                result = vec;
+                            } else if (result->getType()->isVectorTy() && thunk->getReturnType()->isStructTy()) {
+                                // Convert <2 x double> to { double, double }
+                                llvm::Value* v0 = thunkBuilder.CreateExtractElement(result, (uint64_t)0, "ext0");
+                                llvm::Value* v1 = thunkBuilder.CreateExtractElement(result, (uint64_t)1, "ext1");
+                                llvm::Value* st = llvm::UndefValue::get(thunk->getReturnType());
+                                st = thunkBuilder.CreateInsertValue(st, v0, 0, "ins0");
+                                st = thunkBuilder.CreateInsertValue(st, v1, 1, "ins1");
+                                result = st;
+                            } else if (result->getType()->isIntegerTy(1) && thunk->getReturnType()->isDoubleTy()) {
+                                result = thunkBuilder.CreateUIToFP(result, thunk->getReturnType(), "ret_cast");
+                            } else if (result->getType()->isDoubleTy() && thunk->getReturnType()->isIntegerTy(1)) {
+                                llvm::Value* zero = llvm::ConstantFP::get(result->getType(), 0.0);
+                                llvm::Value* cmp = thunkBuilder.CreateFCmpONE(result, zero, "ret_cast");
+                                result = cmp;
+                            } else {
+                                result = thunkBuilder.CreateBitCast(result, thunk->getReturnType(), "ret_cast");
+                            }
+                        }
+                        thunkBuilder.CreateRet(result);
+                    }
+
+                    llvm::Constant* thunkPtr = llvm::ConstantExpr::getPointerBitCastOrAddrSpaceCast(
+                        thunk, i8PtrTy);
+                    vtableFieldTypes.push_back(i8PtrTy);
+                    vtableInitValues.push_back(thunkPtr);
+                }
+
+                if (vtableFieldTypes.size() > 1) {
+                    llvm::StructType* vtableSTy = llvm::StructType::create(context.TheContext, vtableFieldTypes,
+                        "__vtable_" + TraitName + "_for_" + TypeName);
+                    llvm::Constant* vtableInit = llvm::ConstantStruct::get(vtableSTy, vtableInitValues);
+
+                    auto* vtableGV = new llvm::GlobalVariable(*context.TheModule, vtableSTy, true,
+                        llvm::GlobalValue::InternalLinkage, vtableInit,
+                        "__vtable_" + TraitName + "_for_" + TypeName);
+
+                    CodegenContext::VTableEntry ve;
+                    ve.TraitName = TraitName;
+                    ve.TypeName = TypeName;
+                    ve.VTableGlobal = vtableGV;
+                    ve.VTableType = vtableSTy;
+                    context.VTableIndex[{TraitName, TypeName}] = static_cast<int>(context.VTables.size());
+                    context.VTables.push_back(std::move(ve));
+                }
+                }
+            }
+        }
+    }
+    end_vtable:;
 }
 
 void TraitDeclAST::codegen(CodegenContext& context)
@@ -6356,4 +6840,80 @@ TypedValue HotSwapExprAST::codegen(CodegenContext& context)
 
     return TypedValue(llvm::ConstantFP::get(Ctx, llvm::APFloat(1.0)), TypeKind::Double);
 }
+
+TypedValue SpawnExprAST::codegen(CodegenContext& context)
+{
+    llvm::LLVMContext& Ctx = context.TheContext;
+    llvm::Type* DoubleTy = llvm::Type::getDoubleTy(Ctx);
+    llvm::Type* Int64Ty = llvm::Type::getInt64Ty(Ctx);
+    llvm::Type* VoidPtrTy = llvm::PointerType::get(Ctx, 0);
+
+    // 1. Evaluate all arguments
+    size_t nargs = Args.size();
+    std::vector<llvm::Value*> argVals;
+    argVals.reserve(nargs);
+    for (auto& arg : Args) {
+        TypedValue tv = arg->codegen(context);
+        if (!tv.Val) return TypedValue();
+        argVals.push_back(tv.Val);
+    }
+
+    // 2. Get the LLVM function pointer for the callee
+    llvm::Function* calleeFn = context.TheModule->getFunction(Callee);
+    if (!calleeFn) {
+        std::vector<llvm::Type*> paramTys(nargs, DoubleTy);
+        auto* ft = llvm::FunctionType::get(DoubleTy, paramTys, false);
+        calleeFn = llvm::Function::Create(ft, llvm::Function::ExternalLinkage, Callee, context.TheModule);
+    }
+
+    // 3. Create a double[] array on the stack to hold argument values
+    llvm::AllocaInst* argsArray = context.Builder.CreateAlloca(
+        llvm::ArrayType::get(DoubleTy, nargs), nullptr, "spawn_args");
+    for (size_t i = 0; i < nargs; i++) {
+        llvm::Value* idx0 = llvm::ConstantInt::get(Int64Ty, 0);
+        llvm::Value* idx1 = llvm::ConstantInt::get(Int64Ty, static_cast<uint64_t>(i));
+        llvm::Value* gep = context.Builder.CreateGEP(
+            argsArray->getAllocatedType(), argsArray, {idx0, idx1}, "spawn_arg");
+        context.Builder.CreateStore(argVals[i], gep);
+    }
+
+    // 4. Cast function pointer to void*
+    llvm::Value* fnPtr = context.Builder.CreateBitCast(calleeFn, VoidPtrTy, "spawn_fn_ptr");
+
+    // 5. Cast args array to void*
+    llvm::Value* argsPtr = context.Builder.CreateBitCast(argsArray, VoidPtrTy, "spawn_args_ptr");
+
+    // 6. Declare / get flux_spawn(void*, void*, i64) -> double
+    llvm::Function* spawnFn = context.TheModule->getFunction("flux_spawn");
+    if (!spawnFn) {
+        auto* spawnFT = llvm::FunctionType::get(DoubleTy, {VoidPtrTy, VoidPtrTy, Int64Ty}, false);
+        spawnFn = llvm::Function::Create(spawnFT, llvm::Function::ExternalLinkage, "flux_spawn", context.TheModule);
+    }
+
+    llvm::Value* nargsVal = llvm::ConstantInt::get(Int64Ty, static_cast<uint64_t>(nargs));
+    llvm::Value* handle = context.Builder.CreateCall(spawnFn, {fnPtr, argsPtr, nargsVal}, "spawn_handle");
+
+    return TypedValue(handle, FluxType(TypeKind::Double));
+}
+
+TypedValue JoinExprAST::codegen(CodegenContext& context)
+{
+    llvm::LLVMContext& Ctx = context.TheContext;
+    llvm::Type* DoubleTy = llvm::Type::getDoubleTy(Ctx);
+
+    // 1. Evaluate the handle expression
+    TypedValue handleTV = Handle->codegen(context);
+    if (!handleTV.Val) return TypedValue();
+
+    // 2. Declare / get flux_join(double) -> double
+    llvm::Function* joinFn = context.TheModule->getFunction("flux_join");
+    if (!joinFn) {
+        auto* joinFT = llvm::FunctionType::get(DoubleTy, {DoubleTy}, false);
+        joinFn = llvm::Function::Create(joinFT, llvm::Function::ExternalLinkage, "flux_join", context.TheModule);
+    }
+
+    llvm::Value* result = context.Builder.CreateCall(joinFn, {handleTV.Val}, "join_result");
+    return TypedValue(result, FluxType(TypeKind::Double));
+}
+
 } // namespace Flux

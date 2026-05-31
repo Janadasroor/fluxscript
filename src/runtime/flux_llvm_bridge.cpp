@@ -5,8 +5,10 @@
    opaque pointers / strings are passed as `double`. */
 
 #include <cstdint>
+#include <cstdio>
 #include <cstring>
 #include <string>
+#include <deque>
 #include <vector>
 #include <unordered_map>
 
@@ -21,7 +23,7 @@
 /*  Helpers (outside extern "C" to allow templates)                  */
 /* ------------------------------------------------------------------ */
 
-static thread_local std::vector<std::string> g_llvm_pool;
+static thread_local std::deque<std::string> g_llvm_pool;
 
 static inline uint64_t dbl_as_u64(double d) noexcept
 {
@@ -65,6 +67,7 @@ template <typename T> static inline T* dbl_to_ptr(double d)
 /* ------------------------------------------------------------------ */
 
 static thread_local std::vector<LLVMValueRef> g_call_args;
+static thread_local std::vector<std::vector<LLVMValueRef>> g_saved_arg_states;
 static thread_local std::vector<LLVMTypeRef> g_type_args;
 static thread_local std::vector<LLVMValueRef> g_index_args;
 static thread_local std::vector<LLVMValueRef> g_const_args;
@@ -87,7 +90,7 @@ extern "C" double flux_str_at(double str_ptr, double idx)
 {
     const char* s = dbl_to_cstr(str_ptr);
     if (!s) return 0.0;
-    int i = static_cast<int>(dbl_as_u64(idx));
+    int i = static_cast<int>(idx);
     return static_cast<double>(static_cast<unsigned char>(s[i]));
 }
 
@@ -95,8 +98,8 @@ extern "C" double flux_str_slice(double str_ptr, double start, double end)
 {
     const char* s = dbl_to_cstr(str_ptr);
     if (!s) return 0.0;
-    int st = static_cast<int>(dbl_as_u64(start));
-    int en = static_cast<int>(dbl_as_u64(end));
+    int st = static_cast<int>(start);
+    int en = static_cast<int>(end);
     int len = en - st;
     if (len < 0) len = 0;
     std::string result(s + st, static_cast<size_t>(len));
@@ -106,7 +109,7 @@ extern "C" double flux_str_slice(double str_ptr, double start, double end)
 
 extern "C" double flux_str_from_char(double ch)
 {
-    char c = static_cast<char>(static_cast<int>(dbl_as_u64(ch)));
+    char c = static_cast<char>(static_cast<int>(ch));
     std::string s(1, c);
     g_llvm_pool.push_back(s);
     return u64_as_dbl(reinterpret_cast<uintptr_t>(g_llvm_pool.back().c_str()));
@@ -120,6 +123,39 @@ extern "C" double flux_str_concat(double a_ptr, double b_ptr)
     std::string result(a ? a : "");
     result += (b ? b : "");
     g_llvm_pool.push_back(result);
+    return u64_as_dbl(reinterpret_cast<uintptr_t>(g_llvm_pool.back().c_str()));
+}
+
+extern "C" double flux_read_file(double path_dbl)
+{
+    const char* path = dbl_to_cstr(path_dbl);
+    if (!path) return 0.0;
+    FILE* f = std::fopen(path, "rb");
+    if (!f) return 0.0;
+    std::fseek(f, 0, SEEK_END);
+    long sz = std::ftell(f);
+    std::fseek(f, 0, SEEK_SET);
+    std::string result(static_cast<size_t>(sz), '\0');
+    fread(result.data(), 1, static_cast<size_t>(sz), f);
+    std::fclose(f);
+    g_llvm_pool.push_back(std::move(result));
+    return u64_as_dbl(reinterpret_cast<uintptr_t>(g_llvm_pool.back().c_str()));
+}
+
+extern "C" double flux_get_env(double name_dbl)
+{
+    const char* name = dbl_to_cstr(name_dbl);
+    if (!name) return 0.0;
+    const char* val = std::getenv(name);
+    if (!val) return 0.0;
+    g_llvm_pool.emplace_back(val);
+    return u64_as_dbl(reinterpret_cast<uintptr_t>(g_llvm_pool.back().c_str()));
+}
+
+extern "C" double flux_dtoa(double val)
+{
+    std::string s = std::to_string(static_cast<int64_t>(val));
+    g_llvm_pool.push_back(std::move(s));
     return u64_as_dbl(reinterpret_cast<uintptr_t>(g_llvm_pool.back().c_str()));
 }
 
@@ -137,6 +173,20 @@ double flux_llvm_call_arg_push(double val)
 double flux_llvm_call_arg_reset()
 {
     g_call_args.clear();
+    return 0.0;
+}
+double flux_llvm_call_arg_save()
+{
+    g_saved_arg_states.push_back(g_call_args);
+    return static_cast<double>(g_saved_arg_states.size() - 1);
+}
+double flux_llvm_call_arg_restore(double handle)
+{
+    size_t idx = static_cast<size_t>(handle);
+    if (idx < g_saved_arg_states.size()) {
+        g_call_args = g_saved_arg_states[idx];
+        g_saved_arg_states.resize(idx);
+    }
     return 0.0;
 }
 double flux_llvm_type_arg_push(double ty)
@@ -219,6 +269,12 @@ double flux_llvm_dispose_message(double msg)
     LLVMDisposeMessage(const_cast<char*>(dbl_to_cstr(msg)));
     return 0.0;
 }
+double flux_llvm_add_global(double module, double type, double name)
+{
+    return ptr_to_dbl(LLVMAddGlobal(dbl_to_ptr<LLVMOpaqueModule>(module),
+                                    dbl_to_ptr<LLVMOpaqueType>(type),
+                                    dbl_to_cstr(name)));
+}
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                             */
@@ -255,23 +311,23 @@ double flux_llvm_float_type_in_ctx(double ctx)
 double flux_llvm_pointer_type_in_ctx(double ctx, double addr_space)
 {
     return ptr_to_dbl(LLVMPointerTypeInContext(dbl_to_ptr<LLVMOpaqueContext>(ctx),
-                                               static_cast<unsigned>(dbl_as_u64(addr_space))));
+                                               static_cast<unsigned>(addr_space)));
 }
 double flux_llvm_function_type(double ret_ty, double param_count, double is_var_arg)
 {
     LLVMTypeRef* paramTypes = g_type_args.empty() ? nullptr : g_type_args.data();
     return ptr_to_dbl(LLVMFunctionType(dbl_to_ptr<LLVMOpaqueType>(ret_ty),
-                                       paramTypes,
-                                       static_cast<unsigned>(dbl_as_u64(param_count)),
-                                       static_cast<int>(dbl_as_u64(is_var_arg))));
+                                      paramTypes,
+                                      static_cast<unsigned>(param_count),
+                                      static_cast<int>(is_var_arg)));
 }
 double flux_llvm_struct_type_in_ctx(double ctx, double elem_count, double packed)
 {
     LLVMTypeRef* elemTypes = g_type_args.empty() ? nullptr : g_type_args.data();
     return ptr_to_dbl(LLVMStructTypeInContext(dbl_to_ptr<LLVMOpaqueContext>(ctx),
                                               elemTypes,
-                                              static_cast<unsigned>(dbl_as_u64(elem_count)),
-                                              static_cast<int>(dbl_as_u64(packed))));
+                                              static_cast<unsigned>(elem_count),
+                                              static_cast<int>(packed)));
 }
 double flux_llvm_struct_create_named(double ctx, double name)
 {
@@ -281,14 +337,14 @@ double flux_llvm_struct_set_body(double struct_ty, double elem_count, double pac
 {
     LLVMTypeRef* elemTypes = g_type_args.empty() ? nullptr : g_type_args.data();
     LLVMStructSetBody(dbl_to_ptr<LLVMOpaqueType>(struct_ty), elemTypes,
-                      static_cast<unsigned>(dbl_as_u64(elem_count)),
-                      static_cast<int>(dbl_as_u64(packed)));
+                      static_cast<unsigned>(elem_count),
+                       static_cast<int>(packed));
     return 0.0;
 }
 double flux_llvm_array_type(double elem_ty, double elem_count)
 {
     return ptr_to_dbl(LLVMArrayType(dbl_to_ptr<LLVMOpaqueType>(elem_ty),
-                                    static_cast<unsigned>(dbl_as_u64(elem_count))));
+                                    static_cast<unsigned>(elem_count)));
 }
 double flux_llvm_get_element_type(double ty)
 {
@@ -301,7 +357,7 @@ double flux_llvm_get_type_kind(double ty)
 double flux_llvm_struct_get_type_index(double struct_ty, double i)
 {
     return ptr_to_dbl(LLVMStructGetTypeAtIndex(dbl_to_ptr<LLVMOpaqueType>(struct_ty),
-                                               static_cast<unsigned>(dbl_as_u64(i))));
+                                               static_cast<unsigned>(i)));
 }
 
 /* ------------------------------------------------------------------ */
@@ -353,7 +409,7 @@ double flux_llvm_get_named_function(double module, double name)
 }
 double flux_llvm_get_param(double fn, double index)
 {
-    return ptr_to_dbl(LLVMGetParam(dbl_to_ptr<LLVMOpaqueValue>(fn), static_cast<unsigned>(dbl_as_u64(index))));
+    return ptr_to_dbl(LLVMGetParam(dbl_to_ptr<LLVMOpaqueValue>(fn), static_cast<unsigned>(index)));
 }
 double flux_llvm_get_first_param(double fn)
 {
@@ -388,6 +444,22 @@ double flux_llvm_type_of(double val)
 {
     return ptr_to_dbl(LLVMTypeOf(dbl_to_ptr<LLVMOpaqueValue>(val)));
 }
+double flux_llvm_global_get_value_type(double global_val)
+{
+    return ptr_to_dbl(LLVMGlobalGetValueType(dbl_to_ptr<LLVMOpaqueValue>(global_val)));
+}
+double flux_llvm_set_initializer(double global, double const_val)
+{
+    LLVMSetInitializer(dbl_to_ptr<LLVMOpaqueValue>(global),
+                       dbl_to_ptr<LLVMOpaqueValue>(const_val));
+    return 0.0;
+}
+double flux_llvm_set_linkage(double global, double linkage)
+{
+    LLVMSetLinkage(dbl_to_ptr<LLVMOpaqueValue>(global),
+                   static_cast<LLVMLinkage>(static_cast<int>(linkage)));
+    return 0.0;
+}
 
 /* ------------------------------------------------------------------ */
 /*  Constants                                                         */
@@ -396,12 +468,12 @@ double flux_llvm_type_of(double val)
 double flux_llvm_const_int(double int_ty, double value, double sign_extend)
 {
     return ptr_to_dbl(LLVMConstInt(dbl_to_ptr<LLVMOpaqueType>(int_ty),
-                                   static_cast<unsigned long long>(dbl_as_u64(value)),
-                                   static_cast<int>(dbl_as_u64(sign_extend))));
+                                   static_cast<unsigned long long>(value),
+                                   static_cast<int>(sign_extend)));
 }
 double flux_llvm_const_real(double real_ty, double value)
 {
-    return ptr_to_dbl(LLVMConstReal(dbl_to_ptr<LLVMOpaqueType>(real_ty), dbl_as_u64(value)));
+    return ptr_to_dbl(LLVMConstReal(dbl_to_ptr<LLVMOpaqueType>(real_ty), value));
 }
 double flux_llvm_const_null(double ty)
 {
@@ -411,19 +483,30 @@ double flux_llvm_const_string_in_ctx(double ctx, double str, double length, doub
 {
     const char* s = dbl_to_cstr(str);
     return ptr_to_dbl(LLVMConstStringInContext(dbl_to_ptr<LLVMOpaqueContext>(ctx), s,
-                                               static_cast<unsigned>(dbl_as_u64(length)),
-                                               static_cast<int>(dbl_as_u64(dont_null_terminate))));
+                                               static_cast<unsigned>(length),
+                                               static_cast<int>(dont_null_terminate)));
 }
 double flux_llvm_const_struct_in_ctx(double ctx, double elem_count, double packed)
 {
     LLVMValueRef* elems = g_const_args.empty() ? nullptr : g_const_args.data();
     return ptr_to_dbl(LLVMConstStructInContext(dbl_to_ptr<LLVMOpaqueContext>(ctx), elems,
-                                               static_cast<unsigned>(dbl_as_u64(elem_count)),
-                                               static_cast<int>(dbl_as_u64(packed))));
+                                               static_cast<unsigned>(elem_count),
+                                               static_cast<int>(packed)));
 }
 double flux_llvm_get_undef(double ty)
 {
     return ptr_to_dbl(LLVMGetUndef(dbl_to_ptr<LLVMOpaqueType>(ty)));
+}
+double flux_llvm_const_bitcast(double val, double dest_type)
+{
+    return ptr_to_dbl(LLVMConstBitCast(dbl_to_ptr<LLVMOpaqueValue>(val),
+                                       dbl_to_ptr<LLVMOpaqueType>(dest_type)));
+}
+double flux_llvm_const_named_struct(double struct_ty, double elem_count)
+{
+    LLVMValueRef* elems = g_const_args.empty() ? nullptr : g_const_args.data();
+    return ptr_to_dbl(LLVMConstNamedStruct(dbl_to_ptr<LLVMOpaqueType>(struct_ty), elems,
+                                           static_cast<unsigned>(elem_count)));
 }
 
 /* ------------------------------------------------------------------ */
@@ -590,14 +673,14 @@ double flux_llvm_build_gep2(double builder, double ty, double ptr, double num_in
     LLVMValueRef* indices = g_index_args.empty() ? nullptr : g_index_args.data();
     return ptr_to_dbl(LLVMBuildGEP2(dbl_to_ptr<LLVMOpaqueBuilder>(builder),
                                     dbl_to_ptr<LLVMOpaqueType>(ty), dbl_to_ptr<LLVMOpaqueValue>(ptr),
-                                    indices, static_cast<unsigned>(dbl_as_u64(num_indices)),
+                                    indices, static_cast<unsigned>(num_indices),
                                     dbl_to_cstr(name)));
 }
 double flux_llvm_build_struct_gep2(double builder, double ty, double ptr, double index, double name)
 {
     return ptr_to_dbl(LLVMBuildStructGEP2(dbl_to_ptr<LLVMOpaqueBuilder>(builder),
                                           dbl_to_ptr<LLVMOpaqueType>(ty), dbl_to_ptr<LLVMOpaqueValue>(ptr),
-                                          static_cast<unsigned>(dbl_as_u64(index)), dbl_to_cstr(name)));
+                                          static_cast<unsigned>(index), dbl_to_cstr(name)));
 }
 double flux_llvm_build_global_string_ptr(double builder, double str, double name)
 {
@@ -614,7 +697,7 @@ double flux_llvm_build_call2(double builder, double func_ty, double fn, double n
     LLVMValueRef* args = g_call_args.empty() ? nullptr : g_call_args.data();
     return ptr_to_dbl(LLVMBuildCall2(dbl_to_ptr<LLVMOpaqueBuilder>(builder),
                                      dbl_to_ptr<LLVMOpaqueType>(func_ty), dbl_to_ptr<LLVMOpaqueValue>(fn),
-                                     args, static_cast<unsigned>(dbl_as_u64(num_args)),
+                                     args, static_cast<unsigned>(num_args),
                                      dbl_to_cstr(name)));
 }
 
@@ -625,14 +708,14 @@ double flux_llvm_build_call2(double builder, double func_ty, double fn, double n
 double flux_llvm_build_icmp(double builder, double op, double lhs, double rhs, double name)
 {
     return ptr_to_dbl(LLVMBuildICmp(dbl_to_ptr<LLVMOpaqueBuilder>(builder),
-                                    static_cast<LLVMIntPredicate>(dbl_as_u64(op)),
+                                    static_cast<LLVMIntPredicate>(op),
                                     dbl_to_ptr<LLVMOpaqueValue>(lhs), dbl_to_ptr<LLVMOpaqueValue>(rhs),
                                     dbl_to_cstr(name)));
 }
 double flux_llvm_build_fcmp(double builder, double op, double lhs, double rhs, double name)
 {
     return ptr_to_dbl(LLVMBuildFCmp(dbl_to_ptr<LLVMOpaqueBuilder>(builder),
-                                    static_cast<LLVMRealPredicate>(dbl_as_u64(op)),
+                                    static_cast<LLVMRealPredicate>(op),
                                     dbl_to_ptr<LLVMOpaqueValue>(lhs), dbl_to_ptr<LLVMOpaqueValue>(rhs),
                                     dbl_to_cstr(name)));
 }
@@ -669,14 +752,14 @@ double flux_llvm_build_extract_value(double builder, double agg, double index, d
 {
     return ptr_to_dbl(LLVMBuildExtractValue(dbl_to_ptr<LLVMOpaqueBuilder>(builder),
                                             dbl_to_ptr<LLVMOpaqueValue>(agg),
-                                            static_cast<unsigned>(dbl_as_u64(index)), dbl_to_cstr(name)));
+                                            static_cast<unsigned>(index), dbl_to_cstr(name)));
 }
 double flux_llvm_build_insert_value(double builder, double agg, double elem, double index, double name)
 {
     return ptr_to_dbl(LLVMBuildInsertValue(dbl_to_ptr<LLVMOpaqueBuilder>(builder),
                                            dbl_to_ptr<LLVMOpaqueValue>(agg),
                                            dbl_to_ptr<LLVMOpaqueValue>(elem),
-                                           static_cast<unsigned>(dbl_as_u64(index)), dbl_to_cstr(name)));
+                                           static_cast<unsigned>(index), dbl_to_cstr(name)));
 }
 
 /* ------------------------------------------------------------------ */
@@ -713,6 +796,12 @@ double flux_llvm_build_sitofp(double builder, double val, double dest_ty, double
                                       dbl_to_ptr<LLVMOpaqueValue>(val),
                                       dbl_to_ptr<LLVMOpaqueType>(dest_ty), dbl_to_cstr(name)));
 }
+double flux_llvm_build_uitofp(double builder, double val, double dest_ty, double name)
+{
+    return ptr_to_dbl(LLVMBuildUIToFP(dbl_to_ptr<LLVMOpaqueBuilder>(builder),
+                                      dbl_to_ptr<LLVMOpaqueValue>(val),
+                                      dbl_to_ptr<LLVMOpaqueType>(dest_ty), dbl_to_cstr(name)));
+}
 double flux_llvm_build_ptrtoint(double builder, double val, double dest_ty, double name)
 {
     return ptr_to_dbl(LLVMBuildPtrToInt(dbl_to_ptr<LLVMOpaqueBuilder>(builder),
@@ -741,7 +830,7 @@ double flux_llvm_verify_module(double module, double action, double out_message)
     char* err = nullptr;
     LLVMBool result =
         LLVMVerifyModule(dbl_to_ptr<LLVMOpaqueModule>(module),
-                         static_cast<LLVMVerifierFailureAction>(dbl_as_u64(action)), &err);
+                         static_cast<LLVMVerifierFailureAction>(action), &err);
     if (err) {
         LLVMDisposeMessage(err);
     }
@@ -751,7 +840,7 @@ double flux_llvm_verify_function(double fn, double action)
 {
     return static_cast<double>(
         LLVMVerifyFunction(dbl_to_ptr<LLVMOpaqueValue>(fn),
-                           static_cast<LLVMVerifierFailureAction>(dbl_as_u64(action))));
+                           static_cast<LLVMVerifierFailureAction>(action)));
 }
 
 /* ------------------------------------------------------------------ */
@@ -775,9 +864,9 @@ double flux_llvm_create_target_machine(double target, double triple, double cpu,
     return ptr_to_dbl(LLVMCreateTargetMachine(
         reinterpret_cast<LLVMTargetRef>(reinterpret_cast<void*>(static_cast<uintptr_t>(dbl_as_u64(target)))),
         dbl_to_cstr(triple), dbl_to_cstr(cpu), dbl_to_cstr(features),
-        static_cast<LLVMCodeGenOptLevel>(dbl_as_u64(opt_level)),
-        static_cast<LLVMRelocMode>(dbl_as_u64(reloc)),
-        static_cast<LLVMCodeModel>(dbl_as_u64(code_model))));
+        static_cast<LLVMCodeGenOptLevel>(opt_level),
+        static_cast<LLVMRelocMode>(reloc),
+        static_cast<LLVMCodeModel>(code_model)));
 }
 double flux_llvm_target_machine_emit_to_file(double tm, double module, double filename, double file_type)
 {
@@ -785,7 +874,7 @@ double flux_llvm_target_machine_emit_to_file(double tm, double module, double fi
     if (LLVMTargetMachineEmitToFile(dbl_to_ptr<LLVMOpaqueTargetMachine>(tm),
                                      dbl_to_ptr<LLVMOpaqueModule>(module),
                                      const_cast<char*>(dbl_to_cstr(filename)),
-                                     static_cast<LLVMCodeGenFileType>(dbl_as_u64(file_type)), &err)) {
+                                     static_cast<LLVMCodeGenFileType>(file_type), &err)) {
         if (err) LLVMDisposeMessage(err);
         return 1.0;
     }
@@ -797,7 +886,7 @@ double flux_llvm_target_machine_emit_to_mem_buf(double tm, double module, double
     LLVMMemoryBufferRef buf = nullptr;
     if (LLVMTargetMachineEmitToMemoryBuffer(dbl_to_ptr<LLVMOpaqueTargetMachine>(tm),
                                              dbl_to_ptr<LLVMOpaqueModule>(module),
-                                             static_cast<LLVMCodeGenFileType>(dbl_as_u64(file_type)),
+                                             static_cast<LLVMCodeGenFileType>(file_type),
                                              &err, &buf)) {
         if (err) LLVMDisposeMessage(err);
         return 0.0;
@@ -898,6 +987,30 @@ double flux_hm_keys(double hm_id)
     }
     g_llvm_pool.push_back(result);
     return u64_as_dbl(reinterpret_cast<uintptr_t>(g_llvm_pool.back().c_str()));
+}
+
+// ---- Dedicated type map (separate from general hashmap) ----
+static thread_local std::unordered_map<std::string, double> g_var_types;
+
+double flux_type_store(double name_dbl, double type_val)
+{
+    const char* name = dbl_to_cstr(name_dbl);
+    if (name) g_var_types[std::string(name)] = type_val;
+    return 0.0;
+}
+double flux_type_load(double name_dbl)
+{
+    const char* name = dbl_to_cstr(name_dbl);
+    if (!name) return 0.0;
+    auto it = g_var_types.find(std::string(name));
+    if (it != g_var_types.end()) return it->second;
+    return 0.0;
+}
+double flux_type_has(double name_dbl)
+{
+    const char* name = dbl_to_cstr(name_dbl);
+    if (!name) return 0.0;
+    return g_var_types.find(std::string(name)) != g_var_types.end() ? 1.0 : 0.0;
 }
 
 } // extern "C"

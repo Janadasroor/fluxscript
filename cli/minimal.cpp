@@ -199,6 +199,7 @@ int runJIT(const std::string& code)
     engine.initialize();
     engine.setOptimizationLevel(toOptimizationLevel(OptLevel));
     engine.setJITCacheEnabled(EnableCache);
+    engine.setInputName(InputFilename);
 
     if (ProfileMode) {
         std::string error;

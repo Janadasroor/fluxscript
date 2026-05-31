@@ -503,6 +503,10 @@ int Lexer::gettok()
             return static_cast<int>(TokenType::tok_async);
         if (IdentifierStr == "await")
             return static_cast<int>(TokenType::tok_await);
+        if (IdentifierStr == "spawn")
+            return static_cast<int>(TokenType::tok_spawn);
+        if (IdentifierStr == "join")
+            return static_cast<int>(TokenType::tok_join);
         if (IdentifierStr == "export")
             return static_cast<int>(TokenType::tok_export);
         if (IdentifierStr == "namespace")

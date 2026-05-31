@@ -172,6 +172,16 @@ void CompilerInstance::injectStandardLibrary(CodegenContext& context,
     regExtern("flux_regex_replace", DblTy(), {DblTy(), DblTy(), DblTy()});
     regExtern("flux_print_string", DblTy(), {DblTy()});
 
+    // Bridge string utility functions (return String handles as opaque doubles)
+    regExtern("flux_str_len", DblTy(), {DblTy()});
+    regExtern("flux_str_at", DblTy(), {DblTy(), DblTy()});
+    regExtern("flux_str_slice", DblTy(), {DblTy(), DblTy(), DblTy()});
+    regExtern("flux_str_from_char", DblTy(), {DblTy()});
+    regExtern("flux_str_concat", DblTy(), {DblTy(), DblTy()});
+    regExtern("flux_read_file", DblTy(), {DblTy()});
+    regExtern("flux_get_env", DblTy(), {DblTy()});
+    regExtern("flux_dtoa", DblTy(), {DblTy()});
+
     // FFT
     regExtern("fft", MatTy(), {MatTy(), DblTy()});
     regExtern("fft_thd", DblTy(), {MatTy(), DblTy()});
@@ -224,6 +234,30 @@ void CompilerInstance::injectStandardLibrary(CodegenContext& context,
     regExtern("matrix_rank", DblTy(), {MatTy()});
     regExtern("matrix_cond", DblTy(), {MatTy()});
     regExtern("matrix_norm", DblTy(), {MatTy(), DblTy()});
+
+    // --- Threading Primitives ---
+    // flux_spawn and flux_join use native C pointer types (void*, int64_t),
+    // not double — they are declared in SpawnExprAST/JoinExprAST::codegen
+    // with the correct LLVM types. Channel functions use opaque double handles.
+    regExtern("flux_chan_create", DblTy(), {});
+    regExtern("flux_chan_send", FluxType(TypeKind::Void), {DblTy(), DblTy()});
+    regExtern("flux_chan_recv", DblTy(), {DblTy()});
+    regExtern("flux_chan_close", FluxType(TypeKind::Void), {DblTy()});
+    regExtern("flux_chan_destroy", FluxType(TypeKind::Void), {DblTy()});
+    regExtern("flux_thread_self", DblTy(), {});
+
+    // Mutex
+    regExtern("flux_mutex_create", DblTy(), {});
+    regExtern("flux_mutex_lock", FluxType(TypeKind::Void), {DblTy()});
+    regExtern("flux_mutex_unlock", FluxType(TypeKind::Void), {DblTy()});
+    regExtern("flux_mutex_destroy", FluxType(TypeKind::Void), {DblTy()});
+
+    // RwLock
+    regExtern("flux_rwlock_create", DblTy(), {});
+    regExtern("flux_rwlock_read_lock", FluxType(TypeKind::Void), {DblTy()});
+    regExtern("flux_rwlock_write_lock", FluxType(TypeKind::Void), {DblTy()});
+    regExtern("flux_rwlock_unlock", FluxType(TypeKind::Void), {DblTy()});
+    regExtern("flux_rwlock_destroy", FluxType(TypeKind::Void), {DblTy()});
 
     // Pre-declare all registered extern functions with correct LLVM types so that
     // getFunction() in CallExprAST::codegen finds them directly (bypassing the
@@ -411,7 +445,9 @@ bool CompilerInstance::collectImportFunctions(const std::string& moduleName,
                                               CodegenContext& context,
                                               std::map<std::string, FluxType>& returnTypes, std::string* error,
                                               std::map<std::string, bool>& importedModules,
-                                              const std::vector<std::string>& symbols) const
+                                              const std::vector<std::string>& symbols,
+                                              std::unordered_set<std::string>* knownStructTypeNames,
+                                              std::unordered_set<std::string>* knownEnumTypeNames) const
 {
     if (importedModules.find(moduleName) != importedModules.end())
         return true;
@@ -475,7 +511,7 @@ bool CompilerInstance::collectImportFunctions(const std::string& moduleName,
             }
             const std::string& subModuleName = importExpr->getModuleName();
             const std::vector<std::string>& subSymbols = importExpr->getSymbols();
-            if (!collectImportFunctions(subModuleName, outFunctions, context, returnTypes, error, importedModules, subSymbols))
+            if (!collectImportFunctions(subModuleName, outFunctions, context, returnTypes, error, importedModules, subSymbols, knownStructTypeNames, knownEnumTypeNames))
                 return false;
             const std::string& alias = importExpr->getAlias().empty() ? subModuleName : importExpr->getAlias();
             context.NamedValues[alias + ".*"] =
@@ -501,7 +537,16 @@ bool CompilerInstance::collectImportFunctions(const std::string& moduleName,
             std::unique_ptr<ImplDeclAST> classImpl;
             if (parser.ParseClassDecl(&classStruct, &classImpl)) {
                 if (classStruct) classStruct->codegen(context);
-                if (classImpl) classImpl->codegen(context);
+                if (classImpl) {
+                    for (auto& func : localFunctions) {
+                        auto* proto = func->getProto();
+                        if (!context.TheModule->getFunction(proto->getName())) {
+                            context.FuncReturnTypes[proto->getName()] = proto->getReturnType();
+                            proto->codegen(context);
+                        }
+                    }
+                    classImpl->codegen(context);
+                }
             }
         } else if (parser.CurTok == static_cast<int>(TokenType::tok_enum)) {
             std::vector<std::unique_ptr<StructDeclAST>> anonStructs;
@@ -513,6 +558,16 @@ bool CompilerInstance::collectImportFunctions(const std::string& moduleName,
         } else if (parser.CurTok == static_cast<int>(TokenType::tok_impl)) {
             auto implDecl = parser.ParseImplDecl();
             if (implDecl) {
+                // Ensure all pending top-level function prototypes exist before
+                // method body codegen (methods may call top-level functions like
+                // keyword_kind, and auto-declaration would guess double return type)
+                for (auto& func : localFunctions) {
+                    auto* proto = func->getProto();
+                    if (!context.TheModule->getFunction(proto->getName())) {
+                        context.FuncReturnTypes[proto->getName()] = proto->getReturnType();
+                        proto->codegen(context);
+                    }
+                }
                 implDecl->codegen(context);
             }
         } else if (parser.CurTok == static_cast<int>(TokenType::tok_semicolon)) {
@@ -562,6 +617,16 @@ bool CompilerInstance::collectImportFunctions(const std::string& moduleName,
             }
         }
         localFunctions = std::move(filtered);
+    }
+
+    // Propagate known struct/enum type names from imported parser
+    if (knownStructTypeNames) {
+        for (const auto& name : parser.getKnownStructTypeNames())
+            knownStructTypeNames->insert(name);
+    }
+    if (knownEnumTypeNames) {
+        for (const auto& name : parser.getKnownEnumTypeNames())
+            knownEnumTypeNames->insert(name);
     }
 
     // Move local functions to the output vector
@@ -1333,7 +1398,8 @@ bool CompilerInstance::compileParser(Parser& parser, CodegenContext& context,
             }
             const std::string& moduleName = importExpr->getModuleName();
             const std::vector<std::string>& importSymbols = importExpr->getSymbols();
-            if (!collectImportFunctions(moduleName, functions, context, returnTypes, &error, importedModules, importSymbols)) {
+            if (!collectImportFunctions(moduleName, functions, context, returnTypes, &error, importedModules, importSymbols,
+                                        &parser.getKnownStructTypeNames(), &parser.getKnownEnumTypeNames())) {
                 return false;
             }
             const std::string& alias = importExpr->getAlias().empty() ? moduleName : importExpr->getAlias();
@@ -1874,6 +1940,8 @@ std::unique_ptr<CompileArtifacts> CompilerInstance::compileToIR(const std::strin
         artifacts->codegenContext->DebugBuilder->finalize();
 
     if (llvm::verifyModule(*artifacts->codegenContext->TheModule, &llvm::errs())) {
+        llvm::errs() << "=== INVALID MODULE DUMP ===\n";
+        artifacts->codegenContext->TheModule->print(llvm::errs(), nullptr);
         if (error)
             *error = "Generated LLVM IR is invalid.";
         return nullptr;

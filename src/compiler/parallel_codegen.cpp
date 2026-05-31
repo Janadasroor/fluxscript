@@ -17,6 +17,7 @@
 #include <llvm/IR/BasicBlock.h>
 #include <llvm/IR/Constants.h>
 #include <llvm/IR/Function.h>
+#include <llvm/IR/Instructions.h>
 #include <llvm/IR/Verifier.h>
 
 namespace Flux {
@@ -46,12 +47,22 @@ TypedValue ParallelForExprAST::codegen(CodegenContext& context)
     llvm::Value* EndIdx = context.Builder.CreateFPToSI(EndTV.Val, Int64Ty, "end_idx");
 
     // 2. Capture all visible variables (except loop var)
+    // NamedValues contains either AllocaInst* (pointer to stored value for let vars)
+    // or the value itself (for computed expressions). We need the actual value type.
+    auto getCapturedValue = [&](llvm::Value* v) -> std::pair<llvm::Value*, llvm::Type*> {
+        if (auto* alloca = llvm::dyn_cast<llvm::AllocaInst>(v))
+            return {context.Builder.CreateLoad(alloca->getAllocatedType(), v), alloca->getAllocatedType()};
+        return {v, v->getType()};
+    };
     std::vector<std::string> CapturedNames;
+    std::vector<llvm::Value*> CapturedVals;
     std::vector<llvm::Type*> CapturedTypes;
     for (auto const& [name, val] : context.NamedValues) {
         if (name != VarName) {
+            auto [capturedVal, capturedTy] = getCapturedValue(val);
             CapturedNames.push_back(name);
-            CapturedTypes.push_back(val->getType());
+            CapturedVals.push_back(capturedVal);
+            CapturedTypes.push_back(capturedTy);
         }
     }
 
@@ -63,7 +74,7 @@ TypedValue ParallelForExprAST::codegen(CodegenContext& context)
         CaptureStruct = context.Builder.CreateAlloca(CaptureStructTy, nullptr, "par_capture");
         for (size_t i = 0; i < CapturedNames.size(); i++) {
             llvm::Value* MemberPtr = context.Builder.CreateStructGEP(CaptureStructTy, CaptureStruct, i);
-            context.Builder.CreateStore(context.NamedValues[CapturedNames[i]], MemberPtr);
+            context.Builder.CreateStore(CapturedVals[i], MemberPtr);
         }
     }
 

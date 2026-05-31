@@ -21,7 +21,11 @@
 #include <Eigen/Dense>
 #include <algorithm>
 #include <atomic>
+#include <chrono>
 #include <cmath>
+#include <condition_variable>
+#include <queue>
+#include <shared_mutex>
 #include <cstdio>
 #include <cstring>
 #include <fstream>
@@ -112,6 +116,7 @@ double flux_llvm_get_basic_block_terminator(double block);
 double flux_llvm_set_value_name(double val, double name);
 double flux_llvm_get_value_name(double val);
 double flux_llvm_type_of(double val);
+double flux_llvm_global_get_value_type(double global_val);
 double flux_llvm_const_int(double int_ty, double value, double sign_extend);
 double flux_llvm_const_real(double real_ty, double value);
 double flux_llvm_const_null(double ty);
@@ -158,6 +163,7 @@ double flux_llvm_build_zext(double builder, double val, double dest_ty, double n
 double flux_llvm_build_sext(double builder, double val, double dest_ty, double name);
 double flux_llvm_build_fptosi(double builder, double val, double dest_ty, double name);
 double flux_llvm_build_sitofp(double builder, double val, double dest_ty, double name);
+double flux_llvm_build_uitofp(double builder, double val, double dest_ty, double name);
 double flux_llvm_build_ptrtoint(double builder, double val, double dest_ty, double name);
 double flux_llvm_build_inttoptr(double builder, double val, double dest_ty, double name);
 double flux_llvm_build_bitcast(double builder, double val, double dest_ty, double name);
@@ -175,6 +181,8 @@ double flux_llvm_get_current_debug_location(double builder);
 double flux_llvm_set_current_debug_location(double builder, double loc);
 double flux_llvm_call_arg_push(double val);
 double flux_llvm_call_arg_reset();
+double flux_llvm_call_arg_save();
+double flux_llvm_call_arg_restore(double handle);
 double flux_llvm_type_arg_push(double ty);
 double flux_llvm_type_arg_reset();
 double flux_llvm_index_arg_push(double idx);
@@ -196,6 +204,7 @@ double flux_str_at(double str_ptr, double idx);
 double flux_str_slice(double str_ptr, double start, double end);
 double flux_str_from_char(double ch);
 double flux_str_concat(double a_ptr, double b_ptr);
+double flux_read_file(double path_dbl);
 }
 
 // JIT-callable wrappers (C++ linkage, call extern "C" functions internally)
@@ -502,6 +511,31 @@ extern "C" void flux_free_all_allocations()
     g_tracked_allocations.clear();
 }
 
+// ---- Dyn trait fat-pointer table ----
+static thread_local std::vector<std::pair<uint64_t, uint64_t>> g_dyn_ptrs;
+
+extern "C" double flux_dyn_ptr_push(double data, double vtable)
+{
+    double idx = static_cast<double>(g_dyn_ptrs.size());
+    g_dyn_ptrs.push_back({jit_bitcast<uint64_t>(data), jit_bitcast<uint64_t>(vtable)});
+    return idx;
+}
+
+extern "C" double flux_dyn_ptr_get_data(double idx)
+{
+    return jit_bitcast<double>(g_dyn_ptrs[static_cast<size_t>(idx)].first);
+}
+
+extern "C" double flux_dyn_ptr_get_vtable(double idx)
+{
+    return jit_bitcast<double>(g_dyn_ptrs[static_cast<size_t>(idx)].second);
+}
+
+extern "C" void flux_dyn_ptr_clear()
+{
+    g_dyn_ptrs.clear();
+}
+
 extern "C" void flux_inc_call_depth()
 {
     g_jit_call_depth++;
@@ -511,6 +545,7 @@ extern "C" void flux_dec_call_depth()
 {
     if (--g_jit_call_depth == 0) {
         flux_free_all_allocations();
+        flux_dyn_ptr_clear();
     }
 }
 
@@ -1634,6 +1669,29 @@ extern "C" double flux_set_diagnostic(double node_dbl, double type_dbl, double t
 extern "C" void flux_parallel_for(int64_t start, int64_t end, int64_t chunk_size, void* body_func_ptr, void* user_data);
 extern "C" int64_t flux_get_num_threads();
 
+// Forward declarations for threading primitives
+extern "C" double flux_spawn(void* func_ptr, void* args, int64_t nargs);
+extern "C" double flux_join(double handle);
+extern "C" double flux_thread_self();
+extern "C" double flux_chan_create();
+extern "C" void flux_chan_send(double chan, double val);
+extern "C" double flux_chan_recv(double chan);
+extern "C" void flux_chan_close(double chan);
+extern "C" void flux_chan_destroy(double chan);
+
+// Forward declarations for Mutex
+extern "C" double flux_mutex_create();
+extern "C" void flux_mutex_lock(double mtx);
+extern "C" void flux_mutex_unlock(double mtx);
+extern "C" void flux_mutex_destroy(double mtx);
+
+// Forward declarations for RwLock
+extern "C" double flux_rwlock_create();
+extern "C" void flux_rwlock_read_lock(double rw);
+extern "C" void flux_rwlock_write_lock(double rw);
+extern "C" void flux_rwlock_unlock(double rw);
+extern "C" void flux_rwlock_destroy(double rw);
+
 void registerRuntimeFunctions(FluxJIT& jit)
 {
     jit.registerFunction("flux_create_matrix", (void*)&flux_create_matrix);
@@ -1726,6 +1784,10 @@ void registerRuntimeFunctions(FluxJIT& jit)
     jit.registerFunction("flux_print_double", (void*)&flux_print_double);
     jit.registerFunction("flux_malloc", (void*)&flux_malloc);
     jit.registerFunction("flux_free_all_allocations", (void*)&flux_free_all_allocations);
+    jit.registerFunction("flux_dyn_ptr_push", (void*)&flux_dyn_ptr_push);
+    jit.registerFunction("flux_dyn_ptr_get_data", (void*)&flux_dyn_ptr_get_data);
+    jit.registerFunction("flux_dyn_ptr_get_vtable", (void*)&flux_dyn_ptr_get_vtable);
+    jit.registerFunction("flux_dyn_ptr_clear", (void*)&flux_dyn_ptr_clear);
     jit.registerFunction("flux_nn_create", (void*)&AI::flux_nn_create);
     jit.registerFunction("flux_nn_train", (void*)&AI::flux_nn_train);
     jit.registerFunction("flux_nn_predict", (void*)&AI::flux_nn_predict);
@@ -1915,6 +1977,7 @@ void registerRuntimeFunctions(FluxJIT& jit)
     jit.registerFunction("flux_llvm_set_value_name", (void*)&flux_llvm_set_value_name);
     jit.registerFunction("flux_llvm_get_value_name", (void*)&flux_llvm_get_value_name);
     jit.registerFunction("flux_llvm_type_of", (void*)&flux_llvm_type_of);
+    jit.registerFunction("flux_llvm_global_get_value_type", (void*)&flux_llvm_global_get_value_type);
     jit.registerFunction("flux_llvm_const_int", (void*)&flux_llvm_const_int);
     jit.registerFunction("flux_llvm_const_real", (void*)&flux_llvm_const_real);
     jit.registerFunction("flux_llvm_const_null", (void*)&flux_llvm_const_null);
@@ -1961,6 +2024,7 @@ void registerRuntimeFunctions(FluxJIT& jit)
     jit.registerFunction("flux_llvm_build_sext", (void*)&flux_llvm_build_sext);
     jit.registerFunction("flux_llvm_build_fptosi", (void*)&flux_llvm_build_fptosi);
     jit.registerFunction("flux_llvm_build_sitofp", (void*)&flux_llvm_build_sitofp);
+    jit.registerFunction("flux_llvm_build_uitofp", (void*)&flux_llvm_build_uitofp);
     jit.registerFunction("flux_llvm_build_ptrtoint", (void*)&flux_llvm_build_ptrtoint);
     jit.registerFunction("flux_llvm_build_inttoptr", (void*)&flux_llvm_build_inttoptr);
     jit.registerFunction("flux_llvm_build_bitcast", (void*)&flux_llvm_build_bitcast);
@@ -1979,6 +2043,8 @@ void registerRuntimeFunctions(FluxJIT& jit)
     // Collectors
     jit.registerFunction("flux_llvm_call_arg_push", (void*)&flux_llvm_call_arg_push);
     jit.registerFunction("flux_llvm_call_arg_reset", (void*)&flux_llvm_call_arg_reset);
+    jit.registerFunction("flux_llvm_call_arg_save", (void*)&flux_llvm_call_arg_save);
+    jit.registerFunction("flux_llvm_call_arg_restore", (void*)&flux_llvm_call_arg_restore);
     jit.registerFunction("flux_llvm_type_arg_push", (void*)&flux_llvm_type_arg_push);
     jit.registerFunction("flux_llvm_type_arg_reset", (void*)&flux_llvm_type_arg_reset);
     jit.registerFunction("flux_llvm_index_arg_push", (void*)&flux_llvm_index_arg_push);
@@ -2000,6 +2066,30 @@ void registerRuntimeFunctions(FluxJIT& jit)
     jit.registerFunction("flux_str_slice", (void*)&flux_str_slice);
     jit.registerFunction("flux_str_from_char", (void*)&flux_str_from_char);
     jit.registerFunction("flux_str_concat", (void*)&flux_str_concat);
+    jit.registerFunction("flux_read_file", (void*)&flux_read_file);
+
+    // Threading primitives
+    jit.registerFunction("flux_spawn", (void*)&flux_spawn);
+    jit.registerFunction("flux_join", (void*)&flux_join);
+    jit.registerFunction("flux_thread_self", (void*)&flux_thread_self);
+    jit.registerFunction("flux_chan_create", (void*)&flux_chan_create);
+    jit.registerFunction("flux_chan_send", (void*)&flux_chan_send);
+    jit.registerFunction("flux_chan_recv", (void*)&flux_chan_recv);
+    jit.registerFunction("flux_chan_close", (void*)&flux_chan_close);
+    jit.registerFunction("flux_chan_destroy", (void*)&flux_chan_destroy);
+
+    // Mutex
+    jit.registerFunction("flux_mutex_create", (void*)&flux_mutex_create);
+    jit.registerFunction("flux_mutex_lock", (void*)&flux_mutex_lock);
+    jit.registerFunction("flux_mutex_unlock", (void*)&flux_mutex_unlock);
+    jit.registerFunction("flux_mutex_destroy", (void*)&flux_mutex_destroy);
+
+    // RwLock
+    jit.registerFunction("flux_rwlock_create", (void*)&flux_rwlock_create);
+    jit.registerFunction("flux_rwlock_read_lock", (void*)&flux_rwlock_read_lock);
+    jit.registerFunction("flux_rwlock_write_lock", (void*)&flux_rwlock_write_lock);
+    jit.registerFunction("flux_rwlock_unlock", (void*)&flux_rwlock_unlock);
+    jit.registerFunction("flux_rwlock_destroy", (void*)&flux_rwlock_destroy);
 }
 
 // Fixed-size worker thread pool with work-stealing for parallel for loops.
@@ -2118,6 +2208,200 @@ extern "C" int64_t flux_get_num_threads()
     return parallelPool().numThreads();
 }
 
+// --- Threading Primitives: spawn/join + channels ---
+
+struct ThreadContext {
+    std::thread thread;
+    double result;
+    std::atomic<bool> done{false};
+};
+
+static std::mutex g_thread_map_mutex;
+static std::unordered_map<double, ThreadContext*> g_thread_map;
+static double g_next_thread_id = 1.0;
+
+extern "C" double flux_spawn(void* func_ptr, void* args, int64_t nargs)
+{
+    // Copy args array so it outlives the caller
+    double* args_copy = new double[static_cast<size_t>(nargs)];
+    std::memcpy(args_copy, args, static_cast<size_t>(nargs) * sizeof(double));
+
+    auto ctx = std::make_unique<ThreadContext>();
+    double* args_owned = args_copy;
+    ctx->thread = std::thread([func_ptr, args_owned, nargs, ctx = ctx.get()]() {
+        typedef double (*Fn0)();
+        typedef double (*Fn1)(double);
+        typedef double (*Fn2)(double, double);
+        typedef double (*Fn3)(double, double, double);
+        typedef double (*Fn4)(double, double, double, double);
+        typedef double (*Fn5)(double, double, double, double, double);
+        double result = 0.0;
+        switch (nargs) {
+            case 0: result = reinterpret_cast<Fn0>(func_ptr)(); break;
+            case 1: result = reinterpret_cast<Fn1>(func_ptr)(args_owned[0]); break;
+            case 2: result = reinterpret_cast<Fn2>(func_ptr)(args_owned[0], args_owned[1]); break;
+            case 3: result = reinterpret_cast<Fn3>(func_ptr)(args_owned[0], args_owned[1], args_owned[2]); break;
+            case 4: result = reinterpret_cast<Fn4>(func_ptr)(args_owned[0], args_owned[1], args_owned[2], args_owned[3]); break;
+            case 5: result = reinterpret_cast<Fn5>(func_ptr)(args_owned[0], args_owned[1], args_owned[2], args_owned[3], args_owned[4]); break;
+        }
+        delete[] args_owned;
+        ctx->result = result;
+        ctx->done.store(true, std::memory_order_release);
+    });
+
+    // Assign ID and store in map
+    double id;
+    {
+        std::lock_guard<std::mutex> lock(g_thread_map_mutex);
+        id = g_next_thread_id++;
+        g_thread_map[id] = ctx.release();
+    }
+    return id;
+}
+
+extern "C" double flux_join(double handle)
+{
+    ThreadContext* ctx = nullptr;
+    {
+        std::lock_guard<std::mutex> lock(g_thread_map_mutex);
+        auto it = g_thread_map.find(handle);
+        if (it == g_thread_map.end())
+            return 0.0;
+        ctx = it->second;
+        g_thread_map.erase(it);
+    }
+    if (ctx->thread.joinable())
+        ctx->thread.join();
+    double result = ctx->result;
+    delete ctx;
+    return result;
+}
+
+extern "C" double flux_thread_self()
+{
+    // Return a unique double per thread — use std::hash on thread::id
+    std::hash<std::thread::id> hasher;
+    double id = static_cast<double>(hasher(std::this_thread::get_id()));
+    return id;
+}
+
+// --- Channels (MPSC: multi-producer, single-consumer) ---
+
+struct Channel {
+    std::queue<double> queue;
+    std::mutex mtx;
+    std::condition_variable cv;
+    bool closed = false;
+};
+
+extern "C" double flux_chan_create()
+{
+    auto* ch = new Channel;
+    return jit_bitcast<double>(reinterpret_cast<uintptr_t>(ch));
+}
+
+extern "C" void flux_chan_send(double chan, double val)
+{
+    auto* ch = reinterpret_cast<Channel*>(jit_bitcast<uintptr_t>(chan));
+    {
+        std::lock_guard<std::mutex> lock(ch->mtx);
+        if (ch->closed) return;
+        ch->queue.push(val);
+    }
+    ch->cv.notify_one();
+}
+
+extern "C" double flux_chan_recv(double chan)
+{
+    auto* ch = reinterpret_cast<Channel*>(jit_bitcast<uintptr_t>(chan));
+    std::unique_lock<std::mutex> lock(ch->mtx);
+    ch->cv.wait(lock, [ch]() { return !ch->queue.empty() || ch->closed; });
+    if (ch->queue.empty())
+        return 0.0;
+    double val = ch->queue.front();
+    ch->queue.pop();
+    return val;
+}
+
+extern "C" void flux_chan_close(double chan)
+{
+    auto* ch = reinterpret_cast<Channel*>(jit_bitcast<uintptr_t>(chan));
+    {
+        std::lock_guard<std::mutex> lock(ch->mtx);
+        ch->closed = true;
+    }
+    ch->cv.notify_all();
+}
+
+extern "C" void flux_chan_destroy(double chan)
+{
+    auto* ch = reinterpret_cast<Channel*>(jit_bitcast<uintptr_t>(chan));
+    {
+        std::lock_guard<std::mutex> lock(ch->mtx);
+        ch->closed = true;
+    }
+    ch->cv.notify_all();
+    delete ch;
+}
+
+// --- Mutex ---
+
+extern "C" double flux_mutex_create()
+{
+    auto* m = new std::mutex;
+    return jit_bitcast<double>(reinterpret_cast<uintptr_t>(m));
+}
+
+extern "C" void flux_mutex_lock(double mtx)
+{
+    auto* m = reinterpret_cast<std::mutex*>(jit_bitcast<uintptr_t>(mtx));
+    m->lock();
+}
+
+extern "C" void flux_mutex_unlock(double mtx)
+{
+    auto* m = reinterpret_cast<std::mutex*>(jit_bitcast<uintptr_t>(mtx));
+    m->unlock();
+}
+
+extern "C" void flux_mutex_destroy(double mtx)
+{
+    auto* m = reinterpret_cast<std::mutex*>(jit_bitcast<uintptr_t>(mtx));
+    delete m;
+}
+
+// --- RwLock ---
+
+extern "C" double flux_rwlock_create()
+{
+    auto* rw = new std::shared_mutex;
+    return jit_bitcast<double>(reinterpret_cast<uintptr_t>(rw));
+}
+
+extern "C" void flux_rwlock_read_lock(double rw)
+{
+    auto* m = reinterpret_cast<std::shared_mutex*>(jit_bitcast<uintptr_t>(rw));
+    m->lock_shared();
+}
+
+extern "C" void flux_rwlock_write_lock(double rw)
+{
+    auto* m = reinterpret_cast<std::shared_mutex*>(jit_bitcast<uintptr_t>(rw));
+    m->lock();
+}
+
+extern "C" void flux_rwlock_unlock(double rw)
+{
+    auto* m = reinterpret_cast<std::shared_mutex*>(jit_bitcast<uintptr_t>(rw));
+    m->unlock();
+}
+
+extern "C" void flux_rwlock_destroy(double rw)
+{
+    auto* m = reinterpret_cast<std::shared_mutex*>(jit_bitcast<uintptr_t>(rw));
+    delete m;
+}
+
 } // namespace Flux
 
 // Weak forwarding wrappers for AOT compilation.
@@ -2167,7 +2451,7 @@ extern "C" double flux_print_string(double str_dbl)
 {
     const char* str = reinterpret_cast<const char*>(static_cast<uintptr_t>(jit_bitcast<uint64_t>(str_dbl)));
     if (str) {
-        printf("%s", str);
+        fwrite(str, 1, strlen(str), stdout);
         fflush(stdout);
     }
     return 0.0;
@@ -2183,8 +2467,10 @@ extern "C" double flux_string_concat(double a_dbl, double b_dbl)
 {
     const char* a = reinterpret_cast<const char*>(static_cast<uintptr_t>(jit_bitcast<uint64_t>(a_dbl)));
     const char* b = reinterpret_cast<const char*>(static_cast<uintptr_t>(jit_bitcast<uint64_t>(b_dbl)));
+    std::string aStr = a ? std::string(a) : "";
+    std::string bStr = b ? std::string(b) : "";
     auto& pool = g_fileio_pool;
-    pool.emplace_back((a ? std::string(a) : "") + (b ? std::string(b) : ""));
+    pool.emplace_back(aStr + bStr);
     return jit_bitcast<double>(reinterpret_cast<uintptr_t>(pool.back().c_str()));
 }
 
