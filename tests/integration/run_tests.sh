@@ -1616,6 +1616,14 @@ def main() -> Double {
 }
 '
 
+run_selfhost_test "SelfHost: while loop" '
+def main() -> Double {
+    var x = 0.0;
+    while x < 3.0 do { x = x + 1.0 };
+    x
+}
+'
+
 run_selfhost_test "SelfHost: lambda" '
 def main() -> Double {
     let f = fn(x) -> x + 1.0;
@@ -1633,6 +1641,38 @@ def main() -> Double {
 run_selfhost_test "SelfHost: lambda no body" '
 def main() -> Double {
     fn() -> 42.0
+}
+'
+
+run_selfhost_test "SelfHost: while loop" '
+def main() -> Double {
+    var x = 0.0;
+    while x < 3.0 do { x = x + 1.0 };
+    x
+}
+'
+
+run_selfhost_test "SelfHost: break in while" '
+def main() -> Double {
+    var x = 0.0;
+    while true do {
+        x = x + 1.0;
+        if (x > 3.0) { break }
+    };
+    x
+}
+'
+
+run_selfhost_test "SelfHost: continue in while" '
+def main() -> Double {
+    var x = 0.0;
+    var sum = 0.0;
+    while x < 5.0 do {
+        x = x + 1.0;
+        if (x == 3.0) { continue };
+        sum = sum + x
+    };
+    sum
 }
 '
 
