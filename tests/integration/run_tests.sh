@@ -2000,6 +2000,26 @@ def main() -> Double {
 }
 '
 
+# Test S39: Reference/borrow basic
+run_selfhost_test "SelfHost: basic borrow deref" '
+def main() -> Double {
+    let x = 42.0;
+    let r = &x;
+    assert(*r == 42.0, "basic borrow/deref failed");
+    *r
+}
+'
+
+# Test S40: Reference/borrow mutable assignment
+run_selfhost_test "SelfHost: mut assign borrow" '
+def main() -> Double {
+    var x = 5.0;
+    let r = &mut x;
+    *r = 10.0;
+    assert(x == 10.0, "mutable borrow assignment failed");
+    x
+}
+'
 
 
 echo ""
