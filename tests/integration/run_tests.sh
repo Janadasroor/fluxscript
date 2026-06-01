@@ -1772,6 +1772,236 @@ def main() -> Double {
 }
 '
 
+# Test S22: Spawn/join basic
+run_selfhost_test "SelfHost: spawn join" '
+def worker(x: Double) -> Double { x * 2.0 }
+def main() -> Double {
+    let t = spawn worker(21.0);
+    join(t)
+}
+'
+
+# Test S23: Spawn/join multi-arg
+run_selfhost_test "SelfHost: spawn multi-arg" '
+def add(a: Double, b: Double, c: Double) -> Double { a + b + c }
+def main() -> Double {
+    let t = spawn add(10.0, 20.0, 30.0);
+    join(t)
+}
+'
+
+# Test S24: Basic class with field and method
+run_selfhost_test "SelfHost: class basic" '
+class Counter {
+    value: Double
+    def increment(self: Counter) -> Double {
+        self.value = self.value + 1.0;
+        self.value
+    }
+}
+def main() -> Double { 0.0 }
+'
+
+# Test S23: Class with generic template parameter
+run_selfhost_test "SelfHost: class generic" '
+class Box[T] {
+    content: Double
+    def get(self: Box) -> Double {
+        self.content
+    }
+}
+def main() -> Double { 0.0 }
+'
+
+# Test S24: Async/await basic
+run_selfhost_test "SelfHost: async await" '
+async def fetch() -> Double {
+    await 0.5;
+    42.0
+}
+def main() -> Double { 0.0 }
+'
+
+# Test S25: Struct field mutation via var
+run_selfhost_test "SelfHost: struct mutation" '
+struct Point { x: Double, y: Double }
+def main() -> Double {
+    var p = Point { x: 1.0, y: 2.0 };
+    p.x = 42.0;
+    p.x
+}
+'
+
+# Test S26: Nested for loops
+run_selfhost_test "SelfHost: nested for loops" '
+def main() -> Double {
+    var s = 0.0;
+    for i in 1, 3 do {
+        for j in 1, 3 do {
+            s = s + i * j
+        }
+    };
+    s
+}
+'
+
+# Test S27: Lambda invoked
+run_selfhost_test "SelfHost: lambda called" '
+def main() -> Double {
+    let f = fn(x) -> x + 1.0;
+    f(41.0)
+}
+'
+
+# Test S28: Trait with multiple methods
+run_selfhost_test "SelfHost: trait multi method" '
+trait Math {
+    def add(a: Double, b: Double) -> Double;
+    def mul(a: Double, b: Double) -> Double;
+}
+struct Calc { }
+impl Math for Calc {
+    def add(a: Double, b: Double) -> Double { a + b }
+    def mul(a: Double, b: Double) -> Double { a * b }
+}
+def main() -> Double { 0.0 }
+'
+
+# Test S29: Nested if-else chain
+run_selfhost_test "SelfHost: nested if-else" '
+def main() -> Double {
+    let x = 5.0;
+    if (x > 10.0) { 1.0 } else if (x > 3.0) { 2.0 } else { 3.0 }
+}
+'
+
+# Test S30: Complex enum with multiple payload variants
+run_selfhost_test "SelfHost: complex enum payloads" '
+enum Shape { Circle(r: Double), Rect(w: Double, h: Double), Empty }
+def main() -> Double {
+    let s = Shape.Rect { w: 3.0, h: 4.0 };
+    match s {
+        Shape.Circle(r) -> r,
+        Shape.Rect(pl) -> pl.w * pl.h,
+        Shape.Empty -> 0.0
+    }
+}
+'
+
+# Test S31: Generic struct with template
+run_selfhost_test "SelfHost: generic struct" '
+struct Pair[T] { first: Double, second: Double }
+def main() -> Double {
+    let p: Pair = Pair { first: 1.0, second: 2.0 };
+    p.first
+}
+'
+
+# Test S32: While loop with conditional break
+run_selfhost_test "SelfHost: while conditional break" '
+def main() -> Double {
+    var x = 0.0;
+    var found = 0.0;
+    while x < 10.0 do {
+        x = x + 1.0;
+        if (x == 7.0) { found = 1.0; break }
+    };
+    found
+}
+'
+
+# Test S33: Pipe with struct field access
+run_selfhost_test "SelfHost: pipe struct field" '
+struct Box { val: Double }
+impl Box {
+    def scale(self: Box, f: Double) -> Double { self.val * f }
+}
+def main() -> Double {
+    let b: Box = Box { val: 3.0 };
+    5.0 |> b.scale
+}
+'
+
+# Test S34: Enum with named-field braced constructor
+run_selfhost_test "SelfHost: enum braced constructor" '
+enum Option { Some { value: Double }, None }
+def main() -> Double {
+    let x = Option.Some { value: 42.0 };
+    match x {
+        Option.Some(v) -> v,
+        Option.None -> 0.0
+    }
+}
+'
+
+# Test S35: Operator overloading - add and neg
+run_selfhost_test "SelfHost: operator add/neg" '
+struct Vec { x: Double }
+def Vec_add(a: Double, b: Double) -> Double { 42.0 }
+def Vec_neg(a: Double) -> Double { 43.0 }
+def main() -> Double {
+    let a = Vec { x: 1.0 };
+    let b = Vec { x: 2.0 };
+    let r1 = a + b;
+    let r2 = -a;
+    r1 + r2
+}
+'
+
+# Test S36: Operator overloading - sub, mul, div, eq
+run_selfhost_test "SelfHost: operator sub/mul/eq" '
+struct Wrap { val: Double }
+def Wrap_sub(a: Double, b: Double) -> Double { 10.0 }
+def Wrap_mul(a: Double, b: Double) -> Double { 20.0 }
+def Wrap_eq(a: Double, b: Double) -> Double { 30.0 }
+def main() -> Double {
+    let a: Wrap = Wrap { val: 1.0 };
+    let b: Wrap = Wrap { val: 2.0 };
+    let r1 = a - b;
+    let r2 = a * b;
+    let r3 = a == b;
+    r1 + r2 + r3
+}
+'
+
+# Test S37: Associated type in trait — single
+run_selfhost_test "SelfHost: associated type single" '
+trait Container {
+    type Item;
+    def get(self: Container) -> Double;
+}
+struct MyBox { val: Double }
+impl Container for MyBox {
+    type Item = Double;
+    def get(self: MyBox) -> Double { self.val }
+}
+def main() -> Double {
+    0.0
+}
+'
+
+# Test S38: Associated type in trait — multiple
+run_selfhost_test "SelfHost: associated type multi" '
+trait Pair {
+    type First;
+    type Second;
+    def first(self: Pair) -> Double;
+    def second(self: Pair) -> Double;
+}
+struct TwoVals { a: Double, b: Double }
+impl Pair for TwoVals {
+    type First = Double;
+    type Second = Double;
+    def first(self: TwoVals) -> Double { self.a }
+    def second(self: TwoVals) -> Double { self.b }
+}
+def main() -> Double {
+    0.0
+}
+'
+
+
+
 echo ""
 echo "========================================"  
 echo "  Results: $PASSED/$TOTAL passed"

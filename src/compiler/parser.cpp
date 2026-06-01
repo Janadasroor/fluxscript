@@ -4595,8 +4595,9 @@ std::unique_ptr<TraitDeclAST> Parser::ParseTraitDecl()
             std::string MethodName = m_lexer.IdentifierStr;
             getNextToken();
 
-            // Temporarily add associated types as valid generic params for method signatures
+            // Temporarily add trait name + associated types as valid generic params for method signatures
             std::vector<std::string> savedGenericParams = m_activeGenericParams;
+            m_activeGenericParams.push_back(Name);
             m_activeGenericParams.insert(m_activeGenericParams.end(),
                 AssociatedTypeNames.begin(), AssociatedTypeNames.end());
 
