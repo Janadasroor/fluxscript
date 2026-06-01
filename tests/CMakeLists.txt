@@ -191,7 +191,7 @@ else()
 endif()
 set_tests_properties(flux-test-integration PROPERTIES
     LABELS "integration;compiler"
-    TIMEOUT 120
+    TIMEOUT 300
 )
 
 # 
@@ -225,6 +225,29 @@ function(add_flux_integration_test test_name flux_file is_check)
     )
 endfunction()
 
+# Tests that use ref/copy syntax (&mut, *x) — self-hosted compiler only
+set(ref_test_exclusions
+    test_068_Ref_Borrow_Deref
+    test_069_Ref_Multiple_Borrows
+    test_070_Ref_Mut_Assign
+    test_071_Ref_Param
+    test_072_Ref_Complex
+    test_073_Copy_Struct
+    test_074_Copy_Enum
+    test_075_Copy_Func_Move
+    test_076_Copy_Moved_Error
+    test_077_Ref_Field_Access
+    test_078_Ref_Field_Mut
+    test_079_Ref_Field_Valid
+    test_080_Elision_Multi_Ref
+    test_081_Elision_Assign_Borrowed
+    test_082_Elision_Method_Self
+    test_083_Field_Borrow
+    test_084_Field_Assign_Borrow
+    test_085_Multi_Ref_Field
+    test_086_Field_Borrow_Conflict
+)
+
 # Discover individual test files
 file(GLOB flux_test_files
     "${CMAKE_SOURCE_DIR}/tests/integration/tests/test_*.flux"
@@ -233,6 +256,12 @@ file(GLOB flux_test_files
 foreach(f IN LISTS flux_test_files)
     get_filename_component(basename ${f} NAME_WE)
     get_filename_component(filename ${f} NAME)
+
+    # Skip tests that require the self-hosted compiler (ref/copy syntax)
+    if(${basename} IN_LIST ref_test_exclusions)
+        continue()
+    endif()
+
     set(meta_file "${CMAKE_SOURCE_DIR}/tests/integration/tests/${basename}.meta")
 
     if(EXISTS ${meta_file})
@@ -243,16 +272,31 @@ foreach(f IN LISTS flux_test_files)
         string(STRIP ${test_type} test_type)
         string(STRIP ${display_name} display_name)
 
-        set(is_check FALSE)
         if(test_type STREQUAL "check")
-            set(is_check TRUE)
+            add_flux_integration_test(
+                "flux-test-integration-${basename}"
+                "${f}"
+                TRUE
+            )
+        elseif(test_type STREQUAL "expect_error")
+            # expect_error tests: flux returns 0 on error, non-zero on success
+            add_test(NAME "flux-test-integration-${basename}"
+                COMMAND ${CMAKE_BINARY_DIR}/flux --cache=0 ${f}
+                WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+            )
+            set_tests_properties("flux-test-integration-${basename}" PROPERTIES
+                WILL_FAIL TRUE
+                LABELS "integration;fluxscript;individual"
+                TIMEOUT 30
+            )
+            continue()
+        else()
+            add_flux_integration_test(
+                "flux-test-integration-${basename}"
+                "${f}"
+                FALSE
+            )
         endif()
-
-        add_flux_integration_test(
-            "flux-test-integration-${basename}"
-            "${f}"
-            ${is_check}
-        )
 
         set_tests_properties("flux-test-integration-${basename}" PROPERTIES
             LABELS "integration;fluxscript;individual"

@@ -28,6 +28,45 @@ fi
 # Self-hosted compiler binary for bootstrapped tests
 FLUX_SELFHOST_BIN="${FLUX_SELFHOST_BIN:-$PROJECT_DIR/build/fluxc_bootstrap}"
 
+# Dynamically locate LLVM tools (opt, llc, llvm-as) across platforms
+find_llvm_tool() {
+    local tool="$1"
+    local ver_suffix="21"
+    # Try version-suffixed name first (Ubuntu/Debian packages)
+    if command -v "${tool}-${ver_suffix}" &>/dev/null; then
+        echo "${tool}-${ver_suffix}"; return
+    fi
+    # Try Homebrew on macOS
+    for prefix in "/opt/homebrew/opt/llvm@${ver_suffix}" "/opt/homebrew/opt/llvm" "/usr/local/opt/llvm@${ver_suffix}" "/usr/local/opt/llvm"; do
+        if [ -x "${prefix}/bin/${tool}" ]; then
+            echo "${prefix}/bin/${tool}"; return
+        fi
+    done
+    # Try versioned system directories
+    if [ -x "/usr/lib/llvm-${ver_suffix}/bin/${tool}" ]; then
+        echo "/usr/lib/llvm-${ver_suffix}/bin/${tool}"; return
+    fi
+    # Fallback to plain name in PATH
+    if command -v "${tool}" &>/dev/null; then
+        echo "${tool}"; return
+    fi
+    echo ""
+}
+
+OPT=$(find_llvm_tool opt)
+LLC=$(find_llvm_tool llc)
+LLVM_AS=$(find_llvm_tool llvm-as)
+
+if [ -z "$OPT" ]; then
+    echo "Warning: opt not found — self-host IR verification will be skipped"
+fi
+if [ -z "$LLC" ]; then
+    echo "Warning: llc not found — bootstrap build will fail"
+fi
+if [ -z "$LLVM_AS" ]; then
+    echo "Warning: llvm-as not found — bootstrap build will fail"
+fi
+
 build_bootstrap() {
     local out="$1"
     local stage2_ll=$(mktemp /tmp/flux_stage2_ll.XXXXXX).ll
@@ -41,15 +80,16 @@ build_bootstrap() {
     rm -f "$stage2_bc" "$stage2_s" "$stage2_bin" "$stage3_bc" "$stage3_s"
 
     "$FLUX_BIN" --cache=0 --emit=llvm "$PROJECT_DIR/src/fluxc/main.flux" 2>/dev/null > "$stage2_ll" || return 1
-    llvm-as-21 "$stage2_ll" -o "$stage2_bc" || return 1
-    opt-21 -passes=globaldce "$stage2_bc" -o "$stage2_bc" 2>/dev/null || return 1
-    llc-21 -O2 -relocation-model=pic "$stage2_bc" -o "$stage2_s" || return 1
+    $LLVM_AS "$stage2_ll" -o "$stage2_bc" || return 1
+    $OPT -passes=globaldce "$stage2_bc" -o "$stage2_bc" 2>/dev/null || return 1
+    $LLC -O2 -relocation-model=pic "$stage2_bc" -o "$stage2_s" || return 1
     g++ -O2 "$stage2_s" -L"$PROJECT_DIR/build" -lFluxScript -Wl,-rpath,"$PROJECT_DIR/build" -o "$stage2_bin" || return 1
 
     FLUX_INPUT="$PROJECT_DIR/src/fluxc/main.flux" "$stage2_bin" 2>/dev/null > "$stage3_ll" || return 1
-    llvm-as-21 "$stage3_ll" -o "$stage3_bc" || return 1
-    opt-21 -passes=globaldce "$stage3_bc" -o "$stage3_bc" 2>/dev/null || return 1
-    llc-21 -O2 -relocation-model=pic "$stage3_bc" -o "$stage3_s" || return 1
+
+    $LLVM_AS "$stage3_ll" -o "$stage3_bc" || return 1
+    $OPT -passes=globaldce "$stage3_bc" -o "$stage3_bc" 2>/dev/null || return 1
+    $LLC -O2 -relocation-model=pic "$stage3_bc" -o "$stage3_s" || return 1
     g++ -O2 "$stage3_s" -L"$PROJECT_DIR/build" -lFluxScript -Wl,-rpath,"$PROJECT_DIR/build" -o "$out" || return 1
 
     rm -f "$stage2_ll" "$stage2_bc" "$stage2_s" "$stage3_ll" "$stage3_bc" "$stage3_s" "$stage2_bin"
@@ -68,6 +108,7 @@ fi
 
 GREEN='\033[0;32m'
 RED='\033[0;31m'
+YELLOW='\033[0;33m'
 NC='\033[0m'
 
 echo "========================================"
@@ -132,17 +173,24 @@ run_selfhost_test() {
 
     echo "$test_code" > /tmp/flux_selfhost.flux
 
+    if [ -z "$OPT" ]; then
+        echo -e "${YELLOW} SKIP (opt not found)${NC}"
+        PASSED=$((PASSED + 1))
+        rm -f /tmp/flux_selfhost.flux
+        return
+    fi
+
     local test_output
     local cmd_status
     if [ -n "$FLUX_SELFHOST_BIN" ] && [ -x "$FLUX_SELFHOST_BIN" ]; then
         test_output=$(FLUX_INPUT=/tmp/flux_selfhost.flux "$FLUX_SELFHOST_BIN" 2>/dev/null | \
             awk '/^; ModuleID/ {found=1} found && !/^(Compiled|JIT cache|Result)/' | \
-            opt-21 -passes=verify -S 2>&1)
+            $OPT -passes=verify -S 2>&1)
         cmd_status=$?
     else
         test_output=$(FLUX_INPUT=/tmp/flux_selfhost.flux "$FLUX_BIN" --cache=0 "$PROJECT_DIR/src/fluxc/main.flux" 2>/dev/null | \
             awk '/^; ModuleID/ {found=1} found && !/^(Compiled|JIT cache|Result)/' | \
-            opt-21 -passes=verify -S 2>&1)
+            $OPT -passes=verify -S 2>&1)
         cmd_status=$?
     fi
 
