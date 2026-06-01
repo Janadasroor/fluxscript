@@ -95,15 +95,19 @@ TypedValue TryCatchExprAST::codegen(CodegenContext& context)
     context.Builder.SetInsertPoint(CatchBB);
     context.Builder.CreateCall(PopF);
 
-    llvm::Value* ExCode = context.Builder.CreateSIToFP(JmpVal, DoubleTy, "ex_code" + IDStr);
-    context.Builder.CreateStore(ExCode, ExceptionPtr);
+    // Bind the catch variable to the actual thrown value (preserved in
+    // thread-local storage by flux_throw_error), not the setjmp return code.
+    llvm::Function* LastThrownF = context.TheModule->getFunction("flux_last_thrown_value");
+    if (!LastThrownF)
+        LastThrownF = llvm::Function::Create(llvm::FunctionType::get(DoubleTy, {}, false),
+                                             llvm::Function::ExternalLinkage,
+                                             "flux_last_thrown_value", context.TheModule);
+    llvm::Value* ThrownVal = context.Builder.CreateCall(LastThrownF, {}, "thrown_val" + IDStr);
 
     if (!CatchClauses.empty()) {
         auto& [VarName, Handler] = CatchClauses[0];
         llvm::Value* OldVal = context.NamedValues[VarName];
 
-        // Bind the catch variable to the exception value
-        llvm::Value* ThrownVal = context.Builder.CreateLoad(DoubleTy, ExceptionPtr, "thrown_val" + IDStr);
         context.NamedValues[VarName] = ThrownVal;
 
         TypedValue CatchResult = Handler->codegen(context);
@@ -135,6 +139,92 @@ TypedValue TryCatchExprAST::codegen(CodegenContext& context)
         return TypedValue(FinalRes, TypeKind::Double);
     }
     return TypedValue(nullptr, TypeKind::Void);
+}
+
+// ============ `?` Propagation Codegen ============
+//
+// For `inner?` where `inner` evaluates to a Result<T, E> (or Option<T>)
+// tagged-union, we emit:
+//
+//   %slot = alloca ResultTy
+//   store %inner, %slot
+//   %tag  = load i32, ptr gep(%slot, 0, 0)
+//   switch %tag:
+//     case Ok(0):  %payload = load T, ptr gep(%slot, 0, 1); continue
+//     case Err(1): %ret = load ResultTy, %slot;  ret %ret
+//
+// This requires the enclosing function to return the same ResultTy so the
+// `ret` instruction is type-correct.
+TypedValue TryPropagateExprAST::codegen(CodegenContext& context)
+{
+    TypedValue InnerTV = Inner->codegen(context);
+    if (!InnerTV.Val) {
+        std::cerr << "[FLUX ERROR] `?` inner expression failed to codegen" << std::endl;
+        return TypedValue();
+    }
+
+    llvm::LLVMContext& Ctx = context.TheContext;
+    llvm::Function* TheFunction = context.Builder.GetInsertBlock()->getParent();
+    llvm::Type* DoubleTy = llvm::Type::getDoubleTy(Ctx);
+    llvm::Type* Int32Ty = llvm::Type::getInt32Ty(Ctx);
+
+    if (context.Builder.GetInsertBlock()->getTerminator())
+        return TypedValue(llvm::ConstantFP::get(Ctx, llvm::APFloat(0.0)), TypeKind::Double);
+
+    // Determine the struct shape of the inner value.
+    llvm::Type* InnerTy = InnerTV.Val->getType();
+    if (!InnerTy->isStructTy()) {
+        std::cerr << "[FLUX ERROR] `?` requires a tagged-union (Result/Option); got non-struct type" << std::endl;
+        return InnerTV; // fall through, best-effort
+    }
+
+    llvm::StructType* STy = llvm::cast<llvm::StructType>(InnerTy);
+    if (STy->getNumElements() < 2) {
+        std::cerr << "[FLUX ERROR] `?` requires a tagged-union with tag + payload" << std::endl;
+        return InnerTV;
+    }
+
+    // Stash the inner value so both branches can read it.
+    llvm::Value* Slot = context.Builder.CreateAlloca(STy, nullptr, "qmark_slot");
+    context.Builder.CreateStore(InnerTV.Val, Slot);
+
+    // Load tag (index 0). Enum tag is always i32.
+    llvm::Value* TagAddr = context.Builder.CreateStructGEP(STy, Slot, 0, "qmark_tag_addr");
+    llvm::Value* Tag = context.Builder.CreateLoad(Int32Ty, TagAddr, "qmark_tag");
+    llvm::Value* IsErr = context.Builder.CreateICmpNE(Tag, llvm::ConstantInt::get(Int32Ty, 0), "qmark_is_err");
+
+    // For the early-return path we need a fresh block added to the function,
+    // and we need the function to return the same struct type so `ret` is legal.
+    llvm::BasicBlock* ErrBB = llvm::BasicBlock::Create(Ctx, "qmark_err", TheFunction);
+    llvm::BasicBlock* ContBB = llvm::BasicBlock::Create(Ctx, "qmark_cont", TheFunction);
+    context.Builder.CreateCondBr(IsErr, ErrBB, ContBB);
+
+    // Err path: reload the whole value and `ret` it.
+    context.Builder.SetInsertPoint(ErrBB);
+    llvm::Value* ErrVal = context.Builder.CreateLoad(STy, Slot, "qmark_err_val");
+    if (TheFunction->getReturnType() == STy) {
+        context.Builder.CreateRet(ErrVal);
+    } else {
+        // Function doesn't return the same type — degrade gracefully to a poison
+        // constant so the rest of the function is still well-formed.
+        llvm::Value* Poison = llvm::ConstantFP::get(DoubleTy, 0.0);
+        context.Builder.CreateRet(Poison);
+    }
+    context.Builder.SetInsertPoint(ContBB);
+
+    // Ok path: load the payload (index 1) and return it as the expression value.
+    llvm::Type* PayloadTy = STy->getElementType(1);
+    llvm::Value* PayloadAddr = context.Builder.CreateStructGEP(STy, Slot, 1, "qmark_payload_addr");
+    llvm::Value* Payload = context.Builder.CreateLoad(PayloadTy, PayloadAddr, "qmark_payload");
+
+    // Reflect the payload type back into TypedValue so downstream code can
+    // use it. For the common case (Double payload) this maps to TypeKind::Double.
+    TypeKind OutKind = TypeKind::Double;
+    if (PayloadTy->isIntegerTy(1))
+        OutKind = TypeKind::Bool;
+    else if (PayloadTy->isIntegerTy(32))
+        OutKind = TypeKind::Int;
+    return TypedValue(Payload, OutKind);
 }
 
 // ============ Throw Codegen ============

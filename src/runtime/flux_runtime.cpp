@@ -27,6 +27,7 @@
 #include <queue>
 #include <shared_mutex>
 #include <cstdio>
+#include <csetjmp>
 #include <cstring>
 #include <fstream>
 #include <iomanip>
@@ -2587,3 +2588,80 @@ extern "C" double fft_thd(void* sig, double sr) { return flux_fft_thd(sig, sr); 
 
 extern "C" double fft_snr(void*, double);
 extern "C" double fft_snr(void* sig, double sr) { return flux_fft_snr(sig, sr); }
+
+// ============================================================================
+// try / catch / throw runtime support
+// ----------------------------------------------------------------------------
+// The codegen emits a per-try alloca for a jmp_buf, calls `setjmp` from JIT'd
+// code (linked from libc), and branches on the return value. On `throw`,
+// `flux_throw_error` longjmps to the topmost jmp_buf on this thread's stack,
+// so nested try/catch unwinds correctly. The most recent thrown value is
+// preserved in thread-local storage so the catch handler can bind it to the
+// catch variable.
+// ============================================================================
+
+// IMPORTANT: thread_local std::vector and even trivial thread_local structs
+// interact badly with the LLVM ORC JIT runtime (process exits with non-zero
+// code at lib load). Use a regular static + pthread_getspecific to back the
+// jmp_buf stack so no thread_local storage is needed at all.
+#include <pthread.h>
+
+static pthread_key_t g_jmp_key;
+static pthread_once_t g_jmp_once = PTHREAD_ONCE_INIT;
+
+static void jmp_key_destructor(void* p) { free(p); }
+
+static void jmp_key_init() {
+    pthread_key_create(&g_jmp_key, jmp_key_destructor);
+}
+
+struct JmpBufStack {
+    jmp_buf* slots[256];
+    int depth;
+};
+
+static JmpBufStack* get_jmp_stack() {
+    pthread_once(&g_jmp_once, jmp_key_init);
+    void* p = pthread_getspecific(g_jmp_key);
+    if (!p) {
+        p = calloc(1, sizeof(JmpBufStack));
+        pthread_setspecific(g_jmp_key, p);
+    }
+    return static_cast<JmpBufStack*>(p);
+}
+
+static double g_last_thrown_value = 0.0;
+static const char* g_last_thrown_msg = nullptr;
+
+extern "C" void flux_push_jmp_buf(void* buf)
+{
+    JmpBufStack* s = get_jmp_stack();
+    if (s->depth < 256) {
+        s->slots[s->depth++] = static_cast<jmp_buf*>(buf);
+    } else {
+        std::fprintf(stderr, "[FATAL] jmp_buf stack overflow\n");
+        std::abort();
+    }
+}
+
+extern "C" void flux_pop_jmp_buf()
+{
+    JmpBufStack* s = get_jmp_stack();
+    if (s->depth > 0) s->depth--;
+}
+
+extern "C" void flux_throw_error(double value, const char* msg)
+{
+    g_last_thrown_value = value;
+    g_last_thrown_msg = msg;
+    JmpBufStack* s = get_jmp_stack();
+    if (s->depth == 0) {
+        std::fprintf(stderr, "[FATAL] uncaught Flux exception: %s\n",
+                     msg ? msg : "(no message)");
+        std::abort();
+    }
+    longjmp(*s->slots[--s->depth], 1);
+}
+
+extern "C" double flux_last_thrown_value() { return g_last_thrown_value; }
+extern "C" const char* flux_last_thrown_msg() { return g_last_thrown_msg; }

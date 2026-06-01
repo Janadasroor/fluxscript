@@ -1438,6 +1438,20 @@ public:
     bool containsYield() const override { return Exception->containsYield(); }
 };
 
+// `expr?` — early-return propagation for Result/Option enums.
+// If the inner expression's tag is the error/None variant, branch to a
+// per-function early-return block passing the value through unchanged.
+// Otherwise, extract the Ok/Some payload and use it as the result.
+class TryPropagateExprAST : public ExprAST
+{
+    std::unique_ptr<ExprAST> Inner;
+
+public:
+    explicit TryPropagateExprAST(std::unique_ptr<ExprAST> Inner) : Inner(std::move(Inner)) {}
+    TypedValue codegen(CodegenContext& context) override;
+    bool containsYield() const override { return Inner->containsYield(); }
+};
+
 // Assert
 class AssertExprAST : public ExprAST
 {

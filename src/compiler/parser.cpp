@@ -1458,6 +1458,10 @@ std::unique_ptr<ExprAST> Parser::ParsePrimary()
         if (CurTok == static_cast<int>(TokenType::tok_transpose)) {
             Res = std::make_unique<TransposeExprAST>(std::move(Res));
             getNextToken();
+        } else if (CurTok == static_cast<int>(TokenType::tok_question)) {
+            // expr? — early-return on Err/None (Rust-style propagation)
+            getNextToken(); // eat ?
+            Res = std::make_unique<TryPropagateExprAST>(std::move(Res));
         } else if (CurTok == static_cast<int>(TokenType::tok_dot)) {
             getNextToken(); // eat .
             if (CurTok != static_cast<int>(TokenType::tok_identifier)) {

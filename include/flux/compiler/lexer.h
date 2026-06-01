@@ -393,6 +393,9 @@ enum class TokenType
     // Threading primitives
     tok_spawn = -310,
     tok_join = -311,
+
+    // Postfix `?` operator (Result/Option early-return propagation)
+    tok_question = -400,
 };
 
 struct LexerDiagnostic

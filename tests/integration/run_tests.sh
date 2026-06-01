@@ -1490,6 +1490,100 @@ def main() -> Double {
 main()
 '
 
+# Test 81b: try/catch/throw runtime (JIT execution, not just check)
+run_test "Try-Catch-Throw JIT" '
+def risky(n: Double) -> Double {
+    if (n < 0.0) { throw -1.0 } else { n * 2.0 }
+}
+def safe_run(n: Double) -> Double {
+    try { risky(n) } catch e { e + 100.0 }
+}
+def main() -> Double {
+    let a = safe_run(5.0);
+    let b = safe_run(-3.0);
+    a + b
+}
+main()
+'
+
+# Test 81c: try/catch/finally runtime
+run_test "Try-Catch-Finally JIT" '
+def main() -> Double {
+    let acc = 0.0;
+    let r = try {
+        acc + 5.0
+    } catch e {
+        0.0
+    } finally {
+        0.0
+    };
+    r
+}
+main()
+'
+
+# Test 82: `?` operator — Ok path, value is unwrapped
+run_test "Question Ok propagation" '
+enum Result { Ok { value: Double }, Err { msg: Double } }
+def make_ok(v: Double) -> Result { Result.Ok { value: v } }
+def make_err(v: Double) -> Result { Result.Err { msg: v } }
+def div_with(a: Double, b: Double) -> Result {
+    if (b == 0.0) { make_err(99.0) } else { make_ok(a / b) }
+}
+def chain() -> Result {
+    let a = div_with(10.0, 2.0)?;
+    div_with(a, 5.0)
+}
+match chain() {
+    Result.Ok(v) -> v,
+    default -> -1.0
+}
+'
+
+# Test 83: `?` operator — Err path, early return propagates the Err
+run_test "Question Err early-return" '
+enum Result { Ok { value: Double }, Err { msg: Double } }
+def make_ok(v: Double) -> Result { Result.Ok { value: v } }
+def make_err(v: Double) -> Result { Result.Err { msg: v } }
+def div_with(a: Double, b: Double) -> Result {
+    if (b == 0.0) { make_err(99.0) } else { make_ok(a / b) }
+}
+def chain_err() -> Result {
+    let a = div_with(10.0, 0.0)?;
+    div_with(a, 5.0)
+}
+def extract_msg(r: Result) -> Double {
+    match r {
+        Result.Ok(v) -> v,
+        Result.Err(m) -> m
+    }
+}
+extract_msg(chain_err())
+'
+
+# Test 84: `?` operator — chained propagation across multiple calls
+run_test "Question chained" '
+enum Result { Ok { value: Double }, Err { msg: Double } }
+def make_ok(v: Double) -> Result { Result.Ok { value: v } }
+def make_err(v: Double) -> Result { Result.Err { msg: v } }
+def step1() -> Result { make_ok(7.0) }
+def step2(x: Double) -> Result {
+    if (x > 5.0) { make_ok(x + 1.0) } else { make_err(1.0) }
+}
+def step3(x: Double) -> Result {
+    if (x > 8.0) { make_ok(x * 2.0) } else { make_err(2.0) }
+}
+def pipeline() -> Result {
+    let a = step1()?;
+    let b = step2(a)?;
+    step3(b)
+}
+match pipeline() {
+    Result.Ok(v) -> v,
+    default -> -1.0
+}
+'
+
 # ==============================================================================
 # Self-Hosting Compiler Tests (src/fluxc/) — IR generation via opt-21 verify
 # ==============================================================================
@@ -2018,6 +2112,38 @@ def main() -> Double {
     *r = 10.0;
     assert(x == 10.0, "mutable borrow assignment failed");
     x
+}
+'
+
+# Test S41: `?` postfix — Ok path unwraps the payload
+run_selfhost_test "SelfHost: question mark ok" '
+enum Res { Ok { value: Double }, Err { msg: Double } }
+def make_ok(v: Double) -> Res { Res.Ok { value: v } }
+def make_err(v: Double) -> Res { Res.Err { msg: v } }
+def step1() -> Res { make_ok(7.0) }
+def step2(x: Double) -> Res {
+    if (x > 5.0) { make_ok(x + 1.0) } else { make_err(1.0) }
+}
+def main() -> Double {
+    let a = step1()?;
+    let b = step2(a)?;
+    b
+}
+'
+
+# Test S42: `?` postfix — Err path early-returns
+run_selfhost_test "SelfHost: question mark err" '
+enum Res { Ok { value: Double }, Err { msg: Double } }
+def make_ok(v: Double) -> Res { Res.Ok { value: v } }
+def make_err(v: Double) -> Res { Res.Err { msg: v } }
+def step1() -> Res { make_ok(3.0) }
+def step2(x: Double) -> Res {
+    if (x > 5.0) { make_ok(x + 1.0) } else { make_err(99.0) }
+}
+def main() -> Double {
+    let a = step1()?;
+    let b = step2(a)?;
+    b
 }
 '
 

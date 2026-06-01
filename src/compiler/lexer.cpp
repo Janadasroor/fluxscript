@@ -1230,6 +1230,11 @@ int Lexer::gettok()
         return '>';
     }
 
+    if (m_lastChar == '?') {
+        advance();
+        return static_cast<int>(TokenType::tok_question);
+    }
+
     if (m_lastChar == '~') {
         advance();
         return static_cast<int>(TokenType::tok_bitwise_not);
