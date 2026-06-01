@@ -19,6 +19,10 @@
 #include <llvm-c/Target.h>
 #include <llvm-c/TargetMachine.h>
 #include <llvm-c/Types.h>
+#include <llvm/IR/Module.h>
+#include <llvm/IR/Function.h>
+#include <llvm/IR/Type.h>
+#include <llvm/IR/IRBuilder.h>
 
 /* ------------------------------------------------------------------ */
 /*  Helpers (outside extern "C" to allow templates)                  */
@@ -267,7 +271,40 @@ double flux_llvm_dispose_module(double module)
 }
 double flux_llvm_print_module_to_string(double module)
 {
-    char* s = LLVMPrintModuleToString(dbl_to_ptr<LLVMOpaqueModule>(module));
+    LLVMModuleRef mod = dbl_to_ptr<LLVMOpaqueModule>(module);
+
+    // Ensure the C entry point is well-formed for bootstrap binaries:
+    // if there's a `main` function returning double, wrap it in
+    // `int main(i32, i8**) { __flux_main(); return 0; }` so glibc's
+    // __libc_start_main reads 0 on exit. (Without this, the bootstrap
+    // binary's exit code is non-deterministic because rax is undefined
+    // when returning a double in xmm0.)
+    if (mod) {
+        llvm::Module* m = llvm::unwrap(mod);
+        llvm::Function* fluxMain = m->getFunction("main");
+        if (fluxMain && !fluxMain->getReturnType()->isVoidTy() &&
+            fluxMain->getReturnType()->isDoubleTy() &&
+            !fluxMain->empty() &&
+            !fluxMain->getFunctionType()->isVarArg()) {
+            llvm::LLVMContext& Ctx = m->getContext();
+            fluxMain->setName("__flux_main");
+            fluxMain->setLinkage(llvm::Function::ExternalLinkage);
+
+            llvm::Type* I32 = llvm::Type::getInt32Ty(Ctx);
+            llvm::PointerType* I8Ptr = llvm::PointerType::getUnqual(Ctx);
+            llvm::FunctionType* EntryFTy =
+                llvm::FunctionType::get(I32, {I32, I8Ptr}, false);
+            llvm::Function* EntryMain = llvm::Function::Create(
+                EntryFTy, llvm::Function::ExternalLinkage, "main", m);
+
+            llvm::BasicBlock* BB = llvm::BasicBlock::Create(Ctx, "entry", EntryMain);
+            llvm::IRBuilder<> B(BB);
+            B.CreateCall(fluxMain);
+            B.CreateRet(llvm::ConstantInt::get(I32, 0));
+        }
+    }
+
+    char* s = LLVMPrintModuleToString(mod);
     double result = cstr_to_dbl(s);
     LLVMDisposeMessage(s);
     return result;
