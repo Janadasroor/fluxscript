@@ -73,6 +73,7 @@ public:
     // Module system integration
     bool importModule(const std::string& moduleName, std::string* error = nullptr);
     bool loadPlugin(const std::string& pluginPath, std::string* error = nullptr);
+    bool loadPrecompiledObject(const std::string& path, std::string* error = nullptr);
 
     // Reflection API
     std::vector<std::string> getLoadedModules() const;

@@ -205,6 +205,7 @@ double flux_str_slice(double str_ptr, double start, double end);
 double flux_str_from_char(double ch);
 double flux_str_concat(double a_ptr, double b_ptr);
 double flux_read_file(double path_dbl);
+double flux_clock_ms();
 }
 
 // JIT-callable wrappers (C++ linkage, call extern "C" functions internally)
@@ -2067,6 +2068,7 @@ void registerRuntimeFunctions(FluxJIT& jit)
     jit.registerFunction("flux_str_from_char", (void*)&flux_str_from_char);
     jit.registerFunction("flux_str_concat", (void*)&flux_str_concat);
     jit.registerFunction("flux_read_file", (void*)&flux_read_file);
+    jit.registerFunction("flux_clock_ms", (void*)&flux_clock_ms);
 
     // Threading primitives
     jit.registerFunction("flux_spawn", (void*)&flux_spawn);

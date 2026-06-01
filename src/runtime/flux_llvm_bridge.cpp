@@ -11,6 +11,7 @@
 #include <deque>
 #include <vector>
 #include <unordered_map>
+#include <chrono>
 
 #include <llvm-c/Analysis.h>
 #include <llvm-c/Core.h>
@@ -140,6 +141,13 @@ extern "C" double flux_read_file(double path_dbl)
     std::fclose(f);
     g_llvm_pool.push_back(std::move(result));
     return u64_as_dbl(reinterpret_cast<uintptr_t>(g_llvm_pool.back().c_str()));
+}
+
+extern "C" double flux_clock_ms()
+{
+    auto now = std::chrono::steady_clock::now();
+    auto ms = std::chrono::duration<double, std::milli>(now.time_since_epoch()).count();
+    return ms;
 }
 
 extern "C" double flux_get_env(double name_dbl)

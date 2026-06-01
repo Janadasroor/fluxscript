@@ -25,6 +25,47 @@ if [ ! -x "$FLUX_BIN" ]; then
     exit 1
 fi
 
+# Self-hosted compiler binary for bootstrapped tests
+FLUX_SELFHOST_BIN="${FLUX_SELFHOST_BIN:-$PROJECT_DIR/build/fluxc_bootstrap}"
+
+build_bootstrap() {
+    local out="$1"
+    local stage2_ll=$(mktemp /tmp/flux_stage2_ll.XXXXXX).ll
+    local stage2_bc=/tmp/flux_stage2.bc
+    local stage2_s=/tmp/flux_stage2.s
+    local stage2_bin=/tmp/flux_stage2
+    local stage3_ll=$(mktemp /tmp/flux_stage3_ll.XXXXXX).ll
+    local stage3_bc=/tmp/flux_stage3.bc
+    local stage3_s=/tmp/flux_stage3.s
+
+    rm -f "$stage2_bc" "$stage2_s" "$stage2_bin" "$stage3_bc" "$stage3_s"
+
+    "$FLUX_BIN" --cache=0 --emit=llvm "$PROJECT_DIR/src/fluxc/main.flux" 2>/dev/null > "$stage2_ll" || return 1
+    llvm-as-21 "$stage2_ll" -o "$stage2_bc" || return 1
+    opt-21 -passes=globaldce "$stage2_bc" -o "$stage2_bc" 2>/dev/null || return 1
+    llc-21 -O2 -relocation-model=pic "$stage2_bc" -o "$stage2_s" || return 1
+    g++ -O2 "$stage2_s" -L"$PROJECT_DIR/build" -lFluxScript -Wl,-rpath,"$PROJECT_DIR/build" -o "$stage2_bin" || return 1
+
+    FLUX_INPUT="$PROJECT_DIR/src/fluxc/main.flux" "$stage2_bin" 2>/dev/null > "$stage3_ll" || return 1
+    llvm-as-21 "$stage3_ll" -o "$stage3_bc" || return 1
+    opt-21 -passes=globaldce "$stage3_bc" -o "$stage3_bc" 2>/dev/null || return 1
+    llc-21 -O2 -relocation-model=pic "$stage3_bc" -o "$stage3_s" || return 1
+    g++ -O2 "$stage3_s" -L"$PROJECT_DIR/build" -lFluxScript -Wl,-rpath,"$PROJECT_DIR/build" -o "$out" || return 1
+
+    rm -f "$stage2_ll" "$stage2_bc" "$stage2_s" "$stage3_ll" "$stage3_bc" "$stage3_s" "$stage2_bin"
+    return 0
+}
+
+if [ ! -x "$FLUX_SELFHOST_BIN" ]; then
+    echo "Building self-hosted compiler (stage-3) for bootstrap tests..."
+    if build_bootstrap "$FLUX_SELFHOST_BIN"; then
+        echo "  -> $FLUX_SELFHOST_BIN"
+    else
+        echo "  -> bootstrap build failed; falling back to C++ compiler"
+        FLUX_SELFHOST_BIN=""
+    fi
+fi
+
 GREEN='\033[0;32m'
 RED='\033[0;31m'
 NC='\033[0m'
@@ -81,7 +122,7 @@ run_test() {
     rm -f flux_test.flux
 }
 
-# Self-hosting compiler test: generate IR via src/fluxc/main.flux, verify with opt-21
+# Self-hosting compiler test: generate IR via bootstrap or C++ compiler, verify with opt-21
 run_selfhost_test() {
     local test_name="$1"
     local test_code="$2"
@@ -93,10 +134,17 @@ run_selfhost_test() {
 
     local test_output
     local cmd_status
-    test_output=$(FLUX_INPUT=/tmp/flux_selfhost.flux "$FLUX_BIN" --cache=0 "$PROJECT_DIR/src/fluxc/main.flux" 2>/dev/null | \
-        awk '/^; ModuleID/ {found=1} found && !/^(Compiled|JIT cache|Result)/' | \
-        opt-21 -passes=verify -S 2>&1)
-    cmd_status=$?
+    if [ -n "$FLUX_SELFHOST_BIN" ] && [ -x "$FLUX_SELFHOST_BIN" ]; then
+        test_output=$(FLUX_INPUT=/tmp/flux_selfhost.flux "$FLUX_SELFHOST_BIN" 2>/dev/null | \
+            awk '/^; ModuleID/ {found=1} found && !/^(Compiled|JIT cache|Result)/' | \
+            opt-21 -passes=verify -S 2>&1)
+        cmd_status=$?
+    else
+        test_output=$(FLUX_INPUT=/tmp/flux_selfhost.flux "$FLUX_BIN" --cache=0 "$PROJECT_DIR/src/fluxc/main.flux" 2>/dev/null | \
+            awk '/^; ModuleID/ {found=1} found && !/^(Compiled|JIT cache|Result)/' | \
+            opt-21 -passes=verify -S 2>&1)
+        cmd_status=$?
+    fi
 
     if [ $cmd_status -eq 0 ]; then
         echo -e "${GREEN} PASSED${NC}"

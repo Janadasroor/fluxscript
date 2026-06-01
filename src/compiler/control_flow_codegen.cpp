@@ -116,11 +116,14 @@ TypedValue BreakExprAST::codegen(CodegenContext& context)
         return TypedValue();
     }
 
+    // Get current function
+    llvm::Function* TheFunction = context.Builder.GetInsertBlock()->getParent();
+
     // Create branch to target
     context.Builder.CreateBr(TargetBB);
 
     // Create unreachable block after break (for IR validity)
-    llvm::BasicBlock* AfterBreakBB = llvm::BasicBlock::Create(context.TheContext, "after_break");
+    llvm::BasicBlock* AfterBreakBB = llvm::BasicBlock::Create(context.TheContext, "after_break", TheFunction);
     context.Builder.SetInsertPoint(AfterBreakBB);
 
     return TypedValue(llvm::ConstantFP::get(context.TheContext, llvm::APFloat(0.0)), TypeKind::Double);
@@ -136,11 +139,14 @@ TypedValue ContinueExprAST::codegen(CodegenContext& context)
         return TypedValue();
     }
 
+    // Get current function
+    llvm::Function* TheFunction = context.Builder.GetInsertBlock()->getParent();
+
     // Branch to continue target (loop condition or increment)
     context.Builder.CreateBr(context.CurrentLoopCont);
 
     // Create unreachable block after continue
-    llvm::BasicBlock* AfterContBB = llvm::BasicBlock::Create(context.TheContext, "after_continue");
+    llvm::BasicBlock* AfterContBB = llvm::BasicBlock::Create(context.TheContext, "after_continue", TheFunction);
     context.Builder.SetInsertPoint(AfterContBB);
 
     return TypedValue(llvm::ConstantFP::get(context.TheContext, llvm::APFloat(0.0)), TypeKind::Double);

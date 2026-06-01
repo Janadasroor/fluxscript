@@ -57,14 +57,13 @@ jobs:
               apt-get update -qq &&
               apt-get install -y -qq wget lsb-release software-properties-common gnupg &&
               wget -q https://apt.llvm.org/llvm.sh && chmod +x llvm.sh && ./llvm.sh 21 all &&
-              apt-get install -y -qq libclang-21-dev liblld-21-dev cmake libcurl4-openssl-dev patchelf g++ libeigen3-dev &&
-              cmake -B build -DCMAKE_BUILD_TYPE=Release \
+              apt-get install -y -qq libclang-21-dev liblld-21-dev cmake libcurl4-openssl-dev patchelf g++ libeigen3-dev ninja-build ccache &&
+              cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
                 -DLLVM_DIR=/usr/lib/llvm-21/lib/cmake/llvm \
                 -DClang_DIR=/usr/lib/llvm-21/lib/cmake/clang \
                 -DLLD_DIR=/usr/lib/llvm-21/lib/cmake/lld \
                 -DFLUX_BUILD_TESTS=ON &&
-              cmake --build build -j\$(nproc) &&
-              cmake --build build --target flux 2>/dev/null &&
+              ninja -C build -j\$(nproc) &&
               cd build && ctest --output-on-failure -R 'flux-test' -E 'all-features|waveform-extraction|tiered-jit|module-system' -j\$(nproc) || true
             "
 
@@ -116,16 +115,16 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y -qq wget lsb-release software-properties-common gnupg
           wget -q https://apt.llvm.org/llvm.sh && chmod +x llvm.sh && sudo ./llvm.sh 21 all
-          sudo apt-get install -y -qq libclang-21-dev liblld-21-dev cmake libcurl4-openssl-dev g++ libeigen3-dev
+          sudo apt-get install -y -qq libclang-21-dev liblld-21-dev cmake libcurl4-openssl-dev g++ libeigen3-dev ninja-build ccache
 
       - name: Build
         run: |
-          cmake -B build -DCMAKE_BUILD_TYPE=Release \
+          cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
             -DLLVM_DIR=/usr/lib/llvm-21/lib/cmake/llvm \
             -DClang_DIR=/usr/lib/llvm-21/lib/cmake/clang \
             -DLLD_DIR=/usr/lib/llvm-21/lib/cmake/lld \
             -DFLUX_BUILD_TESTS=ON
-          cmake --build build -j$(nproc)
+          ninja -C build -j$(nproc)
 
       - name: Test
         run: cd build && ctest --output-on-failure -R "flux-test" -E "all-features|waveform-extraction|tiered-jit|module-system" -j$(nproc)
@@ -155,7 +154,7 @@ jobs:
 
       - name: Install deps
         run: |
-          brew install llvm@21
+          brew install llvm@21 ccache ninja
           # Download Eigen 3.4 (compatible header layout) instead of brew's Eigen 5
           curl -L -o /tmp/eigen.tar.bz2 https://gitlab.com/libeigen/eigen/-/archive/3.4.0/eigen-3.4.0.tar.bz2
           mkdir -p /tmp/eigen
@@ -165,14 +164,14 @@ jobs:
 
       - name: Build
         run: |
-          cmake -B build \
+          cmake -B build -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
             -DLLVM_DIR="$(brew --prefix llvm@21)/lib/cmake/llvm" \
             -DClang_DIR="$(brew --prefix llvm@21)/lib/cmake/clang" \
             -DLLD_DIR="$(brew --prefix llvm@21)/lib/cmake/lld" \
             -DEIGEN3_INCLUDE_DIR="$EIGEN3_INCLUDE_DIR" \
             -DFLUX_BUILD_TESTS=ON
-          cmake --build build -j$(sysctl -n hw.logicalcpu)
+          ninja -C build -j$(sysctl -n hw.logicalcpu)
 
       - name: Test
         run: cd build && ctest --output-on-failure -R "flux-test" -E "all-features|waveform-extraction|tiered-jit|module-system" -j$(sysctl -n hw.logicalcpu)
@@ -263,10 +262,10 @@ jobs:
         run: Get-ChildItem -Path third_party -Recurse -Depth 2 | Select-Object -First 20
 
       - name: Build
-        run: cmake -B build -DCMAKE_BUILD_TYPE=Release -DLLVM_DIR="$env:LLVM_DIR" -DEIGEN3_INCLUDE_DIR="${{ github.workspace }}\third_party\eigen-3.4.0" -DFLUX_BUILD_TESTS=ON
+        run: cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DLLVM_DIR="$env:LLVM_DIR" -DEIGEN3_INCLUDE_DIR="${{ github.workspace }}\third_party\eigen-3.4.0" -DFLUX_BUILD_TESTS=ON
 
       - name: Build
-        run: cmake --build build --config Release
+        run: ninja -C build
 
       - name: Test
         shell: pwsh
@@ -276,10 +275,10 @@ jobs:
             $llvmBin = $llvmDll.DirectoryName
             $env:PATH = "$llvmBin;$env:PATH"
           }
-          $fluxBin = Resolve-Path "build\Release"
+          $fluxBin = Resolve-Path "build"
           $env:PATH = "$fluxBin;$env:PATH"
           cd build
-          ctest --output-on-failure -C Release -R "flux-test" -E "all-features|waveform-extraction|tiered-jit|module-system"
+          ctest --output-on-failure -R "flux-test" -E "all-features|waveform-extraction|tiered-jit|module-system"
 
       - name: Package
         if: startsWith(github.ref, 'refs/tags/v')
@@ -287,8 +286,8 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force -Path install\include, install\lib | Out-Null
           copy include\flux install\include\ -Recurse
-          copy build\Release\FluxScript.dll install\lib\
-          copy build\Release\FluxScript.lib install\lib\
+          copy build\FluxScript.dll install\lib\
+          copy build\FluxScript.lib install\lib\
           $llvmDlls = Get-ChildItem -Path llvm-windows -Recurse -Filter "LLVM*.dll"
           if ($llvmDlls) {
             Copy-Item $llvmDlls.FullName install\lib\

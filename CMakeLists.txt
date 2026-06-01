@@ -24,6 +24,30 @@ option(FLUX_ENABLE_MLIR "Enable optional MLIR integration" OFF)
 option(FLUX_VIO_MATRIXC_LIB_DIR "Path to VioMATRIXC libngspice directory" "")
 
 # =============================================================================
+# Build Optimizations
+# =============================================================================
+
+# Export compile_commands.json for tooling (clangd, etc.)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
+# ccache (auto-detected)
+find_program(CCACHE_PROGRAM ccache)
+if(CCACHE_PROGRAM)
+    set(CMAKE_CXX_COMPILER_LAUNCHER "${CCACHE_PROGRAM}")
+    set(CMAKE_C_COMPILER_LAUNCHER "${CCACHE_PROGRAM}")
+    message(STATUS "ccache found: ${CCACHE_PROGRAM}")
+endif()
+
+# mold linker (Linux x86_64, non-MSVC)
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_SIZEOF_VOID_P EQUAL 8 AND NOT MSVC)
+    find_program(MOLD_LINKER mold)
+    if(MOLD_LINKER)
+        set(CMAKE_LINKER_TYPE MOLD)
+        message(STATUS "mold linker found: ${MOLD_LINKER}")
+    endif()
+endif()
+
+# =============================================================================
 # Find Dependencies
 # =============================================================================
 

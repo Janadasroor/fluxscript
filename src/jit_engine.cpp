@@ -414,6 +414,24 @@ bool JITEngine::loadPlugin(const std::string& pluginPath, std::string* error)
     return m_moduleLoader.loadPlugin(std::filesystem::path(pluginPath), error);
 }
 
+bool JITEngine::loadPrecompiledObject(const std::string& path, std::string* error)
+{
+    if (!m_initialized) {
+        if (error)
+            *error = "JIT Engine not initialized";
+        return false;
+    }
+
+    auto buf = llvm::MemoryBuffer::getFile(path);
+    if (!buf) {
+        if (error)
+            *error = "Could not open precompiled object: " + path;
+        return false;
+    }
+    m_jit->addObjectFile(std::move(*buf));
+    return true;
+}
+
 std::vector<std::string> JITEngine::getLoadedModules() const
 {
     if (!m_initialized)
