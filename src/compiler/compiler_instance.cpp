@@ -1654,6 +1654,9 @@ bool CompilerInstance::compileParser(Parser& parser, CodegenContext& context,
     }
 
     // --- Fix up anonymous function return types for struct/enum returns ---
+    // Only consider the LAST expression of the block; intermediate let/if/while
+    // statements that call struct/enum-returning functions should NOT override
+    // the anon return type.
     for (auto& func : functions) {
         const std::string& name = func->getProto()->getName();
         if (name.find("anon_expr") == std::string::npos)
@@ -1661,8 +1664,16 @@ bool CompilerInstance::compileParser(Parser& parser, CodegenContext& context,
         FluxType protoRet = func->getProto()->getReturnType();
         if (protoRet.Kind == TypeKind::UserStruct || protoRet.Kind == TypeKind::UserEnum)
             continue;
+        const ExprAST* lastExpr = nullptr;
+        if (auto* block = dynamic_cast<const BlockExprAST*>(func->getBody())) {
+            const auto& stmts = block->getStatements();
+            if (!stmts.empty())
+                lastExpr = stmts.back().get();
+        }
+        if (!lastExpr)
+            continue;
         FluxType fixRet(TypeKind::Void);
-        findStructReturnCalls(func->getBody(), context.FuncReturnTypes, fixRet);
+        findStructReturnCalls(lastExpr, context.FuncReturnTypes, fixRet);
         if (fixRet.Kind == TypeKind::UserStruct || fixRet.Kind == TypeKind::UserEnum) {
             func->getProto()->setReturnType(fixRet);
             returnTypes[name] = fixRet;

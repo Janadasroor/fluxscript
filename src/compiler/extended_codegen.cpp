@@ -666,30 +666,47 @@ TypedValue MatchExprAST::codegen(CodegenContext& context)
                 patVal = context.Builder.CreateIntCast(patVal, matchVal->getType(), false, "pat_cast");
             IsMatch = context.Builder.CreateICmpEQ(matchVal, patVal, "cmp_" + std::to_string(i));
         } else {
-            // Non-enum match: use existing comparison logic
-            TypedValue PatternTV = Pattern->codegen(context);
-            if (!PatternTV.Val) {
-                std::cerr << "[FLUX ERROR] match pattern (non-enum) failed to codegen" << std::endl;
-                return TypedValue();
+            // Non-enum match
+            // Detect binder patterns (standalone VariableExprAST like `x -> ...`)
+            // that the parser didn't add to Bindings.
+            std::string binderName;
+            if (!armBindings.empty()) {
+                binderName = armBindings[0];
+            } else if (auto* varPat = dynamic_cast<VariableExprAST*>(Pattern.get())) {
+                if (varPat->getName() != "_") {
+                    binderName = varPat->getName();
+                }
             }
 
-            llvm::Value*& PatternVal = PatternTV.Val;
-            llvm::Value* MatchVal = MatchValTV.Val;
-
-            if (MatchVal->getType()->isIntegerTy()) {
-                if (PatternVal->getType() != MatchVal->getType())
-                    PatternVal = context.Builder.CreateIntCast(PatternVal, MatchVal->getType(), false, "pat_cast");
-                IsMatch = context.Builder.CreateICmpEQ(MatchVal, PatternVal, "cmp_" + std::to_string(i));
-            } else if (MatchVal->getType()->isFloatingPointTy()) {
-                if (PatternVal->getType()->isIntegerTy())
-                    PatternVal = context.Builder.CreateSIToFP(PatternVal, MatchVal->getType(), "pat_to_fp");
-                IsMatch = context.Builder.CreateFCmpOEQ(MatchVal, PatternVal, "cmp_" + std::to_string(i));
+            if (!binderName.empty()) {
+                // Binder pattern (e.g., `x -> ...`): always matches.
+                IsMatch = llvm::ConstantInt::getTrue(Ctx);
             } else {
-                // Fallback: compare as integers via ptrtoint
-                IsMatch = context.Builder.CreateICmpEQ(
-                    context.Builder.CreatePtrToInt(MatchVal, llvm::Type::getInt64Ty(Ctx)),
-                    context.Builder.CreatePtrToInt(PatternVal, llvm::Type::getInt64Ty(Ctx)),
-                    "cmp_" + std::to_string(i));
+                // Literal pattern: codegen and compare
+                TypedValue PatternTV = Pattern->codegen(context);
+                if (!PatternTV.Val) {
+                    std::cerr << "[FLUX ERROR] match pattern (non-enum) failed to codegen" << std::endl;
+                    return TypedValue();
+                }
+
+                llvm::Value*& PatternVal = PatternTV.Val;
+                llvm::Value* MatchVal = MatchValTV.Val;
+
+                if (MatchVal->getType()->isIntegerTy()) {
+                    if (PatternVal->getType() != MatchVal->getType())
+                        PatternVal = context.Builder.CreateIntCast(PatternVal, MatchVal->getType(), false, "pat_cast");
+                    IsMatch = context.Builder.CreateICmpEQ(MatchVal, PatternVal, "cmp_" + std::to_string(i));
+                } else if (MatchVal->getType()->isFloatingPointTy()) {
+                    if (PatternVal->getType()->isIntegerTy())
+                        PatternVal = context.Builder.CreateSIToFP(PatternVal, MatchVal->getType(), "pat_to_fp");
+                    IsMatch = context.Builder.CreateFCmpOEQ(MatchVal, PatternVal, "cmp_" + std::to_string(i));
+                } else {
+                    // Fallback: compare as integers via ptrtoint
+                    IsMatch = context.Builder.CreateICmpEQ(
+                        context.Builder.CreatePtrToInt(MatchVal, llvm::Type::getInt64Ty(Ctx)),
+                        context.Builder.CreatePtrToInt(PatternVal, llvm::Type::getInt64Ty(Ctx)),
+                        "cmp_" + std::to_string(i));
+                }
             }
         }
 
@@ -697,6 +714,18 @@ TypedValue MatchExprAST::codegen(CodegenContext& context)
 
         // Emit match body
         context.Builder.SetInsertPoint(matchBBs[i]);
+
+        // Detect binder pattern for non-enum match (standalone VariableExprAST)
+        std::string binderName;
+        if (!armBindings.empty()) {
+            binderName = armBindings[0];
+        } else if (!isPayloadEnum && !isEnumMatch) {
+            if (auto* varPat = dynamic_cast<VariableExprAST*>(Pattern.get())) {
+                if (varPat->getName() != "_") {
+                    binderName = varPat->getName();
+                }
+            }
+        }
 
         // If this pattern has binding variables, extract payload fields and store them
         if (!armBindings.empty() && isPayloadEnum) {
@@ -787,6 +816,12 @@ TypedValue MatchExprAST::codegen(CodegenContext& context)
                     }
                 }
             }
+        } else if (!binderName.empty() && !isPayloadEnum) {
+            // Non-enum binding: bind the match value directly to the variable(s)
+            llvm::AllocaInst* BindingAlloca = context.Builder.CreateAlloca(MatchValTV.Val->getType(), nullptr, binderName);
+            context.Builder.CreateStore(MatchValTV.Val, BindingAlloca);
+            context.NamedValues[binderName] = BindingAlloca;
+            context.NamedTypes[binderName] = MatchValTV.Type;
         }
 
         TypedValue ResultTV = Result->codegen(context);
@@ -799,7 +834,12 @@ TypedValue MatchExprAST::codegen(CodegenContext& context)
         if (!armBindings.empty() && isPayloadEnum) {
             for (const auto& bv : armBindings) {
                 context.NamedValues.erase(bv);
+                context.NamedTypes.erase(bv);
             }
+        }
+        if (!binderName.empty() && !isPayloadEnum) {
+            context.NamedValues.erase(binderName);
+            context.NamedTypes.erase(binderName);
         }
 
         llvm::Value* ResultV = ResultTV.Val;
