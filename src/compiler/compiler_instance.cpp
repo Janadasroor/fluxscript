@@ -1555,6 +1555,27 @@ bool CompilerInstance::compileParser(Parser& parser, CodegenContext& context,
         }
     }
 
+    // --- Inject synthetic payload structs for enum variants with bare payloads ---
+    // For braced constructor syntax (e.g., MyEnum.Variant { value: expr }),
+    // we need __enum_<Enum>_<Variant>_Fields to exist in the struct registry.
+    // Variants declared with named fields (e.g., Some { value: T }) are already
+    // handled by ParseEnumDecl; bare payload variants (e.g., Some(T)) need injection.
+    for (const auto& e : enums) {
+        const auto& variants = e->getVariants();
+        const auto& payloads = e->getVariantPayloads();
+        for (size_t i = 0; i < variants.size(); ++i) {
+            if (payloads[i].Kind != TypeKind::Void && payloads[i].Kind != TypeKind::UserStruct) {
+                std::string anonName = "__enum_" + e->getName() + "_" + variants[i] + "_Fields";
+                if (!parser.getKnownStructTypeNames().count(anonName)) {
+                    parser.getKnownStructTypeNames().insert(anonName);
+                    structs.push_back(
+                        std::make_unique<StructDeclAST>(anonName,
+                            std::vector<std::pair<std::string, FluxType>>{{"value", payloads[i]}}));
+                }
+            }
+        }
+    }
+
     // Process struct declarations first so anonymous enum payload
     // struct types are registered before enum codegen references them.
     for (auto& s : structs) {
