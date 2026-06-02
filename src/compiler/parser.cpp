@@ -559,7 +559,7 @@ std::unique_ptr<ExprAST> Parser::ParseIdentifierExpr()
         (m_knownStructTypeNames.count(IdName) || m_knownEnumTypeNames.count(IdName) || !GenericTypeArgs.empty())) {
         return ParseStructConstructExpr(IdName, GenericTypeArgs);
     }
-    auto Result = std::make_unique<VariableExprAST>(IdName);
+    auto Result = std::make_unique<VariableExprAST>(IdName, std::move(GenericTypeArgs));
     Result->setLocation(line, col);
     return Result;
 }
@@ -1505,18 +1505,13 @@ std::unique_ptr<ExprAST> Parser::ParsePrimary()
                 }
                 if (isEnumVariant) {
                     std::string anonName = "__enum_" + enumName + "_" + MemberName + "_Fields";
-                    if (m_knownStructTypeNames.count(anonName)) {
-                        // Yes! Parse the braced struct construction
-                        auto structCtor = ParseStructConstructExpr(anonName);
-                        if (!structCtor) return nullptr;
+                    auto structCtor = ParseStructConstructExpr(anonName);
+                    if (!structCtor) return nullptr;
 
-                        auto member = std::make_unique<MemberExprAST>(std::move(Res), MemberName);
-                        std::vector<std::unique_ptr<ExprAST>> CallArgs;
-                        CallArgs.push_back(std::move(structCtor));
-                        Res = std::make_unique<CallExprAST>(std::move(member), std::move(CallArgs));
-                    } else {
-                        Res = std::make_unique<MemberExprAST>(std::move(Res), MemberName);
-                    }
+                    auto member = std::make_unique<MemberExprAST>(std::move(Res), MemberName);
+                    std::vector<std::unique_ptr<ExprAST>> CallArgs;
+                    CallArgs.push_back(std::move(structCtor));
+                    Res = std::make_unique<CallExprAST>(std::move(member), std::move(CallArgs));
                 } else {
                     Res = std::make_unique<MemberExprAST>(std::move(Res), MemberName);
                 }
@@ -1769,6 +1764,9 @@ std::unique_ptr<PrototypeAST> Parser::ParsePrototype()
                         }
                     }
                     getNextToken(); // eat type keyword (identifier)
+                    if (CurTok == '[' &&
+                        (Type.Kind == TypeKind::UserStruct || Type.Kind == TypeKind::UserEnum))
+                        Type.GenericArgs = ParseGenericTypeArgs();
                 } else if (Type.Kind == TypeKind::Double && CurTok == static_cast<int>(TokenType::tok_type_double)) {
                     // Explicit "Double" keyword — keep as Double
                     getNextToken(); // eat type keyword
@@ -1831,6 +1829,9 @@ std::unique_ptr<PrototypeAST> Parser::ParsePrototype()
                 }
             }
             getNextToken();
+            if (CurTok == '[' &&
+                (RetType.Kind == TypeKind::UserStruct || RetType.Kind == TypeKind::UserEnum))
+                RetType.GenericArgs = ParseGenericTypeArgs();
         }
     }
     auto proto = std::make_unique<PrototypeAST>(FnName, std::move(Args), RetType);
@@ -4309,6 +4310,8 @@ FluxType Parser::parseTypeName(const std::vector<std::string>& genericParams,
             t.StructTypeId = -1;     // resolve at codegen time
             t.StructLLVMType = nullptr;
             t.GenericName = typeName; // carry name for resolution
+            if (CurTok == '[')
+                t.GenericArgs = ParseGenericTypeArgs();
             return t;
         }
 
@@ -4318,6 +4321,8 @@ FluxType Parser::parseTypeName(const std::vector<std::string>& genericParams,
             t.EnumTypeId = -1;       // resolve at codegen time
             t.EnumLLVMType = nullptr;
             t.GenericName = typeName; // carry name for resolution
+            if (CurTok == '[')
+                t.GenericArgs = ParseGenericTypeArgs();
             return t;
         }
 

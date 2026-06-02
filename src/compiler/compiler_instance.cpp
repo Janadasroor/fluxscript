@@ -1348,9 +1348,13 @@ static void inferParamTypes(const std::vector<std::unique_ptr<FunctionAST>>& fun
 bool CompilerInstance::compileParser(Parser& parser, CodegenContext& context,
                                      std::map<std::string, FluxType>& returnTypes, std::string& error,
                                      std::map<std::string, bool>& importedModules,
-                                     const std::vector<std::string>& symbols,
-                                     std::vector<std::unique_ptr<FunctionAST>>* preParsedFunctions) const
+                                      const std::vector<std::string>& symbols,
+                                      std::vector<std::unique_ptr<FunctionAST>>* preParsedFunctions) const
 {
+    // --- Inject built-in generic enum type names for parser recognition ---
+    parser.getKnownEnumTypeNames().insert("Result");
+    parser.getKnownEnumTypeNames().insert("Option");
+
     // --- Pass 1: Parse all definitions (defer prototype declaration) ---
     // Prototype declaration is deferred until after selective-import
     // filtering so that only selected functions get LLVM declarations.
@@ -1492,6 +1496,61 @@ bool CompilerInstance::compileParser(Parser& parser, CodegenContext& context,
                 auto Proto = std::make_unique<PrototypeAST>(anonName, std::vector<std::pair<std::string, FluxType>>(),
                                                             RetType);
                 functions.push_back(std::make_unique<FunctionAST>(std::move(Proto), std::move(Block)));
+            }
+        }
+    }
+
+    // --- Inject built-in generic enums (Result, Option) and synthetic payload structs ---
+    {
+        bool userDeclaredResult = false;
+        bool userDeclaredOption = false;
+        for (const auto& e : enums) {
+            if (e->getName() == "Result") userDeclaredResult = true;
+            if (e->getName() == "Option") userDeclaredOption = true;
+        }
+        if (!userDeclaredResult) {
+            FluxType tGen(TypeKind::Generic);
+            tGen.GenericName = "T";
+            FluxType eGen(TypeKind::Generic);
+            eGen.GenericName = "E";
+            // Synthetic structs for braced constructor syntax: Result.Ok { value: v }
+            auto resultOkFields = std::make_unique<StructDeclAST>(
+                "__enum_Result_Ok_Fields",
+                std::vector<std::pair<std::string, FluxType>>{{"value", tGen}});
+            auto resultErrFields = std::make_unique<StructDeclAST>(
+                "__enum_Result_Err_Fields",
+                std::vector<std::pair<std::string, FluxType>>{{"value", eGen}});
+            parser.getKnownStructTypeNames().insert("__enum_Result_Ok_Fields");
+            parser.getKnownStructTypeNames().insert("__enum_Result_Err_Fields");
+            structs.push_back(std::move(resultOkFields));
+            structs.push_back(std::move(resultErrFields));
+            auto resultEnum = std::make_unique<EnumDeclAST>(
+                "Result",
+                std::vector<std::string>{"Ok", "Err"},
+                std::vector<FluxType>{tGen, eGen});
+            resultEnum->setGenericParams({"T", "E"});
+            enums.push_back(std::move(resultEnum));
+        }
+        if (!userDeclaredOption) {
+            FluxType tGen(TypeKind::Generic);
+            tGen.GenericName = "T";
+            // Synthetic struct for braced constructor syntax: Option.Some { value: v }
+            auto optionSomeFields = std::make_unique<StructDeclAST>(
+                "__enum_Option_Some_Fields",
+                std::vector<std::pair<std::string, FluxType>>{{"value", tGen}});
+            parser.getKnownStructTypeNames().insert("__enum_Option_Some_Fields");
+            structs.push_back(std::move(optionSomeFields));
+            auto optionEnum = std::make_unique<EnumDeclAST>(
+                "Option",
+                std::vector<std::string>{"Some", "None"},
+                std::vector<FluxType>{tGen, FluxType(TypeKind::Void)});
+            optionEnum->setGenericParams({"T"});
+            enums.push_back(std::move(optionEnum));
+        }
+        // Register all generic enums so the generic-enum infrastructure finds them
+        for (auto& e : enums) {
+            if (e->isGeneric()) {
+                context.GenericEnums[e->getName()] = e.get();
             }
         }
     }

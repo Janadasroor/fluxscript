@@ -116,6 +116,8 @@ public:
     llvm::Type* EnumLLVMType = nullptr; // LLVM tagged union type for UserEnum with payload
     int TraitObjectTypeId = 0;     // Trait ID for TypeKind::TraitObject (index into CodegenContext.Traits)
     llvm::Type* TraitObjectVTableTy = nullptr; // LLVM vtable struct type for this trait object
+    // Generic type args for UserStruct/UserEnum (e.g., [Double, Double] for Result[Double, Double])
+    std::vector<FluxType> GenericArgs;
 
     // Reference type fields (TypeKind::Ref)
     FluxType* RefInnerType = nullptr;
@@ -133,6 +135,7 @@ public:
           GenericName(other.GenericName), StructTypeId(other.StructTypeId), StructLLVMType(other.StructLLVMType),
           EnumTypeId(other.EnumTypeId), EnumLLVMType(other.EnumLLVMType),
           TraitObjectTypeId(other.TraitObjectTypeId), TraitObjectVTableTy(other.TraitObjectVTableTy),
+          GenericArgs(other.GenericArgs),
           RefIsMut(other.RefIsMut), Lifetime(other.Lifetime)
     {
         if (other.RefInnerType)
@@ -144,6 +147,7 @@ public:
           StructLLVMType(other.StructLLVMType),
           EnumTypeId(other.EnumTypeId), EnumLLVMType(other.EnumLLVMType),
           TraitObjectTypeId(other.TraitObjectTypeId), TraitObjectVTableTy(other.TraitObjectVTableTy),
+          GenericArgs(std::move(other.GenericArgs)),
           RefInnerType(other.RefInnerType), RefIsMut(other.RefIsMut), Lifetime(std::move(other.Lifetime))
     {
         other.RefInnerType = nullptr;
@@ -155,6 +159,7 @@ public:
             GenericName = other.GenericName; StructTypeId = other.StructTypeId; StructLLVMType = other.StructLLVMType;
             EnumTypeId = other.EnumTypeId; EnumLLVMType = other.EnumLLVMType;
             TraitObjectTypeId = other.TraitObjectTypeId; TraitObjectVTableTy = other.TraitObjectVTableTy;
+            GenericArgs = other.GenericArgs;
             RefIsMut = other.RefIsMut; Lifetime = other.Lifetime;
             delete RefInnerType;
             RefInnerType = other.RefInnerType ? new FluxType(*other.RefInnerType) : nullptr;
@@ -169,6 +174,7 @@ public:
             StructLLVMType = other.StructLLVMType;
             EnumTypeId = other.EnumTypeId; EnumLLVMType = other.EnumLLVMType;
             TraitObjectTypeId = other.TraitObjectTypeId; TraitObjectVTableTy = other.TraitObjectVTableTy;
+            GenericArgs = std::move(other.GenericArgs);
             RefIsMut = other.RefIsMut; Lifetime = std::move(other.Lifetime);
             delete RefInnerType;
             RefInnerType = other.RefInnerType;
@@ -778,11 +784,16 @@ public:
 class VariableExprAST : public ExprAST
 {
     std::string Name;
+    std::vector<FluxType> TypeArgs;
 
 public:
     VariableExprAST(const std::string& Name) : Name(Name) {}
+    VariableExprAST(const std::string& Name, std::vector<FluxType> TypeArgs)
+        : Name(Name), TypeArgs(std::move(TypeArgs)) {}
     TypedValue codegen(CodegenContext& context) override;
     const std::string& getName() const { return Name; }
+    const std::vector<FluxType>& getTypeArgs() const { return TypeArgs; }
+    void setTypeArgs(std::vector<FluxType> Args) { TypeArgs = std::move(Args); }
 };
 
 class MemberExprAST : public ExprAST

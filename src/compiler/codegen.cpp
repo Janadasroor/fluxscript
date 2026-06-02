@@ -163,6 +163,210 @@ static bool checkTraitBounds(
     return true;
 }
 
+// Helper: build a suffix string from generic type args by concatenating
+// each type's name (e.g., [Double, Double] -> "Double_Double").
+static std::string buildGenericTypeSuffix(const std::vector<FluxType>& genericArgs,
+                                           CodegenContext& context)
+{
+    std::string suffix;
+    for (size_t i = 0; i < genericArgs.size(); ++i) {
+        if (i > 0) suffix += "_";
+        FluxType resolved = genericArgs[i];
+        resolveUserStructType(resolved, context);
+        resolveUserEnumType(resolved, context);
+        switch (resolved.Kind) {
+        case TypeKind::Double: suffix += "Double"; break;
+        case TypeKind::Int:    suffix += "Int"; break;
+        case TypeKind::Bool:   suffix += "Bool"; break;
+        case TypeKind::Float:  suffix += "Float"; break;
+        case TypeKind::String: suffix += "String"; break;
+        case TypeKind::Complex: suffix += "Complex"; break;
+        case TypeKind::Matrix: suffix += "Matrix"; break;
+        case TypeKind::ComplexMatrix: suffix += "Cmat"; break;
+        case TypeKind::Vector: suffix += "Vector"; break;
+        case TypeKind::Void: suffix += "Void"; break;
+        case TypeKind::UserStruct: {
+            int sid = resolved.StructTypeId;
+            if (sid >= 0 && sid < static_cast<int>(context.StructTypes.size()))
+                suffix += context.StructTypes[sid].Name;
+            else
+                suffix += "S";
+            break;
+        }
+        case TypeKind::UserEnum: {
+            int eid = resolved.EnumTypeId;
+            if (eid >= 0 && eid < static_cast<int>(context.EnumTypes.size()))
+                suffix += context.EnumTypes[eid].Name;
+            else
+                suffix += "E";
+            break;
+        }
+        case TypeKind::Generic:
+            suffix += resolved.GenericName;
+            break;
+        default:
+            suffix += "T";
+            break;
+        }
+    }
+    return suffix;
+}
+
+// Helper: specialize a generic enum with concrete type arguments.
+// Creates a synthetic enum type with substituted payloads, registers it
+// in context.EnumTypes/EnumTypeIndex, and returns the mangled name.
+// Returns empty string on failure.
+static std::string specializeGenericEnum(const std::string& enumName,
+                                          const std::vector<FluxType>& genericArgs,
+                                          CodegenContext& context)
+{
+    std::string suffix = buildGenericTypeSuffix(genericArgs, context);
+    std::string mangledName = enumName + "_" + suffix;
+
+    // Already specialized?
+    auto existingIt = context.EnumTypeIndex.find(mangledName);
+    if (existingIt != context.EnumTypeIndex.end())
+        return mangledName;
+
+    // Look up the generic enum definition
+    auto genIt = context.GenericEnums.find(enumName);
+    if (genIt == context.GenericEnums.end())
+        return "";
+
+    EnumDeclAST* genericEnum = genIt->second;
+    const auto& genericParams = genericEnum->getGenericParams();
+    const auto& variants = genericEnum->getVariants();
+    const auto& variantPayloads = genericEnum->getVariantPayloads();
+
+    if (genericArgs.size() != genericParams.size()) {
+        std::cerr << "Generic enum " << enumName << " expects " << genericParams.size()
+                  << " type args, got " << genericArgs.size() << std::endl;
+        return "";
+    }
+
+    // Build type map
+    std::map<std::string, FluxType> typeMap;
+    for (size_t i = 0; i < genericParams.size(); ++i)
+        typeMap[genericParams[i]] = genericArgs[i];
+
+    // Substitute concrete types in payloads
+    std::vector<FluxType> concretePayloads;
+    for (auto& pt : variantPayloads) {
+        FluxType concreteType = pt;
+        if (pt.isGeneric()) {
+            auto mapIt = typeMap.find(pt.GenericName);
+            if (mapIt != typeMap.end())
+                concreteType = mapIt->second;
+        }
+        concretePayloads.push_back(concreteType);
+    }
+
+    // Specialize any UserStruct payloads that may contain generic type parameters
+    for (size_t i = 0; i < concretePayloads.size(); ++i) {
+        auto& pt = concretePayloads[i];
+        if (pt.Kind == TypeKind::UserStruct && !pt.GenericName.empty()) {
+            auto structIt = context.StructTypeIndex.find(pt.GenericName);
+            if (structIt != context.StructTypeIndex.end()) {
+                int structId = structIt->second;
+                auto& structInfo = context.StructTypes[structId];
+                bool needsSpecialization = false;
+                for (auto& [fName, fType] : structInfo.Fields) {
+                    if (fType.isGeneric()) { needsSpecialization = true; break; }
+                }
+                if (needsSpecialization) {
+                    std::string specializedStructName = pt.GenericName + "_" + suffix;
+                    auto existing = context.StructTypeIndex.find(specializedStructName);
+                    if (existing == context.StructTypeIndex.end()) {
+                        std::vector<std::pair<std::string, FluxType>> concreteFields;
+                        for (auto& [fName, fType] : structInfo.Fields) {
+                            if (fType.isGeneric()) {
+                                auto mapIt = typeMap.find(fType.GenericName);
+                                if (mapIt != typeMap.end())
+                                    concreteFields.push_back({fName, mapIt->second});
+                                else
+                                    concreteFields.push_back({fName, fType});
+                            } else {
+                                concreteFields.push_back({fName, fType});
+                            }
+                        }
+                        std::vector<llvm::Type*> fieldTypes;
+                        for (auto& [fName, fType] : concreteFields) {
+                            resolveUserStructType(fType, context);
+                            resolveUserEnumType(fType, context);
+                            fieldTypes.push_back(fType.getLLVMType(context.TheContext));
+                        }
+                        auto* llvmStructTy = llvm::StructType::create(context.TheContext, fieldTypes, specializedStructName);
+                        int newId = static_cast<int>(context.StructTypes.size());
+                        CodegenContext::StructTypeInfo newInfo;
+                        newInfo.Name = specializedStructName;
+                        newInfo.Fields = concreteFields;
+                        newInfo.LLVMType = llvmStructTy;
+                        context.StructTypes.push_back(std::move(newInfo));
+                        context.StructTypeIndex[specializedStructName] = newId;
+                    }
+                    pt.StructTypeId = context.StructTypeIndex[specializedStructName];
+                    pt.GenericName = specializedStructName;
+                }
+            }
+        }
+    }
+
+    // Create synthetic enum info
+    CodegenContext::EnumTypeInfo info;
+    info.Name = mangledName;
+    info.Variants = variants;
+    info.VariantPayloads = concretePayloads;
+
+    // Create LLVM tagged union type
+    llvm::StructType* taggedUnionTy = nullptr;
+    bool hasPayload = false;
+    for (auto& pt : concretePayloads) {
+        if (pt.Kind != TypeKind::Void) {
+            hasPayload = true;
+            break;
+        }
+    }
+    if (hasPayload) {
+        llvm::SmallVector<llvm::Type*, 4> memberTypes;
+        memberTypes.push_back(llvm::Type::getInt32Ty(context.TheContext));
+        info.VariantIsBoxed.resize(concretePayloads.size(), false);
+
+        llvm::Type* largestTy = llvm::Type::getInt8Ty(context.TheContext);
+        for (size_t i = 0; i < concretePayloads.size(); ++i) {
+            auto& pt = concretePayloads[i];
+            if (pt.Kind != TypeKind::Void) {
+                resolveUserStructType(pt, context);
+                resolveUserEnumType(pt, context);
+                llvm::Type* payloadLLVM = pt.getLLVMType(context.TheContext);
+                if (!payloadLLVM) {
+                    std::cerr << "Failed to get LLVM type for payload of enum " << mangledName << std::endl;
+                    return "";
+                }
+                uint64_t sizeInBits = context.TheModule->getDataLayout().getTypeSizeInBits(payloadLLVM);
+
+                llvm::Type* effectiveLLVMTy = payloadLLVM;
+                if (sizeInBits > 128) {
+                    info.VariantIsBoxed[i] = true;
+                    effectiveLLVMTy = llvm::PointerType::get(context.TheContext, 0);
+                }
+
+                if (context.TheModule->getDataLayout().getTypeSizeInBits(effectiveLLVMTy) >
+                    context.TheModule->getDataLayout().getTypeSizeInBits(largestTy))
+                    largestTy = effectiveLLVMTy;
+            }
+        }
+        memberTypes.push_back(largestTy);
+        taggedUnionTy = llvm::StructType::create(context.TheContext, memberTypes, mangledName);
+        info.LLVMType = taggedUnionTy;
+    }
+
+    int enumId = static_cast<int>(context.EnumTypes.size());
+    context.EnumTypes.push_back(std::move(info));
+    context.EnumTypeIndex[mangledName] = enumId;
+
+    return mangledName;
+}
+
 static bool shouldPassByPointer(const FluxType& type, CodegenContext& context)
 {
     if (type.Kind != TypeKind::UserStruct && type.Kind != TypeKind::UserEnum)
@@ -2202,6 +2406,130 @@ TypedValue CallExprAST::codegen(CodegenContext& context)
         if (auto* member = dynamic_cast<MemberExprAST*>(CalleeExpr.get())) {
             if (auto* obj = dynamic_cast<const VariableExprAST*>(member->getObject())) {
                 const std::string& enumName = obj->getName();
+                // Handle generic enum: Enum[TypeArgs].Variant(args)
+                if (!obj->getTypeArgs().empty() && context.GenericEnums.count(enumName)) {
+                    std::string mangledEnumName = specializeGenericEnum(enumName, obj->getTypeArgs(), context);
+                    if (mangledEnumName.empty()) {
+                        std::cerr << "Failed to specialize generic enum: " << enumName << std::endl;
+                        return TypedValue();
+                    }
+                    auto specializedEnumIt = context.EnumTypeIndex.find(mangledEnumName);
+                    if (specializedEnumIt == context.EnumTypeIndex.end()) {
+                        std::cerr << "Specialized enum not found: " << mangledEnumName << std::endl;
+                        return TypedValue();
+                    }
+                    int enumTypeId = specializedEnumIt->second;
+                    if (enumTypeId >= 0 && enumTypeId < static_cast<int>(context.EnumTypes.size())) {
+                        auto& enumInfo = context.EnumTypes[enumTypeId];
+                        const std::string& variantName = member->getMemberName();
+                        for (size_t i = 0; i < enumInfo.Variants.size(); ++i) {
+                            if (enumInfo.Variants[i] == variantName) {
+                                int disc = static_cast<int>(i);
+                                FluxType& payloadType = enumInfo.VariantPayloads[i];
+                                if (payloadType.Kind != TypeKind::Void && !Args.empty()) {
+                                    llvm::StructType* taggedTy = enumInfo.LLVMType;
+                                    if (!taggedTy) {
+                                        std::cerr << "[FLUX ERROR] Specialized enum tagged union has no LLVM struct type" << std::endl;
+                                        return TypedValue();
+                                    }
+                                    llvm::Value* structPtr = context.Builder.CreateAlloca(taggedTy, nullptr,
+                                        mangledEnumName + "." + variantName);
+                                    llvm::Value* tagPtr = context.Builder.CreateStructGEP(taggedTy, structPtr, 0, "tag");
+                                    context.Builder.CreateStore(
+                                        llvm::ConstantInt::get(llvm::Type::getInt32Ty(context.TheContext), disc), tagPtr);
+                                    llvm::Value* payloadVal = nullptr;
+                                    if (payloadType.Kind == TypeKind::UserStruct) {
+                                        resolveUserStructType(payloadType, context);
+                                        int anonStructId = payloadType.StructTypeId;
+                                        if (anonStructId < 0) {
+                                            std::cerr << "[FLUX ERROR] Anonymous struct type ID is invalid for enum payload" << std::endl;
+                                            return TypedValue();
+                                        }
+                                        auto& anonInfo = context.StructTypes[anonStructId];
+                                        llvm::Type* anonTy = anonInfo.LLVMType;
+                                        if (!anonTy) {
+                                            std::cerr << "[FLUX ERROR] Anonymous struct has no LLVM type for enum payload" << std::endl;
+                                            return TypedValue();
+                                        }
+                                        if (Args.size() == 1) {
+                                            TypedValue argTV = Args[0]->codegen(context);
+                                            if (argTV.Val && argTV.Type.Kind == TypeKind::UserStruct) {
+                                                payloadVal = argTV.Val;
+                                            }
+                                        }
+                                        if (!payloadVal) {
+                                            llvm::AllocaInst* anonAlloca = context.Builder.CreateAlloca(anonTy, nullptr, "payload_struct");
+                                            for (size_t ai = 0; ai < Args.size() && ai < anonInfo.Fields.size(); ++ai) {
+                                                TypedValue fv = Args[ai]->codegen(context);
+                                                if (!fv.Val) {
+                                                    std::cerr << "[FLUX ERROR] Anonymous struct field expression failed to codegen" << std::endl;
+                                                    return TypedValue();
+                                                }
+                                                llvm::Value* fptr = context.Builder.CreateStructGEP(anonTy, anonAlloca, ai, anonInfo.Fields[ai].first);
+                                                context.Builder.CreateStore(fv.Val, fptr);
+                                            }
+                                            payloadVal = context.Builder.CreateLoad(anonTy, anonAlloca, "payload_loaded");
+                                        }
+                                    } else {
+                                        TypedValue argTV = Args[0]->codegen(context);
+                                        if (!argTV.Val) {
+                                            std::cerr << "[FLUX ERROR] Direct enum payload expression failed to codegen" << std::endl;
+                                            return TypedValue();
+                                        }
+                                        payloadVal = argTV.Val;
+                                    }
+                                    resolveUserStructType(payloadType, context);
+                                    resolveUserEnumType(payloadType, context);
+                                    llvm::Type* concretePayloadTy = payloadType.getLLVMType(context.TheContext);
+                                    if (payloadVal->getType()->isStructTy() && !concretePayloadTy->isStructTy()) {
+                                        if (llvm::StructType* st = llvm::dyn_cast<llvm::StructType>(payloadVal->getType())) {
+                                            if (st->getNumElements() == 1)
+                                                payloadVal = context.Builder.CreateExtractValue(payloadVal, {0}, "payload_val");
+                                        }
+                                    }
+                                    if (payloadVal->getType() != concretePayloadTy) {
+                                        if (concretePayloadTy->isFloatingPointTy() && payloadVal->getType()->isIntegerTy()) {
+                                            payloadVal = context.Builder.CreateSIToFP(payloadVal, concretePayloadTy, "payload_cast");
+                                        } else if (concretePayloadTy->isIntegerTy() && payloadVal->getType()->isFloatingPointTy()) {
+                                            payloadVal = context.Builder.CreateFPToSI(payloadVal, concretePayloadTy, "payload_cast");
+                                        } else if (concretePayloadTy->isPointerTy() && payloadVal->getType()->isPointerTy()) {
+                                            payloadVal = context.Builder.CreatePointerCast(payloadVal, concretePayloadTy, "payload_cast");
+                                        } else {
+                                            payloadVal = context.Builder.CreateBitCast(payloadVal, concretePayloadTy, "payload_cast");
+                                        }
+                                    }
+                                    bool isBoxed = disc < static_cast<int>(enumInfo.VariantIsBoxed.size()) ? enumInfo.VariantIsBoxed[disc] : false;
+                                    llvm::Value* payloadPtr = context.Builder.CreateStructGEP(taggedTy, structPtr, 1, "payload");
+                                    if (isBoxed) {
+                                        llvm::Function* mallocFn = context.TheModule->getFunction("flux_malloc");
+                                        if (!mallocFn) {
+                                            llvm::Type* sizeTy = llvm::Type::getInt64Ty(context.TheContext);
+                                            mallocFn = llvm::Function::Create(
+                                                llvm::FunctionType::get(llvm::PointerType::get(context.TheContext, 0), {sizeTy}, false),
+                                                llvm::Function::ExternalLinkage, "flux_malloc", context.TheModule);
+                                        }
+                                        uint64_t sizeInBytes = context.TheModule->getDataLayout().getTypeStoreSize(concretePayloadTy);
+                                        llvm::Value* sizeVal = llvm::ConstantInt::get(llvm::Type::getInt64Ty(context.TheContext), sizeInBytes);
+                                        llvm::Value* heapAlloc = context.Builder.CreateCall(mallocFn, {sizeVal}, "heap_alloc");
+                                        llvm::Value* concretePayloadPtr = context.Builder.CreatePointerCast(
+                                            heapAlloc, llvm::PointerType::get(context.TheContext, 0), "concrete_heap_ptr");
+                                        context.Builder.CreateStore(payloadVal, concretePayloadPtr);
+                                        llvm::Value* unionPayloadPtr = context.Builder.CreatePointerCast(
+                                            payloadPtr, llvm::PointerType::get(context.TheContext, 0), "union_payload_ptr");
+                                        context.Builder.CreateStore(heapAlloc, unionPayloadPtr);
+                                    } else {
+                                        llvm::Value* concretePayloadPtr = context.Builder.CreatePointerCast(
+                                            payloadPtr, llvm::PointerType::get(context.TheContext, 0), "concrete_payload_ptr");
+                                        context.Builder.CreateStore(payloadVal, concretePayloadPtr);
+                                    }
+                                    llvm::Value* loaded = context.Builder.CreateLoad(taggedTy, structPtr, variantName);
+                                    return TypedValue(loaded, FluxType::userEnum(enumTypeId, taggedTy));
+                                }
+                                break;
+                            }
+                        }
+                    }
+                }
                 auto enumIt = context.EnumTypeIndex.find(enumName);
                 if (enumIt != context.EnumTypeIndex.end()) {
                     int enumTypeId = enumIt->second;
@@ -4287,6 +4615,22 @@ llvm::Function* PrototypeAST::codegen(CodegenContext& context)
     resolveUserStructType(ReturnType, context);
     resolveUserEnumType(ReturnType, context);
 
+    // Specialize generic enum return type
+    if (ReturnType.Kind == TypeKind::UserEnum && !ReturnType.GenericName.empty()
+        && !ReturnType.GenericArgs.empty() && context.GenericEnums.count(ReturnType.GenericName)) {
+        std::string mangledName = specializeGenericEnum(ReturnType.GenericName, ReturnType.GenericArgs, context);
+        if (!mangledName.empty()) {
+            auto enumIdxIt = context.EnumTypeIndex.find(mangledName);
+            if (enumIdxIt != context.EnumTypeIndex.end()) {
+                int enumTypeId = enumIdxIt->second;
+                if (enumTypeId >= 0 && enumTypeId < static_cast<int>(context.EnumTypes.size())) {
+                    auto& enumInfo = context.EnumTypes[enumTypeId];
+                    ReturnType = FluxType::userEnum(enumTypeId, enumInfo.LLVMType);
+                }
+            }
+        }
+    }
+
     std::vector<llvm::Type*> ArgTypes;
     llvm::Type* DoubleTy = llvm::Type::getDoubleTy(context.TheContext);
     llvm::Type* VoidPtrTy = llvm::PointerType::get(context.TheContext, 0);
@@ -4449,7 +4793,9 @@ void StructDeclAST::codegen(CodegenContext& context)
 
 TypedValue StructConstructExprAST::codegen(CodegenContext& context)
 {
-    // Handle generic struct instantiation
+
+
+    // Handle generic struct instantiation or generic enum braced payload struct
     std::string resolvedName = StructName;
     int typeId = StructTypeId;
 
