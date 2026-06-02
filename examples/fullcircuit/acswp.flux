@@ -1,11 +1,10 @@
 # FullCircuit — AC Small-Signal Frequency Sweep Analysis
-import circuit
 import mna
 import dcsolve
 
-def ac_build(comps : matrix, ctrl : matrix, freq, V : matrix) {
-    var N = circuit_num_nodes(ctrl)
-    var nc = circuit_count(ctrl)
+def ac_build(comps: matrix, ctrl: matrix, freq: Double, V: matrix) -> matrix {
+    var N = matrix_get(ctrl, 0.0, 0.0)
+    var nc = matrix_get(ctrl, 1.0, 0.0)
     var M = mna_count_branches(comps, ctrl)
     var dim = N + M
     var dim2 = 2.0 * dim
@@ -15,43 +14,43 @@ def ac_build(comps : matrix, ctrl : matrix, freq, V : matrix) {
     var bi = 0.0
     var ci = 0.0
     while (ci < nc) {
-        var t = circuit_component_type(comps, ci)
-        var np = circuit_node_p(comps, ci)
-        var nm = circuit_node_n(comps, ci)
+        var t = matrix_get(comps, ci, 0.0)
+        var np = matrix_get(comps, ci, 1.0)
+        var nm = matrix_get(comps, ci, 2.0)
         if (t == 0.0) {
-            var rv = circuit_param(comps, ci, 4.0)
+            var rv = matrix_get(comps, ci, 4.0)
             if (rv > 1e-15) { ac_stamp_g(A, np, nm, 1.0 / rv, N, dim) }
         } else if (t == 1.0) {
-            var cv = circuit_param(comps, ci, 4.0)
+            var cv = matrix_get(comps, ci, 4.0)
             if (cv > 1e-20) { ac_stamp_sus(A, np, nm, w * cv, N, dim) }
         } else if (t == 2.0) {
-            var lv = circuit_param(comps, ci, 4.0)
+            var lv = matrix_get(comps, ci, 4.0)
             if (lv > 1e-20 && w > 1e-20) { ac_stamp_sus(A, np, nm, -1.0 / (w * lv), N, dim) }
             bi = bi + 1.0
         } else if (t == 3.0) {
             ac_stamp_vsrc_re(A, b, np, nm, 0.0, N, dim, bi)
             bi = bi + 1.0
         } else if (t == 5.0) {
-            var amag = circuit_param(comps, ci, 8.0)
-            var aphase = circuit_param(comps, ci, 10.0)
+            var amag = matrix_get(comps, ci, 8.0)
+            var aphase = matrix_get(comps, ci, 10.0)
             var pr = aphase * pi() / 180.0
             ac_stamp_vsrc_cx(A, b, np, nm, amag * cos(pr), amag * sin(pr), N, dim, bi)
             bi = bi + 1.0
         } else if (t == 6.0) {
-            var amag = circuit_param(comps, ci, 8.0)
-            var aphase = circuit_param(comps, ci, 10.0)
+            var amag = matrix_get(comps, ci, 8.0)
+            var aphase = matrix_get(comps, ci, 10.0)
             var pr = aphase * pi() / 180.0
             ac_stamp_isrc_cx(b, np, nm, amag * cos(pr), amag * sin(pr), N, dim)
         } else if (t == 7.0) {
-            var n3 = circuit_node_3(comps, ci)
-            var n4 = circuit_param(comps, ci, 4.0)
-            var gain = circuit_param(comps, ci, 5.0)
+            var n3 = matrix_get(comps, ci, 3.0)
+            var n4 = matrix_get(comps, ci, 4.0)
+            var gain = matrix_get(comps, ci, 5.0)
             ac_stamp_vcvs(A, np, nm, n3, n4, gain, N, dim, bi)
             bi = bi + 1.0
         } else if (t == 8.0) {
-            var n3 = circuit_node_3(comps, ci)
-            var n4 = circuit_param(comps, ci, 4.0)
-            ac_stamp_gm(A, np, nm, n3, n4, circuit_param(comps, ci, 5.0), N, dim)
+            var n3 = matrix_get(comps, ci, 3.0)
+            var n4 = matrix_get(comps, ci, 4.0)
+            ac_stamp_gm(A, np, nm, n3, n4, matrix_get(comps, ci, 5.0), N, dim)
         } else if (t == 9.0) {
             ac_stamp_diode_ss(A, comps, ci, np, nm, V, N, dim)
         } else if (t == 10.0 || t == 11.0) {
@@ -79,7 +78,7 @@ def ac_build(comps : matrix, ctrl : matrix, freq, V : matrix) {
     sol
 }
 
-def ac_stamp_g(A : matrix, np, nm, g, N, dim) {
+def ac_stamp_g(A: matrix, np: Double, nm: Double, g: Double, N: Double, dim: Double) {
     if (np > 0.0 && np <= N) {
         var r = mna_ndx(np)
         matrix_set(A, r, r, matrix_get(A, r, r) + g)
@@ -99,7 +98,7 @@ def ac_stamp_g(A : matrix, np, nm, g, N, dim) {
     }
 }
 
-def ac_stamp_sus(A : matrix, np, nm, bval, N, dim) {
+def ac_stamp_sus(A: matrix, np: Double, nm: Double, bval: Double, N: Double, dim: Double) {
     if (np > 0.0 && np <= N) {
         var r = mna_ndx(np)
         matrix_set(A, r, r + dim, matrix_get(A, r, r + dim) - bval)
@@ -119,7 +118,7 @@ def ac_stamp_sus(A : matrix, np, nm, bval, N, dim) {
     }
 }
 
-def ac_stamp_gm(A : matrix, np, nm, ncp, ncn, gm_val, N, dim) {
+def ac_stamp_gm(A: matrix, np: Double, nm: Double, ncp: Double, ncn: Double, gm_val: Double, N: Double, dim: Double) {
     var sgn = 1.0
     if (np > 0.0 && np <= N && ncp > 0.0 && ncp <= N) {
         var rp = mna_ndx(np); var rc = mna_ndx(ncp)
@@ -143,7 +142,7 @@ def ac_stamp_gm(A : matrix, np, nm, ncp, ncn, gm_val, N, dim) {
     }
 }
 
-def ac_stamp_vsrc_re(A : matrix, b : matrix, np, nm, vval, N, dim, bi) {
+def ac_stamp_vsrc_re(A: matrix, b: matrix, np: Double, nm: Double, vval: Double, N: Double, dim: Double, bi: Double) {
     var br = N + bi
     if (np > 0.0 && np <= N) {
         matrix_set(A, br, mna_ndx(np), 1.0); matrix_set(A, mna_ndx(np), br, 1.0)
@@ -156,7 +155,7 @@ def ac_stamp_vsrc_re(A : matrix, b : matrix, np, nm, vval, N, dim, bi) {
     matrix_set(b, br, 0, vval)
 }
 
-def ac_stamp_vsrc_cx(A : matrix, b : matrix, np, nm, vr, vi, N, dim, bi) {
+def ac_stamp_vsrc_cx(A: matrix, b: matrix, np: Double, nm: Double, vr: Double, vi: Double, N: Double, dim: Double, bi: Double) {
     var br = N + bi
     if (np > 0.0 && np <= N) {
         matrix_set(A, br, mna_ndx(np), 1.0); matrix_set(A, mna_ndx(np), br, 1.0)
@@ -170,7 +169,7 @@ def ac_stamp_vsrc_cx(A : matrix, b : matrix, np, nm, vr, vi, N, dim, bi) {
     matrix_set(b, br + dim, 0, vi)
 }
 
-def ac_stamp_isrc_cx(b : matrix, np, nm, ir, ii, N, dim) {
+def ac_stamp_isrc_cx(b: matrix, np: Double, nm: Double, ir: Double, ii: Double, N: Double, dim: Double) {
     if (np > 0.0 && np <= N) {
         matrix_set(b, mna_ndx(np), 0, matrix_get(b, mna_ndx(np), 0) - ir)
         matrix_set(b, mna_ndx(np) + dim, 0, matrix_get(b, mna_ndx(np) + dim, 0) - ii)
@@ -181,7 +180,7 @@ def ac_stamp_isrc_cx(b : matrix, np, nm, ir, ii, N, dim) {
     }
 }
 
-def ac_stamp_vcvs(A : matrix, np, nm, ncp, ncn, gain, N, dim, bi) {
+def ac_stamp_vcvs(A: matrix, np: Double, nm: Double, ncp: Double, ncn: Double, gain: Double, N: Double, dim: Double, bi: Double) {
     var br = N + bi
     if (np > 0.0 && np <= N) {
         matrix_set(A, br, mna_ndx(np), 1.0); matrix_set(A, mna_ndx(np), br, 1.0)
@@ -201,10 +200,10 @@ def ac_stamp_vcvs(A : matrix, np, nm, ncp, ncn, gain, N, dim, bi) {
     }
 }
 
-def ac_stamp_diode_ss(A : matrix, comps : matrix, ci, np, nm, V : matrix, N, dim) {
-    var isat = circuit_param(comps, ci, 4.0)
-    var nf = circuit_param(comps, ci, 5.0)
-    var vt = circuit_param(comps, ci, 7.0)
+def ac_stamp_diode_ss(A: matrix, comps: matrix, ci: Double, np: Double, nm: Double, V: matrix, N: Double, dim: Double) {
+    var isat = matrix_get(comps, ci, 4.0)
+    var nf = matrix_get(comps, ci, 5.0)
+    var vt = matrix_get(comps, ci, 7.0)
     var vnp = 0.0; var vnm = 0.0
     if (np > 0.0 && np <= N) { vnp = matrix_get(V, np, 0) }
     if (nm > 0.0 && nm <= N) { vnm = matrix_get(V, nm, 0) }
@@ -214,13 +213,13 @@ def ac_stamp_diode_ss(A : matrix, comps : matrix, ci, np, nm, V : matrix, N, dim
     ac_stamp_g(A, np, nm, geq, N, dim)
 }
 
-def ac_stamp_bjt_ss(A : matrix, comps : matrix, ci, nc_node, nb_node, V : matrix, N, dim) {
-    var ne_node = circuit_node_3(comps, ci)
-    var bf = circuit_param(comps, ci, 4.0)
-    var isat = circuit_param(comps, ci, 5.0)
-    var vaf = circuit_param(comps, ci, 6.0)
-    var vt = circuit_param(comps, ci, 7.0)
-    var br = circuit_param(comps, ci, 8.0)
+def ac_stamp_bjt_ss(A: matrix, comps: matrix, ci: Double, nc_node: Double, nb_node: Double, V: matrix, N: Double, dim: Double) {
+    var ne_node = matrix_get(comps, ci, 3.0)
+    var bf = matrix_get(comps, ci, 4.0)
+    var isat = matrix_get(comps, ci, 5.0)
+    var vaf = matrix_get(comps, ci, 6.0)
+    var vt = matrix_get(comps, ci, 7.0)
+    var br = matrix_get(comps, ci, 8.0)
     if (br <= 0.0) { br = 2.0 }
     var vc_v = 0.0; var vb_v = 0.0; var ve_v = 0.0
     if (nc_node > 0.0 && nc_node <= N) { vc_v = matrix_get(V, nc_node, 0) }
@@ -283,12 +282,12 @@ def ac_stamp_bjt_ss(A : matrix, comps : matrix, ci, nc_node, nb_node, V : matrix
     }
 }
 
-def ac_stamp_mos_ss(A : matrix, comps : matrix, ci, nd_node, ng_node, V : matrix, N, dim) {
-    var ns_node = circuit_node_3(comps, ci)
-    var t = circuit_component_type(comps, ci)
-    var kp_val = circuit_param(comps, ci, 5.0)
-    var vto_val = circuit_param(comps, ci, 6.0)
-    var lambda_val = circuit_param(comps, ci, 7.0)
+def ac_stamp_mos_ss(A: matrix, comps: matrix, ci: Double, nd_node: Double, ng_node: Double, V: matrix, N: Double, dim: Double) {
+    var ns_node = matrix_get(comps, ci, 3.0)
+    var t = matrix_get(comps, ci, 0.0)
+    var kp_val = matrix_get(comps, ci, 5.0)
+    var vto_val = matrix_get(comps, ci, 6.0)
+    var lambda_val = matrix_get(comps, ci, 7.0)
     var vd_v = 0.0; var vg_v = 0.0; var vs_v = 0.0
     if (nd_node > 0.0 && nd_node <= N) { vd_v = matrix_get(V, nd_node, 0) }
     if (ng_node > 0.0 && ng_node <= N) { vg_v = matrix_get(V, ng_node, 0) }
@@ -346,12 +345,12 @@ def ac_stamp_mos_ss(A : matrix, comps : matrix, ci, nd_node, ng_node, V : matrix
     }
 }
 
-def ac_stamp_jfet_ss(A : matrix, comps : matrix, ci, nd_node, ng_node, V : matrix, N, dim) {
-    var ns_node = circuit_node_3(comps, ci)
-    var t = circuit_component_type(comps, ci)
-    var beta_val = circuit_param(comps, ci, 5.0)
-    var vto_val = circuit_param(comps, ci, 6.0)
-    var lambda_val = circuit_param(comps, ci, 7.0)
+def ac_stamp_jfet_ss(A: matrix, comps: matrix, ci: Double, nd_node: Double, ng_node: Double, V: matrix, N: Double, dim: Double) {
+    var ns_node = matrix_get(comps, ci, 3.0)
+    var t = matrix_get(comps, ci, 0.0)
+    var beta_val = matrix_get(comps, ci, 5.0)
+    var vto_val = matrix_get(comps, ci, 6.0)
+    var lambda_val = matrix_get(comps, ci, 7.0)
     var vd_v = 0.0; var vg_v = 0.0; var vs_v = 0.0
     if (nd_node > 0.0 && nd_node <= N) { vd_v = matrix_get(V, nd_node, 0) }
     if (ng_node > 0.0 && ng_node <= N) { vg_v = matrix_get(V, ng_node, 0) }
@@ -409,11 +408,11 @@ def ac_stamp_jfet_ss(A : matrix, comps : matrix, ci, nd_node, ng_node, V : matri
     }
 }
 
-def ac_mag_db(vr, vi) {
+def ac_mag_db(vr: Double, vi: Double) -> Double {
     sqrt(vr * vr + vi * vi)
 }
 
-def ac_node_voltage(sol : matrix, nd, dim) {
+def ac_node_voltage(sol: matrix, nd: Double, dim: Double) -> matrix {
     var vr = matrix_get(sol, 2.0 + nd - 1.0, 0)
     var vi = matrix_get(sol, 2.0 + dim + nd - 1.0, 0)
     var mag = ac_mag_db(vr, vi)
@@ -425,7 +424,7 @@ def ac_node_voltage(sol : matrix, nd, dim) {
     result
 }
 
-def ac_sweep(comps : matrix, ctrl : matrix, f_start, f_stop, npoints, V : matrix) {
+def ac_sweep(comps: matrix, ctrl: matrix, f_start: Double, f_stop: Double, npoints: Double, V: matrix) -> matrix {
     var log_fs = log(f_start)
     var log_fe = log(f_stop)
     var step = 0.0
@@ -450,9 +449,9 @@ def ac_sweep(comps : matrix, ctrl : matrix, f_start, f_stop, npoints, V : matrix
     results
 }
 
-def ac_stamp_vcsw_ss(A : matrix, comps : matrix, ci, np_node, nm_node, V : matrix, N, dim) {
-    var ncp_node = circuit_node_3(comps, ci)
-    var ncm_node = circuit_param(comps, ci, 4.0)
+def ac_stamp_vcsw_ss(A: matrix, comps: matrix, ci: Double, np_node: Double, nm_node: Double, V: matrix, N: Double, dim: Double) {
+    var ncp_node = matrix_get(comps, ci, 3.0)
+    var ncm_node = matrix_get(comps, ci, 4.0)
     var vnp = 0.0; var vnm = 0.0; var vcp = 0.0; var vcm = 0.0
     if (np_node > 0.0 && np_node <= N) { vnp = matrix_get(V, np_node, 0) }
     if (nm_node > 0.0 && nm_node <= N) { vnm = matrix_get(V, nm_node, 0) }
@@ -470,9 +469,9 @@ def ac_stamp_vcsw_ss(A : matrix, comps : matrix, ci, np_node, nm_node, V : matri
     }
 }
 
-def ac_stamp_ccsw_ss(A : matrix, comps : matrix, ctrl : matrix, ci, np_node, nm_node, V : matrix, N, dim) {
-    var vsrc_idx = circuit_param(comps, ci, 3.0)
-    var Ictrl = circuit_param(comps, ci, 9.0)
+def ac_stamp_ccsw_ss(A: matrix, comps: matrix, ctrl: matrix, ci: Double, np_node: Double, nm_node: Double, V: matrix, N: Double, dim: Double) {
+    var vsrc_idx = matrix_get(comps, ci, 3.0)
+    var Ictrl = matrix_get(comps, ci, 9.0)
     var vnp = 0.0; var vnm = 0.0
     if (np_node > 0.0 && np_node <= N) { vnp = matrix_get(V, np_node, 0) }
     if (nm_node > 0.0 && nm_node <= N) { vnm = matrix_get(V, nm_node, 0) }

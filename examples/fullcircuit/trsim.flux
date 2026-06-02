@@ -1,18 +1,17 @@
 # FullCircuit — Transient Analysis (Time-Domain)
-import circuit
 import mna
 import dcsolve
 
-def tr_src_val(comps : matrix, ci, t) {
-    var tc = circuit_param(comps, ci, 11.0)
-    var dc_val = circuit_param(comps, ci, 4.0)
+def tr_src_val(comps : matrix, ci : Double, t : Double) : Double {
+    var tc = matrix_get(comps, ci, 11.0)
+    var dc_val = matrix_get(comps, ci, 4.0)
     if (tc == 1.0) {
-        var v1 = circuit_param(comps, ci, 8.0)
-        var v2 = circuit_param(comps, ci, 9.0)
-        var td = circuit_param(comps, ci, 10.0)
-        var t_rise = circuit_param(comps, ci, 5.0)
-        var t_fall = circuit_param(comps, ci, 6.0)
-        var pw = circuit_param(comps, ci, 7.0)
+        var v1 = matrix_get(comps, ci, 8.0)
+        var v2 = matrix_get(comps, ci, 9.0)
+        var td = matrix_get(comps, ci, 10.0)
+        var t_rise = matrix_get(comps, ci, 5.0)
+        var t_fall = matrix_get(comps, ci, 6.0)
+        var pw = matrix_get(comps, ci, 7.0)
         var per = dc_val
         if (per <= 0.0) { per = 1e-3 }
         var tm = t
@@ -23,25 +22,25 @@ def tr_src_val(comps : matrix, ci, t) {
         else if (tm < td + t_rise + pw + t_fall) { v2 + (v1 - v2) * (tm - td - t_rise - pw) / t_fall }
         else { v1 }
     } else if (tc == 2.0) {
-        var voff = circuit_param(comps, ci, 8.0)
-        var vamp = circuit_param(comps, ci, 9.0)
-        var freq = circuit_param(comps, ci, 10.0)
-        var ph = circuit_param(comps, ci, 5.0)
+        var voff = matrix_get(comps, ci, 8.0)
+        var vamp = matrix_get(comps, ci, 9.0)
+        var freq = matrix_get(comps, ci, 10.0)
+        var ph = matrix_get(comps, ci, 5.0)
         if (t < 0.0) { voff }
         else { voff + vamp * sin(2.0 * pi() * freq * t + ph * pi() / 180.0) }
     } else { dc_val }
 }
 
-def tr_step(comps : matrix, ctrl : matrix, t, dt, cap_v : matrix, ind_i : matrix, V : matrix, max_iter, tol) {
-    var N = circuit_num_nodes(ctrl)
-    var nc = circuit_count(ctrl)
+def tr_step(comps : matrix, ctrl : matrix, t : Double, dt : Double, cap_v : matrix, ind_i : matrix, V : matrix, max_iter : Double, tol : Double) : matrix {
+    var N = matrix_get(ctrl, 0.0, 0.0)
+    var nc = matrix_get(ctrl, 1.0, 0.0)
     var M = mna_count_branches(comps, ctrl)
     var dim = N + M
 
     var has_nonlinear = 0.0
     var ci = 0.0
     while (ci < nc) {
-        var tc = circuit_component_type(comps, ci)
+        var tc = matrix_get(comps, ci, 0.0)
         if (tc == 9.0 || tc == 10.0 || tc == 11.0 || tc == 12.0 || tc == 13.0 || tc == 14.0 || tc == 15.0 || tc == 16.0 || tc == 17.0) { has_nonlinear = 1.0 }
         ci = ci + 1.0
     }
@@ -52,20 +51,20 @@ def tr_step(comps : matrix, ctrl : matrix, t, dt, cap_v : matrix, ind_i : matrix
         var bi = 0.0
         ci = 0.0
         while (ci < nc) {
-            var tc = circuit_component_type(comps, ci)
-            var np = circuit_node_p(comps, ci)
-            var nm = circuit_node_n(comps, ci)
+            var tc = matrix_get(comps, ci, 0.0)
+            var np = matrix_get(comps, ci, 1.0)
+            var nm = matrix_get(comps, ci, 2.0)
             if (tc == 0.0) {
-                var rv = circuit_param(comps, ci, 4.0)
+                var rv = matrix_get(comps, ci, 4.0)
                 if (rv > 1e-15) { mna_stamp_g(A, np, nm, 1.0 / rv, N) }
             } else if (tc == 1.0) {
-                var cv = circuit_param(comps, ci, 4.0)
+                var cv = matrix_get(comps, ci, 4.0)
                 var geq = cv / dt
                 var vco = matrix_get(cap_v, ci, 0)
                 mna_stamp_g(A, np, nm, geq, N)
                 mna_stamp_isource(b, np, nm, -geq * vco, N)
             } else if (tc == 2.0) {
-                var lv = circuit_param(comps, ci, 4.0)
+                var lv = matrix_get(comps, ci, 4.0)
                 var geq = dt / lv
                 var ilo = matrix_get(ind_i, ci, 0)
                 mna_stamp_g(A, np, nm, geq, N)
@@ -77,14 +76,14 @@ def tr_step(comps : matrix, ctrl : matrix, t, dt, cap_v : matrix, ind_i : matrix
             } else if (tc == 4.0 || tc == 6.0) {
                 mna_stamp_isource(b, np, nm, tr_src_val(comps, ci, t), N)
             } else if (tc == 7.0) {
-                var n3 = circuit_node_3(comps, ci)
-                var n4 = circuit_param(comps, ci, 4.0)
-                mna_stamp_vcvs(A, np, nm, n3, n4, circuit_param(comps, ci, 5.0), N, bi)
+                var n3 = matrix_get(comps, ci, 3.0)
+                var n4 = matrix_get(comps, ci, 4.0)
+                mna_stamp_vcvs(A, np, nm, n3, n4, matrix_get(comps, ci, 5.0), N, bi)
                 bi = bi + 1.0
             } else if (tc == 8.0) {
-                var n3 = circuit_node_3(comps, ci)
-                var n4 = circuit_param(comps, ci, 4.0)
-                mna_stamp_vccs(A, np, nm, n3, n4, circuit_param(comps, ci, 5.0), N)
+                var n3 = matrix_get(comps, ci, 3.0)
+                var n4 = matrix_get(comps, ci, 4.0)
+                mna_stamp_vccs(A, np, nm, n3, n4, matrix_get(comps, ci, 5.0), N)
             }
             ci = ci + 1.0
         }
@@ -107,20 +106,20 @@ def tr_step(comps : matrix, ctrl : matrix, t, dt, cap_v : matrix, ind_i : matrix
             var bi = 0.0
             ci = 0.0
             while (ci < nc) {
-                var tc = circuit_component_type(comps, ci)
-                var np = circuit_node_p(comps, ci)
-                var nm = circuit_node_n(comps, ci)
+                var tc = matrix_get(comps, ci, 0.0)
+                var np = matrix_get(comps, ci, 1.0)
+                var nm = matrix_get(comps, ci, 2.0)
                 if (tc == 0.0) {
-                    var rv = circuit_param(comps, ci, 4.0)
+                    var rv = matrix_get(comps, ci, 4.0)
                     if (rv > 1e-15) { mna_stamp_g(A, np, nm, 1.0 / rv, N) }
                 } else if (tc == 1.0) {
-                    var cv = circuit_param(comps, ci, 4.0)
+                    var cv = matrix_get(comps, ci, 4.0)
                     var geq = cv / dt
                     var vco = matrix_get(cap_v, ci, 0)
                     mna_stamp_g(A, np, nm, geq, N)
                     mna_stamp_isource(b, np, nm, -geq * vco, N)
                 } else if (tc == 2.0) {
-                    var lv = circuit_param(comps, ci, 4.0)
+                    var lv = matrix_get(comps, ci, 4.0)
                     var geq = dt / lv
                     var ilo = matrix_get(ind_i, ci, 0)
                     mna_stamp_g(A, np, nm, geq, N)
@@ -132,18 +131,18 @@ def tr_step(comps : matrix, ctrl : matrix, t, dt, cap_v : matrix, ind_i : matrix
                 } else if (tc == 4.0 || tc == 6.0) {
                     mna_stamp_isource(b, np, nm, tr_src_val(comps, ci, t), N)
                 } else if (tc == 7.0) {
-                    var n3 = circuit_node_3(comps, ci)
-                    var n4 = circuit_param(comps, ci, 4.0)
-                    mna_stamp_vcvs(A, np, nm, n3, n4, circuit_param(comps, ci, 5.0), N, bi)
+                    var n3 = matrix_get(comps, ci, 3.0)
+                    var n4 = matrix_get(comps, ci, 4.0)
+                    mna_stamp_vcvs(A, np, nm, n3, n4, matrix_get(comps, ci, 5.0), N, bi)
                     bi = bi + 1.0
                 } else if (tc == 8.0) {
-                    var n3 = circuit_node_3(comps, ci)
-                    var n4 = circuit_param(comps, ci, 4.0)
-                    mna_stamp_vccs(A, np, nm, n3, n4, circuit_param(comps, ci, 5.0), N)
+                    var n3 = matrix_get(comps, ci, 3.0)
+                    var n4 = matrix_get(comps, ci, 4.0)
+                    mna_stamp_vccs(A, np, nm, n3, n4, matrix_get(comps, ci, 5.0), N)
                 } else if (tc == 9.0) {
-                    var isat = circuit_param(comps, ci, 4.0)
-                    var nf = circuit_param(comps, ci, 5.0)
-                    var vt = circuit_param(comps, ci, 7.0)
+                    var isat = matrix_get(comps, ci, 4.0)
+                    var nf = matrix_get(comps, ci, 5.0)
+                    var vt = matrix_get(comps, ci, 7.0)
                     var vnp = 0.0; var vnm = 0.0
                     if (np > 0.0 && np <= N) { vnp = matrix_get(V, np, 0) }
                     if (nm > 0.0 && nm <= N) { vnm = matrix_get(V, nm, 0) }
@@ -157,12 +156,12 @@ def tr_step(comps : matrix, ctrl : matrix, t, dt, cap_v : matrix, ind_i : matrix
                 } else if (tc == 10.0 || tc == 11.0) {
                     var nc_node = np
                     var nb_node = nm
-                    var ne_node = circuit_node_3(comps, ci)
-                    var bf = circuit_param(comps, ci, 4.0)
-                    var isat = circuit_param(comps, ci, 5.0)
-                    var vaf = circuit_param(comps, ci, 6.0)
-                    var vt = circuit_param(comps, ci, 7.0)
-                    var br = circuit_param(comps, ci, 8.0)
+                    var ne_node = matrix_get(comps, ci, 3.0)
+                    var bf = matrix_get(comps, ci, 4.0)
+                    var isat = matrix_get(comps, ci, 5.0)
+                    var vaf = matrix_get(comps, ci, 6.0)
+                    var vt = matrix_get(comps, ci, 7.0)
+                    var br = matrix_get(comps, ci, 8.0)
                     if (br <= 0.0) { br = 2.0 }
                     var vc_v = 0.0; var vb_v = 0.0; var ve_v = 0.0
                     if (nc_node > 0.0 && nc_node <= N) { vc_v = matrix_get(V, nc_node, 0) }
@@ -232,16 +231,16 @@ def tr_step(comps : matrix, ctrl : matrix, t, dt, cap_v : matrix, ind_i : matrix
                 } else if (tc == 12.0 || tc == 13.0) {
                     var nd_node = np
                     var ng_node = nm
-                    var ns_node = circuit_node_3(comps, ci)
+                    var ns_node = matrix_get(comps, ci, 3.0)
                     var vd_v = 0.0; var vg_v = 0.0; var vs_v = 0.0
                     if (nd_node > 0.0 && nd_node <= N) { vd_v = matrix_get(V, nd_node, 0) }
                     if (ng_node > 0.0 && ng_node <= N) { vg_v = matrix_get(V, ng_node, 0) }
                     if (ns_node > 0.0 && ns_node <= N) { vs_v = matrix_get(V, ns_node, 0) }
                     var vgs = vg_v - vs_v
                     var vds = vd_v - vs_v
-                    var kp_val = circuit_param(comps, ci, 5.0)
-                    var vto_val = circuit_param(comps, ci, 6.0)
-                    var lambda_val = circuit_param(comps, ci, 7.0)
+                    var kp_val = matrix_get(comps, ci, 5.0)
+                    var vto_val = matrix_get(comps, ci, 6.0)
+                    var lambda_val = matrix_get(comps, ci, 7.0)
                     if (t == 13.0) { vgs = -vgs; vds = -vds; vto_val = -vto_val }
                     var vov = vgs - vto_val
                     var id = 0.0; var gm = 0.0; var gds = 0.0
@@ -295,16 +294,16 @@ def tr_step(comps : matrix, ctrl : matrix, t, dt, cap_v : matrix, ind_i : matrix
                 } else if (tc == 14.0 || tc == 15.0) {
                     var nd_node = np
                     var ng_node = nm
-                    var ns_node = circuit_node_3(comps, ci)
+                    var ns_node = matrix_get(comps, ci, 3.0)
                     var vd_v = 0.0; var vg_v = 0.0; var vs_v = 0.0
                     if (nd_node > 0.0 && nd_node <= N) { vd_v = matrix_get(V, nd_node, 0) }
                     if (ng_node > 0.0 && ng_node <= N) { vg_v = matrix_get(V, ng_node, 0) }
                     if (ns_node > 0.0 && ns_node <= N) { vs_v = matrix_get(V, ns_node, 0) }
                     var vgs = vg_v - vs_v
                     var vds = vd_v - vs_v
-                    var beta_val = circuit_param(comps, ci, 5.0)
-                    var vto_val = circuit_param(comps, ci, 6.0)
-                    var lambda_val = circuit_param(comps, ci, 7.0)
+                    var beta_val = matrix_get(comps, ci, 5.0)
+                    var vto_val = matrix_get(comps, ci, 6.0)
+                    var lambda_val = matrix_get(comps, ci, 7.0)
                     if (t == 15.0) { vgs = -vgs; vds = -vds; vto_val = -vto_val }
                     var vov = vgs - vto_val
                     var id = 0.0; var gm = 0.0; var gds = 0.0
@@ -354,8 +353,8 @@ def tr_step(comps : matrix, ctrl : matrix, t, dt, cap_v : matrix, ind_i : matrix
                 } else if (tc == 16.0) {
                     var np_node = np
                     var nm_node = nm
-                    var ncp_node = circuit_node_3(comps, ci)
-                    var ncm_node = circuit_param(comps, ci, 4.0)
+                    var ncp_node = matrix_get(comps, ci, 3.0)
+                    var ncm_node = matrix_get(comps, ci, 4.0)
                     var vnp = 0.0; var vnm = 0.0; var vcp = 0.0; var vcm = 0.0
                     if (np_node > 0.0 && np_node <= N) { vnp = matrix_get(V, np_node, 0) }
                     if (nm_node > 0.0 && nm_node <= N) { vnm = matrix_get(V, nm_node, 0) }
@@ -376,8 +375,8 @@ def tr_step(comps : matrix, ctrl : matrix, t, dt, cap_v : matrix, ind_i : matrix
                 } else if (tc == 17.0) {
                     var np_node = np
                     var nm_node = nm
-                    var vsrc_idx = circuit_param(comps, ci, 3.0)
-                    var Ictrl = circuit_param(comps, ci, 9.0)
+                    var vsrc_idx = matrix_get(comps, ci, 3.0)
+                    var Ictrl = matrix_get(comps, ci, 9.0)
                     var sw_info = ccsw_conductance(comps, ci, Ictrl)
                     var g = matrix_get(sw_info, 0, 0)
                     var dg = matrix_get(sw_info, 1, 0)
@@ -407,13 +406,13 @@ def tr_step(comps : matrix, ctrl : matrix, t, dt, cap_v : matrix, ind_i : matrix
             var x = matrix_solve(A, b)
             var ci2 = 0.0
             while (ci2 < nc) {
-                var t2 = circuit_component_type(comps, ci2)
+                var t2 = matrix_get(comps, ci2, 0.0)
                 if (t2 == 17.0) {
-                    var vsrc_idx = circuit_param(comps, ci2, 3.0)
+                    var vsrc_idx = matrix_get(comps, ci2, 3.0)
                     if (vsrc_idx >= 0.0) {
                         var vsrc_bi = mna_branch_index(comps, ctrl, vsrc_idx)
                         if (vsrc_bi >= 0.0 && vsrc_bi < M) {
-                            circuit_set_param(comps, ci2, 9.0, matrix_get(x, N + vsrc_bi, 0))
+                            matrix_set(comps, ci2, 9.0, matrix_get(x, N + vsrc_bi, 0))
                         }
                     }
                 }
@@ -444,9 +443,9 @@ def tr_step(comps : matrix, ctrl : matrix, t, dt, cap_v : matrix, ind_i : matrix
     }
 }
 
-def tr_solve(comps : matrix, ctrl : matrix, t_start, t_stop, dt) {
-    var N = circuit_num_nodes(ctrl)
-    var nc = circuit_count(ctrl)
+def tr_solve(comps : matrix, ctrl : matrix, t_start : Double, t_stop : Double, dt : Double) : matrix {
+    var N = matrix_get(ctrl, 0.0, 0.0)
+    var nc = matrix_get(ctrl, 1.0, 0.0)
     var ns = (t_stop - t_start) / dt
     if (ns < 1.0) { ns = 1.0 }
     var npts = floor(ns) + 1.0
@@ -461,9 +460,9 @@ def tr_solve(comps : matrix, ctrl : matrix, t_start, t_stop, dt) {
         var Nsol = matrix_get(sol, 0, 0)
         var ci = 0.0
         while (ci < nc) {
-            var tc = circuit_component_type(comps, ci)
-            var np = circuit_node_p(comps, ci)
-            var nm = circuit_node_n(comps, ci)
+            var tc = matrix_get(comps, ci, 0.0)
+            var np = matrix_get(comps, ci, 1.0)
+            var nm = matrix_get(comps, ci, 2.0)
             if (tc == 1.0) {
                 var vnp = 0.0; var vnm = 0.0
                 if (np > 0.0 && np <= N) { vnp = mna_get_node_voltage(sol, np) }

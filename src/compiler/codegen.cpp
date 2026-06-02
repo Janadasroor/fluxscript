@@ -874,8 +874,8 @@ TypedValue VariableExprAST::codegen(CodegenContext& context)
         llvm::Value* LoadedV = context.Builder.CreateLoad(Ty, Alloca, Name.c_str());
 
         FluxType FTy;
-        if (context.NamedTypes.count(Name)) {
-            FTy = context.NamedTypes[Name];
+        if (context.NamedTypes.count(trimmedName)) {
+            FTy = context.NamedTypes[trimmedName];
             resolveUserStructType(FTy, context);
             resolveUserEnumType(FTy, context);
         } else {
@@ -987,6 +987,61 @@ TypedValue MemberExprAST::codegen(CodegenContext& context)
         llvm::Value* gep = context.Builder.CreateStructGEP(structInfo.LLVMType, structPtr, fieldIdx, MemberName);
         llvm::Value* loaded = context.Builder.CreateLoad(fieldLLVMType, gep, MemberName);
         return TypedValue(loaded, fieldFluxType);
+    }
+
+    // Handle enum payload field access: enum_var.field_name
+    // e.g. x.value where x : Option[Double] and Some { value: T }
+    if (objVal.Val && objVal.Type.Kind == TypeKind::UserEnum) {
+        int enumTypeId = objVal.Type.EnumTypeId;
+        if (enumTypeId >= 0 && enumTypeId < static_cast<int>(context.EnumTypes.size())) {
+            auto& enumInfo = context.EnumTypes[enumTypeId];
+            // Iterate variants to find one whose payload struct has MemberName
+            for (size_t vi = 0; vi < enumInfo.Variants.size(); ++vi) {
+                if (enumInfo.VariantPayloads[vi].Kind == TypeKind::Void)
+                    continue;
+                // Look up the synthetic payload struct (e.g. __enum_Option_Some_Fields)
+                std::string payloadStructName = "__enum_" + enumInfo.Name + "_" + enumInfo.Variants[vi] + "_Fields";
+                auto structIt = context.StructTypeIndex.find(payloadStructName);
+                if (structIt == context.StructTypeIndex.end())
+                    continue;
+                int payloadStructId = structIt->second;
+                if (payloadStructId < 0 || payloadStructId >= static_cast<int>(context.StructTypes.size()))
+                    continue;
+                auto& payloadStructInfo = context.StructTypes[payloadStructId];
+                // Find field index by name
+                int fieldIdx = -1;
+                for (size_t fi = 0; fi < payloadStructInfo.Fields.size(); ++fi) {
+                    if (payloadStructInfo.Fields[fi].first == MemberName) {
+                        fieldIdx = static_cast<int>(fi);
+                        break;
+                    }
+                }
+                if (fieldIdx < 0)
+                    continue; // field not in this variant's payload, try next
+                // Extract payload from tagged union { i32 tag, <payload> }
+                llvm::Value* structPtr = nullptr;
+                if (objVal.Val->getType()->isPointerTy()) {
+                    structPtr = objVal.Val;
+                } else {
+                    structPtr = context.Builder.CreateAlloca(objVal.Val->getType(), nullptr, "enumtmp");
+                    context.Builder.CreateStore(objVal.Val, structPtr);
+                }
+                // GEP to payload slot (element 1) in the tagged union
+                llvm::StructType* taggedTy = enumInfo.LLVMType;
+                if (!taggedTy) continue;
+                llvm::Value* payloadPtr = context.Builder.CreateStructGEP(taggedTy, structPtr, 1, "payload");
+                // Resolve the field LLVM type from the payload struct info
+                FluxType fieldFluxType = payloadStructInfo.Fields[fieldIdx].second;
+                resolveUserStructType(fieldFluxType, context);
+                resolveUserEnumType(fieldFluxType, context);
+                llvm::Type* fieldLLVMType = fieldFluxType.getLLVMType(context.TheContext);
+                // GEP into the payload struct for the specific field
+                llvm::Value* fieldPtr = context.Builder.CreateStructGEP(
+                    payloadStructInfo.LLVMType, payloadPtr, fieldIdx, MemberName);
+                llvm::Value* loaded = context.Builder.CreateLoad(fieldLLVMType, fieldPtr, MemberName);
+                return TypedValue(loaded, fieldFluxType);
+            }
+        }
     }
 
     // Check for SPICE parameter probe: device.param (only when object is a variable)
@@ -2672,6 +2727,52 @@ TypedValue CallExprAST::codegen(CodegenContext& context)
                     }
                     selfIsVariable = true;
                 }
+
+                // Check if this is a module namespace access (e.g., defs.func())
+                // Module namespaces are stored as "name.*" in NamedValues
+                const std::string& objName = varExpr->getName();
+                if (context.ModuleNamespaces.count(objName)) {
+                    const std::string& fnName = member->getMemberName();
+                    llvm::Function* calleeFn = context.TheModule->getFunction(fnName);
+                    if (!calleeFn) {
+                        std::cerr << "Module '" << objName << "' has no function '" << fnName << "'" << std::endl;
+                        return TypedValue();
+                    }
+                    // Build call arguments
+                    FluxType retType = context.FuncReturnTypes.count(fnName)
+                        ? context.FuncReturnTypes[fnName]
+                        : FluxType(TypeKind::Double);
+                    resolveUserStructType(retType, context);
+                    resolveUserEnumType(retType, context);
+                    bool isSretCall = calleeFn->getReturnType()->isVoidTy() && calleeFn->arg_size() > 0 &&
+                                      calleeFn->hasParamAttribute(0, llvm::Attribute::StructRet);
+                    std::vector<llvm::Value*> callArgs;
+                    llvm::Value* sretPtr = nullptr;
+                    if (isSretCall) {
+                        llvm::Type* sretLLVMTy = retType.getLLVMType(context.TheContext);
+                        if (!sretLLVMTy) {
+                            sretLLVMTy = llvm::cast<llvm::StructType>(FluxType(TypeKind::Matrix).getLLVMType(context.TheContext));
+                        }
+                        sretPtr = context.Builder.CreateAlloca(sretLLVMTy, nullptr, "sret_ret");
+                        callArgs.push_back(sretPtr);
+                    }
+                    for (auto& Arg : Args) {
+                        TypedValue argVal = Arg->codegen(context);
+                        if (!argVal.Val) {
+                            std::cerr << "[FLUX ERROR] Module call argument failed to codegen" << std::endl;
+                            return TypedValue();
+                        }
+                        callArgs.push_back(argVal.Val);
+                    }
+                    if (isSretCall) {
+                        context.Builder.CreateCall(calleeFn, callArgs);
+                        llvm::Value* result = context.Builder.CreateLoad(
+                            retType.getLLVMType(context.TheContext), sretPtr, "sret_val");
+                        return TypedValue(result, retType);
+                    }
+                    llvm::Value* result = context.Builder.CreateCall(calleeFn, callArgs, "calltmp");
+                    return TypedValue(result, retType);
+                }
             }
             TypedValue objVal = member->getObject()->codegen(context);
             if (!objVal.Val) {
@@ -3015,6 +3116,8 @@ TypedValue CallExprAST::codegen(CodegenContext& context)
                                                      llvm::ConstantFP::get(context.TheContext, llvm::APFloat(scale)));
                 } else if (Arg.Type.Kind == TypeKind::Int && !Arg.Val->getType()->isDoubleTy()) {
                     Val = context.Builder.CreateSIToFP(Val, llvm::Type::getDoubleTy(context.TheContext));
+                } else if (Arg.Type.Kind == TypeKind::Bool) {
+                    Val = context.Builder.CreateUIToFP(Val, llvm::Type::getDoubleTy(context.TheContext));
                 }
                 PrintArgs.push_back(Val);
             }
@@ -3175,24 +3278,24 @@ TypedValue CallExprAST::codegen(CodegenContext& context)
 
     // 2. Handle non-argument built-ins (pi, e, etc. would go here if not externs)
 
-    // 3. LLVM intrinsics for math functions (LTO: inline to single CPU instructions)
+    // 3. Math functions — call extern libm functions directly instead of LLVM
+    //    intrinsics. LLVM intrinsics for sin/cos/sqrt/exp/log get lowered to
+    //    libm calls in the backend, but under CodeModel::Small + PIC_ the
+    //    generated call-site can have misaligned stack, crashing after ~100K+
+    //    calls. Calling libm via the regular C ABI (extern symbol lookup)
+    //    guarantees correct 16-byte stack alignment.
     if (Args.size() == 1) {
         TypedValue Arg0 = Args[0]->codegen(context);
         if (Arg0.Val && Arg0.Type.Kind == TypeKind::Double) {
-            llvm::Type* DoubleTy = llvm::Type::getDoubleTy(context.TheContext);
-            if (Name == "sin") {
-                llvm::Function* F =
-                    llvm::Intrinsic::getDeclaration(context.TheModule, llvm::Intrinsic::sin, {DoubleTy});
-                return TypedValue(context.Builder.CreateCall(F, {Arg0.Val}, "sintmp"), TypeKind::Double);
-            }
-            if (Name == "cos") {
-                llvm::Function* F =
-                    llvm::Intrinsic::getDeclaration(context.TheModule, llvm::Intrinsic::cos, {DoubleTy});
-                return TypedValue(context.Builder.CreateCall(F, {Arg0.Val}, "costmp"), TypeKind::Double);
+            llvm::Function* F = context.TheModule->getFunction(Name);
+            if (!F) {
+                llvm::Type* DoubleTy = llvm::Type::getDoubleTy(context.TheContext);
+                llvm::FunctionType* FT =
+                    llvm::FunctionType::get(DoubleTy, {DoubleTy}, false);
+                F = llvm::Function::Create(FT, llvm::Function::ExternalLinkage, Name, context.TheModule);
+                F->setDoesNotRecurse();
             }
             if (Name == "sqrt") {
-                llvm::Function* F =
-                    llvm::Intrinsic::getDeclaration(context.TheModule, llvm::Intrinsic::sqrt, {DoubleTy});
                 UnitDimensions dims = Arg0.Type.Dimensions;
                 dims.mass /= 2;
                 dims.length /= 2;
@@ -3204,19 +3307,19 @@ TypedValue CallExprAST::codegen(CodegenContext& context)
                 return TypedValue(context.Builder.CreateCall(F, {Arg0.Val}, "sqrttmp"),
                                   FluxType(TypeKind::Double, dims));
             }
+            if (Name == "sin") {
+                return TypedValue(context.Builder.CreateCall(F, {Arg0.Val}, "sintmp"), TypeKind::Double);
+            }
+            if (Name == "cos") {
+                return TypedValue(context.Builder.CreateCall(F, {Arg0.Val}, "costmp"), TypeKind::Double);
+            }
             if (Name == "exp") {
-                llvm::Function* F =
-                    llvm::Intrinsic::getDeclaration(context.TheModule, llvm::Intrinsic::exp, {DoubleTy});
                 return TypedValue(context.Builder.CreateCall(F, {Arg0.Val}, "exptmp"), TypeKind::Double);
             }
             if (Name == "log" || Name == "ln") {
-                llvm::Function* F =
-                    llvm::Intrinsic::getDeclaration(context.TheModule, llvm::Intrinsic::log, {DoubleTy});
                 return TypedValue(context.Builder.CreateCall(F, {Arg0.Val}, "logtmp"), TypeKind::Double);
             }
             if (Name == "log10") {
-                llvm::Function* F =
-                    llvm::Intrinsic::getDeclaration(context.TheModule, llvm::Intrinsic::log10, {DoubleTy});
                 return TypedValue(context.Builder.CreateCall(F, {Arg0.Val}, "log10tmp"), TypeKind::Double);
             }
         }
@@ -4676,10 +4779,6 @@ llvm::Function* PrototypeAST::codegen(CodegenContext& context)
         }
     }
 
-    if (Name.find("make") != std::string::npos) {
-        std::cerr << "DEBUG PROTO " << Name << " ReturnType kind=" << (int)ReturnType.Kind << " id=" << ReturnType.StructTypeId << " llvm=" << ReturnType.StructLLVMType << std::endl;
-    }
-
     // sret returns use void return type with parameter
     llvm::Type* RetTy =
         useSRet ? llvm::Type::getVoidTy(context.TheContext)
@@ -4687,6 +4786,7 @@ llvm::Function* PrototypeAST::codegen(CodegenContext& context)
 
     llvm::FunctionType* FT = llvm::FunctionType::get(RetTy, ArgTypes, false);
     llvm::Function* F = llvm::Function::Create(FT, llvm::Function::ExternalLinkage, Name, context.TheModule);
+    F->addFnAttr("stackrealign");
 
     // Mark sret parameter with attribute
     if (useSRet) {
@@ -5513,12 +5613,15 @@ llvm::Function* FunctionAST::codegen(CodegenContext& context)
 
     llvm::DISubprogram* subprogram = nullptr;
     if (context.DebugBuilder && context.DebugCompileUnit && context.DebugFile) {
-        auto typeArray = context.DebugBuilder->getOrCreateTypeArray({});
-        auto* subroutineType = context.DebugBuilder->createSubroutineType(typeArray);
-        subprogram = context.DebugBuilder->createFunction(context.DebugFile, Proto->getName(), Proto->getName(),
-                                                          context.DebugFile, 1, subroutineType, 1,
-                                                          llvm::DINode::FlagZero, llvm::DISubprogram::SPFlagDefinition);
-        TheFunction->setSubprogram(subprogram);
+        subprogram = TheFunction->getSubprogram();
+        if (!subprogram) {
+            auto typeArray = context.DebugBuilder->getOrCreateTypeArray({});
+            auto* subroutineType = context.DebugBuilder->createSubroutineType(typeArray);
+            subprogram = context.DebugBuilder->createFunction(context.DebugFile, Proto->getName(), Proto->getName(),
+                                                              context.DebugFile, 1, subroutineType, 1,
+                                                              llvm::DINode::FlagZero, llvm::DISubprogram::SPFlagDefinition);
+            TheFunction->setSubprogram(subprogram);
+        }
     }
 
     llvm::BasicBlock* EntryBB = llvm::BasicBlock::Create(context.TheContext, "entry", TheFunction);

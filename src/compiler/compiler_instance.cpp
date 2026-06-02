@@ -475,6 +475,20 @@ bool CompilerInstance::collectImportFunctions(const std::string& moduleName,
     }
 
     Parser parser(std::string(bufferOrErr.get()->getBuffer()));
+
+    // Pre-populate known struct/enum type names from the outer context
+    // so that type annotations referring to types from previously imported
+    // modules (e.g. struct Vec3 defined in veclib and used in scene) are
+    // recognized by the parser even when a nested import is skipped.
+    if (knownStructTypeNames) {
+        for (const auto& name : *knownStructTypeNames)
+            parser.getKnownStructTypeNames().insert(name);
+    }
+    if (knownEnumTypeNames) {
+        for (const auto& name : *knownEnumTypeNames)
+            parser.getKnownEnumTypeNames().insert(name);
+    }
+
     std::vector<std::unique_ptr<FunctionAST>> localFunctions;
 
     while (parser.CurTok != static_cast<int>(TokenType::tok_eof)) {
@@ -514,8 +528,7 @@ bool CompilerInstance::collectImportFunctions(const std::string& moduleName,
             if (!collectImportFunctions(subModuleName, outFunctions, context, returnTypes, error, importedModules, subSymbols, knownStructTypeNames, knownEnumTypeNames))
                 return false;
             const std::string& alias = importExpr->getAlias().empty() ? subModuleName : importExpr->getAlias();
-            context.NamedValues[alias + ".*"] =
-                llvm::ConstantPointerNull::get(llvm::PointerType::get(context.TheContext, 0));
+            context.ModuleNamespaces.insert(alias);
         } else if (parser.CurTok == static_cast<int>(TokenType::tok_extern)) {
             auto proto = parser.ParseExtern();
             if (proto) {
@@ -1407,8 +1420,7 @@ bool CompilerInstance::compileParser(Parser& parser, CodegenContext& context,
                 return false;
             }
             const std::string& alias = importExpr->getAlias().empty() ? moduleName : importExpr->getAlias();
-            context.NamedValues[alias + ".*"] =
-                llvm::ConstantPointerNull::get(llvm::PointerType::get(context.TheContext, 0));
+            context.ModuleNamespaces.insert(alias);
         } else if (parser.CurTok == static_cast<int>(TokenType::tok_extern)) {
             auto proto = parser.ParseExtern();
             if (proto) {
@@ -1777,8 +1789,7 @@ bool CompilerInstance::compileParser(Parser& parser, CodegenContext& context,
         if (SavedInsertBlock)
             context.Builder.SetInsertPoint(SavedInsertBlock);
         const std::string& nsAlias = alias.empty() ? moduleName : alias;
-        context.NamedValues[nsAlias + ".*"] =
-            llvm::ConstantPointerNull::get(llvm::PointerType::get(context.TheContext, 0));
+        context.ModuleNamespaces.insert(nsAlias);
         return true;
     };
 

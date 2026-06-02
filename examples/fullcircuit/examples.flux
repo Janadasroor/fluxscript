@@ -1,183 +1,295 @@
 # FullCircuit — Built-in Test Circuits and Demos
 import circuit
 
-def ex_voltage_divider(comps : matrix, ctrl : matrix, r1, r2, vin) {
-    circuit_add_resistor(comps, ctrl, 1, 2, r1)
-    circuit_add_resistor(comps, ctrl, 2, 0, r2)
-    circuit_add_vdc(comps, ctrl, 1, 0, vin)
+def ex_voltage_divider(c: Circuit, r1: Double, r2: Double, vin: Double) {
+    var comp = Component.R { n_plus: 1.0, n_minus: 2.0, r_val: r1 }
+    c.add(comp)
+    comp = Component.R { n_plus: 2.0, n_minus: 0.0, r_val: r2 }
+    c.add(comp)
+    comp = Component.Vdc { n_plus: 1.0, n_minus: 0.0, v_val: vin }
+    c.add(comp)
 }
 
-def ex_rc_lowpass(comps : matrix, ctrl : matrix, r, c, vin) {
-    circuit_add_resistor(comps, ctrl, 1, 2, r)
-    circuit_add_capacitor(comps, ctrl, 2, 0, c, 0.0)
-    circuit_add_vdc(comps, ctrl, 1, 0, vin)
+def ex_rc_lowpass(c: Circuit, r: Double, cap: Double, vin: Double) {
+    var comp = Component.R { n_plus: 1.0, n_minus: 2.0, r_val: r }
+    c.add(comp)
+    comp = Component.C { n_plus: 2.0, n_minus: 0.0, c_val: cap, init_v: 0.0 }
+    c.add(comp)
+    comp = Component.Vdc { n_plus: 1.0, n_minus: 0.0, v_val: vin }
+    c.add(comp)
 }
 
-def ex_rc_highpass(comps : matrix, ctrl : matrix, r, c, vin) {
-    circuit_add_capacitor(comps, ctrl, 1, 2, c, 0.0)
-    circuit_add_resistor(comps, ctrl, 2, 0, r)
-    circuit_add_vdc(comps, ctrl, 1, 0, vin)
+def ex_rc_highpass(c: Circuit, r: Double, cap: Double, vin: Double) {
+    var comp = Component.C { n_plus: 1.0, n_minus: 2.0, c_val: cap, init_v: 0.0 }
+    c.add(comp)
+    comp = Component.R { n_plus: 2.0, n_minus: 0.0, r_val: r }
+    c.add(comp)
+    comp = Component.Vdc { n_plus: 1.0, n_minus: 0.0, v_val: vin }
+    c.add(comp)
 }
 
-def ex_rlc_series(comps : matrix, ctrl : matrix, r, l, c, vin) {
-    circuit_add_resistor(comps, ctrl, 1, 2, r)
-    circuit_add_inductor(comps, ctrl, 2, 3, l, 0.0)
-    circuit_add_capacitor(comps, ctrl, 3, 0, c, 0.0)
-    circuit_add_vdc(comps, ctrl, 1, 0, vin)
+def ex_rlc_series(c: Circuit, r: Double, l: Double, cap: Double, vin: Double) {
+    var comp = Component.R { n_plus: 1.0, n_minus: 2.0, r_val: r }
+    c.add(comp)
+    comp = Component.L { n_plus: 2.0, n_minus: 3.0, l_val: l, init_i: 0.0 }
+    c.add(comp)
+    comp = Component.C { n_plus: 3.0, n_minus: 0.0, c_val: cap, init_v: 0.0 }
+    c.add(comp)
+    comp = Component.Vdc { n_plus: 1.0, n_minus: 0.0, v_val: vin }
+    c.add(comp)
 }
 
-def ex_rlc_parallel(comps : matrix, ctrl : matrix, r, l, c, iin) {
-    circuit_add_resistor(comps, ctrl, 1, 0, r)
-    circuit_add_inductor(comps, ctrl, 1, 0, l, 0.0)
-    circuit_add_capacitor(comps, ctrl, 1, 0, c, 0.0)
-    circuit_add_idc(comps, ctrl, 1, 0, iin)
+def ex_rlc_parallel(c: Circuit, r: Double, l: Double, cap: Double, iin: Double) {
+    var comp = Component.R { n_plus: 1.0, n_minus: 0.0, r_val: r }
+    c.add(comp)
+    comp = Component.L { n_plus: 1.0, n_minus: 0.0, l_val: l, init_i: 0.0 }
+    c.add(comp)
+    comp = Component.C { n_plus: 1.0, n_minus: 0.0, c_val: cap, init_v: 0.0 }
+    c.add(comp)
+    comp = Component.Idc { n_plus: 1.0, n_minus: 0.0, i_val: iin }
+    c.add(comp)
 }
 
-def ex_vcvs_amplifier(comps : matrix, ctrl : matrix, gain, rin, rout, rload, vin) {
-    circuit_add_resistor(comps, ctrl, 1, 0, rin)
-    circuit_add_vdc(comps, ctrl, 1, 0, vin)
-    circuit_add_vcvs(comps, ctrl, 3, 0, 1, 0, gain)
-    circuit_add_resistor(comps, ctrl, 3, 2, rout)
-    circuit_add_resistor(comps, ctrl, 2, 0, rload)
+def ex_vcvs_amplifier(c: Circuit, gain: Double, rin: Double, rout: Double, rload: Double, vin: Double) {
+    var comp = Component.R { n_plus: 1.0, n_minus: 0.0, r_val: rin }
+    c.add(comp)
+    comp = Component.Vdc { n_plus: 1.0, n_minus: 0.0, v_val: vin }
+    c.add(comp)
+    comp = Component.E { n_op: 3.0, n_on: 0.0, n_ip: 1.0, n_in: 0.0, gain: gain }
+    c.add(comp)
+    comp = Component.R { n_plus: 3.0, n_minus: 2.0, r_val: rout }
+    c.add(comp)
+    comp = Component.R { n_plus: 2.0, n_minus: 0.0, r_val: rload }
+    c.add(comp)
 }
 
-def ex_vccs_amplifier(comps : matrix, ctrl : matrix, gm, rload, iin) {
-    circuit_add_idc(comps, ctrl, 1, 0, iin)
-    circuit_add_resistor(comps, ctrl, 1, 0, 1e6)
-    circuit_add_vccs(comps, ctrl, 3, 0, 1, 0, gm)
-    circuit_add_resistor(comps, ctrl, 3, 0, rload)
+def ex_vccs_amplifier(c: Circuit, gm: Double, rload: Double, iin: Double) {
+    var comp = Component.Idc { n_plus: 1.0, n_minus: 0.0, i_val: iin }
+    c.add(comp)
+    comp = Component.R { n_plus: 1.0, n_minus: 0.0, r_val: 1e6 }
+    c.add(comp)
+    comp = Component.G { n_op: 3.0, n_on: 0.0, n_ip: 1.0, n_in: 0.0, gm: gm }
+    c.add(comp)
+    comp = Component.R { n_plus: 3.0, n_minus: 0.0, r_val: rload }
+    c.add(comp)
 }
 
-def ex_wheatstone_bridge(comps : matrix, ctrl : matrix, r1, r2, r3, r4, r5, vin) {
-    circuit_add_resistor(comps, ctrl, 1, 2, r1)
-    circuit_add_resistor(comps, ctrl, 2, 0, r2)
-    circuit_add_resistor(comps, ctrl, 1, 3, r3)
-    circuit_add_resistor(comps, ctrl, 3, 0, r4)
-    circuit_add_resistor(comps, ctrl, 2, 3, r5)
-    circuit_add_vdc(comps, ctrl, 1, 0, vin)
+def ex_wheatstone_bridge(c: Circuit, r1: Double, r2: Double, r3: Double, r4: Double, r5: Double, vin: Double) {
+    var comp = Component.R { n_plus: 1.0, n_minus: 2.0, r_val: r1 }
+    c.add(comp)
+    comp = Component.R { n_plus: 2.0, n_minus: 0.0, r_val: r2 }
+    c.add(comp)
+    comp = Component.R { n_plus: 1.0, n_minus: 3.0, r_val: r3 }
+    c.add(comp)
+    comp = Component.R { n_plus: 3.0, n_minus: 0.0, r_val: r4 }
+    c.add(comp)
+    comp = Component.R { n_plus: 2.0, n_minus: 3.0, r_val: r5 }
+    c.add(comp)
+    comp = Component.Vdc { n_plus: 1.0, n_minus: 0.0, v_val: vin }
+    c.add(comp)
 }
 
-def ex_current_mirror(comps : matrix, ctrl : matrix, rref, iref, rload) {
-    circuit_add_vdc(comps, ctrl, 1, 0, 5.0)
-    circuit_add_resistor(comps, ctrl, 1, 2, rref)
-    circuit_add_vccs(comps, ctrl, 3, 0, 2, 0, 1.0)
-    circuit_add_vccs(comps, ctrl, 4, 0, 2, 0, 1.0)
-    circuit_add_resistor(comps, ctrl, 4, 0, rload)
-    circuit_add_idc(comps, ctrl, 2, 0, iref)
+def ex_current_mirror(c: Circuit, rref: Double, iref: Double, rload: Double) {
+    var comp = Component.Vdc { n_plus: 1.0, n_minus: 0.0, v_val: 5.0 }
+    c.add(comp)
+    comp = Component.R { n_plus: 1.0, n_minus: 2.0, r_val: rref }
+    c.add(comp)
+    comp = Component.G { n_op: 3.0, n_on: 0.0, n_ip: 2.0, n_in: 0.0, gm: 1.0 }
+    c.add(comp)
+    comp = Component.G { n_op: 4.0, n_on: 0.0, n_ip: 2.0, n_in: 0.0, gm: 1.0 }
+    c.add(comp)
+    comp = Component.R { n_plus: 4.0, n_minus: 0.0, r_val: rload }
+    c.add(comp)
+    comp = Component.Idc { n_plus: 2.0, n_minus: 0.0, i_val: iref }
+    c.add(comp)
 }
 
-def ex_opamp_inverting(comps : matrix, ctrl : matrix, r1, rf, vin) {
-    circuit_add_resistor(comps, ctrl, 1, 2, r1)
-    circuit_add_resistor(comps, ctrl, 2, 3, rf)
-    circuit_add_vcvs(comps, ctrl, 3, 0, 2, 0, 1e6)
-    circuit_add_vdc(comps, ctrl, 1, 0, vin)
+def ex_opamp_inverting(c: Circuit, r1: Double, rf: Double, vin: Double) {
+    var comp = Component.R { n_plus: 1.0, n_minus: 2.0, r_val: r1 }
+    c.add(comp)
+    comp = Component.R { n_plus: 2.0, n_minus: 3.0, r_val: rf }
+    c.add(comp)
+    comp = Component.E { n_op: 3.0, n_on: 0.0, n_ip: 2.0, n_in: 0.0, gain: 1e6 }
+    c.add(comp)
+    comp = Component.Vdc { n_plus: 1.0, n_minus: 0.0, v_val: vin }
+    c.add(comp)
 }
 
-def ex_opamp_noninv(comps : matrix, ctrl : matrix, r1, rf, vin) {
-    circuit_add_resistor(comps, ctrl, 2, 0, r1)
-    circuit_add_resistor(comps, ctrl, 2, 3, rf)
-    circuit_add_vcvs(comps, ctrl, 3, 0, 1, 2, 1e6)
-    circuit_add_vdc(comps, ctrl, 1, 0, vin)
+def ex_opamp_noninv(c: Circuit, r1: Double, rf: Double, vin: Double) {
+    var comp = Component.R { n_plus: 2.0, n_minus: 0.0, r_val: r1 }
+    c.add(comp)
+    comp = Component.R { n_plus: 2.0, n_minus: 3.0, r_val: rf }
+    c.add(comp)
+    comp = Component.E { n_op: 3.0, n_on: 0.0, n_ip: 1.0, n_in: 2.0, gain: 1e6 }
+    c.add(comp)
+    comp = Component.Vdc { n_plus: 1.0, n_minus: 0.0, v_val: vin }
+    c.add(comp)
 }
 
-def ex_sallen_key_lpf(comps : matrix, ctrl : matrix, r, c, vin) {
-    circuit_add_resistor(comps, ctrl, 1, 2, r)
-    circuit_add_resistor(comps, ctrl, 2, 3, r)
-    circuit_add_capacitor(comps, ctrl, 2, 0, c, 0.0)
-    circuit_add_capacitor(comps, ctrl, 3, 4, c, 0.0)
-    circuit_add_vcvs(comps, ctrl, 4, 0, 3, 0, 1.0)
-    circuit_add_vdc(comps, ctrl, 1, 0, vin)
+def ex_sallen_key_lpf(c: Circuit, r: Double, cap: Double, vin: Double) {
+    var comp = Component.R { n_plus: 1.0, n_minus: 2.0, r_val: r }
+    c.add(comp)
+    comp = Component.R { n_plus: 2.0, n_minus: 3.0, r_val: r }
+    c.add(comp)
+    comp = Component.C { n_plus: 2.0, n_minus: 0.0, c_val: cap, init_v: 0.0 }
+    c.add(comp)
+    comp = Component.C { n_plus: 3.0, n_minus: 4.0, c_val: cap, init_v: 0.0 }
+    c.add(comp)
+    comp = Component.E { n_op: 4.0, n_on: 0.0, n_ip: 3.0, n_in: 0.0, gain: 1.0 }
+    c.add(comp)
+    comp = Component.Vdc { n_plus: 1.0, n_minus: 0.0, v_val: vin }
+    c.add(comp)
 }
 
-def ex_rlc_bpf(comps : matrix, ctrl : matrix, r, l, c, vin) {
-    circuit_add_resistor(comps, ctrl, 1, 2, r)
-    circuit_add_inductor(comps, ctrl, 2, 3, l, 0.0)
-    circuit_add_capacitor(comps, ctrl, 3, 0, c, 0.0)
-    circuit_add_resistor(comps, ctrl, 3, 0, 1.0)
-    circuit_add_vdc(comps, ctrl, 1, 0, vin)
+def ex_rlc_bpf(c: Circuit, r: Double, l: Double, cap: Double, vin: Double) {
+    var comp = Component.R { n_plus: 1.0, n_minus: 2.0, r_val: r }
+    c.add(comp)
+    comp = Component.L { n_plus: 2.0, n_minus: 3.0, l_val: l, init_i: 0.0 }
+    c.add(comp)
+    comp = Component.C { n_plus: 3.0, n_minus: 0.0, c_val: cap, init_v: 0.0 }
+    c.add(comp)
+    comp = Component.R { n_plus: 3.0, n_minus: 0.0, r_val: 1.0 }
+    c.add(comp)
+    comp = Component.Vdc { n_plus: 1.0, n_minus: 0.0, v_val: vin }
+    c.add(comp)
 }
 
-def ex_pulse_response(comps : matrix, ctrl : matrix, r, c, v_high, t_rise, t_width) {
-    circuit_add_resistor(comps, ctrl, 1, 2, r)
-    circuit_add_capacitor(comps, ctrl, 2, 0, c, 0.0)
-    var vc = circuit_add_vac(comps, ctrl, 1, 0, 0.0, 1.0, 1.0, 0.0)
-    circuit_set_param(comps, vc, 11.0, 1.0)
-    circuit_set_param(comps, vc, 8.0, 0.0)
-    circuit_set_param(comps, vc, 9.0, v_high)
-    circuit_set_param(comps, vc, 10.0, 0.0)
-    circuit_set_param(comps, vc, 5.0, t_rise)
-    circuit_set_param(comps, vc, 6.0, t_rise)
-    circuit_set_param(comps, vc, 7.0, t_width)
-    circuit_set_param(comps, vc, 4.0, 1.0)
+def ex_pulse_response(c: Circuit, r: Double, cap: Double, v_high: Double, t_rise: Double, t_width: Double) {
+    var comp = Component.R { n_plus: 1.0, n_minus: 2.0, r_val: r }
+    c.add(comp)
+    comp = Component.C { n_plus: 2.0, n_minus: 0.0, c_val: cap, init_v: 0.0 }
+    c.add(comp)
+    var vc = c.add(Component.Vac { n_plus: 1.0, n_minus: 0.0, dc_val: 0.0, ac_mag: 1.0, ac_freq: 1.0, ac_phase: 0.0 })
+    c.set_param(vc, 11.0, 1.0)
+    c.set_param(vc, 8.0, 0.0)
+    c.set_param(vc, 9.0, v_high)
+    c.set_param(vc, 10.0, 0.0)
+    c.set_param(vc, 5.0, t_rise)
+    c.set_param(vc, 6.0, t_rise)
+    c.set_param(vc, 7.0, t_width)
+    c.set_param(vc, 4.0, 1.0)
 }
 
-def ex_diode_rectifier(comps : matrix, ctrl : matrix, rload, cfilter, isat, vt) {
-    circuit_add_vac(comps, ctrl, 1, 0, 0.0, 10.0, 60.0, 0.0)
-    circuit_add_diode(comps, ctrl, 1, 2, isat, 1.0, vt)
-    circuit_add_resistor(comps, ctrl, 2, 0, rload)
-    circuit_add_capacitor(comps, ctrl, 2, 0, cfilter, 0.0)
+def ex_diode_rectifier(c: Circuit, rload: Double, cfilter: Double, isat: Double, vt: Double) {
+    var comp = Component.Vac { n_plus: 1.0, n_minus: 0.0, dc_val: 0.0, ac_mag: 10.0, ac_freq: 60.0, ac_phase: 0.0 }
+    c.add(comp)
+    comp = Component.D { n_plus: 1.0, n_minus: 2.0, isat: isat, n_factor: 1.0, vt: vt }
+    c.add(comp)
+    comp = Component.R { n_plus: 2.0, n_minus: 0.0, r_val: rload }
+    c.add(comp)
+    comp = Component.C { n_plus: 2.0, n_minus: 0.0, c_val: cfilter, init_v: 0.0 }
+    c.add(comp)
 }
 
-def ex_bjt_ce_amplifier(comps : matrix, ctrl : matrix, r1, r2, rc, re, rload, bf, isat, vaf, vt, vcc) {
-    circuit_add_vdc(comps, ctrl, 6, 0, vcc)
-    circuit_add_resistor(comps, ctrl, 6, 1, rc)
-    circuit_add_resistor(comps, ctrl, 6, 2, r1)
-    circuit_add_resistor(comps, ctrl, 2, 0, r2)
-    circuit_add_resistor(comps, ctrl, 3, 0, re)
-    circuit_add_capacitor(comps, ctrl, 4, 2, 1e-6, 0.0)
-    circuit_add_capacitor(comps, ctrl, 1, 5, 1e-6, 0.0)
-    circuit_add_resistor(comps, ctrl, 5, 0, rload)
-    circuit_add_npn(comps, ctrl, 1, 4, 3, bf, isat, vaf, vt)
+def ex_bjt_ce_amplifier(c: Circuit, r1: Double, r2: Double, rc: Double, re: Double, rload: Double, bf: Double, isat: Double, vaf: Double, vt: Double, vcc: Double) {
+    var comp = Component.Vdc { n_plus: 6.0, n_minus: 0.0, v_val: vcc }
+    c.add(comp)
+    comp = Component.R { n_plus: 6.0, n_minus: 1.0, r_val: rc }
+    c.add(comp)
+    comp = Component.R { n_plus: 6.0, n_minus: 2.0, r_val: r1 }
+    c.add(comp)
+    comp = Component.R { n_plus: 2.0, n_minus: 0.0, r_val: r2 }
+    c.add(comp)
+    comp = Component.R { n_plus: 3.0, n_minus: 0.0, r_val: re }
+    c.add(comp)
+    comp = Component.C { n_plus: 4.0, n_minus: 2.0, c_val: 1e-6, init_v: 0.0 }
+    c.add(comp)
+    comp = Component.C { n_plus: 1.0, n_minus: 5.0, c_val: 1e-6, init_v: 0.0 }
+    c.add(comp)
+    comp = Component.R { n_plus: 5.0, n_minus: 0.0, r_val: rload }
+    c.add(comp)
+    comp = Component.Qnpn { n_c: 1.0, n_b: 4.0, n_e: 3.0, bf: bf, isat: isat, vaf: vaf, vt: vt }
+    c.add(comp)
 }
 
-def ex_differential_pair(comps : matrix, ctrl : matrix, rc, ree, rload, bf, isat, vaf, vt, vcc, vee) {
-    circuit_add_vdc(comps, ctrl, 6, 0, vcc)
-    circuit_add_vdc(comps, ctrl, 7, 0, vee)
-    circuit_add_resistor(comps, ctrl, 6, 1, rc)
-    circuit_add_resistor(comps, ctrl, 6, 2, rc)
-    circuit_add_resistor(comps, ctrl, 3, 7, ree)
-    circuit_add_resistor(comps, ctrl, 1, 0, rload)
-    circuit_add_npn(comps, ctrl, 1, 4, 3, bf, isat, vaf, vt)
-    circuit_add_npn(comps, ctrl, 2, 5, 3, bf, isat, vaf, vt)
-    circuit_add_vdc(comps, ctrl, 4, 0, 0.0)
-    circuit_add_vdc(comps, ctrl, 5, 0, 0.0)
+def ex_differential_pair(c: Circuit, rc: Double, ree: Double, rload: Double, bf: Double, isat: Double, vaf: Double, vt: Double, vcc: Double, vee: Double) {
+    var comp = Component.Vdc { n_plus: 6.0, n_minus: 0.0, v_val: vcc }
+    c.add(comp)
+    comp = Component.Vdc { n_plus: 7.0, n_minus: 0.0, v_val: vee }
+    c.add(comp)
+    comp = Component.R { n_plus: 6.0, n_minus: 1.0, r_val: rc }
+    c.add(comp)
+    comp = Component.R { n_plus: 6.0, n_minus: 2.0, r_val: rc }
+    c.add(comp)
+    comp = Component.R { n_plus: 3.0, n_minus: 7.0, r_val: ree }
+    c.add(comp)
+    comp = Component.R { n_plus: 1.0, n_minus: 0.0, r_val: rload }
+    c.add(comp)
+    comp = Component.Qnpn { n_c: 1.0, n_b: 4.0, n_e: 3.0, bf: bf, isat: isat, vaf: vaf, vt: vt }
+    c.add(comp)
+    comp = Component.Qnpn { n_c: 2.0, n_b: 5.0, n_e: 3.0, bf: bf, isat: isat, vaf: vaf, vt: vt }
+    c.add(comp)
+    comp = Component.Vdc { n_plus: 4.0, n_minus: 0.0, v_val: 0.0 }
+    c.add(comp)
+    comp = Component.Vdc { n_plus: 5.0, n_minus: 0.0, v_val: 0.0 }
+    c.add(comp)
 }
 
-def ex_cascade_amplifier(comps : matrix, ctrl : matrix, r1, r2, rc1, re1, rc2, re2, rload, bf, isat, vaf, vt, vcc) {
-    circuit_add_vdc(comps, ctrl, 10, 0, vcc)
-    circuit_add_resistor(comps, ctrl, 10, 1, rc1)
-    circuit_add_resistor(comps, ctrl, 10, 2, r1)
-    circuit_add_resistor(comps, ctrl, 10, 3, rc2)
-    circuit_add_resistor(comps, ctrl, 2, 0, r2)
-    circuit_add_resistor(comps, ctrl, 4, 0, re1)
-    circuit_add_resistor(comps, ctrl, 5, 0, re2)
-    circuit_add_capacitor(comps, ctrl, 6, 2, 1e-6, 0.0)
-    circuit_add_capacitor(comps, ctrl, 1, 7, 1e-6, 0.0)
-    circuit_add_resistor(comps, ctrl, 7, 0, rload)
-    circuit_add_npn(comps, ctrl, 1, 6, 4, bf, isat, vaf, vt)
-    circuit_add_npn(comps, ctrl, 3, 8, 5, bf, isat, vaf, vt)
-    circuit_add_vdc(comps, ctrl, 8, 1, 0.0)
+def ex_cascade_amplifier(c: Circuit, r1: Double, r2: Double, rc1: Double, re1: Double, rc2: Double, re2: Double, rload: Double, bf: Double, isat: Double, vaf: Double, vt: Double, vcc: Double) {
+    var comp = Component.Vdc { n_plus: 10.0, n_minus: 0.0, v_val: vcc }
+    c.add(comp)
+    comp = Component.R { n_plus: 10.0, n_minus: 1.0, r_val: rc1 }
+    c.add(comp)
+    comp = Component.R { n_plus: 10.0, n_minus: 2.0, r_val: r1 }
+    c.add(comp)
+    comp = Component.R { n_plus: 10.0, n_minus: 3.0, r_val: rc2 }
+    c.add(comp)
+    comp = Component.R { n_plus: 2.0, n_minus: 0.0, r_val: r2 }
+    c.add(comp)
+    comp = Component.R { n_plus: 4.0, n_minus: 0.0, r_val: re1 }
+    c.add(comp)
+    comp = Component.R { n_plus: 5.0, n_minus: 0.0, r_val: re2 }
+    c.add(comp)
+    comp = Component.C { n_plus: 6.0, n_minus: 2.0, c_val: 1e-6, init_v: 0.0 }
+    c.add(comp)
+    comp = Component.C { n_plus: 1.0, n_minus: 7.0, c_val: 1e-6, init_v: 0.0 }
+    c.add(comp)
+    comp = Component.R { n_plus: 7.0, n_minus: 0.0, r_val: rload }
+    c.add(comp)
+    comp = Component.Qnpn { n_c: 1.0, n_b: 6.0, n_e: 4.0, bf: bf, isat: isat, vaf: vaf, vt: vt }
+    c.add(comp)
+    comp = Component.Qnpn { n_c: 3.0, n_b: 8.0, n_e: 5.0, bf: bf, isat: isat, vaf: vaf, vt: vt }
+    c.add(comp)
+    comp = Component.Vdc { n_plus: 8.0, n_minus: 1.0, v_val: 0.0 }
+    c.add(comp)
 }
 
-def ex_wein_bridge_osc(comps : matrix, ctrl : matrix, r, c, rf, rg) {
-    circuit_add_resistor(comps, ctrl, 1, 2, r)
-    circuit_add_capacitor(comps, ctrl, 2, 0, c, 1.0)
-    circuit_add_capacitor(comps, ctrl, 1, 3, c, 0.0)
-    circuit_add_resistor(comps, ctrl, 3, 0, r)
-    circuit_add_resistor(comps, ctrl, 4, 0, rg)
-    circuit_add_resistor(comps, ctrl, 4, 5, rf)
-    circuit_add_vcvs(comps, ctrl, 5, 0, 3, 4, 1e6)
-    circuit_add_vdc(comps, ctrl, 1, 0, 0.0)
+def ex_wein_bridge_osc(c: Circuit, r: Double, cap: Double, rf: Double, rg: Double) {
+    var comp = Component.R { n_plus: 1.0, n_minus: 2.0, r_val: r }
+    c.add(comp)
+    comp = Component.C { n_plus: 2.0, n_minus: 0.0, c_val: cap, init_v: 1.0 }
+    c.add(comp)
+    comp = Component.C { n_plus: 1.0, n_minus: 3.0, c_val: cap, init_v: 0.0 }
+    c.add(comp)
+    comp = Component.R { n_plus: 3.0, n_minus: 0.0, r_val: r }
+    c.add(comp)
+    comp = Component.R { n_plus: 4.0, n_minus: 0.0, r_val: rg }
+    c.add(comp)
+    comp = Component.R { n_plus: 4.0, n_minus: 5.0, r_val: rf }
+    c.add(comp)
+    comp = Component.E { n_op: 5.0, n_on: 0.0, n_ip: 3.0, n_in: 4.0, gain: 1e6 }
+    c.add(comp)
+    comp = Component.Vdc { n_plus: 1.0, n_minus: 0.0, v_val: 0.0 }
+    c.add(comp)
 }
 
-def ex_mosfet_cs_amplifier(comps : matrix, ctrl : matrix, rd, rg1, rg2, rs, rload, kp, vto, lambda_val, vdd) {
-    circuit_add_vdc(comps, ctrl, 10, 0, vdd)
-    circuit_add_resistor(comps, ctrl, 10, 1, rd)
-    circuit_add_resistor(comps, ctrl, 10, 2, rg1)
-    circuit_add_resistor(comps, ctrl, 2, 0, rg2)
-    circuit_add_resistor(comps, ctrl, 3, 0, rs)
-    circuit_add_capacitor(comps, ctrl, 4, 2, 1e-6, 0.0)
-    circuit_add_capacitor(comps, ctrl, 1, 5, 1e-6, 0.0)
-    circuit_add_resistor(comps, ctrl, 5, 0, rload)
-    circuit_add_nmos(comps, ctrl, 1, 4, 3, 0, kp, vto, lambda_val)
+def ex_mosfet_cs_amplifier(c: Circuit, rd: Double, rg1: Double, rg2: Double, rs: Double, rload: Double, kp: Double, vto: Double, lambda_val: Double, vdd: Double) {
+    var comp = Component.Vdc { n_plus: 10.0, n_minus: 0.0, v_val: vdd }
+    c.add(comp)
+    comp = Component.R { n_plus: 10.0, n_minus: 1.0, r_val: rd }
+    c.add(comp)
+    comp = Component.R { n_plus: 10.0, n_minus: 2.0, r_val: rg1 }
+    c.add(comp)
+    comp = Component.R { n_plus: 2.0, n_minus: 0.0, r_val: rg2 }
+    c.add(comp)
+    comp = Component.R { n_plus: 3.0, n_minus: 0.0, r_val: rs }
+    c.add(comp)
+    comp = Component.C { n_plus: 4.0, n_minus: 2.0, c_val: 1e-6, init_v: 0.0 }
+    c.add(comp)
+    comp = Component.C { n_plus: 1.0, n_minus: 5.0, c_val: 1e-6, init_v: 0.0 }
+    c.add(comp)
+    comp = Component.R { n_plus: 5.0, n_minus: 0.0, r_val: rload }
+    c.add(comp)
+    comp = Component.Mnmos { n_d: 1.0, n_g: 4.0, n_s: 3.0, n_bulk: 0.0, kp: kp, vto: vto, lambda_val: lambda_val }
+    c.add(comp)
 }

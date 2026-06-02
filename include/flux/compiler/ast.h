@@ -448,6 +448,11 @@ public:
     // Returns true on success, stores error string on failure.
     std::function<bool(const std::string&, const std::string&, const std::vector<std::string>&)> importModuleFn;
 
+    // Set of imported module namespace names (e.g., "defs" for `import defs`).
+    // These survive NamedValues.clear() in FunctionAST::codegen so that
+    // namespace-qualified calls like defs.func() can be resolved.
+    std::set<std::string> ModuleNamespaces;
+
     // Names of functions that exist in selectively-imported modules but
     // were not selected. Used to produce clear error messages when the
     // user tries to call a non-imported function.

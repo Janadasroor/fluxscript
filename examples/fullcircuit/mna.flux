@@ -1,11 +1,10 @@
 # FullCircuit — Modified Nodal Analysis Matrix Builder
-import circuit
 
-def mna_ndx(n) {
+def mna_ndx(n: Double) -> Double {
     n - 1.0
 }
 
-def mna_stamp_g(A : matrix, np, nm, g, N) {
+def mna_stamp_g(A: matrix, np: Double, nm: Double, g: Double, N: Double) {
     if (np > 0.0 && np <= N) {
         var r = mna_ndx(np)
         var v = matrix_get(A, r, r) + g
@@ -26,7 +25,7 @@ def mna_stamp_g(A : matrix, np, nm, g, N) {
     }
 }
 
-def mna_stamp_vsource(A : matrix, b : matrix, np, nm, v_val, N, bi) {
+def mna_stamp_vsource(A: matrix, b: matrix, np: Double, nm: Double, v_val: Double, N: Double, bi: Double) {
     var br = N + bi
     if (np > 0.0 && np <= N) {
         matrix_set(A, mna_ndx(np), br, 1.0)
@@ -36,21 +35,21 @@ def mna_stamp_vsource(A : matrix, b : matrix, np, nm, v_val, N, bi) {
         matrix_set(A, mna_ndx(nm), br, -1.0)
         matrix_set(A, br, mna_ndx(nm), -1.0)
     }
-    matrix_set(b, br, 0, v_val)
+    matrix_set(b, br, 0.0, v_val)
 }
 
-def mna_stamp_isource(b : matrix, np, nm, i_val, N) {
+def mna_stamp_isource(b: matrix, np: Double, nm: Double, i_val: Double, N: Double) {
     if (np > 0.0 && np <= N) {
-        var v = matrix_get(b, mna_ndx(np), 0) - i_val
-        matrix_set(b, mna_ndx(np), 0, v)
+        var v = matrix_get(b, mna_ndx(np), 0.0) - i_val
+        matrix_set(b, mna_ndx(np), 0.0, v)
     }
     if (nm > 0.0 && nm <= N) {
-        var v = matrix_get(b, mna_ndx(nm), 0) + i_val
-        matrix_set(b, mna_ndx(nm), 0, v)
+        var v = matrix_get(b, mna_ndx(nm), 0.0) + i_val
+        matrix_set(b, mna_ndx(nm), 0.0, v)
     }
 }
 
-def mna_stamp_vcvs(A : matrix, np, nm, n_ctrl_p, n_ctrl_n, gain, N, bi) {
+def mna_stamp_vcvs(A: matrix, np: Double, nm: Double, n_ctrl_p: Double, n_ctrl_n: Double, gain: Double, N: Double, bi: Double) {
     var br = N + bi
     if (np > 0.0 && np <= N) {
         matrix_set(A, mna_ndx(np), br, 1.0)
@@ -70,7 +69,7 @@ def mna_stamp_vcvs(A : matrix, np, nm, n_ctrl_p, n_ctrl_n, gain, N, bi) {
     }
 }
 
-def mna_stamp_vccs(A : matrix, np, nm, n_ctrl_p, n_ctrl_n, gm, N) {
+def mna_stamp_vccs(A: matrix, np: Double, nm: Double, n_ctrl_p: Double, n_ctrl_n: Double, gm: Double, N: Double) {
     if (np > 0.0 && np <= N && n_ctrl_p > 0.0 && n_ctrl_p <= N) {
         var v = matrix_get(A, mna_ndx(np), mna_ndx(n_ctrl_p)) + gm
         matrix_set(A, mna_ndx(np), mna_ndx(n_ctrl_p), v)
@@ -89,24 +88,23 @@ def mna_stamp_vccs(A : matrix, np, nm, n_ctrl_p, n_ctrl_n, gm, N) {
     }
 }
 
-# Count how many voltage-defined branches we need
-def mna_branch_index(comps : matrix, ctrl : matrix, comp_idx) {
+def mna_branch_index(comps: matrix, ctrl: matrix, comp_idx: Double) -> Double {
     var bi = 0.0
     var ci = 0.0
     while (ci < comp_idx) {
-        var t = circuit_component_type(comps, ci)
+        var t = matrix_get(comps, ci, 0.0)
         if (t == 2.0 || t == 3.0 || t == 5.0 || t == 7.0) { bi = bi + 1.0 }
         ci = ci + 1.0
     }
     bi
 }
 
-def mna_count_branches(comps : matrix, ctrl : matrix) {
-    var nc = circuit_count(ctrl)
+def mna_count_branches(comps: matrix, ctrl: matrix) -> Double {
+    var nc = matrix_get(ctrl, 1.0, 0.0)
     var M = 0.0
     var ci = 0.0
     while (ci < nc) {
-        var t = circuit_component_type(comps, ci)
+        var t = matrix_get(comps, ci, 0.0)
         if (t == 2.0) { M = M + 1.0 }
         if (t == 3.0) { M = M + 1.0 }
         if (t == 5.0) { M = M + 1.0 }
@@ -116,71 +114,70 @@ def mna_count_branches(comps : matrix, ctrl : matrix) {
     M
 }
 
-def mna_build_A_b(comps : matrix, ctrl : matrix) {
-    var N = circuit_num_nodes(ctrl)
-    var nc = circuit_count(ctrl)
+def mna_build_A_b(comps: matrix, ctrl: matrix) {
+    var N = matrix_get(ctrl, 0.0, 0.0)
+    var nc = matrix_get(ctrl, 1.0, 0.0)
     var M = mna_count_branches(comps, ctrl)
     var dim = N + M
     var A = matrix_zeros(dim, dim)
-    var b = matrix_zeros(dim, 1)
+    var b = matrix_zeros(dim, 1.0)
     var bi = 0.0
     var ci = 0.0
     while (ci < nc) {
-        var t = circuit_component_type(comps, ci)
-        var np = circuit_node_p(comps, ci)
-        var nm = circuit_node_n(comps, ci)
+        var t = matrix_get(comps, ci, 0.0)
+        var np = matrix_get(comps, ci, 1.0)
+        var nm = matrix_get(comps, ci, 2.0)
         if (t == 0.0) {
-            var r = circuit_param(comps, ci, 4.0)
+            var r = matrix_get(comps, ci, 4.0)
             if (r > 1e-15) {
                 mna_stamp_g(A, np, nm, 1.0 / r, N)
             }
         } else if (t == 1.0) {
         } else if (t == 2.0) {
-            # Inductor: DC short circuit (0V source)
             mna_stamp_vsource(A, b, np, nm, 0.0, N, bi)
             bi = bi + 1.0
         } else if (t == 3.0 || t == 5.0) {
-            var v_val = circuit_param(comps, ci, 4.0)
+            var v_val = matrix_get(comps, ci, 4.0)
             mna_stamp_vsource(A, b, np, nm, v_val, N, bi)
             bi = bi + 1.0
         } else if (t == 4.0 || t == 6.0) {
-            var i_val = circuit_param(comps, ci, 4.0)
+            var i_val = matrix_get(comps, ci, 4.0)
             mna_stamp_isource(b, np, nm, i_val, N)
         } else if (t == 7.0) {
-            var n_ctrl_p = circuit_node_3(comps, ci)
-            var n_ctrl_n = circuit_param(comps, ci, 4.0)
-            var gain = circuit_param(comps, ci, 5.0)
+            var n_ctrl_p = matrix_get(comps, ci, 3.0)
+            var n_ctrl_n = matrix_get(comps, ci, 4.0)
+            var gain = matrix_get(comps, ci, 5.0)
             mna_stamp_vcvs(A, np, nm, n_ctrl_p, n_ctrl_n, gain, N, bi)
             bi = bi + 1.0
         } else if (t == 8.0) {
-            var n_ctrl_p = circuit_node_3(comps, ci)
-            var n_ctrl_n = circuit_param(comps, ci, 4.0)
-            var gm = circuit_param(comps, ci, 5.0)
+            var n_ctrl_p = matrix_get(comps, ci, 3.0)
+            var n_ctrl_n = matrix_get(comps, ci, 4.0)
+            var gm = matrix_get(comps, ci, 5.0)
             mna_stamp_vccs(A, np, nm, n_ctrl_p, n_ctrl_n, gm, N)
         }
         ci = ci + 1.0
     }
-    var result = matrix_zeros(2, 1)
-    matrix_set(result, 0, 0, M)
-    matrix_set(result, 1, 0, dim)
+    var result = matrix_zeros(2.0, 1.0)
+    matrix_set(result, 0.0, 0.0, M)
+    matrix_set(result, 1.0, 0.0, dim)
     result
 }
 
-def mna_dc_solve(comps : matrix, ctrl : matrix) {
-    var N = circuit_num_nodes(ctrl)
-    var nc = circuit_count(ctrl)
+def mna_dc_solve(comps: matrix, ctrl: matrix) -> matrix {
+    var N = matrix_get(ctrl, 0.0, 0.0)
+    var nc = matrix_get(ctrl, 1.0, 0.0)
     var M = mna_count_branches(comps, ctrl)
     var dim = N + M
     var A = matrix_zeros(dim, dim)
-    var b = matrix_zeros(dim, 1)
+    var b = matrix_zeros(dim, 1.0)
     var bi = 0.0
     var ci = 0.0
     while (ci < nc) {
-        var t = circuit_component_type(comps, ci)
-        var np = circuit_node_p(comps, ci)
-        var nm = circuit_node_n(comps, ci)
+        var t = matrix_get(comps, ci, 0.0)
+        var np = matrix_get(comps, ci, 1.0)
+        var nm = matrix_get(comps, ci, 2.0)
         if (t == 0.0) {
-            var r = circuit_param(comps, ci, 4.0)
+            var r = matrix_get(comps, ci, 4.0)
             if (r > 1e-15) {
                 mna_stamp_g(A, np, nm, 1.0 / r, N)
             }
@@ -189,59 +186,59 @@ def mna_dc_solve(comps : matrix, ctrl : matrix) {
             mna_stamp_vsource(A, b, np, nm, 0.0, N, bi)
             bi = bi + 1.0
         } else if (t == 3.0 || t == 5.0) {
-            var v_val = circuit_param(comps, ci, 4.0)
+            var v_val = matrix_get(comps, ci, 4.0)
             mna_stamp_vsource(A, b, np, nm, v_val, N, bi)
             bi = bi + 1.0
         } else if (t == 4.0 || t == 6.0) {
-            var i_val = circuit_param(comps, ci, 4.0)
+            var i_val = matrix_get(comps, ci, 4.0)
             mna_stamp_isource(b, np, nm, i_val, N)
         } else if (t == 7.0) {
-            var n3 = circuit_node_3(comps, ci)
-            var n4 = circuit_param(comps, ci, 4.0)
-            var gain = circuit_param(comps, ci, 5.0)
+            var n3 = matrix_get(comps, ci, 3.0)
+            var n4 = matrix_get(comps, ci, 4.0)
+            var gain = matrix_get(comps, ci, 5.0)
             mna_stamp_vcvs(A, np, nm, n3, n4, gain, N, bi)
             bi = bi + 1.0
         } else if (t == 8.0) {
-            var n3 = circuit_node_3(comps, ci)
-            var n4 = circuit_param(comps, ci, 4.0)
-            var gm = circuit_param(comps, ci, 5.0)
+            var n3 = matrix_get(comps, ci, 3.0)
+            var n4 = matrix_get(comps, ci, 4.0)
+            var gm = matrix_get(comps, ci, 5.0)
             mna_stamp_vccs(A, np, nm, n3, n4, gm, N)
         }
         ci = ci + 1.0
     }
     var x = matrix_solve(A, b)
-    var sol = matrix_zeros(dim + 2.0, 1)
-    matrix_set(sol, 0, 0, N)
-    matrix_set(sol, 1, 0, M)
+    var sol = matrix_zeros(dim + 2.0, 1.0)
+    matrix_set(sol, 0.0, 0.0, N)
+    matrix_set(sol, 1.0, 0.0, M)
     var ri = 0.0
     while (ri < dim) {
-        matrix_set(sol, ri + 2.0, 0, matrix_get(x, ri, 0))
+        matrix_set(sol, ri + 2.0, 0.0, matrix_get(x, ri, 0.0))
         ri = ri + 1.0
     }
     sol
 }
 
-def mna_get_node_voltage(sol : matrix, nd) {
-    var N = matrix_get(sol, 0, 0)
+def mna_get_node_voltage(sol: matrix, nd: Double) -> Double {
+    var N = matrix_get(sol, 0.0, 0.0)
     if (nd == 0.0) { 0.0 }
-    else if (nd <= N) { matrix_get(sol, nd + 1.0, 0) }
+    else if (nd <= N) { matrix_get(sol, nd + 1.0, 0.0) }
     else { 0.0 }
 }
 
-def mna_get_branch_current(sol : matrix, branch_idx) {
-    var N = matrix_get(sol, 0, 0)
-    var M = matrix_get(sol, 1, 0)
+def mna_get_branch_current(sol: matrix, branch_idx: Double) -> Double {
+    var N = matrix_get(sol, 0.0, 0.0)
+    var M = matrix_get(sol, 1.0, 0.0)
     if (branch_idx >= 0.0 && branch_idx < M) {
-        matrix_get(sol, N + 2.0 + branch_idx, 0)
+        matrix_get(sol, N + 2.0 + branch_idx, 0.0)
     } else { 0.0 }
 }
 
-def mna_extract_voltages(sol : matrix) {
-    var N = matrix_get(sol, 0, 0)
-    var V = matrix_zeros(N + 1.0, 1)
+def mna_extract_voltages(sol: matrix) -> matrix {
+    var N = matrix_get(sol, 0.0, 0.0)
+    var V = matrix_zeros(N + 1.0, 1.0)
     var i = 1.0
     while (i <= N) {
-        matrix_set(V, i, 0, mna_get_node_voltage(sol, i))
+        matrix_set(V, i, 0.0, mna_get_node_voltage(sol, i))
         i = i + 1.0
     }
     V

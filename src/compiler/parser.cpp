@@ -1743,7 +1743,7 @@ std::unique_ptr<PrototypeAST> Parser::ParsePrototype()
                         }
                     }
                     if (!isGeneric) {
-                        // Check user-defined struct types
+                        // Check user-defined struct types first
                         if (m_knownStructTypeNames.count(typeName)) {
                             Type = FluxType(TypeKind::UserStruct);
                             Type.StructTypeId = -1;
@@ -1754,6 +1754,20 @@ std::unique_ptr<PrototypeAST> Parser::ParsePrototype()
                             Type.EnumTypeId = -1;
                             Type.EnumLLVMType = nullptr;
                             Type.GenericName = typeName;
+                        } else if (typeName == "Double" || typeName == "double") {
+                            Type = FluxType(TypeKind::Double);
+                        } else if (typeName == "Float" || typeName == "float") {
+                            Type = FluxType(TypeKind::Float);
+                        } else if (typeName == "Int" || typeName == "int") {
+                            Type = FluxType(TypeKind::Int);
+                        } else if (typeName == "Bool" || typeName == "bool") {
+                            Type = FluxType(TypeKind::Bool);
+                        } else if (typeName == "Void" || typeName == "void") {
+                            Type = FluxType(TypeKind::Void);
+                        } else if (typeName == "Complex" || typeName == "complex") {
+                            Type = FluxType(TypeKind::Complex);
+                        } else if (typeName == "String" || typeName == "string") {
+                            Type = FluxType(TypeKind::String);
                         } else {
                             FluxType unitType = FluxType::fromUnitName(typeName);
                             if (unitType.Dimensions.mass != 0 || unitType.Dimensions.length != 0 || unitType.Dimensions.time != 0 ||
@@ -1807,7 +1821,7 @@ std::unique_ptr<PrototypeAST> Parser::ParsePrototype()
                     }
                 }
                 if (!isGeneric) {
-                    // Check user-defined struct types
+                    // Check user-defined struct types first
                     if (m_knownStructTypeNames.count(typeName)) {
                         RetType = FluxType(TypeKind::UserStruct);
                         RetType.StructTypeId = -1;
@@ -1818,6 +1832,20 @@ std::unique_ptr<PrototypeAST> Parser::ParsePrototype()
                         RetType.EnumTypeId = -1;
                         RetType.EnumLLVMType = nullptr;
                         RetType.GenericName = typeName;
+                    } else if (typeName == "Double" || typeName == "double") {
+                        RetType = FluxType(TypeKind::Double);
+                    } else if (typeName == "Float" || typeName == "float") {
+                        RetType = FluxType(TypeKind::Float);
+                    } else if (typeName == "Int" || typeName == "int") {
+                        RetType = FluxType(TypeKind::Int);
+                    } else if (typeName == "Bool" || typeName == "bool") {
+                        RetType = FluxType(TypeKind::Bool);
+                    } else if (typeName == "Void" || typeName == "void") {
+                        RetType = FluxType(TypeKind::Void);
+                    } else if (typeName == "Complex" || typeName == "complex") {
+                        RetType = FluxType(TypeKind::Complex);
+                    } else if (typeName == "String" || typeName == "string") {
+                        RetType = FluxType(TypeKind::String);
                     } else {
                         FluxType unitType = FluxType::fromUnitName(typeName);
                         if (unitType.Dimensions.mass != 0 || unitType.Dimensions.length != 0 || unitType.Dimensions.time != 0 ||
@@ -4263,6 +4291,26 @@ FluxType Parser::parseTypeName(const std::vector<std::string>& genericParams,
         ReportError("unknown trait '" + traitName + "' in dyn type");
         return FluxType(TypeKind::Double);
     }
+
+    // Keyword tokens — built-in type keywords (matrix, vector, etc.)
+    if (CurTok == static_cast<int>(TokenType::tok_type_matrix))
+        { getNextToken(); return FluxType(TypeKind::Matrix); }
+    if (CurTok == static_cast<int>(TokenType::tok_type_vector))
+        { getNextToken(); return FluxType(TypeKind::Vector); }
+    if (CurTok == static_cast<int>(TokenType::tok_type_float))
+        { getNextToken(); return FluxType(TypeKind::Float); }
+    if (CurTok == static_cast<int>(TokenType::tok_type_int))
+        { getNextToken(); return FluxType(TypeKind::Int); }
+    if (CurTok == static_cast<int>(TokenType::tok_type_bool))
+        { getNextToken(); return FluxType(TypeKind::Bool); }
+    if (CurTok == static_cast<int>(TokenType::tok_type_void))
+        { getNextToken(); return FluxType(TypeKind::Void); }
+    if (CurTok == static_cast<int>(TokenType::tok_type_complex))
+        { getNextToken(); return FluxType(TypeKind::Complex); }
+    if (CurTok == static_cast<int>(TokenType::tok_type_string))
+        { getNextToken(); return FluxType(TypeKind::String); }
+    if (CurTok == static_cast<int>(TokenType::tok_type_double))
+        { getNextToken(); return FluxType(TypeKind::Double); }
 
     // Identifier — could be built-in type name (capitalized), unit type, or generic param
     if (CurTok == static_cast<int>(TokenType::tok_identifier)) {

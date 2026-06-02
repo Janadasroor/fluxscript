@@ -2,7 +2,7 @@
 import circuit
 import mna
 
-def diode_junction(vd, isat, n_factor, vt) {
+def diode_junction(vd: Double, isat: Double, n_factor: Double, vt: Double) -> matrix {
     var cv = n_factor * vt
     var vcrit = cv * log(cv / (0.5 * isat))
     if (vd > vcrit) {
@@ -32,28 +32,28 @@ def diode_junction(vd, isat, n_factor, vt) {
     }
 }
 
-def bjt_junction(vd, isat, vt) {
+def bjt_junction(vd: Double, isat: Double, vt: Double) -> matrix {
     diode_junction(vd, isat, 1.0, vt)
 }
 
-def dc_solve_linear(comps : matrix, ctrl : matrix) {
+def dc_solve_linear(comps: matrix, ctrl: matrix) -> matrix {
     mna_dc_solve(comps, ctrl)
 }
 
-def dc_nonlinear_solve(comps : matrix, ctrl : matrix, max_iter, tol) {
-    var N = circuit_num_nodes(ctrl)
-    var nc = circuit_count(ctrl)
+def dc_nonlinear_solve(comps: matrix, ctrl: matrix, max_iter: Double, tol: Double) -> matrix {
+    var N = matrix_get(ctrl, 0.0, 0.0)
+    var nc = matrix_get(ctrl, 1.0, 0.0)
     var V = matrix_zeros(N + 1.0, 1)
     dc_nonlinear_solve_v0(comps, ctrl, max_iter, tol, V)
 }
 
-def dc_nonlinear_solve_v0(comps : matrix, ctrl : matrix, max_iter, tol, V : matrix) {
+def dc_nonlinear_solve_v0(comps: matrix, ctrl: matrix, max_iter: Double, tol: Double, V: matrix) -> matrix {
     dc_nlsolve_gmin(comps, ctrl, max_iter, tol, V, 0.0)
 }
 
-def dc_nlsolve_gmin(comps : matrix, ctrl : matrix, max_iter, tol, V : matrix, gmin) {
-    var N = circuit_num_nodes(ctrl)
-    var nc = circuit_count(ctrl)
+def dc_nlsolve_gmin(comps: matrix, ctrl: matrix, max_iter: Double, tol: Double, V: matrix, gmin: Double) -> matrix {
+    var N = matrix_get(ctrl, 0.0, 0.0)
+    var nc = matrix_get(ctrl, 1.0, 0.0)
     var iter = 0.0
     var converged = 0.0
     if (max_iter < 0.0) { max_iter = 20.0 }
@@ -67,11 +67,11 @@ def dc_nlsolve_gmin(comps : matrix, ctrl : matrix, max_iter, tol, V : matrix, gm
         var bi = 0.0
         var ci = 0.0
         while (ci < nc) {
-            var t = circuit_component_type(comps, ci)
-            var np = circuit_node_p(comps, ci)
-            var nm = circuit_node_n(comps, ci)
+            var t = matrix_get(comps, ci, 0.0)
+            var np = matrix_get(comps, ci, 1.0)
+            var nm = matrix_get(comps, ci, 2.0)
             if (t == 0.0) {
-                var r = circuit_param(comps, ci, 4.0)
+                var r = matrix_get(comps, ci, 4.0)
                 if (r > 1e-15) {
                     mna_stamp_g(A, np, nm, 1.0 / r, N)
                 }
@@ -79,27 +79,27 @@ def dc_nlsolve_gmin(comps : matrix, ctrl : matrix, max_iter, tol, V : matrix, gm
                 mna_stamp_vsource(A, b, np, nm, 0.0, N, bi)
                 bi = bi + 1.0
             } else if (t == 3.0 || t == 5.0) {
-                var vv = circuit_param(comps, ci, 4.0)
+                var vv = matrix_get(comps, ci, 4.0)
                 mna_stamp_vsource(A, b, np, nm, vv, N, bi)
                 bi = bi + 1.0
             } else if (t == 4.0 || t == 6.0) {
-                var iv = circuit_param(comps, ci, 4.0)
+                var iv = matrix_get(comps, ci, 4.0)
                 mna_stamp_isource(b, np, nm, iv, N)
             } else if (t == 7.0) {
-                var n3 = circuit_node_3(comps, ci)
-                var n4 = circuit_param(comps, ci, 4.0)
-                var gain = circuit_param(comps, ci, 5.0)
+                var n3 = matrix_get(comps, ci, 3.0)
+                var n4 = matrix_get(comps, ci, 4.0)
+                var gain = matrix_get(comps, ci, 5.0)
                 mna_stamp_vcvs(A, np, nm, n3, n4, gain, N, bi)
                 bi = bi + 1.0
             } else if (t == 8.0) {
-                var n3 = circuit_node_3(comps, ci)
-                var n4 = circuit_param(comps, ci, 4.0)
-                var gm = circuit_param(comps, ci, 5.0)
+                var n3 = matrix_get(comps, ci, 3.0)
+                var n4 = matrix_get(comps, ci, 4.0)
+                var gm = matrix_get(comps, ci, 5.0)
                 mna_stamp_vccs(A, np, nm, n3, n4, gm, N)
             } else if (t == 9.0) {
-                var isat = circuit_param(comps, ci, 4.0)
-                var nf = circuit_param(comps, ci, 5.0)
-                var vt = circuit_param(comps, ci, 7.0)
+                var isat = matrix_get(comps, ci, 4.0)
+                var nf = matrix_get(comps, ci, 5.0)
+                var vt = matrix_get(comps, ci, 7.0)
                 var vnp = 0.0
                 var vnm = 0.0
                 if (np > 0.0 && np <= N) { vnp = matrix_get(V, np, 0) }
@@ -114,11 +114,11 @@ def dc_nlsolve_gmin(comps : matrix, ctrl : matrix, max_iter, tol, V : matrix, gm
             } else if (t == 10.0 || t == 11.0) {
                 var nc_node = np
                 var nb_node = nm
-                var ne_node = circuit_node_3(comps, ci)
-                var bf = circuit_param(comps, ci, 4.0)
-                var isat = circuit_param(comps, ci, 5.0)
-                var vaf = circuit_param(comps, ci, 6.0)
-                var vt = circuit_param(comps, ci, 7.0)
+                var ne_node = matrix_get(comps, ci, 3.0)
+                var bf = matrix_get(comps, ci, 4.0)
+                var isat = matrix_get(comps, ci, 5.0)
+                var vaf = matrix_get(comps, ci, 6.0)
+                var vt = matrix_get(comps, ci, 7.0)
                 var vc_v = 0.0
                 var vb_v = 0.0
                 var ve_v = 0.0
@@ -138,7 +138,7 @@ def dc_nlsolve_gmin(comps : matrix, ctrl : matrix, max_iter, tol, V : matrix, gm
                 bjt_jr = diode_junction(vbc_eff, isat, 1.0, vt)
                 var iec = matrix_get(bjt_jr, 0, 0)
                 var gbc = matrix_get(bjt_jr, 1, 0)
-                var br = circuit_param(comps, ci, 8.0)
+                var br = matrix_get(comps, ci, 8.0)
                 if (br <= 0.0) { br = 2.0 }
                 var af = bf / (bf + 1.0)
                 var go = 0.0
@@ -158,54 +158,54 @@ def dc_nlsolve_gmin(comps : matrix, ctrl : matrix, max_iter, tol, V : matrix, gm
                 var i_co = i_c - (af * gbe - gbc) * vb_v - (go + gbc) * vc_v + (af * gbe + go) * ve_v
                 var ib_co = ib - gpi * vb_v + (gbc / br) * vc_v + (gbe / bf) * ve_v
                 if (nc_node > 0.0 && nc_node <= N) {
-                    A[mna_ndx(nc_node), mna_ndx(nc_node)] += go + gbc
+                    matrix_set(A, mna_ndx(nc_node), mna_ndx(nc_node), matrix_get(A, mna_ndx(nc_node), mna_ndx(nc_node)) + go + gbc)
                 }
                 if (nc_node > 0.0 && nc_node <= N && nb_node > 0.0 && nb_node <= N) {
-                    A[mna_ndx(nc_node), mna_ndx(nb_node)] += af * gbe - gbc
+                    matrix_set(A, mna_ndx(nc_node), mna_ndx(nb_node), matrix_get(A, mna_ndx(nc_node), mna_ndx(nb_node)) + af * gbe - gbc)
                 }
                 if (nc_node > 0.0 && nc_node <= N && ne_node > 0.0 && ne_node <= N) {
-                    A[mna_ndx(nc_node), mna_ndx(ne_node)] -= af * gbe + go
+                    matrix_set(A, mna_ndx(nc_node), mna_ndx(ne_node), matrix_get(A, mna_ndx(nc_node), mna_ndx(ne_node)) - (af * gbe + go))
                 }
                 if (nb_node > 0.0 && nb_node <= N) {
-                    A[mna_ndx(nb_node), mna_ndx(nb_node)] += gpi
+                    matrix_set(A, mna_ndx(nb_node), mna_ndx(nb_node), matrix_get(A, mna_ndx(nb_node), mna_ndx(nb_node)) + gpi)
                 }
                 if (nb_node > 0.0 && nb_node <= N && nc_node > 0.0 && nc_node <= N) {
-                    A[mna_ndx(nb_node), mna_ndx(nc_node)] -= gbc / br
+                    matrix_set(A, mna_ndx(nb_node), mna_ndx(nc_node), matrix_get(A, mna_ndx(nb_node), mna_ndx(nc_node)) - gbc / br)
                 }
                 if (nb_node > 0.0 && nb_node <= N && ne_node > 0.0 && ne_node <= N) {
-                    A[mna_ndx(nb_node), mna_ndx(ne_node)] -= gbe / bf
+                    matrix_set(A, mna_ndx(nb_node), mna_ndx(ne_node), matrix_get(A, mna_ndx(nb_node), mna_ndx(ne_node)) - gbe / bf)
                 }
                 if (ne_node > 0.0 && ne_node <= N && nb_node > 0.0 && nb_node <= N) {
-                    A[mna_ndx(ne_node), mna_ndx(nb_node)] -= (af * gbe + gbe / bf) - gbc * (1.0 - 1.0 / br)
+                    matrix_set(A, mna_ndx(ne_node), mna_ndx(nb_node), matrix_get(A, mna_ndx(ne_node), mna_ndx(nb_node)) - ((af * gbe + gbe / bf) - gbc * (1.0 - 1.0 / br)))
                 }
                 if (ne_node > 0.0 && ne_node <= N && nc_node > 0.0 && nc_node <= N) {
-                    A[mna_ndx(ne_node), mna_ndx(nc_node)] -= go + gbc * (1.0 - 1.0 / br)
+                    matrix_set(A, mna_ndx(ne_node), mna_ndx(nc_node), matrix_get(A, mna_ndx(ne_node), mna_ndx(nc_node)) - (go + gbc * (1.0 - 1.0 / br)))
                 }
                 if (ne_node > 0.0 && ne_node <= N) {
-                    A[mna_ndx(ne_node), mna_ndx(ne_node)] += af * gbe + gbe / bf + go
+                    matrix_set(A, mna_ndx(ne_node), mna_ndx(ne_node), matrix_get(A, mna_ndx(ne_node), mna_ndx(ne_node)) + af * gbe + gbe / bf + go)
                 }
                 if (nc_node > 0.0 && nc_node <= N) {
-                    b[mna_ndx(nc_node), 0] -= i_co
+                    matrix_set(b, mna_ndx(nc_node), 0, matrix_get(b, mna_ndx(nc_node), 0) - i_co)
                 }
                 if (nb_node > 0.0 && nb_node <= N) {
-                    b[mna_ndx(nb_node), 0] -= ib_co
+                    matrix_set(b, mna_ndx(nb_node), 0, matrix_get(b, mna_ndx(nb_node), 0) - ib_co)
                 }
                 if (ne_node > 0.0 && ne_node <= N) {
-                    b[mna_ndx(ne_node), 0] += i_co + ib_co
+                    matrix_set(b, mna_ndx(ne_node), 0, matrix_get(b, mna_ndx(ne_node), 0) + i_co + ib_co)
                 }
             } else if (t == 12.0 || t == 13.0) {
                 var nd_node = np
                 var ng_node = nm
-                var ns_node = circuit_node_3(comps, ci)
+                var ns_node = matrix_get(comps, ci, 3.0)
                 var vd_v = 0.0; var vg_v = 0.0; var vs_v = 0.0
                 if (nd_node > 0.0 && nd_node <= N) { vd_v = matrix_get(V, nd_node, 0) }
                 if (ng_node > 0.0 && ng_node <= N) { vg_v = matrix_get(V, ng_node, 0) }
                 if (ns_node > 0.0 && ns_node <= N) { vs_v = matrix_get(V, ns_node, 0) }
                 var vgs = vg_v - vs_v
                 var vds = vd_v - vs_v
-                var kp_val = circuit_param(comps, ci, 5.0)
-                var vto_val = circuit_param(comps, ci, 6.0)
-                var lambda_val = circuit_param(comps, ci, 7.0)
+                var kp_val = matrix_get(comps, ci, 5.0)
+                var vto_val = matrix_get(comps, ci, 6.0)
+                var lambda_val = matrix_get(comps, ci, 7.0)
                 if (t == 13.0) { vgs = -vgs; vds = -vds; vto_val = -vto_val }
                 var vov = vgs - vto_val
                 var id = 0.0; var gm = 0.0; var gds = 0.0
@@ -236,42 +236,42 @@ def dc_nlsolve_gmin(comps : matrix, ctrl : matrix, max_iter, tol, V : matrix, gm
                 var ieq = id - gm * vgs - gds * vds
                 if (t == 13.0) { ieq = id + gm * vgs + gds * vds }
                 if (nd_node > 0.0 && nd_node <= N) {
-                    A[mna_ndx(nd_node), mna_ndx(nd_node)] += gds
+                    matrix_set(A, mna_ndx(nd_node), mna_ndx(nd_node), matrix_get(A, mna_ndx(nd_node), mna_ndx(nd_node)) + gds)
                 }
                 if (nd_node > 0.0 && nd_node <= N && ng_node > 0.0 && ng_node <= N) {
-                    A[mna_ndx(nd_node), mna_ndx(ng_node)] += gm
+                    matrix_set(A, mna_ndx(nd_node), mna_ndx(ng_node), matrix_get(A, mna_ndx(nd_node), mna_ndx(ng_node)) + gm)
                 }
                 if (nd_node > 0.0 && nd_node <= N && ns_node > 0.0 && ns_node <= N) {
-                    A[mna_ndx(nd_node), mna_ndx(ns_node)] -= gds + gm
+                    matrix_set(A, mna_ndx(nd_node), mna_ndx(ns_node), matrix_get(A, mna_ndx(nd_node), mna_ndx(ns_node)) - (gds + gm))
                 }
                 if (ns_node > 0.0 && ns_node <= N) {
-                    A[mna_ndx(ns_node), mna_ndx(ns_node)] += gds + gm
+                    matrix_set(A, mna_ndx(ns_node), mna_ndx(ns_node), matrix_get(A, mna_ndx(ns_node), mna_ndx(ns_node)) + gds + gm)
                 }
                 if (ns_node > 0.0 && ns_node <= N && nd_node > 0.0 && nd_node <= N) {
-                    A[mna_ndx(ns_node), mna_ndx(nd_node)] -= gds
+                    matrix_set(A, mna_ndx(ns_node), mna_ndx(nd_node), matrix_get(A, mna_ndx(ns_node), mna_ndx(nd_node)) - gds)
                 }
                 if (ns_node > 0.0 && ns_node <= N && ng_node > 0.0 && ng_node <= N) {
-                    A[mna_ndx(ns_node), mna_ndx(ng_node)] -= gm
+                    matrix_set(A, mna_ndx(ns_node), mna_ndx(ng_node), matrix_get(A, mna_ndx(ns_node), mna_ndx(ng_node)) - gm)
                 }
                 if (nd_node > 0.0 && nd_node <= N) {
-                    b[mna_ndx(nd_node), 0] -= ieq
+                    matrix_set(b, mna_ndx(nd_node), 0, matrix_get(b, mna_ndx(nd_node), 0) - ieq)
                 }
                 if (ns_node > 0.0 && ns_node <= N) {
-                    b[mna_ndx(ns_node), 0] += ieq
+                    matrix_set(b, mna_ndx(ns_node), 0, matrix_get(b, mna_ndx(ns_node), 0) + ieq)
                 }
             } else if (t == 14.0 || t == 15.0) {
                 var nd_node = np
                 var ng_node = nm
-                var ns_node = circuit_node_3(comps, ci)
+                var ns_node = matrix_get(comps, ci, 3.0)
                 var vd_v = 0.0; var vg_v = 0.0; var vs_v = 0.0
                 if (nd_node > 0.0 && nd_node <= N) { vd_v = matrix_get(V, nd_node, 0) }
                 if (ng_node > 0.0 && ng_node <= N) { vg_v = matrix_get(V, ng_node, 0) }
                 if (ns_node > 0.0 && ns_node <= N) { vs_v = matrix_get(V, ns_node, 0) }
                 var vgs = vg_v - vs_v
                 var vds = vd_v - vs_v
-                var beta_val = circuit_param(comps, ci, 5.0)
-                var vto_val = circuit_param(comps, ci, 6.0)
-                var lambda_val = circuit_param(comps, ci, 7.0)
+                var beta_val = matrix_get(comps, ci, 5.0)
+                var vto_val = matrix_get(comps, ci, 6.0)
+                var lambda_val = matrix_get(comps, ci, 7.0)
                 if (t == 15.0) { vgs = -vgs; vds = -vds; vto_val = -vto_val }
                 var vov = vgs - vto_val
                 var id = 0.0; var gm = 0.0; var gds = 0.0
@@ -302,30 +302,30 @@ def dc_nlsolve_gmin(comps : matrix, ctrl : matrix, max_iter, tol, V : matrix, gm
                 var ieq = id - gm * vgs - gds * vds
                 if (t == 15.0) { ieq = id + gm * vgs + gds * vds }
                 if (nd_node > 0.0 && nd_node <= N) {
-                    A[mna_ndx(nd_node), mna_ndx(nd_node)] += gds
-                    b[mna_ndx(nd_node), 0] -= ieq
+                    matrix_set(A, mna_ndx(nd_node), mna_ndx(nd_node), matrix_get(A, mna_ndx(nd_node), mna_ndx(nd_node)) + gds)
+                    matrix_set(b, mna_ndx(nd_node), 0, matrix_get(b, mna_ndx(nd_node), 0) - ieq)
                 }
                 if (nd_node > 0.0 && nd_node <= N && ng_node > 0.0 && ng_node <= N) {
-                    A[mna_ndx(nd_node), mna_ndx(ng_node)] += gm
+                    matrix_set(A, mna_ndx(nd_node), mna_ndx(ng_node), matrix_get(A, mna_ndx(nd_node), mna_ndx(ng_node)) + gm)
                 }
                 if (nd_node > 0.0 && nd_node <= N && ns_node > 0.0 && ns_node <= N) {
-                    A[mna_ndx(nd_node), mna_ndx(ns_node)] -= gds + gm
+                    matrix_set(A, mna_ndx(nd_node), mna_ndx(ns_node), matrix_get(A, mna_ndx(nd_node), mna_ndx(ns_node)) - (gds + gm))
                 }
                 if (ns_node > 0.0 && ns_node <= N) {
-                    A[mna_ndx(ns_node), mna_ndx(ns_node)] += gds + gm
-                    b[mna_ndx(ns_node), 0] += ieq
+                    matrix_set(A, mna_ndx(ns_node), mna_ndx(ns_node), matrix_get(A, mna_ndx(ns_node), mna_ndx(ns_node)) + gds + gm)
+                    matrix_set(b, mna_ndx(ns_node), 0, matrix_get(b, mna_ndx(ns_node), 0) + ieq)
                 }
                 if (ns_node > 0.0 && ns_node <= N && nd_node > 0.0 && nd_node <= N) {
-                    A[mna_ndx(ns_node), mna_ndx(nd_node)] -= gds
+                    matrix_set(A, mna_ndx(ns_node), mna_ndx(nd_node), matrix_get(A, mna_ndx(ns_node), mna_ndx(nd_node)) - gds)
                 }
                 if (ns_node > 0.0 && ns_node <= N && ng_node > 0.0 && ng_node <= N) {
-                    A[mna_ndx(ns_node), mna_ndx(ng_node)] -= gm
+                    matrix_set(A, mna_ndx(ns_node), mna_ndx(ng_node), matrix_get(A, mna_ndx(ns_node), mna_ndx(ng_node)) - gm)
                 }
             } else if (t == 16.0) {
                 var np_node = np
                 var nm_node = nm
-                var ncp_node = circuit_node_3(comps, ci)
-                var ncm_node = circuit_param(comps, ci, 4.0)
+                var ncp_node = matrix_get(comps, ci, 3.0)
+                var ncm_node = matrix_get(comps, ci, 4.0)
                 var vnp = 0.0; var vnm = 0.0; var vcp = 0.0; var vcm = 0.0
                 if (np_node > 0.0 && np_node <= N) { vnp = matrix_get(V, np_node, 0) }
                 if (nm_node > 0.0 && nm_node <= N) { vnm = matrix_get(V, nm_node, 0) }
@@ -346,8 +346,8 @@ def dc_nlsolve_gmin(comps : matrix, ctrl : matrix, max_iter, tol, V : matrix, gm
             } else if (t == 17.0) {
                 var np_node = np
                 var nm_node = nm
-                var vsrc_idx = circuit_param(comps, ci, 3.0)
-                var Ictrl = circuit_param(comps, ci, 9.0)
+                var vsrc_idx = matrix_get(comps, ci, 3.0)
+                var Ictrl = matrix_get(comps, ci, 9.0)
                 var sw_info = ccsw_conductance(comps, ci, Ictrl)
                 var g = matrix_get(sw_info, 0, 0)
                 var dg = matrix_get(sw_info, 1, 0)
@@ -363,10 +363,10 @@ def dc_nlsolve_gmin(comps : matrix, ctrl : matrix, max_iter, tol, V : matrix, gm
                     var br = N + vsrc_bi
                     if (br < N + M) {
                         if (np_node > 0.0 && np_node <= N) {
-                            A[mna_ndx(np_node), br] += gm_sw
+                            matrix_set(A, mna_ndx(np_node), br, matrix_get(A, mna_ndx(np_node), br) + gm_sw)
                         }
                         if (nm_node > 0.0 && nm_node <= N) {
-                            A[mna_ndx(nm_node), br] -= gm_sw
+                            matrix_set(A, mna_ndx(nm_node), br, matrix_get(A, mna_ndx(nm_node), br) - gm_sw)
                         }
                     }
                 }
@@ -377,7 +377,7 @@ def dc_nlsolve_gmin(comps : matrix, ctrl : matrix, max_iter, tol, V : matrix, gm
         if (gmin > 0.0) {
             var gi = 0.0
             while (gi < N) {
-                A[gi, gi] += gmin
+                matrix_set(A, gi, gi, matrix_get(A, gi, gi) + gmin)
                 gi = gi + 1.0
             }
         }
@@ -387,13 +387,13 @@ def dc_nlsolve_gmin(comps : matrix, ctrl : matrix, max_iter, tol, V : matrix, gm
         # Update CCSW branch currents
         var m = 0.0
         while (m < nc) {
-            var mt = circuit_component_type(comps, m)
+            var mt = matrix_get(comps, m, 0.0)
             if (mt == 17.0) {
-                var vsrc_idx = circuit_param(comps, m, 3.0)
+                var vsrc_idx = matrix_get(comps, m, 3.0)
                 if (vsrc_idx >= 0.0) {
                     var vsrc_bi = mna_branch_index(comps, ctrl, vsrc_idx)
                     if (vsrc_bi >= 0.0 && vsrc_bi < M) {
-                        circuit_set_param(comps, m, 9.0, matrix_get(x, N + vsrc_bi, 0))
+                        matrix_set(comps, m, 9.0, matrix_get(x, N + vsrc_bi, 0))
                     }
                 }
             }
@@ -418,12 +418,13 @@ def dc_nlsolve_gmin(comps : matrix, ctrl : matrix, max_iter, tol, V : matrix, gm
     V
 }
 
-def dc_solve(comps : matrix, ctrl : matrix, max_iter, tol) {
-    var nc = circuit_count(ctrl)
+
+def dc_solve(comps: matrix, ctrl: matrix, max_iter: Double, tol: Double) -> matrix {
+    var nc = matrix_get(ctrl, 1.0, 0.0)
     var has_nonlinear = 0.0
     var ci = 0.0
     while (ci < nc) {
-        var t = circuit_component_type(comps, ci)
+        var t = matrix_get(comps, ci, 0.0)
         if (t == 9.0 || t == 10.0 || t == 11.0 || t == 12.0 || t == 13.0 || t == 14.0 || t == 15.0 || t == 16.0 || t == 17.0) {
             has_nonlinear = 1.0
         }
@@ -440,15 +441,15 @@ def dc_solve(comps : matrix, ctrl : matrix, max_iter, tol) {
         }
         V
     } else {
-        var N = circuit_num_nodes(ctrl)
+        var N = matrix_get(ctrl, 0.0, 0.0)
         var V = matrix_zeros(N + 1.0, 1)
         var ci = 0.0
         var ns = 0.0
         var src_rows = matrix_zeros(nc, 2)
         while (ci < nc) {
-            var t = circuit_component_type(comps, ci)
+            var t = matrix_get(comps, ci, 0.0)
             if (t == 3.0 || t == 4.0 || t == 5.0 || t == 6.0) {
-                var orig = circuit_param(comps, ci, 4.0)
+                var orig = matrix_get(comps, ci, 4.0)
                 matrix_set(src_rows, ns, 0, ci)
                 matrix_set(src_rows, ns, 1, orig)
                 ns = ns + 1.0
@@ -478,7 +479,7 @@ def dc_solve(comps : matrix, ctrl : matrix, max_iter, tol) {
             while (si < nsrc) {
                 var s_idx = matrix_get(src_rows, si, 0)
                 var orig = matrix_get(src_rows, si, 1)
-                circuit_set_param(comps, s_idx, 4.0, orig * frac)
+                matrix_set(comps, s_idx, 4.0, orig * frac)
                 si = si + 1.0
             }
             var gi = 0.0
@@ -495,10 +496,10 @@ def dc_solve(comps : matrix, ctrl : matrix, max_iter, tol) {
     }
 }
 
-def dc_diode_vd(comps : matrix, ctrl : matrix, comp_idx, V : matrix) {
-    var np = circuit_node_p(comps, comp_idx)
-    var nm = circuit_node_n(comps, comp_idx)
-    var N = circuit_num_nodes(ctrl)
+def dc_diode_vd(comps: matrix, ctrl: matrix, comp_idx: Double, V: matrix) -> Double {
+    var np = matrix_get(comps, comp_idx, 1.0)
+    var nm = matrix_get(comps, comp_idx, 2.0)
+    var N = matrix_get(ctrl, 0.0, 0.0)
     var vnp = 0.0
     var vnm = 0.0
     if (np > 0.0 && np <= N) { vnp = matrix_get(V, np, 0) }
@@ -506,20 +507,20 @@ def dc_diode_vd(comps : matrix, ctrl : matrix, comp_idx, V : matrix) {
     vnp - vnm
 }
 
-def dc_diode_id(comps : matrix, ctrl : matrix, comp_idx, V : matrix) {
+def dc_diode_id(comps: matrix, ctrl: matrix, comp_idx: Double, V: matrix) -> Double {
     var vd = dc_diode_vd(comps, ctrl, comp_idx, V)
-    var isat = circuit_param(comps, comp_idx, 4.0)
-    var nf = circuit_param(comps, comp_idx, 5.0)
-    var vt = circuit_param(comps, comp_idx, 7.0)
+    var isat = matrix_get(comps, comp_idx, 4.0)
+    var nf = matrix_get(comps, comp_idx, 5.0)
+    var vt = matrix_get(comps, comp_idx, 7.0)
     var djr = diode_junction(vd, isat, nf, vt)
     matrix_get(djr, 0, 0)
 }
 
-def dc_bjt_info(comps : matrix, ctrl : matrix, comp_idx, V : matrix) {
-    var nc = circuit_node_p(comps, comp_idx)
-    var nb = circuit_node_n(comps, comp_idx)
-    var ne = circuit_node_3(comps, comp_idx)
-    var N = circuit_num_nodes(ctrl)
+def dc_bjt_info(comps: matrix, ctrl: matrix, comp_idx: Double, V: matrix) -> matrix {
+    var nc = matrix_get(comps, comp_idx, 1.0)
+    var nb = matrix_get(comps, comp_idx, 2.0)
+    var ne = matrix_get(comps, comp_idx, 3.0)
+    var N = matrix_get(ctrl, 0.0, 0.0)
     var vc = 0.0; var vb = 0.0; var ve = 0.0
     if (nc > 0.0 && nc <= N) { vc = matrix_get(V, nc, 0) }
     if (nb > 0.0 && nb <= N) { vb = matrix_get(V, nb, 0) }
@@ -527,11 +528,11 @@ def dc_bjt_info(comps : matrix, ctrl : matrix, comp_idx, V : matrix) {
     var vbe = vb - ve
     var vbc = vb - vc
     var vce = vc - ve
-    var bf = circuit_param(comps, comp_idx, 4.0)
-    var isat = circuit_param(comps, comp_idx, 5.0)
-    var vaf = circuit_param(comps, comp_idx, 6.0)
-    var vt = circuit_param(comps, comp_idx, 7.0)
-    var br = circuit_param(comps, comp_idx, 8.0)
+    var bf = matrix_get(comps, comp_idx, 4.0)
+    var isat = matrix_get(comps, comp_idx, 5.0)
+    var vaf = matrix_get(comps, comp_idx, 6.0)
+    var vt = matrix_get(comps, comp_idx, 7.0)
+    var br = matrix_get(comps, comp_idx, 8.0)
     if (br <= 0.0) { br = 2.0 }
     var be_jn = diode_junction(vbe, isat, 1.0, vt)
     var icc = matrix_get(be_jn, 0, 0)
@@ -555,11 +556,11 @@ def dc_bjt_info(comps : matrix, ctrl : matrix, comp_idx, V : matrix) {
     result
 }
 
-def dc_mos_info(comps : matrix, ctrl : matrix, comp_idx, V : matrix) {
-    var nd = circuit_node_p(comps, comp_idx)
-    var ng = circuit_node_n(comps, comp_idx)
-    var ns = circuit_node_3(comps, comp_idx)
-    var N = circuit_num_nodes(ctrl)
+def dc_mos_info(comps: matrix, ctrl: matrix, comp_idx: Double, V: matrix) -> matrix {
+    var nd = matrix_get(comps, comp_idx, 1.0)
+    var ng = matrix_get(comps, comp_idx, 2.0)
+    var ns = matrix_get(comps, comp_idx, 3.0)
+    var N = matrix_get(ctrl, 0.0, 0.0)
     var vd = 0.0
     var vg = 0.0
     var vs = 0.0
@@ -568,10 +569,10 @@ def dc_mos_info(comps : matrix, ctrl : matrix, comp_idx, V : matrix) {
     if (ns > 0.0 && ns <= N) { vs = matrix_get(V, ns, 0) }
     var vgs = vg - vs
     var vds = vd - vs
-    var t = circuit_component_type(comps, comp_idx)
-    var kp = circuit_param(comps, comp_idx, 5.0)
-    var vto = circuit_param(comps, comp_idx, 6.0)
-    var lambda = circuit_param(comps, comp_idx, 7.0)
+    var t = matrix_get(comps, comp_idx, 0.0)
+    var kp = matrix_get(comps, comp_idx, 5.0)
+    var vto = matrix_get(comps, comp_idx, 6.0)
+    var lambda = matrix_get(comps, comp_idx, 7.0)
     if (t == 13.0) { vgs = -vgs; vds = -vds; vto = -vto }
     var vov = vgs - vto
     var id = 0.0
@@ -596,21 +597,21 @@ def dc_mos_info(comps : matrix, ctrl : matrix, comp_idx, V : matrix) {
     result
 }
 
-def dc_jfet_info(comps : matrix, ctrl : matrix, comp_idx, V : matrix) {
-    var nd = circuit_node_p(comps, comp_idx)
-    var ng = circuit_node_n(comps, comp_idx)
-    var ns = circuit_node_3(comps, comp_idx)
-    var N = circuit_num_nodes(ctrl)
+def dc_jfet_info(comps: matrix, ctrl: matrix, comp_idx: Double, V: matrix) -> matrix {
+    var nd = matrix_get(comps, comp_idx, 1.0)
+    var ng = matrix_get(comps, comp_idx, 2.0)
+    var ns = matrix_get(comps, comp_idx, 3.0)
+    var N = matrix_get(ctrl, 0.0, 0.0)
     var vd = 0.0; var vg = 0.0; var vs = 0.0
     if (nd > 0.0 && nd <= N) { vd = matrix_get(V, nd, 0) }
     if (ng > 0.0 && ng <= N) { vg = matrix_get(V, ng, 0) }
     if (ns > 0.0 && ns <= N) { vs = matrix_get(V, ns, 0) }
     var vgs = vg - vs
     var vds = vd - vs
-    var t = circuit_component_type(comps, comp_idx)
-    var beta_val = circuit_param(comps, comp_idx, 5.0)
-    var vto_val = circuit_param(comps, comp_idx, 6.0)
-    var lambda_val = circuit_param(comps, comp_idx, 7.0)
+    var t = matrix_get(comps, comp_idx, 0.0)
+    var beta_val = matrix_get(comps, comp_idx, 5.0)
+    var vto_val = matrix_get(comps, comp_idx, 6.0)
+    var lambda_val = matrix_get(comps, comp_idx, 7.0)
     if (t == 15.0) { vgs = -vgs; vds = -vds; vto_val = -vto_val }
     var vov = vgs - vto_val
     var id = 0.0; var region = 0.0
@@ -637,11 +638,11 @@ def dc_jfet_info(comps : matrix, ctrl : matrix, comp_idx, V : matrix) {
 # --- switch helpers ---
 # Returns matrix [g, dg_dctrl, gmin] for a voltage-controlled switch
 # g = conductance, dg_dctrl = dG/dVcontrol
-def vcsw_conductance(comps : matrix, ci, Vctrl) {
-    var ron = circuit_param(comps, ci, 5.0)
-    var roff = circuit_param(comps, ci, 6.0)
-    var von = circuit_param(comps, ci, 7.0)
-    var voff = circuit_param(comps, ci, 8.0)
+def vcsw_conductance(comps: matrix, ci: Double, Vctrl: Double) -> matrix {
+    var ron = matrix_get(comps, ci, 5.0)
+    var roff = matrix_get(comps, ci, 6.0)
+    var von = matrix_get(comps, ci, 7.0)
+    var voff = matrix_get(comps, ci, 8.0)
     if (ron <= 0.0) { ron = 1.0 }
     if (roff <= 0.0) { roff = 1e9 }
     var gon = 1.0 / ron
@@ -664,11 +665,11 @@ def vcsw_conductance(comps : matrix, ci, Vctrl) {
 
 # Returns matrix [g, dg_dctrl] for a current-controlled switch
 # dg_dctrl = dG/dIcontrol
-def ccsw_conductance(comps : matrix, ci, Ictrl) {
-    var ron = circuit_param(comps, ci, 5.0)
-    var roff = circuit_param(comps, ci, 6.0)
-    var ion = circuit_param(comps, ci, 7.0)
-    var ioff = circuit_param(comps, ci, 8.0)
+def ccsw_conductance(comps: matrix, ci: Double, Ictrl: Double) -> matrix {
+    var ron = matrix_get(comps, ci, 5.0)
+    var roff = matrix_get(comps, ci, 6.0)
+    var ion = matrix_get(comps, ci, 7.0)
+    var ioff = matrix_get(comps, ci, 8.0)
     if (ron <= 0.0) { ron = 1.0 }
     if (roff <= 0.0) { roff = 1e9 }
     var gon = 1.0 / ron
@@ -689,15 +690,15 @@ def ccsw_conductance(comps : matrix, ci, Ictrl) {
     result
 }
 
-def dc_sweep(comps : matrix, ctrl : matrix, src_idx, start_val, stop_val, nsteps, max_iter, tol) {
-    var N = circuit_num_nodes(ctrl)
+def dc_sweep(comps: matrix, ctrl: matrix, src_idx: Double, start_val: Double, stop_val: Double, nsteps: Double, max_iter: Double, tol: Double) -> matrix {
+    var N = matrix_get(ctrl, 0.0, 0.0)
     var step = 0.0
     if (nsteps > 0.0) { step = (stop_val - start_val) / nsteps }
     var results = matrix_zeros(nsteps + 1.0, N + 2.0)
     var si = 0.0
     while (si <= nsteps) {
         var v_val = start_val + si * step
-        circuit_set_param(comps, src_idx, 4.0, v_val)
+        matrix_set(comps, src_idx, 4.0, v_val)
         var Vs = dc_solve(comps, ctrl, max_iter, tol)
         matrix_set(results, si, 0, v_val)
         var ri = 0.0
@@ -709,4 +710,3 @@ def dc_sweep(comps : matrix, ctrl : matrix, src_idx, start_val, stop_val, nsteps
     }
     results
 }
-
