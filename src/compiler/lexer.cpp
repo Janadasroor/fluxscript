@@ -383,6 +383,8 @@ int Lexer::gettok()
             return static_cast<int>(TokenType::tok_then);
         if (IdentifierStr == "else")
             return static_cast<int>(TokenType::tok_else);
+        if (IdentifierStr == "elif")
+            return static_cast<int>(TokenType::tok_elif);
         if (IdentifierStr == "for")
             return static_cast<int>(TokenType::tok_for);
         if (IdentifierStr == "in")

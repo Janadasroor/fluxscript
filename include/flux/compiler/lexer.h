@@ -40,6 +40,7 @@ enum class TokenType
     tok_if = -8,
     tok_then = -9,
     tok_else = -10,
+    tok_elif = -143,
     tok_for = -11,
     tok_in = -12,
     tok_do = -13,

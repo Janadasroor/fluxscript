@@ -706,12 +706,62 @@ std::unique_ptr<ExprAST> Parser::ParseIfStmt()
     // Then block — must be a {}-block, but may be empty
     auto ThenBody = ParseStmtBlock();
 
-    // Optional else block
+    // Optional else/elif block
     std::vector<std::unique_ptr<ExprAST>> ElseBody;
     if (CurTok == static_cast<int>(TokenType::tok_else)) {
         getNextToken(); // eat else
         if (CurTok == static_cast<int>(TokenType::tok_if)) {
             // else if  wrap as a nested IfStmt
+            auto ElseIf = ParseIfStmt();
+            if (!ElseIf)
+                return nullptr;
+            ElseBody.push_back(std::move(ElseIf));
+        } else {
+            ElseBody = ParseStmtBlock();
+        }
+    } else if (CurTok == static_cast<int>(TokenType::tok_elif)) {
+        getNextToken(); // eat elif
+        auto ElifStmt = ParseElifStmt();
+        if (!ElifStmt)
+            return nullptr;
+        ElseBody.push_back(std::move(ElifStmt));
+    }
+
+    return std::make_unique<IfStmtAST>(std::move(Cond), std::move(ThenBody), std::move(ElseBody));
+}
+
+std::unique_ptr<ExprAST> Parser::ParseElifStmt()
+{
+    // Expect parentheses: elif (cond) { ... }
+    if (CurTok != '(') {
+        ReportError("expected '(' after elif");
+        return nullptr;
+    }
+    getNextToken(); // eat (
+
+    auto Cond = ParseExpression();
+    if (!Cond)
+        return nullptr;
+
+    if (CurTok != ')') {
+        ReportError("expected ')' after elif condition");
+        return nullptr;
+    }
+    getNextToken(); // eat )
+
+    auto ThenBody = ParseStmtBlock();
+
+    // Optional chained elif/else
+    std::vector<std::unique_ptr<ExprAST>> ElseBody;
+    if (CurTok == static_cast<int>(TokenType::tok_elif)) {
+        getNextToken(); // eat elif
+        auto ElifStmt = ParseElifStmt();
+        if (!ElifStmt)
+            return nullptr;
+        ElseBody.push_back(std::move(ElifStmt));
+    } else if (CurTok == static_cast<int>(TokenType::tok_else)) {
+        getNextToken(); // eat else
+        if (CurTok == static_cast<int>(TokenType::tok_if)) {
             auto ElseIf = ParseIfStmt();
             if (!ElseIf)
                 return nullptr;
@@ -1170,7 +1220,14 @@ std::unique_ptr<ExprAST> Parser::ParsePrimary()
         break;
     case static_cast<int>(TokenType::tok_return):
         getNextToken(); // eat return
-        Res = std::make_unique<ReturnExprAST>(ParseExpression());
+        if (CurTok == static_cast<int>(TokenType::tok_rbrace) ||
+            CurTok == static_cast<int>(TokenType::tok_eof) ||
+            CurTok == static_cast<int>(TokenType::tok_else) ||
+            CurTok == static_cast<int>(TokenType::tok_elif)) {
+            Res = std::make_unique<ReturnExprAST>(nullptr);
+        } else {
+            Res = std::make_unique<ReturnExprAST>(ParseExpression());
+        }
         break;
 
     // Advanced control flow
@@ -1445,6 +1502,12 @@ std::unique_ptr<ExprAST> Parser::ParsePrimary()
     case static_cast<int>(TokenType::tok_end):
         // end is a block terminator for struct/enum/impl, not an expression.
         // Consume it to avoid infinite loops in the caller.
+        getNextToken();
+        return nullptr;
+    case static_cast<int>(TokenType::tok_elif):
+    case static_cast<int>(TokenType::tok_else):
+        // elif/else are if-chain continuation keywords, not standalone expressions.
+        // Silently consume to avoid spurious errors from pre-parse passes.
         getNextToken();
         return nullptr;
     default: {

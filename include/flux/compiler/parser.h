@@ -92,6 +92,7 @@ private:
 
     // Statement-based control flow parsers
     std::unique_ptr<ExprAST> ParseIfStmt();
+    std::unique_ptr<ExprAST> ParseElifStmt();
     std::unique_ptr<ExprAST> ParseForStmt();
     std::unique_ptr<ExprAST> ParseWhileStmt();
     std::vector<std::unique_ptr<ExprAST>> ParseStmtBlock();
