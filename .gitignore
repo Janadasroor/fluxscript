@@ -24,5 +24,6 @@ progress.md
 .vscode/
 .spiceinit
 .flux_cache/
+*.log
 llvm.sh
 debug/
