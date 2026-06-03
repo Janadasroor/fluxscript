@@ -94,7 +94,7 @@ TypedValue SwitchExprAST::codegen(CodegenContext& context)
     context.Builder.SetInsertPoint(SwitchEndBB);
     context.CurrentSwitchEnd = nullptr; // Clear break target
 
-    return TypedValue(llvm::ConstantFP::get(context.TheContext, llvm::APFloat(0.0)), TypeKind::Double);
+    return TypedValue(llvm::ConstantFP::get(llvm::Type::getDoubleTy(context.TheContext), 0.0), TypeKind::Double);
 }
 
 // ============ Break Statement Codegen ============
@@ -126,7 +126,7 @@ TypedValue BreakExprAST::codegen(CodegenContext& context)
     llvm::BasicBlock* AfterBreakBB = llvm::BasicBlock::Create(context.TheContext, "after_break", TheFunction);
     context.Builder.SetInsertPoint(AfterBreakBB);
 
-    return TypedValue(llvm::ConstantFP::get(context.TheContext, llvm::APFloat(0.0)), TypeKind::Double);
+    return TypedValue(llvm::ConstantFP::get(llvm::Type::getDoubleTy(context.TheContext), 0.0), TypeKind::Double);
 }
 
 // ============ Continue Statement Codegen ============
@@ -149,7 +149,7 @@ TypedValue ContinueExprAST::codegen(CodegenContext& context)
     llvm::BasicBlock* AfterContBB = llvm::BasicBlock::Create(context.TheContext, "after_continue", TheFunction);
     context.Builder.SetInsertPoint(AfterContBB);
 
-    return TypedValue(llvm::ConstantFP::get(context.TheContext, llvm::APFloat(0.0)), TypeKind::Double);
+    return TypedValue(llvm::ConstantFP::get(llvm::Type::getDoubleTy(context.TheContext), 0.0), TypeKind::Double);
 }
 
 // ============ Return Statement Codegen ============

@@ -478,7 +478,7 @@ static llvm::Value* boolCondition(llvm::Value* V, llvm::IRBuilder<>& Builder, ll
 {
     if (V->getType()->isIntegerTy(1))
         return V;
-    return Builder.CreateFCmpONE(V, llvm::ConstantFP::get(Ctx, llvm::APFloat(0.0)), "boolcond");
+    return Builder.CreateFCmpONE(V, llvm::ConstantFP::get(llvm::Type::getDoubleTy(Ctx), 0.0), "boolcond");
 }
 
 // Helper to promote double to complex <2 x double>
@@ -526,7 +526,7 @@ TypedValue NumberExprAST::codegen(CodegenContext& context)
             // Silently ignore unknown units for now, or report as warning
         }
     }
-    return TypedValue(llvm::ConstantFP::get(context.TheContext, llvm::APFloat(finalVal)),
+    return TypedValue(llvm::ConstantFP::get(llvm::Type::getDoubleTy(context.TheContext), finalVal),
                       FluxType(TypeKind::Double, dims));
 }
 
@@ -578,7 +578,7 @@ TypedValue ToFixedExprAST::codegen(CodegenContext& context)
 
         double scale = std::pow(2.0, Fract);
         llvm::Value* Scaled =
-            context.Builder.CreateFMul(FloatVal, llvm::ConstantFP::get(context.TheContext, llvm::APFloat(scale)));
+            context.Builder.CreateFMul(FloatVal, llvm::ConstantFP::get(llvm::Type::getDoubleTy(context.TheContext), scale));
         Res = context.Builder.CreateFPToSI(Scaled, IntTy);
     }
 
@@ -590,8 +590,8 @@ TypedValue ComplexExprAST::codegen(CodegenContext& context)
     llvm::Type* DoubleTy = llvm::Type::getDoubleTy(context.TheContext);
 
     // Create <2 x double> vector: <Real, Imag>
-    llvm::Constant* RealVal = llvm::ConstantFP::get(context.TheContext, llvm::APFloat(Real));
-    llvm::Constant* ImagVal = llvm::ConstantFP::get(context.TheContext, llvm::APFloat(Imag));
+    llvm::Constant* RealVal = llvm::ConstantFP::get(llvm::Type::getDoubleTy(context.TheContext), Real);
+    llvm::Constant* ImagVal = llvm::ConstantFP::get(llvm::Type::getDoubleTy(context.TheContext), Imag);
     llvm::Constant* Elts[] = {RealVal, ImagVal};
     llvm::Value* ComplexVal = llvm::ConstantVector::get(llvm::ArrayRef<llvm::Constant*>(Elts, 2));
 
@@ -732,7 +732,7 @@ TypedValue ImportExprAST::codegen(CodegenContext& context)
     } else {
         std::cerr << "Warning: import '" << ModuleName << "' inside function body but no import callback configured\n";
     }
-    return TypedValue(llvm::ConstantFP::get(context.TheContext, llvm::APFloat(1.0)), TypeKind::Double);
+    return TypedValue(llvm::ConstantFP::get(llvm::Type::getDoubleTy(context.TheContext), 1.0), TypeKind::Double);
 }
 
 TypedValue BlockExprAST::codegen(CodegenContext& context)
@@ -2032,7 +2032,7 @@ TypedValue BinaryExprAST::codegen(CodegenContext& context)
     auto boolCondition = [&](llvm::Value* V) -> llvm::Value* {
         if (V->getType()->isIntegerTy(1))
             return V;
-        return context.Builder.CreateFCmpONE(V, llvm::ConstantFP::get(context.TheContext, llvm::APFloat(0.0)),
+        return context.Builder.CreateFCmpONE(V, llvm::ConstantFP::get(llvm::Type::getDoubleTy(context.TheContext), 0.0),
                                              "boolcond");
     };
 
@@ -3113,7 +3113,7 @@ TypedValue CallExprAST::codegen(CodegenContext& context)
                     llvm::Value* FloatVal =
                         context.Builder.CreateSIToFP(Val, llvm::Type::getDoubleTy(context.TheContext));
                     Val = context.Builder.CreateFMul(FloatVal,
-                                                     llvm::ConstantFP::get(context.TheContext, llvm::APFloat(scale)));
+                                                     llvm::ConstantFP::get(llvm::Type::getDoubleTy(context.TheContext), scale));
                 } else if (Arg.Type.Kind == TypeKind::Int && !Arg.Val->getType()->isDoubleTy()) {
                     Val = context.Builder.CreateSIToFP(Val, llvm::Type::getDoubleTy(context.TheContext));
                 } else if (Arg.Type.Kind == TypeKind::Bool) {
@@ -3135,7 +3135,7 @@ TypedValue CallExprAST::codegen(CodegenContext& context)
                 context.Builder.CreateCall(PrintStr, {NewLineAsDouble});
             }
         }
-        return TypedValue(llvm::ConstantFP::get(context.TheContext, llvm::APFloat(0.0)), TypeKind::Double);
+        return TypedValue(llvm::ConstantFP::get(llvm::Type::getDoubleTy(context.TheContext), 0.0), TypeKind::Double);
     }
 
     if (Args.size() == 1) {
@@ -3641,7 +3641,7 @@ TypedValue CallExprAST::codegen(CodegenContext& context)
             double scale = std::pow(2.0, -ArgTVs[i].Type.Fract);
             llvm::Value* FloatVal = context.Builder.CreateSIToFP(ArgV, llvm::Type::getDoubleTy(context.TheContext));
             ArgV =
-                context.Builder.CreateFMul(FloatVal, llvm::ConstantFP::get(context.TheContext, llvm::APFloat(scale)));
+                context.Builder.CreateFMul(FloatVal, llvm::ConstantFP::get(llvm::Type::getDoubleTy(context.TheContext), scale));
         }
 
         llvm::Type* ExpectedTy = CalleeF->getArg(ArgsV.size())->getType();
@@ -3840,7 +3840,7 @@ TypedValue CallExprAST::codegen(CodegenContext& context)
 
     if (extRetIt != context.ExternFuncTypes.end() && extRetIt->second.first.Kind == TypeKind::Void) {
         context.Builder.CreateCall(CalleeF, ArgsV);
-        return TypedValue(llvm::ConstantFP::get(context.TheContext, llvm::APFloat(0.0)), TypeKind::Double);
+        return TypedValue(llvm::ConstantFP::get(llvm::Type::getDoubleTy(context.TheContext), 0.0), TypeKind::Double);
     }
     FluxType retType = typeFromLLVM(CalleeF->getReturnType());
     {
@@ -4022,7 +4022,7 @@ TypedValue ForExprAST::codegen(CodegenContext& context)
     TypedValue EndTV = End->codegen(context);
     TypedValue StepTV =
         Step ? Step->codegen(context)
-             : TypedValue(llvm::ConstantFP::get(context.TheContext, llvm::APFloat(1.0)), TypeKind::Double);
+             : TypedValue(llvm::ConstantFP::get(llvm::Type::getDoubleTy(context.TheContext), 1.0), TypeKind::Double);
     if (!StartTV.Val || !EndTV.Val || !StepTV.Val) {
         std::cerr << "[FLUX ERROR] For-loop range sub-expression failed to codegen" << std::endl;
         return TypedValue();
@@ -4202,7 +4202,7 @@ TypedValue LetExprAST::codegen(CodegenContext& context)
     if (InitV->getType() != VarTy) {
         if (VarTy->isIntegerTy(1) && InitV->getType()->isFloatingPointTy()) {
             // double → bool: compare against 0.0
-            InitV = context.Builder.CreateFCmpONE(InitV, llvm::ConstantFP::get(context.TheContext, llvm::APFloat(0.0)),
+            InitV = context.Builder.CreateFCmpONE(InitV, llvm::ConstantFP::get(llvm::Type::getDoubleTy(context.TheContext), 0.0),
                                                   "dbltobool");
         } else if (VarTy->isIntegerTy() && InitV->getType()->isIntegerTy(1)) {
             // bool → int: zero-extend i1 to i32
@@ -4378,7 +4378,7 @@ TypedValue LambdaExprAST::codegen(CodegenContext& context)
     if (OldBB)
         context.Builder.SetInsertPoint(OldBB);
     context.NamedValues = OldNamedValues;
-    return TypedValue(llvm::ConstantFP::get(context.TheContext, llvm::APFloat(0.0)), TypeKind::Double);
+    return TypedValue(llvm::ConstantFP::get(llvm::Type::getDoubleTy(context.TheContext), 0.0), TypeKind::Double);
 }
 
 TypedValue VectorExprAST::codegen(CodegenContext& context)
@@ -4624,7 +4624,7 @@ TypedValue IndexExprAST::codegen(CodegenContext& context)
         return TypedValue(context.Builder.CreateCall(GetElemF, {MatPtr, RowV, ColV}, "elem_val"), idxRetType);
     }
 
-    return TypedValue(llvm::ConstantFP::get(context.TheContext, llvm::APFloat(0.0)), TypeKind::Double);
+    return TypedValue(llvm::ConstantFP::get(llvm::Type::getDoubleTy(context.TheContext), 0.0), TypeKind::Double);
 }
 
 TypedValue RangeExprAST::codegen(CodegenContext& context)
@@ -4633,11 +4633,11 @@ TypedValue RangeExprAST::codegen(CodegenContext& context)
     TypedValue EndTV = End->codegen(context);
     TypedValue StepTV =
         Step ? Step->codegen(context)
-             : TypedValue(llvm::ConstantFP::get(context.TheContext, llvm::APFloat(1.0)), TypeKind::Double);
+             : TypedValue(llvm::ConstantFP::get(llvm::Type::getDoubleTy(context.TheContext), 1.0), TypeKind::Double);
 
     auto ensureFP = [&](TypedValue& tv) {
         if (!tv.Val) {
-            tv.Val = llvm::ConstantFP::get(context.TheContext, llvm::APFloat(0.0));
+            tv.Val = llvm::ConstantFP::get(llvm::Type::getDoubleTy(context.TheContext), 0.0);
         } else if (tv.Val->getType()->isIntegerTy()) {
             tv.Val = context.Builder.CreateSIToFP(tv.Val, llvm::Type::getDoubleTy(context.TheContext), "range_cast");
         } else if (tv.Val->getType()->isIntegerTy(1)) {
@@ -6059,7 +6059,7 @@ TypedValue UpdateFuncAST::codegen(CodegenContext& context)
 
     // Create return value alloca
     llvm::Value* RetValAlloca = context.Builder.CreateAlloca(RetTy, nullptr, "retval");
-    context.Builder.CreateStore(llvm::ConstantFP::get(context.TheContext, llvm::APFloat(0.0)), RetValAlloca);
+    context.Builder.CreateStore(llvm::ConstantFP::get(llvm::Type::getDoubleTy(context.TheContext), 0.0), RetValAlloca);
 
     // Update context for nested returns
     llvm::BasicBlock* SavedRetBB = context.CurrentReturnBB;
@@ -6088,7 +6088,7 @@ TypedValue UpdateFuncAST::codegen(CodegenContext& context)
             }
         }
         if (!RetVal)
-            RetVal = llvm::ConstantFP::get(context.TheContext, llvm::APFloat(0.0));
+            RetVal = llvm::ConstantFP::get(llvm::Type::getDoubleTy(context.TheContext), 0.0);
         context.Builder.CreateStore(RetVal, RetValAlloca);
         context.Builder.CreateBr(ReturnBB);
     }
@@ -6169,7 +6169,7 @@ TypedValue ESourceExprAST::codegen(CodegenContext& context)
                                                   context.Builder.CreateGlobalString(NegativeNode),
                                                   context.Builder.CreateGlobalString(ControlPosNode),
                                                   context.Builder.CreateGlobalString(ControlNegNode),
-                                                  llvm::ConstantFP::get(context.TheContext, llvm::APFloat(GainVal))}),
+                                                  llvm::ConstantFP::get(llvm::Type::getDoubleTy(context.TheContext), GainVal)}),
                       TypeKind::Double);
 }
 
@@ -6198,7 +6198,7 @@ TypedValue FSourceExprAST::codegen(CodegenContext& context)
                                                   context.Builder.CreateGlobalString(PositiveNode),
                                                   context.Builder.CreateGlobalString(NegativeNode),
                                                   context.Builder.CreateGlobalString(VoltageSourceName),
-                                                  llvm::ConstantFP::get(context.TheContext, llvm::APFloat(GainVal))}),
+                                                  llvm::ConstantFP::get(llvm::Type::getDoubleTy(context.TheContext), GainVal)}),
                       TypeKind::Double);
 }
 
@@ -6228,7 +6228,7 @@ TypedValue GSourceExprAST::codegen(CodegenContext& context)
             {context.Builder.CreateGlobalString(Name), context.Builder.CreateGlobalString(PositiveNode),
              context.Builder.CreateGlobalString(NegativeNode), context.Builder.CreateGlobalString(ControlPosNode),
              context.Builder.CreateGlobalString(ControlNegNode),
-             llvm::ConstantFP::get(context.TheContext, llvm::APFloat(TranscondVal))}),
+             llvm::ConstantFP::get(llvm::Type::getDoubleTy(context.TheContext), TranscondVal)}),
         TypeKind::Double);
 }
 
@@ -6257,7 +6257,7 @@ TypedValue HSourceExprAST::codegen(CodegenContext& context)
             RegisterHSource,
             {context.Builder.CreateGlobalString(Name), context.Builder.CreateGlobalString(PositiveNode),
              context.Builder.CreateGlobalString(NegativeNode), context.Builder.CreateGlobalString(VoltageSourceName),
-             llvm::ConstantFP::get(context.TheContext, llvm::APFloat(TransresVal))}),
+             llvm::ConstantFP::get(llvm::Type::getDoubleTy(context.TheContext), TransresVal)}),
         TypeKind::Double);
 }
 
@@ -6516,7 +6516,7 @@ TypedValue ParamExprAST::codegen(CodegenContext& context)
 
     return TypedValue(
         context.Builder.CreateCall(RegisterParam, {context.Builder.CreateGlobalString(Name),
-                                                   llvm::ConstantFP::get(context.TheContext, llvm::APFloat(Val))}),
+                                                   llvm::ConstantFP::get(llvm::Type::getDoubleTy(context.TheContext), Val)}),
         TypeKind::Double);
 }
 
@@ -6537,7 +6537,7 @@ TypedValue ICExprAST::codegen(CodegenContext& context)
 
     return TypedValue(
         context.Builder.CreateCall(RegisterIC, {context.Builder.CreateGlobalString(NodeName),
-                                                llvm::ConstantFP::get(context.TheContext, llvm::APFloat(Val))}),
+                                                llvm::ConstantFP::get(llvm::Type::getDoubleTy(context.TheContext), Val)}),
         TypeKind::Double);
 }
 
@@ -6812,7 +6812,7 @@ TypedValue IfStmtAST::codegen(CodegenContext& context)
         IsTrue = CondTV.Val;
     } else {
         // Otherwise compare to non-zero
-        IsTrue = context.Builder.CreateFCmpONE(CondTV.Val, llvm::ConstantFP::get(Ctx, llvm::APFloat(0.0)), "ifcond");
+        IsTrue = context.Builder.CreateFCmpONE(CondTV.Val, llvm::ConstantFP::get(llvm::Type::getDoubleTy(Ctx), 0.0), "ifcond");
     }
 
     // Create basic blocks
@@ -6853,7 +6853,7 @@ TypedValue IfStmtAST::codegen(CodegenContext& context)
     // Determine if we need to continue after the if
     if (thenTerminated && elseTerminated) {
         delete MergeBB;
-        return ThenTV.Val ? ThenTV : TypedValue(llvm::ConstantFP::get(Ctx, llvm::APFloat(0.0)), TypeKind::Double);
+        return ThenTV.Val ? ThenTV : TypedValue(llvm::ConstantFP::get(llvm::Type::getDoubleTy(Ctx), 0.0), TypeKind::Double);
     }
 
     // Continue at merge
@@ -6950,7 +6950,7 @@ TypedValue ForStmtAST::codegen(CodegenContext& context)
         IsTrue = CondTV.Val;
     } else {
         // Otherwise compare to non-zero
-        IsTrue = context.Builder.CreateFCmpONE(CondTV.Val, llvm::ConstantFP::get(Ctx, llvm::APFloat(0.0)), "forcond");
+        IsTrue = context.Builder.CreateFCmpONE(CondTV.Val, llvm::ConstantFP::get(llvm::Type::getDoubleTy(Ctx), 0.0), "forcond");
     }
     context.Builder.CreateCondBr(IsTrue, BodyBB, AfterBB);
 
@@ -6977,7 +6977,7 @@ TypedValue ForStmtAST::codegen(CodegenContext& context)
     context.CurrentLoopEnd = SavedLoopEnd;
     context.CurrentLoopCont = SavedLoopCont;
 
-    return TypedValue(llvm::ConstantFP::get(Ctx, llvm::APFloat(0.0)), TypeKind::Double);
+    return TypedValue(llvm::ConstantFP::get(llvm::Type::getDoubleTy(Ctx), 0.0), TypeKind::Double);
 }
 
 TypedValue WhileStmtAST::codegen(CodegenContext& context)
@@ -7010,7 +7010,7 @@ TypedValue WhileStmtAST::codegen(CodegenContext& context)
         IsTrue = CondTV.Val;
     } else {
         // Otherwise compare to non-zero
-        IsTrue = context.Builder.CreateFCmpONE(CondTV.Val, llvm::ConstantFP::get(Ctx, llvm::APFloat(0.0)), "whilecond");
+        IsTrue = context.Builder.CreateFCmpONE(CondTV.Val, llvm::ConstantFP::get(llvm::Type::getDoubleTy(Ctx), 0.0), "whilecond");
     }
     context.Builder.CreateCondBr(IsTrue, BodyBB, AfterBB);
 
@@ -7030,7 +7030,7 @@ TypedValue WhileStmtAST::codegen(CodegenContext& context)
     context.CurrentLoopEnd = SavedLoopEnd;
     context.CurrentLoopCont = SavedLoopCont;
 
-    return TypedValue(llvm::ConstantFP::get(Ctx, llvm::APFloat(0.0)), TypeKind::Double);
+    return TypedValue(llvm::ConstantFP::get(llvm::Type::getDoubleTy(Ctx), 0.0), TypeKind::Double);
 }
 
 TypedValue TrainExprAST::codegen(CodegenContext& context)
@@ -7143,7 +7143,7 @@ TypedValue GoalExprAST::codegen(CodegenContext& context)
 
     context.Builder.CreateCall(Fn, {ExprTV.Val, TargetTV.Val});
 
-    return TypedValue(llvm::ConstantFP::get(Ctx, llvm::APFloat(0.0)), TypeKind::Double);
+    return TypedValue(llvm::ConstantFP::get(llvm::Type::getDoubleTy(Ctx), 0.0), TypeKind::Double);
 }
 
 TypedValue ThermalBlockAST::codegen(CodegenContext& context)
@@ -7287,7 +7287,7 @@ TypedValue HotSwapExprAST::codegen(CodegenContext& context)
 
     context.Builder.CreateCall(Fn, {NamePtr, ModelTV.Val});
 
-    return TypedValue(llvm::ConstantFP::get(Ctx, llvm::APFloat(1.0)), TypeKind::Double);
+    return TypedValue(llvm::ConstantFP::get(llvm::Type::getDoubleTy(Ctx), 1.0), TypeKind::Double);
 }
 
 TypedValue SpawnExprAST::codegen(CodegenContext& context)

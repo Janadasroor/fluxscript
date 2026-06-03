@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 80">
+  <rect width="200" height="80" rx="8" fill="#1a1a2e"/>
+  <text x="20" y="50" font-family="monospace" font-size="32" font-weight="bold" fill="#26a">FLUX</text>
+  <text x="110" y="50" font-family="monospace" font-size="32" font-weight="bold" fill="#2a6">SCRIPT</text>
+  <circle cx="178" cy="24" r="10" fill="#f0c040" opacity="0.8"/>
+  <polygon points="178,18 182,28 174,22 182,22 174,28" fill="#1a1a2e" opacity="0.6"/>
+</svg>

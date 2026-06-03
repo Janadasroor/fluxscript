@@ -152,7 +152,7 @@ TypedValue FSMExprAST::codegen(CodegenContext& context)
         auto SavedNames = context.NamedValues;
         // The condition would be evaluated in a runtime context
         // For now, emit a stub that returns 1.0 (true)
-        CondBuilder.CreateRet(llvm::ConstantFP::get(context.TheContext, llvm::APFloat(1.0)));
+        CondBuilder.CreateRet(llvm::ConstantFP::get(llvm::Type::getDoubleTy(context.TheContext), 1.0));
         context.NamedValues = SavedNames;
 
         // Create output function
@@ -166,7 +166,7 @@ TypedValue FSMExprAST::codegen(CodegenContext& context)
         // Evaluate output expression
         auto SavedNames2 = context.NamedValues;
         // For now, emit a stub that returns 0.0
-        OutBuilder.CreateRet(llvm::ConstantFP::get(context.TheContext, llvm::APFloat(0.0)));
+        OutBuilder.CreateRet(llvm::ConstantFP::get(llvm::Type::getDoubleTy(context.TheContext), 0.0));
         context.NamedValues = SavedNames2;
 
         llvm::Value* CurStateVal = llvm::ConstantInt::get(Int32Ty, trans.CurrentState, true);
@@ -216,7 +216,7 @@ TypedValue TriggeredExprAST::codegen(CodegenContext& context)
     }
 
     llvm::Value* IsEvent = context.Builder.CreateFCmpONE(
-        EventLLVM, llvm::ConstantFP::get(context.TheContext, llvm::APFloat(0.0)), "is_event");
+        EventLLVM, llvm::ConstantFP::get(llvm::Type::getDoubleTy(context.TheContext), 0.0), "is_event");
 
     // Create conditional block for body
     llvm::Function* TheFunction = context.Builder.GetInsertBlock()->getParent();
@@ -230,7 +230,7 @@ TypedValue TriggeredExprAST::codegen(CodegenContext& context)
     auto BodyVal = Body->codegen(context);
     llvm::Value* ThenResult = BodyVal.Val;
     if (!ThenResult)
-        ThenResult = llvm::ConstantFP::get(context.TheContext, llvm::APFloat(0.0));
+        ThenResult = llvm::ConstantFP::get(llvm::Type::getDoubleTy(context.TheContext), 0.0);
     if (BodyVal.Type.Kind == TypeKind::Int) {
         ThenResult = context.Builder.CreateSIToFP(ThenResult, DoubleTy, "inttodouble");
     }
@@ -243,7 +243,7 @@ TypedValue TriggeredExprAST::codegen(CodegenContext& context)
 
     llvm::PHINode* PHI = context.Builder.CreatePHI(DoubleTy, 2, "triggered_result");
     PHI->addIncoming(ThenResult, ThenEndBB);
-    PHI->addIncoming(llvm::ConstantFP::get(context.TheContext, llvm::APFloat(0.0)), ThenBB->getNextNode());
+    PHI->addIncoming(llvm::ConstantFP::get(llvm::Type::getDoubleTy(context.TheContext), 0.0), ThenBB->getNextNode());
 
     return TypedValue(PHI, TypeKind::Double);
 }
@@ -274,7 +274,7 @@ TypedValue NoiseExprAST::codegen(CodegenContext& context)
         AmpLLVM = context.Builder.CreateSIToFP(AmpLLVM, DoubleTy, "inttodouble");
     }
 
-    llvm::Value* FreqLLVM = llvm::ConstantFP::get(context.TheContext, llvm::APFloat(1.0)); // Default 1 Hz
+    llvm::Value* FreqLLVM = llvm::ConstantFP::get(llvm::Type::getDoubleTy(context.TheContext), 1.0); // Default 1 Hz
     if (Frequency) {
         auto FreqVal = Frequency->codegen(context);
         FreqLLVM = FreqVal.Val;
@@ -356,7 +356,7 @@ TypedValue ThermalNoiseExprAST::codegen(CodegenContext& context)
         ResLLVM = context.Builder.CreateSIToFP(ResLLVM, DoubleTy, "inttodouble");
     }
 
-    llvm::Value* TempLLVM = llvm::ConstantFP::get(context.TheContext, llvm::APFloat(300.15)); // Default 300.15K
+    llvm::Value* TempLLVM = llvm::ConstantFP::get(llvm::Type::getDoubleTy(context.TheContext), 300.15); // Default 300.15K
     if (Temperature) {
         auto TVal = Temperature->codegen(context);
         TempLLVM = TVal.Val;
@@ -430,7 +430,7 @@ TypedValue PiecewiseExprAST::codegen(CodegenContext& context)
             llvm::Function::Create(FT, llvm::Function::ExternalLinkage, "flux_piecewise_eval", context.TheModule);
     }
 
-    llvm::Value* QueryLLVM = llvm::ConstantFP::get(context.TheContext, llvm::APFloat(0.0));
+    llvm::Value* QueryLLVM = llvm::ConstantFP::get(llvm::Type::getDoubleTy(context.TheContext), 0.0);
     if (QueryX) {
         auto QVal = QueryX->codegen(context);
         QueryLLVM = QVal.Val;
@@ -514,7 +514,7 @@ TypedValue TableExprAST::codegen(CodegenContext& context)
             llvm::Function::Create(FT, llvm::Function::ExternalLinkage, "flux_table_lookup", context.TheModule);
     }
 
-    llvm::Value* QueryLLVM = llvm::ConstantFP::get(context.TheContext, llvm::APFloat(0.0));
+    llvm::Value* QueryLLVM = llvm::ConstantFP::get(llvm::Type::getDoubleTy(context.TheContext), 0.0);
     if (QueryKey) {
         auto QVal = QueryKey->codegen(context);
         QueryLLVM = QVal.Val;
@@ -599,7 +599,7 @@ TypedValue UnitExprAST::codegen(CodegenContext& context)
             dims.luminous = scaledUnit.dimensions.luminous;
 
             if (scaledUnit.scale != 1.0) {
-                llvm::Value* Scale = llvm::ConstantFP::get(context.TheContext, llvm::APFloat(scaledUnit.scale));
+                llvm::Value* Scale = llvm::ConstantFP::get(llvm::Type::getDoubleTy(context.TheContext), scaledUnit.scale);
                 V = context.Builder.CreateFMul(V, Scale, "unit_scaled");
             }
         } catch (const std::exception& e) {
@@ -663,7 +663,7 @@ TypedValue ConvertExprAST::codegen(CodegenContext& context)
             dims.luminous = toUnit.dimensions.luminous;
 
             if (convFactor != 1.0) {
-                llvm::Value* CF = llvm::ConstantFP::get(context.TheContext, llvm::APFloat(convFactor));
+                llvm::Value* CF = llvm::ConstantFP::get(llvm::Type::getDoubleTy(context.TheContext), convFactor);
                 V = context.Builder.CreateFMul(V, CF, "converted");
             }
         } catch (const std::exception& e) {
@@ -697,7 +697,7 @@ TypedValue HasUnitExprAST::codegen(CodegenContext& context)
         }
     }
 
-    return TypedValue(llvm::ConstantFP::get(context.TheContext, llvm::APFloat(match ? 1.0 : 0.0)), TypeKind::Double);
+    return TypedValue(llvm::ConstantFP::get(llvm::Type::getDoubleTy(context.TheContext), match ? 1.0 : 0.0), TypeKind::Double);
 }
 
 } // namespace Flux

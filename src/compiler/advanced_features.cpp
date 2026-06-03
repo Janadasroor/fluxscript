@@ -423,7 +423,7 @@ TypedValue PlotDeclAST::codegen(CodegenContext& context)
         context.Builder.CreateCall(PrintF, {MsgPtr});
     }
 
-    return TypedValue(llvm::ConstantFP::get(context.TheContext, llvm::APFloat(0.0)), TypeKind::Double);
+    return TypedValue(llvm::ConstantFP::get(llvm::Type::getDoubleTy(context.TheContext), 0.0), TypeKind::Double);
 }
 
 TypedValue BenchmarkDeclAST::codegen(CodegenContext& context)
@@ -454,7 +454,7 @@ TypedValue BenchmarkDeclAST::codegen(CodegenContext& context)
         context.Builder.CreateCall(PrintF, {MsgPtr});
     }
 
-    return TypedValue(llvm::ConstantFP::get(context.TheContext, llvm::APFloat(0.0)), TypeKind::Double);
+    return TypedValue(llvm::ConstantFP::get(llvm::Type::getDoubleTy(context.TheContext), 0.0), TypeKind::Double);
 }
 
 TypedValue OptimizeDeclAST::codegen(CodegenContext& context)
@@ -503,7 +503,7 @@ TypedValue OptimizeDeclAST::codegen(CodegenContext& context)
         context.Builder.CreateCall(PrintF, {MsgPtr});
     }
 
-    return TypedValue(llvm::ConstantFP::get(context.TheContext, llvm::APFloat(0.0)), TypeKind::Double);
+    return TypedValue(llvm::ConstantFP::get(llvm::Type::getDoubleTy(context.TheContext), 0.0), TypeKind::Double);
 }
 
 TypedValue SweepDeclAST::codegen(CodegenContext& context)
@@ -545,7 +545,7 @@ TypedValue SweepDeclAST::codegen(CodegenContext& context)
         context.Builder.CreateCall(PrintF, {MsgPtr});
     }
 
-    return TypedValue(llvm::ConstantFP::get(context.TheContext, llvm::APFloat(0.0)), TypeKind::Double);
+    return TypedValue(llvm::ConstantFP::get(llvm::Type::getDoubleTy(context.TheContext), 0.0), TypeKind::Double);
 }
 
 TypedValue ReportDeclAST::codegen(CodegenContext& context)
@@ -581,7 +581,7 @@ TypedValue ReportDeclAST::codegen(CodegenContext& context)
         context.Builder.CreateCall(PrintF, {MsgPtr});
     }
 
-    return TypedValue(llvm::ConstantFP::get(context.TheContext, llvm::APFloat(0.0)), TypeKind::Double);
+    return TypedValue(llvm::ConstantFP::get(llvm::Type::getDoubleTy(context.TheContext), 0.0), TypeKind::Double);
 }
 
 void SweepDeclAST::addControl(const std::string& name, const std::string& type,

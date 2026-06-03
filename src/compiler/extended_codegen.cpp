@@ -169,7 +169,7 @@ TypedValue TryPropagateExprAST::codegen(CodegenContext& context)
     llvm::Type* Int32Ty = llvm::Type::getInt32Ty(Ctx);
 
     if (context.Builder.GetInsertBlock()->getTerminator())
-        return TypedValue(llvm::ConstantFP::get(Ctx, llvm::APFloat(0.0)), TypeKind::Double);
+        return TypedValue(llvm::ConstantFP::get(llvm::Type::getDoubleTy(Ctx), 0.0), TypeKind::Double);
 
     // Determine the struct shape of the inner value.
     llvm::Type* InnerTy = InnerTV.Val->getType();
@@ -241,7 +241,7 @@ TypedValue ThrowExprAST::codegen(CodegenContext& context)
 
     // If block already terminated, stop.
     if (context.Builder.GetInsertBlock()->getTerminator()) {
-        return TypedValue(llvm::ConstantFP::get(Ctx, llvm::APFloat(0.0)), TypeKind::Double);
+        return TypedValue(llvm::ConstantFP::get(llvm::Type::getDoubleTy(Ctx), 0.0), TypeKind::Double);
     }
 
     llvm::Module* TheModule = context.TheModule;
@@ -258,7 +258,7 @@ TypedValue ThrowExprAST::codegen(CodegenContext& context)
     context.Builder.CreateCall(ThrowFunc, {ExTV.Val, MsgPtr});
     context.Builder.CreateUnreachable();
 
-    return TypedValue(llvm::ConstantFP::get(Ctx, llvm::APFloat(0.0)), TypeKind::Double);
+    return TypedValue(llvm::ConstantFP::get(llvm::Type::getDoubleTy(Ctx), 0.0), TypeKind::Double);
 }
 
 // ============ Assert Codegen ============
@@ -282,7 +282,7 @@ TypedValue AssertExprAST::codegen(CodegenContext& context)
         IsTrue = CondTV.Val;
     } else {
         IsTrue = context.Builder.CreateFCmpONE(
-            CondTV.Val, llvm::ConstantFP::get(context.TheContext, llvm::APFloat(0.0)), "assert_check");
+            CondTV.Val, llvm::ConstantFP::get(llvm::Type::getDoubleTy(context.TheContext), 0.0), "assert_check");
     }
 
     context.Builder.CreateCondBr(IsTrue, ContinueBB, FailBB);
@@ -299,7 +299,7 @@ TypedValue AssertExprAST::codegen(CodegenContext& context)
 
     // Continue block
     context.Builder.SetInsertPoint(ContinueBB);
-    return TypedValue(llvm::ConstantFP::get(context.TheContext, llvm::APFloat(1.0)), TypeKind::Double);
+    return TypedValue(llvm::ConstantFP::get(llvm::Type::getDoubleTy(context.TheContext), 1.0), TypeKind::Double);
 }
 
 // ============ Yield Codegen ============
@@ -367,7 +367,7 @@ TypedValue AwaitExprAST::codegen(CodegenContext& context)
     llvm::BasicBlock* ContBB = llvm::BasicBlock::Create(context.TheContext, "await_cont", TheFunction);
 
     // 4. Compare the result against 0.0 to check if it's ready
-    auto ZeroVal = llvm::ConstantFP::get(context.TheContext, llvm::APFloat(0.0));
+    auto ZeroVal = llvm::ConstantFP::get(llvm::Type::getDoubleTy(context.TheContext), 0.0);
     llvm::Value* IsReady = context.Builder.CreateFCmpONE(ValueTV.Val, ZeroVal, "await_ready");
 
     // 5. If ready, branch to continuation; otherwise suspend
@@ -390,7 +390,7 @@ TypedValue AwaitExprAST::codegen(CodegenContext& context)
                                 IndexPtr);
 
     // Return 0.0 (Pending) from the function
-    auto PendingVal = llvm::ConstantFP::get(context.TheContext, llvm::APFloat(0.0));
+    auto PendingVal = llvm::ConstantFP::get(llvm::Type::getDoubleTy(context.TheContext), 0.0);
     context.Builder.CreateRet(PendingVal);
 
     // 6. Create resume block and record it
@@ -443,7 +443,7 @@ TypedValue CornerExprAST::codegen(CodegenContext& context)
     size_t NumCases = Cases.size();
 
     if (NumCases == 0) {
-        return TypedValue(llvm::ConstantFP::get(Ctx, llvm::APFloat(0.0)), TypeKind::Double);
+        return TypedValue(llvm::ConstantFP::get(llvm::Type::getDoubleTy(Ctx), 0.0), TypeKind::Double);
     }
 
     // Create result array on stack: { double, double, ... } for each case
@@ -955,7 +955,7 @@ TypedValue ForeachExprAST::codegen(CodegenContext& context)
         context.Builder.SetInsertPoint(AfterBB);
         context.NamedValues[VarName] = OldVal;
 
-        return TypedValue(llvm::ConstantFP::get(Ctx, llvm::APFloat(0.0)), TypeKind::Double);
+        return TypedValue(llvm::ConstantFP::get(llvm::Type::getDoubleTy(Ctx), 0.0), TypeKind::Double);
     }
 
     // Default: Vector iteration (existing implementation)
@@ -1021,7 +1021,7 @@ TypedValue ForeachExprAST::codegen(CodegenContext& context)
     context.CurrentLoopEnd = nullptr;
     context.CurrentLoopCont = nullptr;
 
-    return BodyTV ? BodyTV : TypedValue(llvm::ConstantFP::get(Ctx, llvm::APFloat(0.0)), TypeKind::Double);
+    return BodyTV ? BodyTV : TypedValue(llvm::ConstantFP::get(llvm::Type::getDoubleTy(Ctx), 0.0), TypeKind::Double);
 }
 
 // ============ Repeat-Until Codegen ============
@@ -1065,7 +1065,7 @@ TypedValue RepeatUntilExprAST::codegen(CodegenContext& context)
         IsDone = CondTV.Val;
     } else {
         IsDone = context.Builder.CreateFCmpONE(
-            CondTV.Val, llvm::ConstantFP::get(context.TheContext, llvm::APFloat(0.0)), "until_check");
+            CondTV.Val, llvm::ConstantFP::get(llvm::Type::getDoubleTy(context.TheContext), 0.0), "until_check");
     }
 
     context.Builder.CreateCondBr(IsDone, AfterBB, BodyBB);
@@ -1122,7 +1122,7 @@ TypedValue DoWhileExprAST::codegen(CodegenContext& context)
         CondBool = CondTV.Val;
     } else {
         CondBool = context.Builder.CreateFCmpONE(
-            CondTV.Val, llvm::ConstantFP::get(Ctx, llvm::APFloat(0.0)), "dowhile_check");
+            CondTV.Val, llvm::ConstantFP::get(llvm::Type::getDoubleTy(Ctx), 0.0), "dowhile_check");
     }
     context.Builder.CreateCondBr(CondBool, BodyBB, AfterBB);
 

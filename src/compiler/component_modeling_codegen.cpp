@@ -52,7 +52,7 @@ TypedValue SubcktInstanceAST::codegen(CodegenContext& context)
         context.Builder.CreateCall(PrintF, {MsgPtr});
     }
 
-    return TypedValue(llvm::ConstantFP::get(context.TheContext, llvm::APFloat(1.0)), TypeKind::Double);
+    return TypedValue(llvm::ConstantFP::get(llvm::Type::getDoubleTy(context.TheContext), 1.0), TypeKind::Double);
 }
 
 // ============================================================================
@@ -73,7 +73,7 @@ TypedValue AnalogBlockAST::codegen(CodegenContext& context)
         std::cout << "  Tolerance: " << param << " = " << value << std::endl;
     }
 
-    return TypedValue(llvm::ConstantFP::get(context.TheContext, llvm::APFloat(1.0)), TypeKind::Double);
+    return TypedValue(llvm::ConstantFP::get(llvm::Type::getDoubleTy(context.TheContext), 1.0), TypeKind::Double);
 }
 
 TypedValue ContributorAST::codegen(CodegenContext& context)
@@ -98,7 +98,7 @@ TypedValue ContributorAST::codegen(CodegenContext& context)
 
     std::cout << "[CodeGen] Contributor: " << oss.str() << std::endl;
 
-    return TypedValue(llvm::ConstantFP::get(context.TheContext, llvm::APFloat(1.0)), TypeKind::Double);
+    return TypedValue(llvm::ConstantFP::get(llvm::Type::getDoubleTy(context.TheContext), 1.0), TypeKind::Double);
 }
 
 TypedValue VoltageAccessAST::codegen(CodegenContext& context)
@@ -168,7 +168,7 @@ TypedValue IdtExprAST::codegen(CodegenContext& context)
         auto icTV = IC->codegen(context);
         icVal = icTV.Val;
     } else {
-        icVal = llvm::ConstantFP::get(context.TheContext, llvm::APFloat(0.0));
+        icVal = llvm::ConstantFP::get(llvm::Type::getDoubleTy(context.TheContext), 0.0);
     }
 
     llvm::Function* IdtF = context.TheModule->getFunction("flux_idt");
@@ -206,7 +206,7 @@ TypedValue SymbolDeclAST::codegen(CodegenContext& context)
         std::cout << "  " << key << " = " << value << std::endl;
     }
 
-    return TypedValue(llvm::ConstantFP::get(context.TheContext, llvm::APFloat(1.0)), TypeKind::Double);
+    return TypedValue(llvm::ConstantFP::get(llvm::Type::getDoubleTy(context.TheContext), 1.0), TypeKind::Double);
 }
 
 TypedValue PinMapAST::codegen(CodegenContext& context)
@@ -224,7 +224,7 @@ TypedValue PinMapAST::codegen(CodegenContext& context)
         context.Builder.CreateCall(PrintF, {MsgPtr});
     }
 
-    return TypedValue(llvm::ConstantFP::get(context.TheContext, llvm::APFloat(1.0)), TypeKind::Double);
+    return TypedValue(llvm::ConstantFP::get(llvm::Type::getDoubleTy(context.TheContext), 1.0), TypeKind::Double);
 }
 
 } // namespace Flux

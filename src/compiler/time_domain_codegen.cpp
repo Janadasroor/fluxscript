@@ -81,7 +81,7 @@ TypedValue BSourceDeclAST::codegen(CodegenContext& context)
     // Register with time-domain engine
     std::cout << "[CodeGen] Registered B-source: " << Name << std::endl;
 
-    return TypedValue(llvm::ConstantFP::get(context.TheContext, llvm::APFloat(1.0)), TypeKind::Double);
+    return TypedValue(llvm::ConstantFP::get(llvm::Type::getDoubleTy(context.TheContext), 1.0), TypeKind::Double);
 }
 
 // ============ Time Variable Codegen ============
@@ -146,7 +146,7 @@ TypedValue InputsExprAST::codegen(CodegenContext& context)
     llvm::Value* InputsValue = context.NamedValues["inputs"];
     if (!InputsValue) {
         std::cerr << "[CodeGen] Error: 'inputs' variable not available in context" << std::endl;
-        return TypedValue(llvm::ConstantFP::get(context.TheContext, llvm::APFloat(0.0)), TypeKind::Double);
+        return TypedValue(llvm::ConstantFP::get(llvm::Type::getDoubleTy(context.TheContext), 0.0), TypeKind::Double);
     }
 
     llvm::Value* InputsPtr = InputsValue;
@@ -260,7 +260,7 @@ TypedValue InitialCondAST::codegen(CodegenContext& context)
 
     std::cout << "[CodeGen] Initial condition set: " << Node << " = value" << std::endl;
 
-    return TypedValue(llvm::ConstantFP::get(context.TheContext, llvm::APFloat(1.0)), TypeKind::Double);
+    return TypedValue(llvm::ConstantFP::get(llvm::Type::getDoubleTy(context.TheContext), 1.0), TypeKind::Double);
 }
 
 // ============ Transient Analysis Codegen ============
@@ -278,12 +278,12 @@ TypedValue TransientAnalysisAST::codegen(CodegenContext& context)
             llvm::Function::Create(funcType, llvm::Function::ExternalLinkage, "flux_set_timestep", context.TheModule);
     }
 
-    llvm::Value* timestepVal = llvm::ConstantFP::get(context.TheContext, llvm::APFloat(Timestep));
+    llvm::Value* timestepVal = llvm::ConstantFP::get(llvm::Type::getDoubleTy(context.TheContext), Timestep);
     context.Builder.CreateCall(setTimestepF, {timestepVal});
 
     std::cout << "[CodeGen] Timestep configured: " << Timestep << std::endl;
 
-    return TypedValue(llvm::ConstantFP::get(context.TheContext, llvm::APFloat(1.0)), TypeKind::Double);
+    return TypedValue(llvm::ConstantFP::get(llvm::Type::getDoubleTy(context.TheContext), 1.0), TypeKind::Double);
 }
 
 } // namespace Flux

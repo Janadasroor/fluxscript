@@ -147,7 +147,7 @@ TypedValue ParallelForExprAST::codegen(CodegenContext& context)
 
     context.Builder.CreateCall(ParForFunc, {StartIdx, EndIdx, ChunkSizeV, BodyFuncPtr, CapturePtr});
 
-    return TypedValue(llvm::ConstantFP::get(Ctx, llvm::APFloat(0.0)), TypeKind::Double);
+    return TypedValue(llvm::ConstantFP::get(llvm::Type::getDoubleTy(Ctx), 0.0), TypeKind::Double);
 }
 
 } // namespace Flux

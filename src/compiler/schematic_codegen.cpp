@@ -194,7 +194,7 @@ TypedValue SchematicExprAST::codegen(CodegenContext& context)
     std::string spiceFile = getName() + ".cir";
     KiCadSchematicGenerator::generateSPICE(*this, spiceFile);
 
-    return TypedValue(llvm::ConstantFP::get(context.TheContext, llvm::APFloat(success ? 1.0 : 0.0)), TypeKind::Double);
+    return TypedValue(llvm::ConstantFP::get(llvm::Type::getDoubleTy(context.TheContext), success ? 1.0 : 0.0), TypeKind::Double);
 }
 
 TypedValue ExportSchematicExprAST::codegen(CodegenContext& context)
@@ -204,7 +204,7 @@ TypedValue ExportSchematicExprAST::codegen(CodegenContext& context)
 
     // This would need access to the schematic AST
     // For now, just print the export command
-    return TypedValue(llvm::ConstantFP::get(context.TheContext, llvm::APFloat(1.0)), TypeKind::Double);
+    return TypedValue(llvm::ConstantFP::get(llvm::Type::getDoubleTy(context.TheContext), 1.0), TypeKind::Double);
 }
 
 } // namespace Flux
