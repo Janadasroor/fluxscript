@@ -12,6 +12,8 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QMessageBox>
+#include <QColorDialog>
+#include <QFontDialog>
 #include <QMetaProperty>
 #include <QProgressBar>
 #include <QPushButton>
@@ -20,7 +22,7 @@
 #include <QToolButton>
 #include <QCommandLinkButton>
 #include <QChartView>
-#include <QSplineSeries>
+#include <QtCharts/QSplineSeries>
 #include <QScatterSeries>
 #include <QAreaSeries>
 #include <QLineSeries>
@@ -616,6 +618,42 @@ static double flux_qt_input_dialog(double title_dbl, double label_dbl) {
         QLineEdit::Normal, QString(), &ok);
     return ok ? ptr_to_double(strdup(s.toUtf8().constData())) : 0.0;
 }
+
+// ── Color Dialog ──
+static double g_colorR = 0, g_colorG = 0, g_colorB = 0;
+
+static double flux_qt_color_dialog(double title_dbl) {
+    QColor c = QColorDialog::getColor(Qt::white, nullptr,
+        QString::fromUtf8(dbl_to_str(title_dbl)));
+    if (!c.isValid()) return 0.0;
+    g_colorR = c.red();
+    g_colorG = c.green();
+    g_colorB = c.blue();
+    return 1.0;
+}
+
+static double flux_qt_color_r() { return g_colorR; }
+static double flux_qt_color_g() { return g_colorG; }
+static double flux_qt_color_b() { return g_colorB; }
+
+// ── Font Dialog ──
+static double g_fontSize = 12;
+static char g_fontFamily[256] = "Sans";
+
+static double flux_qt_font_dialog(double title_dbl) {
+    bool ok = false;
+    QFont font = QFontDialog::getFont(&ok, QFont(), nullptr,
+        QString::fromUtf8(dbl_to_str(title_dbl)));
+    if (!ok) return 0.0;
+    g_fontSize = font.pointSize() > 0 ? font.pointSize() : 12;
+    auto fam = font.family().toUtf8();
+    strncpy(g_fontFamily, fam.constData(), sizeof(g_fontFamily) - 1);
+    g_fontFamily[sizeof(g_fontFamily) - 1] = '\0';
+    return 1.0;
+}
+
+static double flux_qt_font_size() { return g_fontSize; }
+static double flux_qt_font_family() { return ptr_to_double(strdup(g_fontFamily)); }
 
 // ── QScrollArea ──
 static void flux_qt_scroll_set_widget(double h, double widget_h) {
@@ -1467,6 +1505,13 @@ void registerFluxQtSymbols(Flux::JITEngine& jit) {
     jit.registerFunction("flux_qt_open_file_dialog",   (void*)&flux_qt_open_file_dialog);
     jit.registerFunction("flux_qt_save_file_dialog",   (void*)&flux_qt_save_file_dialog);
     jit.registerFunction("flux_qt_input_dialog",       (void*)&flux_qt_input_dialog);
+    jit.registerFunction("flux_qt_color_dialog",       (void*)&flux_qt_color_dialog);
+    jit.registerFunction("flux_qt_color_r",            (void*)&flux_qt_color_r);
+    jit.registerFunction("flux_qt_color_g",            (void*)&flux_qt_color_g);
+    jit.registerFunction("flux_qt_color_b",            (void*)&flux_qt_color_b);
+    jit.registerFunction("flux_qt_font_dialog",        (void*)&flux_qt_font_dialog);
+    jit.registerFunction("flux_qt_font_size",          (void*)&flux_qt_font_size);
+    jit.registerFunction("flux_qt_font_family",        (void*)&flux_qt_font_family);
     jit.registerFunction("flux_qt_scroll_set_widget",  (void*)&flux_qt_scroll_set_widget);
     jit.registerFunction("flux_qt_create_svgwidget",   (void*)&flux_qt_create_svgwidget);
     jit.registerFunction("flux_qt_svgwidget_load",     (void*)&flux_qt_svgwidget_load);
