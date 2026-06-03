@@ -15,7 +15,10 @@
 #include <QMetaProperty>
 #include <QProgressBar>
 #include <QPushButton>
+#include <QAbstractButton>
 #include <QRadioButton>
+#include <QToolButton>
+#include <QCommandLinkButton>
 #include <QSlider>
 #include <QSpinBox>
 #include <QSplitter>
@@ -225,6 +228,63 @@ static double flux_qt_create_groupbox(double title_dbl) {
 static double flux_qt_create_radiobutton(double text_dbl) {
     auto* rb = new QRadioButton(QString::fromUtf8(dbl_to_str(text_dbl)));
     return FluxQtBridge::instance().registerObject(rb);
+}
+
+// ── QToolButton ──
+static double flux_qt_create_toolbutton(double text_dbl) {
+    auto* tb = new QToolButton;
+    if (std::strlen(dbl_to_str(text_dbl)) > 0)
+        tb->setText(QString::fromUtf8(dbl_to_str(text_dbl)));
+    return FluxQtBridge::instance().registerObject(tb);
+}
+
+static void flux_qt_toolbutton_set_arrow_type(double h, double type) {
+    auto* tb = qobject_cast<QToolButton*>(FluxQtBridge::instance().resolveHandle(h));
+    if (tb) tb->setArrowType(static_cast<Qt::ArrowType>(static_cast<int>(type)));
+}
+
+static void flux_qt_toolbutton_set_popup_mode(double h, double mode) {
+    auto* tb = qobject_cast<QToolButton*>(FluxQtBridge::instance().resolveHandle(h));
+    if (tb) tb->setPopupMode(static_cast<QToolButton::ToolButtonPopupMode>(static_cast<int>(mode)));
+}
+
+static void flux_qt_toolbutton_set_toolbutton_style(double h, double style) {
+    auto* tb = qobject_cast<QToolButton*>(FluxQtBridge::instance().resolveHandle(h));
+    if (tb) tb->setToolButtonStyle(static_cast<Qt::ToolButtonStyle>(static_cast<int>(style)));
+}
+
+static void flux_qt_toolbutton_set_auto_raise(double h, double enabled) {
+    auto* tb = qobject_cast<QToolButton*>(FluxQtBridge::instance().resolveHandle(h));
+    if (tb) tb->setAutoRaise(enabled != 0.0);
+}
+
+static void flux_qt_toolbutton_set_menu(double h, double menu_h) {
+    auto* tb = qobject_cast<QToolButton*>(FluxQtBridge::instance().resolveHandle(h));
+    auto* menu = qobject_cast<QMenu*>(FluxQtBridge::instance().resolveHandle(menu_h));
+    if (tb && menu) tb->setMenu(menu);
+}
+
+static void flux_qt_toolbutton_show_menu(double h) {
+    auto* tb = qobject_cast<QToolButton*>(FluxQtBridge::instance().resolveHandle(h));
+    if (tb) tb->showMenu();
+}
+
+// ── QCommandLinkButton ──
+static double flux_qt_create_commandlinkbutton(double text_dbl) {
+    auto* clb = new QCommandLinkButton(QString::fromUtf8(dbl_to_str(text_dbl)));
+    return FluxQtBridge::instance().registerObject(clb);
+}
+
+static double flux_qt_commandlinkbutton_set_description(double h, double desc_dbl) {
+    auto* clb = qobject_cast<QCommandLinkButton*>(FluxQtBridge::instance().resolveHandle(h));
+    if (!clb) return 0.0;
+    clb->setDescription(QString::fromUtf8(dbl_to_str(desc_dbl)));
+    return 1.0;
+}
+
+static void flux_qt_set_abstractbutton_icon(double h, double path_dbl) {
+    auto* btn = qobject_cast<QAbstractButton*>(FluxQtBridge::instance().resolveHandle(h));
+    if (btn) btn->setIcon(QIcon(QString::fromUtf8(dbl_to_str(path_dbl))));
 }
 
 static double flux_qt_create_splitter(double orient) {
@@ -497,6 +557,11 @@ static void flux_qt_set_statusbar_text(double h, double text_dbl) {
 }
 
 // ── QMenuBar / QMenu / QAction ──
+static double flux_qt_create_menu(double title_dbl) {
+    auto* menu = new QMenu(QString::fromUtf8(dbl_to_str(title_dbl)));
+    return ptr_to_double(menu);
+}
+
 static double flux_qt_menu_add_menu(double mb_h, double title_dbl) {
     auto* mb = qobject_cast<QMenuBar*>(FluxQtBridge::instance().resolveHandle(mb_h));
     if (!mb) mb = static_cast<QMenuBar*>(double_to_ptr(mb_h));
@@ -742,6 +807,16 @@ void registerFluxQtSymbols(Flux::JITEngine& jit) {
     jit.registerFunction("flux_qt_create_tabwidget",  (void*)&flux_qt_create_tabwidget);
     jit.registerFunction("flux_qt_create_groupbox",   (void*)&flux_qt_create_groupbox);
     jit.registerFunction("flux_qt_create_radiobutton",(void*)&flux_qt_create_radiobutton);
+    jit.registerFunction("flux_qt_create_toolbutton", (void*)&flux_qt_create_toolbutton);
+    jit.registerFunction("flux_qt_toolbutton_set_arrow_type", (void*)&flux_qt_toolbutton_set_arrow_type);
+    jit.registerFunction("flux_qt_toolbutton_set_popup_mode", (void*)&flux_qt_toolbutton_set_popup_mode);
+    jit.registerFunction("flux_qt_toolbutton_set_toolbutton_style", (void*)&flux_qt_toolbutton_set_toolbutton_style);
+    jit.registerFunction("flux_qt_toolbutton_set_auto_raise", (void*)&flux_qt_toolbutton_set_auto_raise);
+    jit.registerFunction("flux_qt_toolbutton_set_menu", (void*)&flux_qt_toolbutton_set_menu);
+    jit.registerFunction("flux_qt_toolbutton_show_menu", (void*)&flux_qt_toolbutton_show_menu);
+    jit.registerFunction("flux_qt_create_commandlinkbutton", (void*)&flux_qt_create_commandlinkbutton);
+    jit.registerFunction("flux_qt_commandlinkbutton_set_description", (void*)&flux_qt_commandlinkbutton_set_description);
+    jit.registerFunction("flux_qt_set_abstractbutton_icon", (void*)&flux_qt_set_abstractbutton_icon);
     jit.registerFunction("flux_qt_create_splitter",   (void*)&flux_qt_create_splitter);
     jit.registerFunction("flux_qt_create_listwidget",  (void*)&flux_qt_create_listwidget);
     jit.registerFunction("flux_qt_create_stackedwidget",(void*)&flux_qt_create_stackedwidget);
@@ -787,6 +862,7 @@ void registerFluxQtSymbols(Flux::JITEngine& jit) {
     jit.registerFunction("flux_qt_stacked_set_current",(void*)&flux_qt_stacked_set_current);
     jit.registerFunction("flux_qt_stacked_count",      (void*)&flux_qt_stacked_count);
     jit.registerFunction("flux_qt_get_menubar",        (void*)&flux_qt_get_menubar);
+    jit.registerFunction("flux_qt_create_menu",         (void*)&flux_qt_create_menu);
     jit.registerFunction("flux_qt_set_central_widget", (void*)&flux_qt_set_central_widget);
     jit.registerFunction("flux_qt_set_statusbar_text", (void*)&flux_qt_set_statusbar_text);
     jit.registerFunction("flux_qt_menu_add_menu",      (void*)&flux_qt_menu_add_menu);
