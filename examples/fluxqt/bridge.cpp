@@ -39,6 +39,7 @@
 #include <QTableWidget>
 #include <QTextEdit>
 #include <QTimer>
+#include <QTreeWidget>
 #include <QFileDialog>
 #include <QInputDialog>
 #include <QListWidget>
@@ -964,6 +965,117 @@ static void flux_qt_chart_add_series(double cv_h, double series_h) {
     if (cv && series) cv->chart()->addSeries(series);
 }
 
+// ── QTreeWidget ──
+static double flux_qt_create_treewidget() {
+    auto* tw = new QTreeWidget;
+    tw->setHeaderLabel("Items");
+    return FluxQtBridge::instance().registerObject(tw);
+}
+
+static void flux_qt_tree_set_header(double h, double col, double text_dbl) {
+    auto* tw = qobject_cast<QTreeWidget*>(FluxQtBridge::instance().resolveHandle(h));
+    if (tw) {
+        auto* hi = tw->headerItem();
+        if (hi) hi->setText(static_cast<int>(col), QString::fromUtf8(dbl_to_str(text_dbl)));
+    }
+}
+
+static void flux_qt_tree_set_column_count(double h, double count) {
+    auto* tw = qobject_cast<QTreeWidget*>(FluxQtBridge::instance().resolveHandle(h));
+    if (tw) tw->setColumnCount(static_cast<int>(count));
+}
+
+static double flux_qt_tree_add_item(double h, double text_dbl) {
+    auto* tw = qobject_cast<QTreeWidget*>(FluxQtBridge::instance().resolveHandle(h));
+    if (!tw) return 0.0;
+    auto* item = new QTreeWidgetItem;
+    item->setText(0, QString::fromUtf8(dbl_to_str(text_dbl)));
+    tw->addTopLevelItem(item);
+    return ptr_to_double(item);
+}
+
+static double flux_qt_tree_add_item_col(double h, double col, double text_dbl) {
+    auto* tw = qobject_cast<QTreeWidget*>(FluxQtBridge::instance().resolveHandle(h));
+    if (!tw) return 0.0;
+    auto* item = new QTreeWidgetItem;
+    item->setText(static_cast<int>(col), QString::fromUtf8(dbl_to_str(text_dbl)));
+    tw->addTopLevelItem(item);
+    return ptr_to_double(item);
+}
+
+static double flux_qt_tree_add_child(double parent_h, double text_dbl) {
+    auto* parent = static_cast<QTreeWidgetItem*>(double_to_ptr(parent_h));
+    if (!parent) return 0.0;
+    auto* item = new QTreeWidgetItem;
+    item->setText(0, QString::fromUtf8(dbl_to_str(text_dbl)));
+    parent->addChild(item);
+    return ptr_to_double(item);
+}
+
+static void flux_qt_tree_item_set_text(double item_h, double col, double text_dbl) {
+    auto* item = static_cast<QTreeWidgetItem*>(double_to_ptr(item_h));
+    if (item) item->setText(static_cast<int>(col), QString::fromUtf8(dbl_to_str(text_dbl)));
+}
+
+static double flux_qt_tree_item_text(double item_h, double col) {
+    auto* item = static_cast<QTreeWidgetItem*>(double_to_ptr(item_h));
+    if (!item) return 0.0;
+    auto s = item->text(static_cast<int>(col));
+    return ptr_to_double(strdup(s.toUtf8().constData()));
+}
+
+static void flux_qt_tree_item_set_icon(double item_h, double col, double path_dbl) {
+    auto* item = static_cast<QTreeWidgetItem*>(double_to_ptr(item_h));
+    if (item) item->setIcon(static_cast<int>(col), QIcon(QString::fromUtf8(dbl_to_str(path_dbl))));
+}
+
+static void flux_qt_tree_item_set_checked(double item_h, double col, double checked) {
+    auto* item = static_cast<QTreeWidgetItem*>(double_to_ptr(item_h));
+    if (item) item->setCheckState(static_cast<int>(col), checked != 0.0 ? Qt::Checked : Qt::Unchecked);
+}
+
+static double flux_qt_tree_item_checked(double item_h, double col) {
+    auto* item = static_cast<QTreeWidgetItem*>(double_to_ptr(item_h));
+    if (!item) return 0.0;
+    return item->checkState(static_cast<int>(col)) == Qt::Checked ? 1.0 : 0.0;
+}
+
+static void flux_qt_tree_item_set_expanded(double item_h, double expanded) {
+    auto* item = static_cast<QTreeWidgetItem*>(double_to_ptr(item_h));
+    if (item) item->setExpanded(expanded != 0.0);
+}
+
+static double flux_qt_tree_current_item(double h) {
+    auto* tw = qobject_cast<QTreeWidget*>(FluxQtBridge::instance().resolveHandle(h));
+    if (!tw) return 0.0;
+    auto* item = tw->currentItem();
+    return item ? ptr_to_double(item) : 0.0;
+}
+
+static void flux_qt_tree_set_current_item(double h, double item_h) {
+    auto* tw = qobject_cast<QTreeWidget*>(FluxQtBridge::instance().resolveHandle(h));
+    auto* item = static_cast<QTreeWidgetItem*>(double_to_ptr(item_h));
+    if (tw && item) tw->setCurrentItem(item);
+}
+
+static void flux_qt_tree_clear(double h) {
+    auto* tw = qobject_cast<QTreeWidget*>(FluxQtBridge::instance().resolveHandle(h));
+    if (tw) tw->clear();
+}
+
+static void flux_qt_tree_sort(double h, double col, double order) {
+    auto* tw = qobject_cast<QTreeWidget*>(FluxQtBridge::instance().resolveHandle(h));
+    if (tw) tw->sortItems(static_cast<int>(col), order != 0.0 ? Qt::AscendingOrder : Qt::DescendingOrder);
+}
+
+static void flux_qt_tree_on_item_clicked(double h, double callback_dbl) {
+    FluxQtBridge::instance().connectSignalByName(h, "itemClicked(QTreeWidgetItem*,int)", dbl_to_str(callback_dbl));
+}
+
+static void flux_qt_tree_on_current_item_changed(double h, double callback_dbl) {
+    FluxQtBridge::instance().connectSignalByName(h, "currentItemChanged(QTreeWidgetItem*,QTreeWidgetItem*)", dbl_to_str(callback_dbl));
+}
+
 // ===========================================================================
 // Properties — numeric
 // ===========================================================================
@@ -1208,6 +1320,26 @@ void registerFluxQtSymbols(Flux::JITEngine& jit) {
     jit.registerFunction("flux_qt_axis_set_tick_count",     (void*)&flux_qt_axis_set_tick_count);
     jit.registerFunction("flux_qt_series_attach_axis",      (void*)&flux_qt_series_attach_axis);
     jit.registerFunction("flux_qt_chart_add_series",        (void*)&flux_qt_chart_add_series);
+
+    // QTreeWidget
+    jit.registerFunction("flux_qt_create_treewidget",   (void*)&flux_qt_create_treewidget);
+    jit.registerFunction("flux_qt_tree_set_header",      (void*)&flux_qt_tree_set_header);
+    jit.registerFunction("flux_qt_tree_set_column_count",(void*)&flux_qt_tree_set_column_count);
+    jit.registerFunction("flux_qt_tree_add_item",        (void*)&flux_qt_tree_add_item);
+    jit.registerFunction("flux_qt_tree_add_item_col",    (void*)&flux_qt_tree_add_item_col);
+    jit.registerFunction("flux_qt_tree_add_child",       (void*)&flux_qt_tree_add_child);
+    jit.registerFunction("flux_qt_tree_item_set_text",   (void*)&flux_qt_tree_item_set_text);
+    jit.registerFunction("flux_qt_tree_item_text",       (void*)&flux_qt_tree_item_text);
+    jit.registerFunction("flux_qt_tree_item_set_icon",   (void*)&flux_qt_tree_item_set_icon);
+    jit.registerFunction("flux_qt_tree_item_set_checked",(void*)&flux_qt_tree_item_set_checked);
+    jit.registerFunction("flux_qt_tree_item_checked",    (void*)&flux_qt_tree_item_checked);
+    jit.registerFunction("flux_qt_tree_item_set_expanded",(void*)&flux_qt_tree_item_set_expanded);
+    jit.registerFunction("flux_qt_tree_current_item",    (void*)&flux_qt_tree_current_item);
+    jit.registerFunction("flux_qt_tree_set_current_item",(void*)&flux_qt_tree_set_current_item);
+    jit.registerFunction("flux_qt_tree_clear",           (void*)&flux_qt_tree_clear);
+    jit.registerFunction("flux_qt_tree_sort",            (void*)&flux_qt_tree_sort);
+    jit.registerFunction("flux_qt_tree_on_item_clicked", (void*)&flux_qt_tree_on_item_clicked);
+    jit.registerFunction("flux_qt_tree_on_current_item_changed", (void*)&flux_qt_tree_on_current_item_changed);
 
     // Numeric properties
     jit.registerFunction("flux_qt_get_property",     (void*)&flux_qt_get_property);
