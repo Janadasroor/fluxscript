@@ -2,6 +2,8 @@
 #include <flux/jit_engine.h>
 #include <QApplication>
 #include <QBoxLayout>
+#include <QGridLayout>
+#include <QLayout>
 #include <QCheckBox>
 #include <QComboBox>
 #include <QDial>
@@ -52,8 +54,21 @@
 #include <QStatusBar>
 #include <QSvgWidget>
 #include <QToolBar>
+#include <QCalendarWidget>
+#include <QMdiArea>
+#include <QMdiSubWindow>
+#include <QProgressDialog>
+#include <QShortcut>
+#include <QSystemTrayIcon>
+#include <QMenu>
+#include <QDragEnterEvent>
+#include <QDropEvent>
+#include <QMimeData>
+#include <QUrl>
+#include <algorithm>
 #include <cstring>
 #include <iostream>
+#include <vector>
 
 #define QT_LOG if (true) std::cerr << "[qt] "
 
@@ -122,9 +137,41 @@ void FluxQtBridge::onBridgeEvent() {
     callFluxFunction(it.value().toUtf8().constData());
 }
 
+void FluxQtBridge::clearRegistry() {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    QSet<QObject*> deleted;
+    for (auto it = m_registry.begin(); it != m_registry.end(); ++it) {
+        QObject* obj = it->data();
+        if (obj && !deleted.contains(obj) && obj != m_persistentWindow) {
+            deleted.insert(obj);
+            delete obj;
+        }
+    }
+    m_registry.clear();
+    m_signalNameMap.clear();
+    // Re-register persistent window so its handle stays valid
+    if (m_persistentWindow) {
+        m_registry[m_persistentWindow] = QPointer<QObject>(m_persistentWindow);
+    }
+}
+
+void FluxQtBridge::setPersistentWindow(QMainWindow* win) {
+    m_persistentWindow = win;
+    if (win) registerObject(win);
+}
+
 // ===========================================================================
 // Property helpers
 // ===========================================================================
+
+#define RESOLVE(var, type, handle) \
+    auto* var = qobject_cast<type*>(FluxQtBridge::instance().resolveHandle(handle, __func__)); \
+    if (!var) return
+
+#define RESOLVE_DBL(var, type, handle) \
+    auto* var = qobject_cast<type*>(FluxQtBridge::instance().resolveHandle(handle, __func__)); \
+    if (!var) return 0.0
+
 static double get_numeric_prop(double h, const char* name) {
     auto* obj = FluxQtBridge::instance().resolveHandle(h);
     if (!obj) return 0.0;
@@ -149,6 +196,47 @@ static void set_numeric_prop(double h, const char* name, double value) {
     else if (prop.typeId() == QMetaType::Bool) obj->setProperty(name, value != 0.0);
     else obj->setProperty(name, value);
 }
+
+// ===========================================================================
+// Drag-and-drop support
+// ===========================================================================
+static std::string g_lastDroppedFile;
+
+class DropFilter : public QObject {
+public:
+    DropFilter(QObject* parent, const char* callback)
+        : QObject(parent), m_callback(callback) {
+        parent->installEventFilter(this);
+    }
+protected:
+    bool eventFilter(QObject* obj, QEvent* event) override {
+        if (event->type() == QEvent::DragEnter) {
+            auto* de = static_cast<QDragEnterEvent*>(event);
+            if (de->mimeData()->hasUrls()) {
+                de->acceptProposedAction();
+                return true;
+            }
+            return false;
+        }
+        if (event->type() == QEvent::Drop) {
+            auto* de = static_cast<QDropEvent*>(event);
+            auto urls = de->mimeData()->urls();
+            if (!urls.isEmpty()) {
+                QString path = urls.first().toLocalFile();
+                if (path.endsWith(".flux", Qt::CaseInsensitive) ||
+                    path.endsWith(".flxsch", Qt::CaseInsensitive)) {
+                    g_lastDroppedFile = path.toStdString();
+                    extern void callFluxFunction(const char* name);
+                    callFluxFunction(m_callback.c_str());
+                }
+            }
+            return true;
+        }
+        return QObject::eventFilter(obj, event);
+    }
+private:
+    std::string m_callback;
+};
 
 // ===========================================================================
 // Widget creation
@@ -332,6 +420,11 @@ static double flux_qt_create_mainwindow(double title_dbl) {
     return FluxQtBridge::instance().registerObject(mw);
 }
 
+static double flux_qt_get_window() {
+    auto* pw = FluxQtBridge::instance().persistentWindow();
+    return pw ? ptr_to_double(pw) : 0.0;
+}
+
 static double flux_qt_create_scrollarea() {
     auto* sa = new QScrollArea;
     return FluxQtBridge::instance().registerObject(sa);
@@ -342,22 +435,25 @@ static double flux_qt_create_scrollarea() {
 // ===========================================================================
 static double flux_qt_create_layout(double type_dbl) {
     const char* type = dbl_to_str(type_dbl);
+    QLayout* lay = nullptr;
     if (std::strcmp(type, "vbox") == 0)
-        return ptr_to_double(new QVBoxLayout);
-    if (std::strcmp(type, "grid") == 0)
-        return ptr_to_double(new QGridLayout);
-    return ptr_to_double(new QHBoxLayout);
+        lay = new QVBoxLayout;
+    else if (std::strcmp(type, "grid") == 0)
+        lay = new QGridLayout;
+    else
+        lay = new QHBoxLayout;
+    return FluxQtBridge::instance().registerObject(lay);
 }
 
 static void flux_qt_set_layout(double container_h, double layout_h) {
-    auto* w = qobject_cast<QWidget*>(FluxQtBridge::instance().resolveHandle(container_h));
-    auto* lay = static_cast<QLayout*>(double_to_ptr(layout_h));
-    if (w && lay) w->setLayout(lay);
+    auto* w = qobject_cast<QWidget*>(FluxQtBridge::instance().resolveHandle(container_h, __func__));
+    RESOLVE(lay, QLayout, layout_h);
+    if (w) w->setLayout(lay);
 }
 
 static void flux_qt_add_widget(double container, double widget) {
-    auto* parent = qobject_cast<QWidget*>(FluxQtBridge::instance().resolveHandle(container));
-    auto* child = qobject_cast<QWidget*>(FluxQtBridge::instance().resolveHandle(widget));
+    auto* parent = qobject_cast<QWidget*>(FluxQtBridge::instance().resolveHandle(container, __func__));
+    auto* child = qobject_cast<QWidget*>(FluxQtBridge::instance().resolveHandle(widget, __func__));
     if (parent && child) {
         if (parent->layout()) {
             parent->layout()->addWidget(child);
@@ -369,16 +465,16 @@ static void flux_qt_add_widget(double container, double widget) {
 }
 
 static void flux_qt_layout_add_widget(double layout_h, double widget_h) {
-    auto* lay = static_cast<QLayout*>(double_to_ptr(layout_h));
-    auto* w = qobject_cast<QWidget*>(FluxQtBridge::instance().resolveHandle(widget_h));
+    RESOLVE(lay, QLayout, layout_h);
+    auto* w = qobject_cast<QWidget*>(FluxQtBridge::instance().resolveHandle(widget_h, __func__));
     if (lay && w) lay->addWidget(w);
 }
 
 static void flux_qt_grid_add_widget(
     double layout_h, double widget_h,
     double row, double col, double rowSpan, double colSpan) {
-    auto* grid = static_cast<QGridLayout*>(double_to_ptr(layout_h));
-    auto* w = qobject_cast<QWidget*>(FluxQtBridge::instance().resolveHandle(widget_h));
+    RESOLVE(grid, QGridLayout, layout_h);
+    auto* w = qobject_cast<QWidget*>(FluxQtBridge::instance().resolveHandle(widget_h, __func__));
     if (grid && w)
         grid->addWidget(w, static_cast<int>(row), static_cast<int>(col),
                         static_cast<int>(rowSpan), static_cast<int>(colSpan));
@@ -390,18 +486,18 @@ static void flux_qt_set_window_size(double h, double w, double hh) {
 }
 
 static void flux_qt_layout_set_margins(double layout_h, double l, double t, double r, double b) {
-    auto* lay = static_cast<QLayout*>(double_to_ptr(layout_h));
-    if (lay) lay->setContentsMargins(static_cast<int>(l), static_cast<int>(t), static_cast<int>(r), static_cast<int>(b));
+    RESOLVE(lay, QLayout, layout_h);
+    lay->setContentsMargins(static_cast<int>(l), static_cast<int>(t), static_cast<int>(r), static_cast<int>(b));
 }
 
 static void flux_qt_layout_set_spacing(double layout_h, double spacing) {
-    auto* lay = static_cast<QLayout*>(double_to_ptr(layout_h));
-    if (lay) lay->setSpacing(static_cast<int>(spacing));
+    RESOLVE(lay, QLayout, layout_h);
+    lay->setSpacing(static_cast<int>(spacing));
 }
 
 static void flux_qt_layout_set_stretch(double layout_h, double widget_h, double stretch) {
-    auto* box = static_cast<QBoxLayout*>(double_to_ptr(layout_h));
-    auto* w = qobject_cast<QWidget*>(FluxQtBridge::instance().resolveHandle(widget_h));
+    RESOLVE(box, QBoxLayout, layout_h);
+    auto* w = qobject_cast<QWidget*>(FluxQtBridge::instance().resolveHandle(widget_h, __func__));
     if (box && w) box->setStretchFactor(w, static_cast<int>(stretch));
 }
 
@@ -678,6 +774,39 @@ static void flux_qt_svgwidget_set_size(double h, double w, double hh) {
     if (svg) svg->setFixedSize(static_cast<int>(w), static_cast<int>(hh));
 }
 
+// ── Raytraced-image pixel buffer ──
+static std::vector<QRgb> g_rayPixels;
+
+static void flux_qt_put_pixel(double r, double g, double b) {
+    static int pc = 0;
+    if (pc < 3) fprintf(stderr, "[px %d] r=%f g=%f b=%f\n", pc, r, g, b);
+    pc++;
+    int ri = static_cast<int>(r * 255.0);
+    int gi = static_cast<int>(g * 255.0);
+    int bi = static_cast<int>(b * 255.0);
+    g_rayPixels.push_back(qRgb(std::clamp(ri, 0, 255),
+                               std::clamp(gi, 0, 255),
+                               std::clamp(bi, 0, 255)));
+}
+
+static void flux_qt_render_image(double label_h, double w, double h) {
+    auto* label = qobject_cast<QLabel*>(FluxQtBridge::instance().resolveHandle(label_h, __func__));
+    if (!label || g_rayPixels.empty()) { g_rayPixels.clear(); return; }
+    int width = static_cast<int>(w), height = static_cast<int>(h);
+    QImage img(width, height, QImage::Format_RGB32);
+    for (int y = 0; y < height && y * width < (int)g_rayPixels.size(); y++) {
+        for (int x = 0; x < width && y * width + x < (int)g_rayPixels.size(); x++) {
+            img.setPixel(x, y, g_rayPixels[y * width + x]);
+        }
+    }
+    label->setPixmap(QPixmap::fromImage(img).scaled(label->size(), Qt::KeepAspectRatio, Qt::SmoothTransformation));
+    g_rayPixels.clear();
+}
+
+static double flux_qt_ray_pixel_count() {
+    return static_cast<double>(g_rayPixels.size());
+}
+
 // ── Images (QPixmap via QLabel) ──
 static double flux_qt_label_load_image(double label_h, double path_dbl) {
     auto* label = qobject_cast<QLabel*>(FluxQtBridge::instance().resolveHandle(label_h));
@@ -791,9 +920,52 @@ static void flux_qt_xy_series_append(double h, double x, double y) {
     if (s) s->append(x, y);
 }
 
+static void flux_qt_series_append_data(double h, double data_dbl) {
+    auto* s = qobject_cast<QXYSeries*>(FluxQtBridge::instance().resolveHandle(h));
+    if (!s) return;
+    std::string data = dbl_to_str(data_dbl);
+    char* buf = strdup(data.c_str());
+    char* p = strtok(buf, ";");
+    while (p) {
+        char* comma = strchr(p, ',');
+        if (comma) {
+            *comma = '\0';
+            char* endX = nullptr; double x = std::strtod(p, &endX);
+            char* endY = nullptr; double y = std::strtod(comma + 1, &endY);
+            if (endX != p && endY != comma + 1) s->append(x, y);
+        }
+        p = strtok(nullptr, ";");
+    }
+    free(buf);
+}
+
 static void flux_qt_xy_series_set_pen(double h, double r, double g, double b, double width) {
     auto* s = qobject_cast<QXYSeries*>(FluxQtBridge::instance().resolveHandle(h));
     if (s) s->setPen(QPen(QColor(static_cast<int>(r), static_cast<int>(g), static_cast<int>(b)), width));
+}
+
+static double flux_qt_xy_series_count(double h) {
+    auto* s = qobject_cast<QXYSeries*>(FluxQtBridge::instance().resolveHandle(h));
+    return s ? static_cast<double>(s->count()) : 0.0;
+}
+
+static void flux_qt_xy_series_clear(double h) {
+    auto* s = qobject_cast<QXYSeries*>(FluxQtBridge::instance().resolveHandle(h));
+    if (s) s->clear();
+}
+
+static void flux_qt_xy_series_scroll(double h, double x, double y, double maxCount) {
+    auto* s = qobject_cast<QXYSeries*>(FluxQtBridge::instance().resolveHandle(h));
+    if (!s) return;
+    s->append(x, y);
+    int max = static_cast<int>(maxCount);
+    while (s->count() > max)
+        s->remove(0);
+}
+
+static void flux_qt_progress_set_range(double h, double min, double max) {
+    auto* p = qobject_cast<QProgressBar*>(FluxQtBridge::instance().resolveHandle(h));
+    if (p) p->setRange(static_cast<int>(min), static_cast<int>(max));
 }
 
 static double flux_qt_chart_add_line_series(double cv_h, double name_dbl) {
@@ -866,6 +1038,11 @@ static double flux_qt_create_bar_set(double label_dbl) {
 static void flux_qt_bar_set_append(double h, double value) {
     auto* bs = qobject_cast<QBarSet*>(FluxQtBridge::instance().resolveHandle(h));
     if (bs) *bs << value;
+}
+
+static void flux_qt_bar_set_remove(double h, double index) {
+    auto* bs = qobject_cast<QBarSet*>(FluxQtBridge::instance().resolveHandle(h, __func__));
+    if (bs) bs->remove(static_cast<int>(index));
 }
 
 static void flux_qt_bar_set_set_color(double h, double r, double g, double b) {
@@ -1000,8 +1177,15 @@ static void flux_qt_series_attach_axis(double series_h, double axis_h) {
 
 static void flux_qt_chart_add_series(double cv_h, double series_h) {
     auto* cv = qobject_cast<QChartView*>(FluxQtBridge::instance().resolveHandle(cv_h));
-    auto* series = qobject_cast<QAbstractSeries*>(FluxQtBridge::instance().resolveHandle(series_h));
-    if (cv && series) cv->chart()->addSeries(series);
+    auto* s = qobject_cast<QAbstractSeries*>(FluxQtBridge::instance().resolveHandle(series_h));
+    if (cv && s) cv->chart()->addSeries(s);
+}
+
+static void flux_qt_chart_save_png(double cv_h, double path_dbl) {
+    auto* cv = qobject_cast<QChartView*>(FluxQtBridge::instance().resolveHandle(cv_h));
+    if (!cv) return;
+    QPixmap pix = cv->grab();
+    pix.save(QString::fromUtf8(dbl_to_str(path_dbl)), "PNG");
 }
 
 // ── QTreeWidget ──
@@ -1396,6 +1580,199 @@ static void flux_qt_app_quit() {
 }
 
 // ===========================================================================
+// QCalendarWidget
+// ===========================================================================
+static double flux_qt_create_calendar(double parent_h) {
+    auto* parent = qobject_cast<QWidget*>(FluxQtBridge::instance().resolveHandle(parent_h));
+    auto* cal = new QCalendarWidget(parent);
+    return FluxQtBridge::instance().registerObject(cal);
+}
+
+static double flux_qt_calendar_selected_date(double h) {
+    auto* cal = qobject_cast<QCalendarWidget*>(FluxQtBridge::instance().resolveHandle(h));
+    if (cal) {
+        QString s = cal->selectedDate().toString("yyyy-MM-dd");
+        return ptr_to_double(strdup(s.toUtf8().constData()));
+    }
+    return ptr_to_double(strdup(""));
+}
+
+// ===========================================================================
+// QMdiArea
+// ===========================================================================
+static double flux_qt_create_mdiarea(double parent_h) {
+    auto* parent = qobject_cast<QWidget*>(FluxQtBridge::instance().resolveHandle(parent_h));
+    auto* mdi = new QMdiArea(parent);
+    return FluxQtBridge::instance().registerObject(mdi);
+}
+
+static double flux_qt_mdi_add_subwindow(double mdi_h, double widget_h) {
+    auto* mdi = qobject_cast<QMdiArea*>(FluxQtBridge::instance().resolveHandle(mdi_h));
+    auto* w = qobject_cast<QWidget*>(FluxQtBridge::instance().resolveHandle(widget_h));
+    if (mdi && w) {
+        auto* sub = mdi->addSubWindow(w);
+        sub->setAttribute(Qt::WA_DeleteOnClose);
+        sub->show();
+        return ptr_to_double(sub);
+    }
+    return 0.0;
+}
+
+static double flux_qt_mdi_cascade(double mdi_h) {
+    auto* mdi = qobject_cast<QMdiArea*>(FluxQtBridge::instance().resolveHandle(mdi_h));
+    if (mdi) mdi->cascadeSubWindows();
+    return 0.0;
+}
+
+static double flux_qt_mdi_tile(double mdi_h) {
+    auto* mdi = qobject_cast<QMdiArea*>(FluxQtBridge::instance().resolveHandle(mdi_h));
+    if (mdi) mdi->tileSubWindows();
+    return 0.0;
+}
+
+static double flux_qt_mdi_subwindow_set_title(double sw_h, double title_dbl) {
+    auto* sub = reinterpret_cast<QMdiSubWindow*>(double_to_ptr(sw_h));
+    if (sub) sub->setWindowTitle(QString::fromUtf8(dbl_to_str(title_dbl)));
+    return 0.0;
+}
+
+static double flux_qt_mdi_close_all(double mdi_h) {
+    auto* mdi = qobject_cast<QMdiArea*>(FluxQtBridge::instance().resolveHandle(mdi_h));
+    if (mdi) mdi->closeAllSubWindows();
+    return 0.0;
+}
+
+// ===========================================================================
+// QProgressDialog
+// ===========================================================================
+static double flux_qt_create_progress_dialog(double label_dbl, double cancel, double min, double max) {
+    QString label = QString::fromUtf8(dbl_to_str(label_dbl));
+    auto* dlg = new QProgressDialog(
+        label,
+        cancel != 0.0 ? QString::fromUtf8("Cancel") : QString(),
+        static_cast<int>(min),
+        static_cast<int>(max)
+    );
+    dlg->setWindowModality(Qt::WindowModal);
+    dlg->setAutoClose(true);
+    dlg->show();
+    return FluxQtBridge::instance().registerObject(dlg);
+}
+
+static double flux_qt_progress_set_value(double h, double val) {
+    auto* dlg = qobject_cast<QProgressDialog*>(FluxQtBridge::instance().resolveHandle(h));
+    if (dlg) dlg->setValue(static_cast<int>(val));
+    return 0.0;
+}
+
+static double flux_qt_progress_set_label(double h, double label_dbl) {
+    auto* dlg = qobject_cast<QProgressDialog*>(FluxQtBridge::instance().resolveHandle(h));
+    if (dlg) dlg->setLabelText(QString::fromUtf8(dbl_to_str(label_dbl)));
+    return 0.0;
+}
+
+static double flux_qt_progress_was_canceled(double h) {
+    auto* dlg = qobject_cast<QProgressDialog*>(FluxQtBridge::instance().resolveHandle(h));
+    if (dlg) return dlg->wasCanceled() ? 1.0 : 0.0;
+    return 0.0;
+}
+
+// ===========================================================================
+// QShortcut
+// ===========================================================================
+static double flux_qt_create_shortcut(double parent_h, double key_dbl, double callback_dbl) {
+    auto* parent = qobject_cast<QWidget*>(FluxQtBridge::instance().resolveHandle(parent_h));
+    if (!parent) return 0.0;
+    auto* sc = new QShortcut(QKeySequence(QString::fromUtf8(dbl_to_str(key_dbl))), parent);
+    auto h = FluxQtBridge::instance().registerObject(sc);
+    FluxQtBridge::instance().connectSignalByName(h, "activated()", dbl_to_str(callback_dbl));
+    return h;
+}
+
+// ===========================================================================
+// QSystemTrayIcon
+// ===========================================================================
+static double flux_qt_create_tray_icon(double icon_dbl, double tooltip_dbl) {
+    auto* tray = new QSystemTrayIcon();
+    tray->setIcon(QIcon(QString::fromUtf8(dbl_to_str(icon_dbl))));
+    tray->setToolTip(QString::fromUtf8(dbl_to_str(tooltip_dbl)));
+    auto h = FluxQtBridge::instance().registerObject(tray);
+    return h;
+}
+
+static double flux_qt_tray_set_visible(double h, double visible) {
+    auto* tray = qobject_cast<QSystemTrayIcon*>(FluxQtBridge::instance().resolveHandle(h));
+    if (tray) tray->setVisible(visible != 0.0);
+    return 0.0;
+}
+
+static double flux_qt_tray_show_message(double h, double title_dbl, double msg_dbl, double timeout) {
+    auto* tray = qobject_cast<QSystemTrayIcon*>(FluxQtBridge::instance().resolveHandle(h));
+    if (tray) tray->showMessage(
+        QString::fromUtf8(dbl_to_str(title_dbl)),
+        QString::fromUtf8(dbl_to_str(msg_dbl)),
+        QSystemTrayIcon::Information,
+        static_cast<int>(timeout));
+    return 0.0;
+}
+
+static double flux_qt_tray_set_context_menu(double h, double menu_h) {
+    auto* tray = qobject_cast<QSystemTrayIcon*>(FluxQtBridge::instance().resolveHandle(h));
+    auto* menu = qobject_cast<QMenu*>(FluxQtBridge::instance().resolveHandle(menu_h));
+    if (tray && menu) tray->setContextMenu(menu);
+    return 0.0;
+}
+
+static double flux_qt_tray_on_activated(double h, double callback_dbl) {
+    auto* tray = qobject_cast<QSystemTrayIcon*>(FluxQtBridge::instance().resolveHandle(h));
+    if (!tray) return 0.0;
+    std::string cb = dbl_to_str(callback_dbl);
+    QObject::connect(tray, &QSystemTrayIcon::activated, [cb](QSystemTrayIcon::ActivationReason) {
+        extern void callFluxFunction(const char* name);
+        callFluxFunction(cb.c_str());
+    });
+    return 0.0;
+}
+
+static double flux_qt_app_set_quit_on_last_closed(double enabled) {
+    QApplication::setQuitOnLastWindowClosed(enabled != 0.0);
+    return 0.0;
+}
+
+static double flux_qt_set_app_icon(double path_dbl) {
+    QIcon icon(QString::fromUtf8(dbl_to_str(path_dbl)));
+    if (!icon.isNull())
+        QApplication::setWindowIcon(icon);
+    return 0.0;
+}
+
+// ===========================================================================
+// Drag-and-drop
+// ===========================================================================
+static double flux_qt_enable_drops(double widget_h, double callback_dbl) {
+    auto* w = qobject_cast<QWidget*>(FluxQtBridge::instance().resolveHandle(widget_h));
+    if (!w) return 0.0;
+    w->setAcceptDrops(true);
+    new DropFilter(w, dbl_to_str(callback_dbl));
+    return 0.0;
+}
+
+static double flux_qt_last_dropped_file() {
+    return ptr_to_double(strdup(g_lastDroppedFile.c_str()));
+}
+
+// ===========================================================================
+// FluxScript eval
+// ===========================================================================
+static double flux_qt_eval(double source_dbl) {
+    auto& jit = Flux::JITEngine::instance();
+    std::string err;
+    if (!jit.executeString(dbl_to_str(source_dbl), &err))
+        return ptr_to_double(strdup(("Error: " + err).c_str()));
+    return ptr_to_double(strdup("OK"));
+}
+
+// ===========================================================================
 // Signal binding (by FluxScript function name)
 // ===========================================================================
 static void flux_qt_on_click_by_name(double h, double name_dbl) {
@@ -1416,6 +1793,9 @@ static void flux_qt_on_text_changed_by_name(double h, double name_dbl) {
 static void flux_qt_on_current_row_changed_by_name(double h, double name_dbl) {
     FluxQtBridge::instance().connectSignalByName(h, "currentRowChanged(int)", dbl_to_str(name_dbl));
 }
+static void flux_qt_on_selection_changed_by_name(double h, double name_dbl) {
+    FluxQtBridge::instance().connectSignalByName(h, "selectionChanged()", dbl_to_str(name_dbl));
+}
 
 } // extern "C"
 
@@ -1425,233 +1805,251 @@ static void flux_qt_on_current_row_changed_by_name(double h, double name_dbl) {
 extern void callFluxFunction(const char* name);
 
 void registerFluxQtSymbols(Flux::JITEngine& jit) {
-    // Widget creation
-    jit.registerFunction("flux_qt_create_window",     (void*)&flux_qt_create_window);
-    jit.registerFunction("flux_qt_create_button",     (void*)&flux_qt_create_button);
-    jit.registerFunction("flux_qt_create_label",      (void*)&flux_qt_create_label);
-    jit.registerFunction("flux_qt_create_slider",     (void*)&flux_qt_create_slider);
-    jit.registerFunction("flux_qt_create_dial",       (void*)&flux_qt_create_dial);
-    jit.registerFunction("flux_qt_create_lcd",        (void*)&flux_qt_create_lcd);
-    jit.registerFunction("flux_qt_create_combobox",   (void*)&flux_qt_create_combobox);
-    jit.registerFunction("flux_qt_create_spinbox",    (void*)&flux_qt_create_spinbox);
-    jit.registerFunction("flux_qt_create_progressbar",(void*)&flux_qt_create_progressbar);
-    jit.registerFunction("flux_qt_create_checkbox",   (void*)&flux_qt_create_checkbox);
-    jit.registerFunction("flux_qt_create_lineedit",   (void*)&flux_qt_create_lineedit);
-    jit.registerFunction("flux_qt_create_textedit",   (void*)&flux_qt_create_textedit);
-    jit.registerFunction("flux_qt_create_tableview",  (void*)&flux_qt_create_tableview);
-    jit.registerFunction("flux_qt_create_tabwidget",  (void*)&flux_qt_create_tabwidget);
-    jit.registerFunction("flux_qt_create_groupbox",   (void*)&flux_qt_create_groupbox);
-    jit.registerFunction("flux_qt_create_radiobutton",(void*)&flux_qt_create_radiobutton);
-    jit.registerFunction("flux_qt_create_toolbutton", (void*)&flux_qt_create_toolbutton);
-    jit.registerFunction("flux_qt_toolbutton_set_arrow_type", (void*)&flux_qt_toolbutton_set_arrow_type);
-    jit.registerFunction("flux_qt_toolbutton_set_popup_mode", (void*)&flux_qt_toolbutton_set_popup_mode);
-    jit.registerFunction("flux_qt_toolbutton_set_toolbutton_style", (void*)&flux_qt_toolbutton_set_toolbutton_style);
-    jit.registerFunction("flux_qt_toolbutton_set_auto_raise", (void*)&flux_qt_toolbutton_set_auto_raise);
-    jit.registerFunction("flux_qt_toolbutton_set_menu", (void*)&flux_qt_toolbutton_set_menu);
-    jit.registerFunction("flux_qt_toolbutton_show_menu", (void*)&flux_qt_toolbutton_show_menu);
-    jit.registerFunction("flux_qt_create_commandlinkbutton", (void*)&flux_qt_create_commandlinkbutton);
-    jit.registerFunction("flux_qt_commandlinkbutton_set_description", (void*)&flux_qt_commandlinkbutton_set_description);
-    jit.registerFunction("flux_qt_set_abstractbutton_icon", (void*)&flux_qt_set_abstractbutton_icon);
-    jit.registerFunction("flux_qt_create_splitter",   (void*)&flux_qt_create_splitter);
-    jit.registerFunction("flux_qt_create_listwidget",  (void*)&flux_qt_create_listwidget);
-    jit.registerFunction("flux_qt_create_stackedwidget",(void*)&flux_qt_create_stackedwidget);
-    jit.registerFunction("flux_qt_create_widget",      (void*)&flux_qt_create_widget);
-    jit.registerFunction("flux_qt_create_mainwindow",  (void*)&flux_qt_create_mainwindow);
-    jit.registerFunction("flux_qt_create_scrollarea",  (void*)&flux_qt_create_scrollarea);
-
-    // Layout
-    jit.registerFunction("flux_qt_create_layout",    (void*)&flux_qt_create_layout);
-    jit.registerFunction("flux_qt_set_layout",       (void*)&flux_qt_set_layout);
-    jit.registerFunction("flux_qt_add_widget",       (void*)&flux_qt_add_widget);
-    jit.registerFunction("flux_qt_layout_add_widget",(void*)&flux_qt_layout_add_widget);
-    jit.registerFunction("flux_qt_grid_add_widget",  (void*)&flux_qt_grid_add_widget);
-    jit.registerFunction("flux_qt_set_window_size",  (void*)&flux_qt_set_window_size);
-    jit.registerFunction("flux_qt_layout_set_margins",(void*)&flux_qt_layout_set_margins);
-    jit.registerFunction("flux_qt_layout_set_spacing",(void*)&flux_qt_layout_set_spacing);
-    jit.registerFunction("flux_qt_layout_set_stretch",(void*)&flux_qt_layout_set_stretch);
-
-    // Misc widgets
-    jit.registerFunction("flux_qt_msg_box",           (void*)&flux_qt_msg_box);
-    jit.registerFunction("flux_qt_lcd_display",       (void*)&flux_qt_lcd_display);
-    jit.registerFunction("flux_qt_combo_add_item",    (void*)&flux_qt_combo_add_item);
-    jit.registerFunction("flux_qt_combo_clear",       (void*)&flux_qt_combo_clear);
-    jit.registerFunction("flux_qt_combo_set_current_index", (void*)&flux_qt_combo_set_current_index);
-    jit.registerFunction("flux_qt_table_row_count",   (void*)&flux_qt_table_row_count);
-    jit.registerFunction("flux_qt_table_col_count",   (void*)&flux_qt_table_col_count);
-    jit.registerFunction("flux_qt_table_set_value",   (void*)&flux_qt_table_set_value);
-    jit.registerFunction("flux_qt_table_set_item",    (void*)&flux_qt_table_set_item);
-    jit.registerFunction("flux_qt_table_set_header",  (void*)&flux_qt_table_set_header);
-    jit.registerFunction("flux_qt_create_timer",      (void*)&flux_qt_create_timer);
-    jit.registerFunction("flux_qt_timer_start",       (void*)&flux_qt_timer_start);
-    jit.registerFunction("flux_qt_timer_stop",        (void*)&flux_qt_timer_stop);
-    jit.registerFunction("flux_qt_tab_add",           (void*)&flux_qt_tab_add);
-    jit.registerFunction("flux_qt_tab_set_current",   (void*)&flux_qt_tab_set_current);
-    jit.registerFunction("flux_qt_groupbox_set_layout",(void*)&flux_qt_groupbox_set_layout);
-    jit.registerFunction("flux_qt_splitter_add",       (void*)&flux_qt_splitter_add);
-    jit.registerFunction("flux_qt_list_add_item",      (void*)&flux_qt_list_add_item);
-    jit.registerFunction("flux_qt_list_current_row",   (void*)&flux_qt_list_current_row);
-    jit.registerFunction("flux_qt_list_set_current_row",(void*)&flux_qt_list_set_current_row);
-    jit.registerFunction("flux_qt_list_clear",         (void*)&flux_qt_list_clear);
-    jit.registerFunction("flux_qt_list_count",         (void*)&flux_qt_list_count);
-    jit.registerFunction("flux_qt_stacked_add",        (void*)&flux_qt_stacked_add);
-    jit.registerFunction("flux_qt_stacked_set_current",(void*)&flux_qt_stacked_set_current);
-    jit.registerFunction("flux_qt_stacked_count",      (void*)&flux_qt_stacked_count);
-    jit.registerFunction("flux_qt_get_menubar",        (void*)&flux_qt_get_menubar);
-    jit.registerFunction("flux_qt_create_menu",         (void*)&flux_qt_create_menu);
-    jit.registerFunction("flux_qt_set_central_widget", (void*)&flux_qt_set_central_widget);
-    jit.registerFunction("flux_qt_set_statusbar_text", (void*)&flux_qt_set_statusbar_text);
-    jit.registerFunction("flux_qt_menu_add_menu",      (void*)&flux_qt_menu_add_menu);
-    jit.registerFunction("flux_qt_menu_add_action",    (void*)&flux_qt_menu_add_action);
-    jit.registerFunction("flux_qt_open_file_dialog",   (void*)&flux_qt_open_file_dialog);
-    jit.registerFunction("flux_qt_save_file_dialog",   (void*)&flux_qt_save_file_dialog);
-    jit.registerFunction("flux_qt_input_dialog",       (void*)&flux_qt_input_dialog);
-    jit.registerFunction("flux_qt_color_dialog",       (void*)&flux_qt_color_dialog);
-    jit.registerFunction("flux_qt_color_r",            (void*)&flux_qt_color_r);
-    jit.registerFunction("flux_qt_color_g",            (void*)&flux_qt_color_g);
-    jit.registerFunction("flux_qt_color_b",            (void*)&flux_qt_color_b);
-    jit.registerFunction("flux_qt_font_dialog",        (void*)&flux_qt_font_dialog);
-    jit.registerFunction("flux_qt_font_size",          (void*)&flux_qt_font_size);
-    jit.registerFunction("flux_qt_font_family",        (void*)&flux_qt_font_family);
-    jit.registerFunction("flux_qt_scroll_set_widget",  (void*)&flux_qt_scroll_set_widget);
-    jit.registerFunction("flux_qt_create_svgwidget",   (void*)&flux_qt_create_svgwidget);
-    jit.registerFunction("flux_qt_svgwidget_load",     (void*)&flux_qt_svgwidget_load);
-    jit.registerFunction("flux_qt_svgwidget_set_size", (void*)&flux_qt_svgwidget_set_size);
-    jit.registerFunction("flux_qt_label_load_image",   (void*)&flux_qt_label_load_image);
-    jit.registerFunction("flux_qt_label_set_pixmap",   (void*)&flux_qt_label_set_pixmap);
-    jit.registerFunction("flux_qt_set_window_icon",    (void*)&flux_qt_set_window_icon);
-    jit.registerFunction("flux_qt_set_button_icon",    (void*)&flux_qt_set_button_icon);
-    jit.registerFunction("flux_qt_set_action_icon",    (void*)&flux_qt_set_action_icon);
-    jit.registerFunction("flux_qt_create_toolbar",     (void*)&flux_qt_create_toolbar);
-    jit.registerFunction("flux_qt_toolbar_add_action", (void*)&flux_qt_toolbar_add_action);
-    jit.registerFunction("flux_qt_toolbar_add_separator",(void*)&flux_qt_toolbar_add_separator);
-
-    // Qt Charts
-    jit.registerFunction("flux_qt_create_chartview",    (void*)&flux_qt_create_chartview);
-    jit.registerFunction("flux_qt_chart_set_title",     (void*)&flux_qt_chart_set_title);
-    jit.registerFunction("flux_qt_chart_set_animation", (void*)&flux_qt_chart_set_animation);
-    jit.registerFunction("flux_qt_chart_set_theme",     (void*)&flux_qt_chart_set_theme);
-    jit.registerFunction("flux_qt_chart_set_background",(void*)&flux_qt_chart_set_background);
-    jit.registerFunction("flux_qt_chart_set_drop_shadow",(void*)&flux_qt_chart_set_drop_shadow);
-    jit.registerFunction("flux_qt_chart_set_margins",   (void*)&flux_qt_chart_set_margins);
-    jit.registerFunction("flux_qt_chart_legend_show",   (void*)&flux_qt_chart_legend_show);
-    jit.registerFunction("flux_qt_chart_legend_align",  (void*)&flux_qt_chart_legend_align);
-    jit.registerFunction("flux_qt_chart_add_line_series",   (void*)&flux_qt_chart_add_line_series);
-    jit.registerFunction("flux_qt_chart_add_spline_series", (void*)&flux_qt_chart_add_spline_series);
-    jit.registerFunction("flux_qt_chart_add_scatter_series",(void*)&flux_qt_chart_add_scatter_series);
-    jit.registerFunction("flux_qt_chart_add_area_series",   (void*)&flux_qt_chart_add_area_series);
-    jit.registerFunction("flux_qt_xy_series_append",        (void*)&flux_qt_xy_series_append);
-    jit.registerFunction("flux_qt_xy_series_set_pen",       (void*)&flux_qt_xy_series_set_pen);
-    jit.registerFunction("flux_qt_line_series_append",      (void*)&flux_qt_xy_series_append);
-    jit.registerFunction("flux_qt_line_series_set_pen",     (void*)&flux_qt_xy_series_set_pen);
-    jit.registerFunction("flux_qt_scatter_series_set_marker_size", (void*)&flux_qt_scatter_series_set_marker_size);
-    jit.registerFunction("flux_qt_chart_add_bar_series",    (void*)&flux_qt_chart_add_bar_series);
-    jit.registerFunction("flux_qt_chart_add_stacked_bar_series",(void*)&flux_qt_chart_add_stacked_bar_series);
-    jit.registerFunction("flux_qt_create_bar_set",          (void*)&flux_qt_create_bar_set);
-    jit.registerFunction("flux_qt_bar_set_append",          (void*)&flux_qt_bar_set_append);
-    jit.registerFunction("flux_qt_bar_set_set_color",       (void*)&flux_qt_bar_set_set_color);
-    jit.registerFunction("flux_qt_bar_series_append_set",   (void*)&flux_qt_bar_series_append_set);
-    jit.registerFunction("flux_qt_chart_add_hbar_series",   (void*)&flux_qt_chart_add_hbar_series);
-    jit.registerFunction("flux_qt_chart_add_pie_series",    (void*)&flux_qt_chart_add_pie_series);
-    jit.registerFunction("flux_qt_pie_series_append",       (void*)&flux_qt_pie_series_append);
-    jit.registerFunction("flux_qt_pie_slice_set_color",     (void*)&flux_qt_pie_slice_set_color);
-    jit.registerFunction("flux_qt_pie_slice_set_label_visible", (void*)&flux_qt_pie_slice_set_label_visible);
-    jit.registerFunction("flux_qt_pie_slice_set_exploded",  (void*)&flux_qt_pie_slice_set_exploded);
-    jit.registerFunction("flux_qt_pie_series_set_hole_size",(void*)&flux_qt_pie_series_set_hole_size);
-    jit.registerFunction("flux_qt_pie_series_set_labels_position",(void*)&flux_qt_pie_series_set_labels_position);
-    jit.registerFunction("flux_qt_chart_create_default_axes",(void*)&flux_qt_chart_create_default_axes);
-    jit.registerFunction("flux_qt_chart_add_axis",          (void*)&flux_qt_chart_add_axis);
-    jit.registerFunction("flux_qt_axis_set_range",          (void*)&flux_qt_axis_set_range);
-    jit.registerFunction("flux_qt_axis_set_min",            (void*)&flux_qt_axis_set_min);
-    jit.registerFunction("flux_qt_axis_set_max",            (void*)&flux_qt_axis_set_max);
-    jit.registerFunction("flux_qt_axis_set_title",          (void*)&flux_qt_axis_set_title);
-    jit.registerFunction("flux_qt_axis_set_label_format",   (void*)&flux_qt_axis_set_label_format);
-    jit.registerFunction("flux_qt_axis_set_grid_visible",   (void*)&flux_qt_axis_set_grid_visible);
-    jit.registerFunction("flux_qt_axis_set_labels_visible", (void*)&flux_qt_axis_set_labels_visible);
-    jit.registerFunction("flux_qt_axis_set_line_visible",   (void*)&flux_qt_axis_set_line_visible);
-    jit.registerFunction("flux_qt_axis_set_tick_count",     (void*)&flux_qt_axis_set_tick_count);
-    jit.registerFunction("flux_qt_series_attach_axis",      (void*)&flux_qt_series_attach_axis);
-    jit.registerFunction("flux_qt_chart_add_series",        (void*)&flux_qt_chart_add_series);
-
-    // QTreeWidget
-    jit.registerFunction("flux_qt_create_treewidget",   (void*)&flux_qt_create_treewidget);
-    jit.registerFunction("flux_qt_tree_set_header",      (void*)&flux_qt_tree_set_header);
-    jit.registerFunction("flux_qt_tree_set_column_count",(void*)&flux_qt_tree_set_column_count);
-    jit.registerFunction("flux_qt_tree_set_column_width",(void*)&flux_qt_tree_set_column_width);
-    jit.registerFunction("flux_qt_tree_resize_to_contents",(void*)&flux_qt_tree_resize_to_contents);
-    jit.registerFunction("flux_qt_tree_top_level_count", (void*)&flux_qt_tree_top_level_count);
-    jit.registerFunction("flux_qt_tree_top_level_item",  (void*)&flux_qt_tree_top_level_item);
-    jit.registerFunction("flux_qt_tree_item_child_count",(void*)&flux_qt_tree_item_child_count);
-    jit.registerFunction("flux_qt_tree_item_child",      (void*)&flux_qt_tree_item_child);
-    jit.registerFunction("flux_qt_tree_item_parent",     (void*)&flux_qt_tree_item_parent);
-    jit.registerFunction("flux_qt_tree_item_row",        (void*)&flux_qt_tree_item_row);
-    jit.registerFunction("flux_qt_tree_invisible_root",  (void*)&flux_qt_tree_invisible_root);
-    jit.registerFunction("flux_qt_tree_add_item",        (void*)&flux_qt_tree_add_item);
-    jit.registerFunction("flux_qt_tree_add_item_col",    (void*)&flux_qt_tree_add_item_col);
-    jit.registerFunction("flux_qt_tree_add_child",       (void*)&flux_qt_tree_add_child);
-    jit.registerFunction("flux_qt_tree_item_set_text",   (void*)&flux_qt_tree_item_set_text);
-    jit.registerFunction("flux_qt_tree_item_text",       (void*)&flux_qt_tree_item_text);
-    jit.registerFunction("flux_qt_tree_item_set_icon",   (void*)&flux_qt_tree_item_set_icon);
-    jit.registerFunction("flux_qt_tree_item_set_checked",(void*)&flux_qt_tree_item_set_checked);
-    jit.registerFunction("flux_qt_tree_item_checked",    (void*)&flux_qt_tree_item_checked);
-    jit.registerFunction("flux_qt_tree_item_set_expanded",(void*)&flux_qt_tree_item_set_expanded);
-    jit.registerFunction("flux_qt_tree_item_set_tooltip",(void*)&flux_qt_tree_item_set_tooltip);
-    jit.registerFunction("flux_qt_tree_item_set_foreground",(void*)&flux_qt_tree_item_set_foreground);
-    jit.registerFunction("flux_qt_tree_item_set_background",(void*)&flux_qt_tree_item_set_background);
-    jit.registerFunction("flux_qt_tree_current_item",    (void*)&flux_qt_tree_current_item);
-    jit.registerFunction("flux_qt_tree_set_current_item",(void*)&flux_qt_tree_set_current_item);
-    jit.registerFunction("flux_qt_tree_set_selection_mode",(void*)&flux_qt_tree_set_selection_mode);
-    jit.registerFunction("flux_qt_tree_set_header_visible",(void*)&flux_qt_tree_set_header_visible);
-    jit.registerFunction("flux_qt_tree_set_alternating", (void*)&flux_qt_tree_set_alternating);
-    jit.registerFunction("flux_qt_tree_set_animated",    (void*)&flux_qt_tree_set_animated);
-    jit.registerFunction("flux_qt_tree_set_indentation", (void*)&flux_qt_tree_set_indentation);
-    jit.registerFunction("flux_qt_tree_clear",           (void*)&flux_qt_tree_clear);
-    jit.registerFunction("flux_qt_tree_sort",            (void*)&flux_qt_tree_sort);
-    jit.registerFunction("flux_qt_tree_remove_item",     (void*)&flux_qt_tree_remove_item);
-    jit.registerFunction("flux_qt_tree_on_item_clicked", (void*)&flux_qt_tree_on_item_clicked);
-    jit.registerFunction("flux_qt_tree_on_current_item_changed", (void*)&flux_qt_tree_on_current_item_changed);
-    jit.registerFunction("flux_qt_tree_on_item_expanded",(void*)&flux_qt_tree_on_item_expanded);
-    jit.registerFunction("flux_qt_tree_on_item_collapsed",(void*)&flux_qt_tree_on_item_collapsed);
-    jit.registerFunction("flux_qt_tree_on_item_activated",(void*)&flux_qt_tree_on_item_activated);
-
-    // QDockWidget
-    jit.registerFunction("flux_qt_create_dockwidget",    (void*)&flux_qt_create_dockwidget);
-    jit.registerFunction("flux_qt_dock_set_widget",      (void*)&flux_qt_dock_set_widget);
-    jit.registerFunction("flux_qt_dock_set_features",    (void*)&flux_qt_dock_set_features);
-    jit.registerFunction("flux_qt_dock_set_title",       (void*)&flux_qt_dock_set_title);
-    jit.registerFunction("flux_qt_dock_set_visible",     (void*)&flux_qt_dock_set_visible);
-    jit.registerFunction("flux_qt_dock_is_visible",      (void*)&flux_qt_dock_is_visible);
-    jit.registerFunction("flux_qt_dock_is_floating",     (void*)&flux_qt_dock_is_floating);
-    jit.registerFunction("flux_qt_mainwindow_add_dock",  (void*)&flux_qt_mainwindow_add_dock);
-    jit.registerFunction("flux_qt_mainwindow_tabify_docks",(void*)&flux_qt_mainwindow_tabify_docks);
-    jit.registerFunction("flux_qt_mainwindow_split_dock",(void*)&flux_qt_mainwindow_split_dock);
-    jit.registerFunction("flux_qt_dock_on_visibility_changed",(void*)&flux_qt_dock_on_visibility_changed);
-    jit.registerFunction("flux_qt_dock_on_dock_location_changed",(void*)&flux_qt_dock_on_dock_location_changed);
-    jit.registerFunction("flux_qt_dock_on_top_level_changed",(void*)&flux_qt_dock_on_top_level_changed);
-
-    // Numeric properties
-    jit.registerFunction("flux_qt_get_property",     (void*)&flux_qt_get_property);
-    jit.registerFunction("flux_qt_set_property",     (void*)&flux_qt_set_property);
-
-    // String properties (new)
-    jit.registerFunction("flux_qt_get_str_prop",     (void*)&flux_qt_get_str_prop);
-    jit.registerFunction("flux_qt_set_str_prop",     (void*)&flux_qt_set_str_prop);
-    jit.registerFunction("flux_qt_get_text",         (void*)&flux_qt_get_text);
-    jit.registerFunction("flux_qt_set_text",         (void*)&flux_qt_set_text);
-    jit.registerFunction("flux_qt_set_window_title", (void*)&flux_qt_set_window_title);
-
-    // Styling / widget control
-    jit.registerFunction("flux_qt_set_stylesheet",   (void*)&flux_qt_set_stylesheet);
-    jit.registerFunction("flux_qt_set_visible",      (void*)&flux_qt_set_visible);
-    jit.registerFunction("flux_qt_set_tooltip",      (void*)&flux_qt_set_tooltip);
-
-    // App control
-    jit.registerFunction("flux_qt_app_quit",         (void*)&flux_qt_app_quit);
-
-    // Signal bindings
-    jit.registerFunction("flux_qt_on_click_by_name", (void*)&flux_qt_on_click_by_name);
-    jit.registerFunction("flux_qt_on_value_changed_by_name", (void*)&flux_qt_on_value_changed_by_name);
-    jit.registerFunction("flux_qt_on_current_index_changed_by_name", (void*)&flux_qt_on_current_index_changed_by_name);
-    jit.registerFunction("flux_qt_on_toggled_by_name", (void*)&flux_qt_on_toggled_by_name);
-    jit.registerFunction("flux_qt_on_text_changed_by_name", (void*)&flux_qt_on_text_changed_by_name);
-    jit.registerFunction("flux_qt_on_current_row_changed_by_name", (void*)&flux_qt_on_current_row_changed_by_name);
+    struct { const char* name; void* ptr; } const fns[] = {
+        {"flux_qt_create_button",          (void*)&flux_qt_create_button},
+        {"flux_qt_create_label",           (void*)&flux_qt_create_label},
+        {"flux_qt_create_slider",          (void*)&flux_qt_create_slider},
+        {"flux_qt_create_dial",            (void*)&flux_qt_create_dial},
+        {"flux_qt_create_lcd",             (void*)&flux_qt_create_lcd},
+        {"flux_qt_create_spinbox",         (void*)&flux_qt_create_spinbox},
+        {"flux_qt_create_progressbar",     (void*)&flux_qt_create_progressbar},
+        {"flux_qt_create_checkbox",        (void*)&flux_qt_create_checkbox},
+        {"flux_qt_create_lineedit",        (void*)&flux_qt_create_lineedit},
+        {"flux_qt_create_textedit",        (void*)&flux_qt_create_textedit},
+        {"flux_qt_create_combobox",        (void*)&flux_qt_create_combobox},
+        {"flux_qt_create_tableview",       (void*)&flux_qt_create_tableview},
+        {"flux_qt_create_tabwidget",       (void*)&flux_qt_create_tabwidget},
+        {"flux_qt_create_groupbox",        (void*)&flux_qt_create_groupbox},
+        {"flux_qt_create_radiobutton",     (void*)&flux_qt_create_radiobutton},
+        {"flux_qt_create_toolbutton",      (void*)&flux_qt_create_toolbutton},
+        {"flux_qt_toolbutton_set_arrow_type",        (void*)&flux_qt_toolbutton_set_arrow_type},
+        {"flux_qt_toolbutton_set_popup_mode",        (void*)&flux_qt_toolbutton_set_popup_mode},
+        {"flux_qt_toolbutton_set_toolbutton_style",  (void*)&flux_qt_toolbutton_set_toolbutton_style},
+        {"flux_qt_toolbutton_set_auto_raise",        (void*)&flux_qt_toolbutton_set_auto_raise},
+        {"flux_qt_toolbutton_set_menu",              (void*)&flux_qt_toolbutton_set_menu},
+        {"flux_qt_toolbutton_show_menu",             (void*)&flux_qt_toolbutton_show_menu},
+        {"flux_qt_create_commandlinkbutton",         (void*)&flux_qt_create_commandlinkbutton},
+        {"flux_qt_commandlinkbutton_set_description",(void*)&flux_qt_commandlinkbutton_set_description},
+        {"flux_qt_set_abstractbutton_icon",          (void*)&flux_qt_set_abstractbutton_icon},
+        {"flux_qt_create_splitter",        (void*)&flux_qt_create_splitter},
+        {"flux_qt_create_listwidget",      (void*)&flux_qt_create_listwidget},
+        {"flux_qt_create_stackedwidget",   (void*)&flux_qt_create_stackedwidget},
+        {"flux_qt_create_widget",          (void*)&flux_qt_create_widget},
+        {"flux_qt_create_window",          (void*)&flux_qt_create_window},
+        {"flux_qt_create_mainwindow",      (void*)&flux_qt_create_mainwindow},
+        {"flux_qt_get_window",             (void*)&flux_qt_get_window},
+        {"flux_qt_create_scrollarea",      (void*)&flux_qt_create_scrollarea},
+        {"flux_qt_create_layout",          (void*)&flux_qt_create_layout},
+        {"flux_qt_set_layout",             (void*)&flux_qt_set_layout},
+        {"flux_qt_add_widget",             (void*)&flux_qt_add_widget},
+        {"flux_qt_layout_add_widget",      (void*)&flux_qt_layout_add_widget},
+        {"flux_qt_grid_add_widget",        (void*)&flux_qt_grid_add_widget},
+        {"flux_qt_set_window_size",        (void*)&flux_qt_set_window_size},
+        {"flux_qt_layout_set_margins",     (void*)&flux_qt_layout_set_margins},
+        {"flux_qt_layout_set_spacing",     (void*)&flux_qt_layout_set_spacing},
+        {"flux_qt_layout_set_stretch",     (void*)&flux_qt_layout_set_stretch},
+        {"flux_qt_msg_box",                (void*)&flux_qt_msg_box},
+        {"flux_qt_lcd_display",            (void*)&flux_qt_lcd_display},
+        {"flux_qt_combo_add_item",         (void*)&flux_qt_combo_add_item},
+        {"flux_qt_combo_clear",            (void*)&flux_qt_combo_clear},
+        {"flux_qt_combo_set_current_index",(void*)&flux_qt_combo_set_current_index},
+        {"flux_qt_table_row_count",        (void*)&flux_qt_table_row_count},
+        {"flux_qt_table_col_count",        (void*)&flux_qt_table_col_count},
+        {"flux_qt_table_set_value",        (void*)&flux_qt_table_set_value},
+        {"flux_qt_table_set_item",         (void*)&flux_qt_table_set_item},
+        {"flux_qt_table_set_header",       (void*)&flux_qt_table_set_header},
+        {"flux_qt_create_timer",           (void*)&flux_qt_create_timer},
+        {"flux_qt_timer_start",            (void*)&flux_qt_timer_start},
+        {"flux_qt_timer_stop",             (void*)&flux_qt_timer_stop},
+        {"flux_qt_tab_add",                (void*)&flux_qt_tab_add},
+        {"flux_qt_tab_set_current",        (void*)&flux_qt_tab_set_current},
+        {"flux_qt_groupbox_set_layout",    (void*)&flux_qt_groupbox_set_layout},
+        {"flux_qt_splitter_add",           (void*)&flux_qt_splitter_add},
+        {"flux_qt_list_add_item",          (void*)&flux_qt_list_add_item},
+        {"flux_qt_list_current_row",       (void*)&flux_qt_list_current_row},
+        {"flux_qt_list_set_current_row",   (void*)&flux_qt_list_set_current_row},
+        {"flux_qt_list_clear",             (void*)&flux_qt_list_clear},
+        {"flux_qt_list_count",             (void*)&flux_qt_list_count},
+        {"flux_qt_stacked_add",            (void*)&flux_qt_stacked_add},
+        {"flux_qt_stacked_set_current",    (void*)&flux_qt_stacked_set_current},
+        {"flux_qt_stacked_count",          (void*)&flux_qt_stacked_count},
+        {"flux_qt_get_menubar",            (void*)&flux_qt_get_menubar},
+        {"flux_qt_create_menu",            (void*)&flux_qt_create_menu},
+        {"flux_qt_set_central_widget",     (void*)&flux_qt_set_central_widget},
+        {"flux_qt_set_statusbar_text",     (void*)&flux_qt_set_statusbar_text},
+        {"flux_qt_menu_add_menu",          (void*)&flux_qt_menu_add_menu},
+        {"flux_qt_menu_add_action",        (void*)&flux_qt_menu_add_action},
+        {"flux_qt_open_file_dialog",       (void*)&flux_qt_open_file_dialog},
+        {"flux_qt_save_file_dialog",       (void*)&flux_qt_save_file_dialog},
+        {"flux_qt_input_dialog",           (void*)&flux_qt_input_dialog},
+        {"flux_qt_color_dialog",           (void*)&flux_qt_color_dialog},
+        {"flux_qt_color_r",                (void*)&flux_qt_color_r},
+        {"flux_qt_color_g",                (void*)&flux_qt_color_g},
+        {"flux_qt_color_b",                (void*)&flux_qt_color_b},
+        {"flux_qt_font_dialog",            (void*)&flux_qt_font_dialog},
+        {"flux_qt_font_size",              (void*)&flux_qt_font_size},
+        {"flux_qt_font_family",            (void*)&flux_qt_font_family},
+        {"flux_qt_scroll_set_widget",      (void*)&flux_qt_scroll_set_widget},
+        {"flux_qt_create_svgwidget",       (void*)&flux_qt_create_svgwidget},
+        {"flux_qt_svgwidget_load",         (void*)&flux_qt_svgwidget_load},
+        {"flux_qt_svgwidget_set_size",     (void*)&flux_qt_svgwidget_set_size},
+        {"flux_qt_label_load_image",       (void*)&flux_qt_label_load_image},
+        {"flux_qt_label_set_pixmap",       (void*)&flux_qt_label_set_pixmap},
+        {"flux_qt_set_window_icon",        (void*)&flux_qt_set_window_icon},
+        {"flux_qt_set_button_icon",        (void*)&flux_qt_set_button_icon},
+        {"flux_qt_set_action_icon",        (void*)&flux_qt_set_action_icon},
+        {"flux_qt_create_toolbar",         (void*)&flux_qt_create_toolbar},
+        {"flux_qt_toolbar_add_action",     (void*)&flux_qt_toolbar_add_action},
+        {"flux_qt_toolbar_add_separator",  (void*)&flux_qt_toolbar_add_separator},
+        {"flux_qt_create_chartview",       (void*)&flux_qt_create_chartview},
+        {"flux_qt_chart_set_title",        (void*)&flux_qt_chart_set_title},
+        {"flux_qt_chart_set_animation",    (void*)&flux_qt_chart_set_animation},
+        {"flux_qt_chart_set_theme",        (void*)&flux_qt_chart_set_theme},
+        {"flux_qt_chart_set_background",   (void*)&flux_qt_chart_set_background},
+        {"flux_qt_chart_set_drop_shadow",  (void*)&flux_qt_chart_set_drop_shadow},
+        {"flux_qt_chart_set_margins",      (void*)&flux_qt_chart_set_margins},
+        {"flux_qt_chart_legend_show",      (void*)&flux_qt_chart_legend_show},
+        {"flux_qt_chart_legend_align",     (void*)&flux_qt_chart_legend_align},
+        {"flux_qt_chart_add_line_series",  (void*)&flux_qt_chart_add_line_series},
+        {"flux_qt_chart_add_spline_series",(void*)&flux_qt_chart_add_spline_series},
+        {"flux_qt_chart_add_scatter_series",(void*)&flux_qt_chart_add_scatter_series},
+        {"flux_qt_chart_add_area_series",  (void*)&flux_qt_chart_add_area_series},
+        {"flux_qt_xy_series_append",       (void*)&flux_qt_xy_series_append},
+        {"flux_qt_series_append_data",     (void*)&flux_qt_series_append_data},
+        {"flux_qt_xy_series_set_pen",      (void*)&flux_qt_xy_series_set_pen},
+        {"flux_qt_xy_series_count",        (void*)&flux_qt_xy_series_count},
+        {"flux_qt_xy_series_clear",        (void*)&flux_qt_xy_series_clear},
+        {"flux_qt_xy_series_scroll",       (void*)&flux_qt_xy_series_scroll},
+        {"flux_qt_progress_set_range",     (void*)&flux_qt_progress_set_range},
+        {"flux_qt_line_series_append",     (void*)&flux_qt_xy_series_append},
+        {"flux_qt_line_series_set_pen",    (void*)&flux_qt_xy_series_set_pen},
+        {"flux_qt_scatter_series_set_marker_size",(void*)&flux_qt_scatter_series_set_marker_size},
+        {"flux_qt_chart_add_bar_series",   (void*)&flux_qt_chart_add_bar_series},
+        {"flux_qt_chart_add_stacked_bar_series",(void*)&flux_qt_chart_add_stacked_bar_series},
+        {"flux_qt_create_bar_set",         (void*)&flux_qt_create_bar_set},
+        {"flux_qt_bar_set_append",         (void*)&flux_qt_bar_set_append},
+        {"flux_qt_bar_set_remove",         (void*)&flux_qt_bar_set_remove},
+        {"flux_qt_bar_set_set_color",      (void*)&flux_qt_bar_set_set_color},
+        {"flux_qt_bar_series_append_set",  (void*)&flux_qt_bar_series_append_set},
+        {"flux_qt_chart_add_hbar_series",  (void*)&flux_qt_chart_add_hbar_series},
+        {"flux_qt_chart_add_pie_series",   (void*)&flux_qt_chart_add_pie_series},
+        {"flux_qt_pie_series_append",      (void*)&flux_qt_pie_series_append},
+        {"flux_qt_pie_slice_set_color",    (void*)&flux_qt_pie_slice_set_color},
+        {"flux_qt_pie_slice_set_label_visible",(void*)&flux_qt_pie_slice_set_label_visible},
+        {"flux_qt_pie_slice_set_exploded", (void*)&flux_qt_pie_slice_set_exploded},
+        {"flux_qt_pie_series_set_hole_size",(void*)&flux_qt_pie_series_set_hole_size},
+        {"flux_qt_pie_series_set_labels_position",(void*)&flux_qt_pie_series_set_labels_position},
+        {"flux_qt_chart_create_default_axes",(void*)&flux_qt_chart_create_default_axes},
+        {"flux_qt_chart_add_axis",         (void*)&flux_qt_chart_add_axis},
+        {"flux_qt_axis_set_range",         (void*)&flux_qt_axis_set_range},
+        {"flux_qt_axis_set_min",           (void*)&flux_qt_axis_set_min},
+        {"flux_qt_axis_set_max",           (void*)&flux_qt_axis_set_max},
+        {"flux_qt_axis_set_title",         (void*)&flux_qt_axis_set_title},
+        {"flux_qt_axis_set_label_format",  (void*)&flux_qt_axis_set_label_format},
+        {"flux_qt_axis_set_grid_visible",  (void*)&flux_qt_axis_set_grid_visible},
+        {"flux_qt_axis_set_labels_visible",(void*)&flux_qt_axis_set_labels_visible},
+        {"flux_qt_axis_set_line_visible",  (void*)&flux_qt_axis_set_line_visible},
+        {"flux_qt_axis_set_tick_count",    (void*)&flux_qt_axis_set_tick_count},
+        {"flux_qt_series_attach_axis",     (void*)&flux_qt_series_attach_axis},
+        {"flux_qt_chart_add_series",       (void*)&flux_qt_chart_add_series},
+        {"flux_qt_chart_save_png",         (void*)&flux_qt_chart_save_png},
+        {"flux_qt_create_treewidget",      (void*)&flux_qt_create_treewidget},
+        {"flux_qt_tree_set_header",        (void*)&flux_qt_tree_set_header},
+        {"flux_qt_tree_set_column_count",  (void*)&flux_qt_tree_set_column_count},
+        {"flux_qt_tree_set_column_width",  (void*)&flux_qt_tree_set_column_width},
+        {"flux_qt_tree_resize_to_contents",(void*)&flux_qt_tree_resize_to_contents},
+        {"flux_qt_tree_top_level_count",   (void*)&flux_qt_tree_top_level_count},
+        {"flux_qt_tree_top_level_item",    (void*)&flux_qt_tree_top_level_item},
+        {"flux_qt_tree_item_child_count",  (void*)&flux_qt_tree_item_child_count},
+        {"flux_qt_tree_item_child",        (void*)&flux_qt_tree_item_child},
+        {"flux_qt_tree_item_parent",       (void*)&flux_qt_tree_item_parent},
+        {"flux_qt_tree_item_row",          (void*)&flux_qt_tree_item_row},
+        {"flux_qt_tree_invisible_root",    (void*)&flux_qt_tree_invisible_root},
+        {"flux_qt_tree_add_item",          (void*)&flux_qt_tree_add_item},
+        {"flux_qt_tree_add_item_col",      (void*)&flux_qt_tree_add_item_col},
+        {"flux_qt_tree_add_child",         (void*)&flux_qt_tree_add_child},
+        {"flux_qt_tree_item_set_text",     (void*)&flux_qt_tree_item_set_text},
+        {"flux_qt_tree_item_text",         (void*)&flux_qt_tree_item_text},
+        {"flux_qt_tree_item_set_icon",     (void*)&flux_qt_tree_item_set_icon},
+        {"flux_qt_tree_item_set_checked",  (void*)&flux_qt_tree_item_set_checked},
+        {"flux_qt_tree_item_checked",      (void*)&flux_qt_tree_item_checked},
+        {"flux_qt_tree_item_set_expanded", (void*)&flux_qt_tree_item_set_expanded},
+        {"flux_qt_tree_item_set_tooltip",  (void*)&flux_qt_tree_item_set_tooltip},
+        {"flux_qt_tree_item_set_foreground",(void*)&flux_qt_tree_item_set_foreground},
+        {"flux_qt_tree_item_set_background",(void*)&flux_qt_tree_item_set_background},
+        {"flux_qt_tree_current_item",      (void*)&flux_qt_tree_current_item},
+        {"flux_qt_tree_set_current_item",  (void*)&flux_qt_tree_set_current_item},
+        {"flux_qt_tree_set_selection_mode",(void*)&flux_qt_tree_set_selection_mode},
+        {"flux_qt_tree_set_header_visible",(void*)&flux_qt_tree_set_header_visible},
+        {"flux_qt_tree_set_alternating",   (void*)&flux_qt_tree_set_alternating},
+        {"flux_qt_tree_set_animated",      (void*)&flux_qt_tree_set_animated},
+        {"flux_qt_tree_set_indentation",   (void*)&flux_qt_tree_set_indentation},
+        {"flux_qt_tree_clear",             (void*)&flux_qt_tree_clear},
+        {"flux_qt_tree_sort",              (void*)&flux_qt_tree_sort},
+        {"flux_qt_tree_remove_item",       (void*)&flux_qt_tree_remove_item},
+        {"flux_qt_tree_on_item_clicked",   (void*)&flux_qt_tree_on_item_clicked},
+        {"flux_qt_tree_on_current_item_changed",(void*)&flux_qt_tree_on_current_item_changed},
+        {"flux_qt_tree_on_item_expanded",  (void*)&flux_qt_tree_on_item_expanded},
+        {"flux_qt_tree_on_item_collapsed", (void*)&flux_qt_tree_on_item_collapsed},
+        {"flux_qt_tree_on_item_activated", (void*)&flux_qt_tree_on_item_activated},
+        {"flux_qt_create_dockwidget",      (void*)&flux_qt_create_dockwidget},
+        {"flux_qt_dock_set_widget",        (void*)&flux_qt_dock_set_widget},
+        {"flux_qt_dock_set_features",      (void*)&flux_qt_dock_set_features},
+        {"flux_qt_dock_set_title",         (void*)&flux_qt_dock_set_title},
+        {"flux_qt_dock_set_visible",       (void*)&flux_qt_dock_set_visible},
+        {"flux_qt_dock_is_visible",        (void*)&flux_qt_dock_is_visible},
+        {"flux_qt_dock_is_floating",       (void*)&flux_qt_dock_is_floating},
+        {"flux_qt_mainwindow_add_dock",    (void*)&flux_qt_mainwindow_add_dock},
+        {"flux_qt_mainwindow_tabify_docks",(void*)&flux_qt_mainwindow_tabify_docks},
+        {"flux_qt_mainwindow_split_dock",  (void*)&flux_qt_mainwindow_split_dock},
+        {"flux_qt_dock_on_visibility_changed",(void*)&flux_qt_dock_on_visibility_changed},
+        {"flux_qt_dock_on_dock_location_changed",(void*)&flux_qt_dock_on_dock_location_changed},
+        {"flux_qt_dock_on_top_level_changed",(void*)&flux_qt_dock_on_top_level_changed},
+        {"flux_qt_get_property",           (void*)&flux_qt_get_property},
+        {"flux_qt_set_property",           (void*)&flux_qt_set_property},
+        {"flux_qt_get_str_prop",           (void*)&flux_qt_get_str_prop},
+        {"flux_qt_set_str_prop",           (void*)&flux_qt_set_str_prop},
+        {"flux_qt_get_text",               (void*)&flux_qt_get_text},
+        {"flux_qt_set_text",               (void*)&flux_qt_set_text},
+        {"flux_qt_set_window_title",       (void*)&flux_qt_set_window_title},
+        {"flux_qt_set_stylesheet",         (void*)&flux_qt_set_stylesheet},
+        {"flux_qt_set_visible",            (void*)&flux_qt_set_visible},
+        {"flux_qt_set_tooltip",            (void*)&flux_qt_set_tooltip},
+        {"flux_qt_app_quit",               (void*)&flux_qt_app_quit},
+        {"flux_qt_create_calendar",        (void*)&flux_qt_create_calendar},
+        {"flux_qt_calendar_selected_date", (void*)&flux_qt_calendar_selected_date},
+        {"flux_qt_create_mdiarea",         (void*)&flux_qt_create_mdiarea},
+        {"flux_qt_mdi_add_subwindow",      (void*)&flux_qt_mdi_add_subwindow},
+        {"flux_qt_mdi_cascade",            (void*)&flux_qt_mdi_cascade},
+        {"flux_qt_mdi_tile",               (void*)&flux_qt_mdi_tile},
+        {"flux_qt_mdi_subwindow_set_title",(void*)&flux_qt_mdi_subwindow_set_title},
+        {"flux_qt_mdi_close_all",          (void*)&flux_qt_mdi_close_all},
+        {"flux_qt_create_progress_dialog", (void*)&flux_qt_create_progress_dialog},
+        {"flux_qt_progress_set_value",     (void*)&flux_qt_progress_set_value},
+        {"flux_qt_progress_set_label",     (void*)&flux_qt_progress_set_label},
+        {"flux_qt_progress_was_canceled",  (void*)&flux_qt_progress_was_canceled},
+        {"flux_qt_on_click_by_name",       (void*)&flux_qt_on_click_by_name},
+        {"flux_qt_on_value_changed_by_name",(void*)&flux_qt_on_value_changed_by_name},
+        {"flux_qt_on_current_index_changed_by_name",(void*)&flux_qt_on_current_index_changed_by_name},
+        {"flux_qt_on_toggled_by_name",     (void*)&flux_qt_on_toggled_by_name},
+        {"flux_qt_on_text_changed_by_name",(void*)&flux_qt_on_text_changed_by_name},
+        {"flux_qt_on_current_row_changed_by_name",(void*)&flux_qt_on_current_row_changed_by_name},
+        {"flux_qt_on_selection_changed_by_name",(void*)&flux_qt_on_selection_changed_by_name},
+        {"flux_qt_create_shortcut",        (void*)&flux_qt_create_shortcut},
+        {"flux_qt_create_tray_icon",       (void*)&flux_qt_create_tray_icon},
+        {"flux_qt_tray_set_visible",       (void*)&flux_qt_tray_set_visible},
+        {"flux_qt_tray_show_message",      (void*)&flux_qt_tray_show_message},
+        {"flux_qt_tray_set_context_menu",  (void*)&flux_qt_tray_set_context_menu},
+        {"flux_qt_tray_on_activated",      (void*)&flux_qt_tray_on_activated},
+        {"flux_qt_app_set_quit_on_last_closed",(void*)&flux_qt_app_set_quit_on_last_closed},
+        {"flux_qt_set_app_icon",           (void*)&flux_qt_set_app_icon},
+        {"flux_qt_put_pixel",              (void*)&flux_qt_put_pixel},
+        {"flux_qt_render_image",           (void*)&flux_qt_render_image},
+        {"flux_qt_ray_pixel_count",        (void*)&flux_qt_ray_pixel_count},
+        {"flux_qt_enable_drops",           (void*)&flux_qt_enable_drops},
+        {"flux_qt_last_dropped_file",      (void*)&flux_qt_last_dropped_file},
+        {"flux_qt_eval",                   (void*)&flux_qt_eval},
+    };
+    for (auto& f : fns)
+        jit.registerFunction(f.name, f.ptr);
 }

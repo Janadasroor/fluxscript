@@ -1,8 +1,72 @@
-# FluxScript Tree Demo — QTreeWidget with hierarchy, columns, icons, colors
+# FluxScript Tree Demo — Modern Rewrite
+# Demonstrates: enum, struct, impl, match, method calls
+
+# ── Enums ────────────────────────────────────────────────────────────────────
+
+enum FileType {
+  Folder,
+  Text,
+  Sheet,
+  Markdown,
+  Image,
+  Vector,
+  App
+}
+
+# ── Structs ──────────────────────────────────────────────────────────────────
+
+struct TreeRef {
+  handle: Double
+}
+
+# ── Helpers ──────────────────────────────────────────────────────────────────
+
+def type_label(t: FileType) -> Double {
+  match t {
+    FileType.Folder -> "Folder",
+    FileType.Text -> "Text",
+    FileType.Sheet -> "Sheet",
+    FileType.Markdown -> "Markdown",
+    FileType.Image -> "Image",
+    FileType.Vector -> "Vector",
+    FileType.App -> "App",
+    default -> "?"
+  }
+}
+
+def icon_path(t: FileType) -> Double {
+  match t {
+    FileType.Folder -> "gear.svg",
+    FileType.Image -> "flux.svg",
+    default -> ""
+  }
+}
+
+# ── Impl (methods on TreeRef) ────────────────────────────────────────────────
+
+impl TreeRef {
+  def add_item(self, name: Double, kind: FileType, size: Double) -> Double {
+    let h = flux_qt_tree_add_item(self.handle, name)
+    flux_qt_tree_item_set_text(h, 1.0, type_label(kind))
+    flux_qt_tree_item_set_text(h, 2.0, size)
+    h
+  }
+
+  def add_child(self, parent: Double, name: Double, kind: FileType, size: Double) -> Double {
+    let h = flux_qt_tree_add_child(parent, name)
+    flux_qt_tree_item_set_text(h, 1.0, type_label(kind))
+    flux_qt_tree_item_set_text(h, 2.0, size)
+    h
+  }
+}
+
+# ── Global keys ──────────────────────────────────────────────────────────────
 
 def K_WIN()  1.0
 def K_TREE() 2.0
 def K_SEL()  3.0
+
+# ── Callbacks ────────────────────────────────────────────────────────────────
 
 def on_item_changed() {
   let cur = flux_qt_tree_current_item(flux_get_var(K_TREE()))
@@ -21,7 +85,8 @@ def on_clear() {
 }
 
 def on_add() {
-  flux_qt_tree_add_item(flux_get_var(K_TREE()), "New Item")
+  let tr = TreeRef { handle: flux_get_var(K_TREE()) }
+  tr.add_item("New Item", FileType.Text, "-")
   0.0
 }
 
@@ -33,14 +98,10 @@ def on_remove() {
   0.0
 }
 
-def on_count() {
-  let n = flux_qt_tree_top_level_count(flux_get_var(K_TREE()))
-  flux_qt_set_text(flux_get_var(K_SEL()), "Items: ")
-  0.0
-}
+# ── Main ─────────────────────────────────────────────────────────────────────
 
 def main() {
-  flux_set_var(K_WIN(), flux_qt_create_mainwindow("FluxScript TreeWidget"))
+  flux_set_var(K_WIN(), flux_qt_create_mainwindow("FluxScript TreeWidget (Modern)"))
   flux_qt_set_window_size(flux_get_var(K_WIN()), 560, 480)
 
   let central = flux_qt_create_widget()
@@ -61,61 +122,42 @@ def main() {
   flux_qt_tree_set_animated(flux_get_var(K_TREE()), 1.0)
   flux_qt_tree_set_indentation(flux_get_var(K_TREE()), 20.0)
 
+  let tr = TreeRef { handle: flux_get_var(K_TREE()) }
+
   # ── Build tree hierarchy ──
-  let docs = flux_qt_tree_add_item(flux_get_var(K_TREE()), "Documents")
-  flux_qt_tree_item_set_text(docs, 1.0, "Folder")
+  let docs = tr.add_item("Documents", FileType.Folder, "-")
   flux_qt_tree_item_set_icon(docs, 0.0, "star.svg")
   flux_qt_tree_item_set_tooltip(docs, 0.0, "My documents folder")
   flux_qt_tree_item_set_foreground(docs, 0.0, 0.0, 80.0, 180.0)
 
-  let r1 = flux_qt_tree_add_child(docs, "report.txt")
-  flux_qt_tree_item_set_text(r1, 1.0, "Text")
-  flux_qt_tree_item_set_text(r1, 2.0, "24 KB")
+  let r1 = tr.add_child(docs, "report.txt", FileType.Text, "24 KB")
 
-  let r2 = flux_qt_tree_add_child(docs, "budget.xlsx")
-  flux_qt_tree_item_set_text(r2, 1.0, "Sheet")
-  flux_qt_tree_item_set_text(r2, 2.0, "156 KB")
+  let r2 = tr.add_child(docs, "budget.xlsx", FileType.Sheet, "156 KB")
   flux_qt_tree_item_set_checked(r2, 0.0, 1.0)
 
-  let r3 = flux_qt_tree_add_child(docs, "notes.md")
-  flux_qt_tree_item_set_text(r3, 1.0, "Markdown")
-  flux_qt_tree_item_set_text(r3, 2.0, "8 KB")
+  let r3 = tr.add_child(docs, "notes.md", FileType.Markdown, "8 KB")
 
-  let pics = flux_qt_tree_add_item(flux_get_var(K_TREE()), "Pictures")
-  flux_qt_tree_item_set_text(pics, 1.0, "Folder")
+  let pics = tr.add_item("Pictures", FileType.Folder, "-")
   flux_qt_tree_item_set_icon(pics, 0.0, "gear.svg")
   flux_qt_tree_item_set_foreground(pics, 0.0, 0.0, 120.0, 60.0)
 
-  let p1 = flux_qt_tree_add_child(pics, "photo.jpg")
-  flux_qt_tree_item_set_text(p1, 1.0, "Image")
-  flux_qt_tree_item_set_text(p1, 2.0, "2.1 MB")
+  let p1 = tr.add_child(pics, "photo.jpg", FileType.Image, "2.1 MB")
 
-  let p2 = flux_qt_tree_add_child(pics, "screenshot.png")
-  flux_qt_tree_item_set_text(p2, 1.0, "Image")
-  flux_qt_tree_item_set_text(p2, 2.0, "840 KB")
+  let p2 = tr.add_child(pics, "screenshot.png", FileType.Image, "840 KB")
   flux_qt_tree_item_set_checked(p2, 0.0, 1.0)
 
-  let p3 = flux_qt_tree_add_child(pics, "diagram.svg")
-  flux_qt_tree_item_set_text(p3, 1.0, "Vector")
-  flux_qt_tree_item_set_text(p3, 2.0, "12 KB")
+  let p3 = tr.add_child(pics, "diagram.svg", FileType.Vector, "12 KB")
   flux_qt_tree_item_set_icon(p3, 0.0, "flux.svg")
 
-  let apps = flux_qt_tree_add_item(flux_get_var(K_TREE()), "Applications")
-  flux_qt_tree_item_set_text(apps, 1.0, "Folder")
+  let apps = tr.add_item("Applications", FileType.Folder, "-")
   flux_qt_tree_item_set_foreground(apps, 0.0, 160.0, 60.0, 0.0)
 
-  let a1 = flux_qt_tree_add_child(apps, "Text Editor")
-  flux_qt_tree_item_set_text(a1, 1.0, "App")
-  flux_qt_tree_item_set_text(a1, 2.0, "4.2 MB")
+  let a1 = tr.add_child(apps, "Text Editor", FileType.App, "4.2 MB")
   flux_qt_tree_item_set_background(a1, 0.0, 230.0, 240.0, 255.0)
 
-  let a2 = flux_qt_tree_add_child(apps, "Image Viewer")
-  flux_qt_tree_item_set_text(a2, 1.0, "App")
-  flux_qt_tree_item_set_text(a2, 2.0, "3.8 MB")
+  let a2 = tr.add_child(apps, "Image Viewer", FileType.App, "3.8 MB")
 
-  let a3 = flux_qt_tree_add_child(apps, "Terminal")
-  flux_qt_tree_item_set_text(a3, 1.0, "App")
-  flux_qt_tree_item_set_text(a3, 2.0, "1.1 MB")
+  let a3 = tr.add_child(apps, "Terminal", FileType.App, "1.1 MB")
   flux_qt_tree_item_set_background(a3, 0.0, 240.0, 240.0, 240.0)
 
   # Expand all

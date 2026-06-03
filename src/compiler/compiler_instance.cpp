@@ -990,6 +990,14 @@ static FluxType inferReturnType(
     if (dynamic_cast<const ComplexExprAST*>(expr))
         return FluxType(TypeKind::Complex);
 
+    if (auto* structCtor = dynamic_cast<const StructConstructExprAST*>(expr)) {
+        FluxType retType(TypeKind::UserStruct);
+        retType.StructTypeId = -1;
+        retType.StructLLVMType = nullptr;
+        retType.GenericName = structCtor->getStructName();
+        return retType;
+    }
+
     return TypeKind::Double;
 }
 
@@ -1720,7 +1728,8 @@ bool CompilerInstance::compileParser(Parser& parser, CodegenContext& context,
         FluxType inferred = inferReturnType(func->getBody(), context.ExternFuncTypes, &context.FuncReturnTypes,
                                             &paramTypeMap, nullptr);
         if (inferred.Kind == TypeKind::Matrix || inferred.Kind == TypeKind::ComplexMatrix ||
-            inferred.Kind == TypeKind::Vector) {
+            inferred.Kind == TypeKind::Vector || inferred.Kind == TypeKind::UserStruct ||
+            inferred.Kind == TypeKind::UserEnum) {
             func->getProto()->setReturnType(inferred);
         }
         // Update return type map immediately so subsequent functions

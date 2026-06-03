@@ -237,6 +237,7 @@ std::unique_ptr<ExprAST> Parser::ParseStringExpr()
             if (expr)
                 parts.push_back({true, "", std::move(expr)});
             std::swap(m_lexer, subLexer);
+            CurTok = m_lexer.CurTok; // Sync parser's CurTok with main lexer
         }
         pos = end;
     }
@@ -1958,6 +1959,13 @@ std::unique_ptr<FunctionAST> Parser::ParseDefinition()
             Proto->setReturnType(FluxType(TypeKind::Matrix));
         else if (dynamic_cast<VectorExprAST*>(Body.get()))
             Proto->setReturnType(FluxType(TypeKind::Vector));
+        else if (auto* structCtor = dynamic_cast<StructConstructExprAST*>(Body.get())) {
+            FluxType retType(TypeKind::UserStruct);
+            retType.StructTypeId = -1;
+            retType.StructLLVMType = nullptr;
+            retType.GenericName = structCtor->getStructName();
+            Proto->setReturnType(retType);
+        }
         return std::make_unique<FunctionAST>(std::move(Proto), std::move(Body));
     }
     return nullptr;
@@ -1982,6 +1990,13 @@ std::unique_ptr<FunctionAST> Parser::ParseAsyncDef()
             Proto->setReturnType(FluxType(TypeKind::Matrix));
         else if (dynamic_cast<VectorExprAST*>(Body.get()))
             Proto->setReturnType(FluxType(TypeKind::Vector));
+        else if (auto* structCtor = dynamic_cast<StructConstructExprAST*>(Body.get())) {
+            FluxType retType(TypeKind::UserStruct);
+            retType.StructTypeId = -1;
+            retType.StructLLVMType = nullptr;
+            retType.GenericName = structCtor->getStructName();
+            Proto->setReturnType(retType);
+        }
         return std::make_unique<FunctionAST>(std::move(Proto), std::move(Body));
     }
     return nullptr;

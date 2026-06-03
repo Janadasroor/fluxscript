@@ -646,7 +646,8 @@ extern "C" void* flux_matrix_transpose(void* m_ptr)
 extern "C" int flux_matrix_rows(void* m_ptr)
 {
     auto* M = g_matrix_tracker.get_matrix(m_ptr);
-    return M ? (int)M->rows() : 0;
+    int r = M ? (int)M->rows() : 0;
+    return r;
 }
 
 extern "C" int flux_matrix_cols(void* m_ptr)
@@ -664,15 +665,21 @@ extern "C" double flux_matrix_det(void* m_ptr)
 extern "C" void flux_matrix_set(void* m_ptr, int row, int col, double val)
 {
     auto* M = g_matrix_tracker.get_matrix(m_ptr);
-    if (M && row >= 0 && row < M->rows() && col >= 0 && col < M->cols())
-        (*M)(row, col) = val;
+    if (!M) {
+        return;
+    }
+    if (row < 0 || row >= M->rows() || col < 0 || col >= M->cols()) {
+        return;
+    }
+    (*M)(row, col) = val;
 }
 
 extern "C" void* flux_matrix_zeros(int rows, int cols)
 {
     auto mat = std::make_unique<Eigen::MatrixXd>(rows, cols);
     mat->setZero();
-    return g_matrix_tracker.register_matrix(std::move(mat));
+    void* ptr = g_matrix_tracker.register_matrix(std::move(mat));
+    return ptr;
 }
 
 extern "C" void* flux_create_range_sum(double start, double step, double end)
@@ -815,9 +822,14 @@ extern "C" void* flux_matrix_solve(void* a_ptr, void* b_ptr)
 extern "C" double flux_matrix_get(void* m_ptr, int row, int col)
 {
     auto* M = g_matrix_tracker.get_matrix(m_ptr);
-    if (!M || row < 0 || row >= M->rows() || col < 0 || col >= M->cols())
+    if (!M) {
         return 0.0;
-    return (*M)(row, col);
+    }
+    if (row < 0 || row >= M->rows() || col < 0 || col >= M->cols()) {
+        return 0.0;
+    }
+    double val = (*M)(row, col);
+    return val;
 }
 
 extern "C" void* flux_create_complex_matrix(std::complex<double>* data, int rows, int cols)
