@@ -20,8 +20,13 @@
 #include <QToolButton>
 #include <QCommandLinkButton>
 #include <QChartView>
+#include <QSplineSeries>
+#include <QScatterSeries>
+#include <QAreaSeries>
 #include <QLineSeries>
 #include <QBarSeries>
+#include <QStackedBarSeries>
+#include <QHorizontalBarSeries>
 #include <QBarSet>
 #include <QPieSeries>
 #include <QPieSlice>
@@ -715,6 +720,21 @@ static void flux_qt_chart_set_theme(double cv_h, double theme) {
     if (cv) cv->chart()->setTheme(static_cast<QChart::ChartTheme>(static_cast<int>(theme)));
 }
 
+static void flux_qt_chart_set_background(double cv_h, double r, double g, double b) {
+    auto* cv = qobject_cast<QChartView*>(FluxQtBridge::instance().resolveHandle(cv_h));
+    if (cv) cv->chart()->setBackgroundBrush(QBrush(QColor(static_cast<int>(r), static_cast<int>(g), static_cast<int>(b))));
+}
+
+static void flux_qt_chart_set_drop_shadow(double cv_h, double enabled) {
+    auto* cv = qobject_cast<QChartView*>(FluxQtBridge::instance().resolveHandle(cv_h));
+    if (cv) cv->chart()->setDropShadowEnabled(enabled != 0.0);
+}
+
+static void flux_qt_chart_set_margins(double cv_h, double l, double t, double r, double b) {
+    auto* cv = qobject_cast<QChartView*>(FluxQtBridge::instance().resolveHandle(cv_h));
+    if (cv) cv->chart()->setMargins(QMargins(static_cast<int>(l), static_cast<int>(t), static_cast<int>(r), static_cast<int>(b)));
+}
+
 static void flux_qt_chart_legend_show(double cv_h, double visible) {
     auto* cv = qobject_cast<QChartView*>(FluxQtBridge::instance().resolveHandle(cv_h));
     if (cv) cv->chart()->legend()->setVisible(visible != 0.0);
@@ -725,7 +745,17 @@ static void flux_qt_chart_legend_align(double cv_h, double align) {
     if (cv) cv->chart()->legend()->setAlignment(static_cast<Qt::Alignment>(static_cast<int>(align)));
 }
 
-// ── Line Series ──
+// ── Line / Spline / Scatter / Area helpers ──
+static void flux_qt_xy_series_append(double h, double x, double y) {
+    auto* s = qobject_cast<QXYSeries*>(FluxQtBridge::instance().resolveHandle(h));
+    if (s) s->append(x, y);
+}
+
+static void flux_qt_xy_series_set_pen(double h, double r, double g, double b, double width) {
+    auto* s = qobject_cast<QXYSeries*>(FluxQtBridge::instance().resolveHandle(h));
+    if (s) s->setPen(QPen(QColor(static_cast<int>(r), static_cast<int>(g), static_cast<int>(b)), width));
+}
+
 static double flux_qt_chart_add_line_series(double cv_h, double name_dbl) {
     auto* cv = qobject_cast<QChartView*>(FluxQtBridge::instance().resolveHandle(cv_h));
     if (!cv) return 0.0;
@@ -735,21 +765,54 @@ static double flux_qt_chart_add_line_series(double cv_h, double name_dbl) {
     return FluxQtBridge::instance().registerObject(s);
 }
 
-static void flux_qt_line_series_append(double h, double x, double y) {
-    auto* s = qobject_cast<QLineSeries*>(FluxQtBridge::instance().resolveHandle(h));
-    if (s) s->append(x, y);
+static double flux_qt_chart_add_spline_series(double cv_h, double name_dbl) {
+    auto* cv = qobject_cast<QChartView*>(FluxQtBridge::instance().resolveHandle(cv_h));
+    if (!cv) return 0.0;
+    auto* s = new QSplineSeries;
+    s->setName(QString::fromUtf8(dbl_to_str(name_dbl)));
+    cv->chart()->addSeries(s);
+    return FluxQtBridge::instance().registerObject(s);
 }
 
-static void flux_qt_line_series_set_pen(double h, double r, double g, double b, double width) {
-    auto* s = qobject_cast<QLineSeries*>(FluxQtBridge::instance().resolveHandle(h));
-    if (s) s->setPen(QPen(QColor(static_cast<int>(r), static_cast<int>(g), static_cast<int>(b)), width));
+static double flux_qt_chart_add_scatter_series(double cv_h, double name_dbl) {
+    auto* cv = qobject_cast<QChartView*>(FluxQtBridge::instance().resolveHandle(cv_h));
+    if (!cv) return 0.0;
+    auto* s = new QScatterSeries;
+    s->setName(QString::fromUtf8(dbl_to_str(name_dbl)));
+    cv->chart()->addSeries(s);
+    return FluxQtBridge::instance().registerObject(s);
 }
 
-// ── Bar Series ──
+static void flux_qt_scatter_series_set_marker_size(double h, double size) {
+    auto* s = qobject_cast<QScatterSeries*>(FluxQtBridge::instance().resolveHandle(h));
+    if (s) s->setMarkerSize(size);
+}
+
+// ── Area Series (returns upper QLineSeries handle for data) ──
+static double flux_qt_chart_add_area_series(double cv_h, double name_dbl) {
+    auto* cv = qobject_cast<QChartView*>(FluxQtBridge::instance().resolveHandle(cv_h));
+    if (!cv) return 0.0;
+    auto* upper = new QLineSeries;
+    upper->setName(QString::fromUtf8(dbl_to_str(name_dbl)));
+    auto* area = new QAreaSeries(upper);
+    cv->chart()->addSeries(area);
+    return FluxQtBridge::instance().registerObject(upper);
+}
+
+// ── Bar Series (vertical) ──
 static double flux_qt_chart_add_bar_series(double cv_h, double name_dbl) {
     auto* cv = qobject_cast<QChartView*>(FluxQtBridge::instance().resolveHandle(cv_h));
     if (!cv) return 0.0;
     auto* s = new QBarSeries;
+    s->setName(QString::fromUtf8(dbl_to_str(name_dbl)));
+    cv->chart()->addSeries(s);
+    return FluxQtBridge::instance().registerObject(s);
+}
+
+static double flux_qt_chart_add_stacked_bar_series(double cv_h, double name_dbl) {
+    auto* cv = qobject_cast<QChartView*>(FluxQtBridge::instance().resolveHandle(cv_h));
+    if (!cv) return 0.0;
+    auto* s = new QStackedBarSeries;
     s->setName(QString::fromUtf8(dbl_to_str(name_dbl)));
     cv->chart()->addSeries(s);
     return FluxQtBridge::instance().registerObject(s);
@@ -771,9 +834,19 @@ static void flux_qt_bar_set_set_color(double h, double r, double g, double b) {
 }
 
 static void flux_qt_bar_series_append_set(double series_h, double set_h) {
-    auto* s = qobject_cast<QBarSeries*>(FluxQtBridge::instance().resolveHandle(series_h));
+    auto* s = qobject_cast<QAbstractBarSeries*>(FluxQtBridge::instance().resolveHandle(series_h));
     auto* bs = qobject_cast<QBarSet*>(FluxQtBridge::instance().resolveHandle(set_h));
     if (s && bs) s->append(bs);
+}
+
+// ── Horizontal Bar Series ──
+static double flux_qt_chart_add_hbar_series(double cv_h, double name_dbl) {
+    auto* cv = qobject_cast<QChartView*>(FluxQtBridge::instance().resolveHandle(cv_h));
+    if (!cv) return 0.0;
+    auto* s = new QHorizontalBarSeries;
+    s->setName(QString::fromUtf8(dbl_to_str(name_dbl)));
+    cv->chart()->addSeries(s);
+    return FluxQtBridge::instance().registerObject(s);
 }
 
 // ── Pie Series ──
@@ -813,6 +886,11 @@ static void flux_qt_pie_series_set_hole_size(double h, double size) {
     if (s) s->setHoleSize(size);
 }
 
+static void flux_qt_pie_series_set_labels_position(double h, double pos) {
+    auto* s = qobject_cast<QPieSeries*>(FluxQtBridge::instance().resolveHandle(h));
+    if (s) s->setLabelsPosition(static_cast<QPieSlice::LabelPosition>(static_cast<int>(pos)));
+}
+
 // ── Axes ──
 static double flux_qt_chart_create_default_axes(double cv_h) {
     auto* cv = qobject_cast<QChartView*>(FluxQtBridge::instance().resolveHandle(cv_h));
@@ -834,6 +912,16 @@ static void flux_qt_axis_set_range(double h, double min, double max) {
     if (axis) axis->setRange(min, max);
 }
 
+static void flux_qt_axis_set_min(double h, double min) {
+    auto* axis = qobject_cast<QValueAxis*>(FluxQtBridge::instance().resolveHandle(h));
+    if (axis) axis->setMin(min);
+}
+
+static void flux_qt_axis_set_max(double h, double max) {
+    auto* axis = qobject_cast<QValueAxis*>(FluxQtBridge::instance().resolveHandle(h));
+    if (axis) axis->setMax(max);
+}
+
 static void flux_qt_axis_set_title(double h, double title_dbl) {
     auto* axis = qobject_cast<QValueAxis*>(FluxQtBridge::instance().resolveHandle(h));
     if (axis) axis->setTitleText(QString::fromUtf8(dbl_to_str(title_dbl)));
@@ -842,6 +930,26 @@ static void flux_qt_axis_set_title(double h, double title_dbl) {
 static void flux_qt_axis_set_label_format(double h, double fmt_dbl) {
     auto* axis = qobject_cast<QValueAxis*>(FluxQtBridge::instance().resolveHandle(h));
     if (axis) axis->setLabelFormat(QString::fromUtf8(dbl_to_str(fmt_dbl)));
+}
+
+static void flux_qt_axis_set_grid_visible(double h, double visible) {
+    auto* axis = qobject_cast<QValueAxis*>(FluxQtBridge::instance().resolveHandle(h));
+    if (axis) axis->setGridLineVisible(visible != 0.0);
+}
+
+static void flux_qt_axis_set_labels_visible(double h, double visible) {
+    auto* axis = qobject_cast<QValueAxis*>(FluxQtBridge::instance().resolveHandle(h));
+    if (axis) axis->setLabelsVisible(visible != 0.0);
+}
+
+static void flux_qt_axis_set_line_visible(double h, double visible) {
+    auto* axis = qobject_cast<QValueAxis*>(FluxQtBridge::instance().resolveHandle(h));
+    if (axis) axis->setLineVisible(visible != 0.0);
+}
+
+static void flux_qt_axis_set_tick_count(double h, double count) {
+    auto* axis = qobject_cast<QValueAxis*>(FluxQtBridge::instance().resolveHandle(h));
+    if (axis) axis->setTickCount(static_cast<int>(count));
 }
 
 static void flux_qt_series_attach_axis(double series_h, double axis_h) {
@@ -1059,27 +1167,45 @@ void registerFluxQtSymbols(Flux::JITEngine& jit) {
     jit.registerFunction("flux_qt_chart_set_title",     (void*)&flux_qt_chart_set_title);
     jit.registerFunction("flux_qt_chart_set_animation", (void*)&flux_qt_chart_set_animation);
     jit.registerFunction("flux_qt_chart_set_theme",     (void*)&flux_qt_chart_set_theme);
+    jit.registerFunction("flux_qt_chart_set_background",(void*)&flux_qt_chart_set_background);
+    jit.registerFunction("flux_qt_chart_set_drop_shadow",(void*)&flux_qt_chart_set_drop_shadow);
+    jit.registerFunction("flux_qt_chart_set_margins",   (void*)&flux_qt_chart_set_margins);
     jit.registerFunction("flux_qt_chart_legend_show",   (void*)&flux_qt_chart_legend_show);
     jit.registerFunction("flux_qt_chart_legend_align",  (void*)&flux_qt_chart_legend_align);
     jit.registerFunction("flux_qt_chart_add_line_series",   (void*)&flux_qt_chart_add_line_series);
-    jit.registerFunction("flux_qt_line_series_append",      (void*)&flux_qt_line_series_append);
-    jit.registerFunction("flux_qt_line_series_set_pen",     (void*)&flux_qt_line_series_set_pen);
+    jit.registerFunction("flux_qt_chart_add_spline_series", (void*)&flux_qt_chart_add_spline_series);
+    jit.registerFunction("flux_qt_chart_add_scatter_series",(void*)&flux_qt_chart_add_scatter_series);
+    jit.registerFunction("flux_qt_chart_add_area_series",   (void*)&flux_qt_chart_add_area_series);
+    jit.registerFunction("flux_qt_xy_series_append",        (void*)&flux_qt_xy_series_append);
+    jit.registerFunction("flux_qt_xy_series_set_pen",       (void*)&flux_qt_xy_series_set_pen);
+    jit.registerFunction("flux_qt_line_series_append",      (void*)&flux_qt_xy_series_append);
+    jit.registerFunction("flux_qt_line_series_set_pen",     (void*)&flux_qt_xy_series_set_pen);
+    jit.registerFunction("flux_qt_scatter_series_set_marker_size", (void*)&flux_qt_scatter_series_set_marker_size);
     jit.registerFunction("flux_qt_chart_add_bar_series",    (void*)&flux_qt_chart_add_bar_series);
+    jit.registerFunction("flux_qt_chart_add_stacked_bar_series",(void*)&flux_qt_chart_add_stacked_bar_series);
     jit.registerFunction("flux_qt_create_bar_set",          (void*)&flux_qt_create_bar_set);
     jit.registerFunction("flux_qt_bar_set_append",          (void*)&flux_qt_bar_set_append);
     jit.registerFunction("flux_qt_bar_set_set_color",       (void*)&flux_qt_bar_set_set_color);
     jit.registerFunction("flux_qt_bar_series_append_set",   (void*)&flux_qt_bar_series_append_set);
+    jit.registerFunction("flux_qt_chart_add_hbar_series",   (void*)&flux_qt_chart_add_hbar_series);
     jit.registerFunction("flux_qt_chart_add_pie_series",    (void*)&flux_qt_chart_add_pie_series);
     jit.registerFunction("flux_qt_pie_series_append",       (void*)&flux_qt_pie_series_append);
     jit.registerFunction("flux_qt_pie_slice_set_color",     (void*)&flux_qt_pie_slice_set_color);
     jit.registerFunction("flux_qt_pie_slice_set_label_visible", (void*)&flux_qt_pie_slice_set_label_visible);
     jit.registerFunction("flux_qt_pie_slice_set_exploded",  (void*)&flux_qt_pie_slice_set_exploded);
     jit.registerFunction("flux_qt_pie_series_set_hole_size",(void*)&flux_qt_pie_series_set_hole_size);
+    jit.registerFunction("flux_qt_pie_series_set_labels_position",(void*)&flux_qt_pie_series_set_labels_position);
     jit.registerFunction("flux_qt_chart_create_default_axes",(void*)&flux_qt_chart_create_default_axes);
     jit.registerFunction("flux_qt_chart_add_axis",          (void*)&flux_qt_chart_add_axis);
     jit.registerFunction("flux_qt_axis_set_range",          (void*)&flux_qt_axis_set_range);
+    jit.registerFunction("flux_qt_axis_set_min",            (void*)&flux_qt_axis_set_min);
+    jit.registerFunction("flux_qt_axis_set_max",            (void*)&flux_qt_axis_set_max);
     jit.registerFunction("flux_qt_axis_set_title",          (void*)&flux_qt_axis_set_title);
     jit.registerFunction("flux_qt_axis_set_label_format",   (void*)&flux_qt_axis_set_label_format);
+    jit.registerFunction("flux_qt_axis_set_grid_visible",   (void*)&flux_qt_axis_set_grid_visible);
+    jit.registerFunction("flux_qt_axis_set_labels_visible", (void*)&flux_qt_axis_set_labels_visible);
+    jit.registerFunction("flux_qt_axis_set_line_visible",   (void*)&flux_qt_axis_set_line_visible);
+    jit.registerFunction("flux_qt_axis_set_tick_count",     (void*)&flux_qt_axis_set_tick_count);
     jit.registerFunction("flux_qt_series_attach_axis",      (void*)&flux_qt_series_attach_axis);
     jit.registerFunction("flux_qt_chart_add_series",        (void*)&flux_qt_chart_add_series);
 
