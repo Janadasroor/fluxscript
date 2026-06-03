@@ -40,6 +40,7 @@
 #include <QTextEdit>
 #include <QTimer>
 #include <QTreeWidget>
+#include <QDockWidget>
 #include <QFileDialog>
 #include <QInputDialog>
 #include <QListWidget>
@@ -1202,6 +1203,85 @@ static void flux_qt_tree_on_item_activated(double h, double callback_dbl) {
     FluxQtBridge::instance().connectSignalByName(h, "itemActivated(QTreeWidgetItem*,int)", dbl_to_str(callback_dbl));
 }
 
+// ── QDockWidget ──
+static double flux_qt_create_dockwidget(double title_dbl) {
+    auto* dock = new QDockWidget(QString::fromUtf8(dbl_to_str(title_dbl)));
+    return FluxQtBridge::instance().registerObject(dock);
+}
+
+static void flux_qt_dock_set_widget(double dock_h, double widget_h) {
+    auto* dock = qobject_cast<QDockWidget*>(FluxQtBridge::instance().resolveHandle(dock_h));
+    auto* w = qobject_cast<QWidget*>(FluxQtBridge::instance().resolveHandle(widget_h));
+    if (dock && w) dock->setWidget(w);
+}
+
+static void flux_qt_dock_set_features(double dock_h, double features) {
+    auto* dock = qobject_cast<QDockWidget*>(FluxQtBridge::instance().resolveHandle(dock_h));
+    if (dock) dock->setFeatures(static_cast<QDockWidget::DockWidgetFeatures>(static_cast<int>(features)));
+}
+
+static void flux_qt_dock_set_title(double dock_h, double title_dbl) {
+    auto* dock = qobject_cast<QDockWidget*>(FluxQtBridge::instance().resolveHandle(dock_h));
+    if (dock) dock->setWindowTitle(QString::fromUtf8(dbl_to_str(title_dbl)));
+}
+
+static void flux_qt_dock_set_visible(double dock_h, double visible) {
+    auto* dock = qobject_cast<QDockWidget*>(FluxQtBridge::instance().resolveHandle(dock_h));
+    if (dock) dock->setVisible(visible != 0.0);
+}
+
+static double flux_qt_dock_is_visible(double dock_h) {
+    auto* dock = qobject_cast<QDockWidget*>(FluxQtBridge::instance().resolveHandle(dock_h));
+    return dock && dock->isVisible() ? 1.0 : 0.0;
+}
+
+static double flux_qt_dock_is_floating(double dock_h) {
+    auto* dock = qobject_cast<QDockWidget*>(FluxQtBridge::instance().resolveHandle(dock_h));
+    return dock && dock->isFloating() ? 1.0 : 0.0;
+}
+
+// ── QMainWindow dock management ──
+static void flux_qt_mainwindow_add_dock(double mw_h, double dock_h, double area) {
+    auto* mw = qobject_cast<QMainWindow*>(FluxQtBridge::instance().resolveHandle(mw_h));
+    auto* dock = qobject_cast<QDockWidget*>(FluxQtBridge::instance().resolveHandle(dock_h));
+    if (!mw || !dock) return;
+    Qt::DockWidgetArea a;
+    int ia = static_cast<int>(area);
+    if (ia == 1) a = Qt::RightDockWidgetArea;
+    else if (ia == 2) a = Qt::TopDockWidgetArea;
+    else if (ia == 3) a = Qt::BottomDockWidgetArea;
+    else a = Qt::LeftDockWidgetArea;
+    mw->addDockWidget(a, dock);
+}
+
+static void flux_qt_mainwindow_tabify_docks(double mw_h, double a_h, double b_h) {
+    auto* mw = qobject_cast<QMainWindow*>(FluxQtBridge::instance().resolveHandle(mw_h));
+    auto* a = qobject_cast<QDockWidget*>(FluxQtBridge::instance().resolveHandle(a_h));
+    auto* b = qobject_cast<QDockWidget*>(FluxQtBridge::instance().resolveHandle(b_h));
+    if (mw && a && b) mw->tabifyDockWidget(a, b);
+}
+
+static void flux_qt_mainwindow_split_dock(double mw_h, double first_h, double second_h, double orient) {
+    auto* mw = qobject_cast<QMainWindow*>(FluxQtBridge::instance().resolveHandle(mw_h));
+    auto* first = qobject_cast<QDockWidget*>(FluxQtBridge::instance().resolveHandle(first_h));
+    auto* second = qobject_cast<QDockWidget*>(FluxQtBridge::instance().resolveHandle(second_h));
+    if (mw && first && second)
+        mw->splitDockWidget(first, second, static_cast<int>(orient) == 0 ? Qt::Horizontal : Qt::Vertical);
+}
+
+// ── Signals ──
+static void flux_qt_dock_on_visibility_changed(double dock_h, double callback_dbl) {
+    FluxQtBridge::instance().connectSignalByName(dock_h, "visibilityChanged(bool)", dbl_to_str(callback_dbl));
+}
+
+static void flux_qt_dock_on_dock_location_changed(double dock_h, double callback_dbl) {
+    FluxQtBridge::instance().connectSignalByName(dock_h, "dockLocationChanged(Qt::DockWidgetArea)", dbl_to_str(callback_dbl));
+}
+
+static void flux_qt_dock_on_top_level_changed(double dock_h, double callback_dbl) {
+    FluxQtBridge::instance().connectSignalByName(dock_h, "topLevelChanged(bool)", dbl_to_str(callback_dbl));
+}
+
 // ===========================================================================
 // Properties — numeric
 // ===========================================================================
@@ -1487,6 +1567,21 @@ void registerFluxQtSymbols(Flux::JITEngine& jit) {
     jit.registerFunction("flux_qt_tree_on_item_expanded",(void*)&flux_qt_tree_on_item_expanded);
     jit.registerFunction("flux_qt_tree_on_item_collapsed",(void*)&flux_qt_tree_on_item_collapsed);
     jit.registerFunction("flux_qt_tree_on_item_activated",(void*)&flux_qt_tree_on_item_activated);
+
+    // QDockWidget
+    jit.registerFunction("flux_qt_create_dockwidget",    (void*)&flux_qt_create_dockwidget);
+    jit.registerFunction("flux_qt_dock_set_widget",      (void*)&flux_qt_dock_set_widget);
+    jit.registerFunction("flux_qt_dock_set_features",    (void*)&flux_qt_dock_set_features);
+    jit.registerFunction("flux_qt_dock_set_title",       (void*)&flux_qt_dock_set_title);
+    jit.registerFunction("flux_qt_dock_set_visible",     (void*)&flux_qt_dock_set_visible);
+    jit.registerFunction("flux_qt_dock_is_visible",      (void*)&flux_qt_dock_is_visible);
+    jit.registerFunction("flux_qt_dock_is_floating",     (void*)&flux_qt_dock_is_floating);
+    jit.registerFunction("flux_qt_mainwindow_add_dock",  (void*)&flux_qt_mainwindow_add_dock);
+    jit.registerFunction("flux_qt_mainwindow_tabify_docks",(void*)&flux_qt_mainwindow_tabify_docks);
+    jit.registerFunction("flux_qt_mainwindow_split_dock",(void*)&flux_qt_mainwindow_split_dock);
+    jit.registerFunction("flux_qt_dock_on_visibility_changed",(void*)&flux_qt_dock_on_visibility_changed);
+    jit.registerFunction("flux_qt_dock_on_dock_location_changed",(void*)&flux_qt_dock_on_dock_location_changed);
+    jit.registerFunction("flux_qt_dock_on_top_level_changed",(void*)&flux_qt_dock_on_top_level_changed);
 
     // Numeric properties
     jit.registerFunction("flux_qt_get_property",     (void*)&flux_qt_get_property);
