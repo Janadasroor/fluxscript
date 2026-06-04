@@ -1,0 +1,31 @@
+# FluxScript Dev Environment
+# Build:   docker build -t fluxscript-dev -f Dockerfile.dev .
+# Run:     docker run -it --rm -v $(pwd):/workspace fluxscript-dev
+
+FROM ubuntu:22.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update -qq && apt-get install -y -qq \
+    wget lsb-release software-properties-common gnupg \
+    && rm -rf /var/lib/apt/lists/*
+
+# LLVM 21
+RUN wget -q https://apt.llvm.org/llvm.sh && chmod +x llvm.sh \
+    && ./llvm.sh 21 all
+
+# Build tools
+RUN apt-get update -qq && apt-get install -y -qq \
+    cmake \
+    ninja-build \
+    mold \
+    ccache \
+    g++ \
+    clang-tidy-21 \
+    clang-format-21 \
+    libclang-21-dev \
+    liblld-21-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /workspace
+CMD ["/bin/bash"]
