@@ -218,9 +218,6 @@ int LspServer::run()
 
             std::string content(contentLength, '\0');
             std::cin.read(&content[0], contentLength);
-            // Consume the trailing CRLF if present
-            char buf[2];
-            std::cin.read(buf, 2);
 
             std::string response = processRequest(content);
             if (!response.empty()) {
@@ -560,17 +557,17 @@ std::string LspServer::handleTextDocumentCompletion(const std::string& params)
         if (i > 0)
             oss << ",";
         oss << "{";
-        oss << R"("label":")" << jsonEscape(items[i].label) << "\",";
-        oss << R"("kind":)" << items[i].kind << ",";
+        oss << R"("label":")" << jsonEscape(items[i].label) << "\"";
+        oss << R"(,"kind":)" << items[i].kind;
         if (!items[i].detail.empty()) {
-            oss << R"("detail":")" << jsonEscape(items[i].detail) << "\",";
+            oss << R"(,"detail":")" << jsonEscape(items[i].detail) << "\"";
         }
         if (!items[i].documentation.empty()) {
-            oss << R"("documentation":")" << jsonEscape(items[i].documentation) << "\",";
+            oss << R"(,"documentation":")" << jsonEscape(items[i].documentation) << "\"";
         }
         if (!items[i].insertText.empty()) {
-            oss << R"("insertText":")" << jsonEscape(items[i].insertText) << "\",";
-            oss << R"("insertTextFormat":)" << items[i].insertTextFormat << ",";
+            oss << R"(,"insertText":")" << jsonEscape(items[i].insertText) << "\"";
+            oss << R"(,"insertTextFormat":)" << items[i].insertTextFormat;
         }
         oss << "}";
     }

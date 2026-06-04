@@ -1,0 +1,37 @@
+{
+  "scopeName": "source.flux",
+  "name": "FluxScript",
+  "fileTypes": [".flux"],
+  "patterns": [
+    { "include": "#comments" },
+    { "include": "#keywords" },
+    { "include": "#types" },
+    { "include": "#strings" },
+    { "include": "#numbers" }
+  ],
+  "repository": {
+    "comments": {
+      "patterns": [
+        { "match": "//.*", "name": "comment.line.double-slash.flux" },
+        { "begin": "/\\*", "end": "\\*/", "name": "comment.block.flux" }
+      ]
+    },
+    "keywords": {
+      "match": "\\b(def|let|var|if|else|elif|while|for|in|return|match|switch|case|default|class|struct|enum|trait|impl|async|await|true|false|null|mut|import|as|pub)\\b",
+      "name": "keyword.control.flux"
+    },
+    "types": {
+      "match": "\\b(double|int|bool|string|void|Vector|Matrix|Complex|ComplexMatrix|auto)\\b",
+      "name": "storage.type.flux"
+    },
+    "strings": {
+      "patterns": [
+        { "match": "\"(?:[^\"\\\\]|\\\\.)*\"", "name": "string.quoted.double.flux" }
+      ]
+    },
+    "numbers": {
+      "match": "\\b[0-9]+(?:\\.[0-9]+)?(?:[eE][+-]?[0-9]+)?\\b",
+      "name": "constant.numeric.flux"
+    }
+  }
+}
