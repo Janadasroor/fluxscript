@@ -21,12 +21,10 @@ jobs:
           sudo apt-get install -y libclang-21-dev clang-tidy-21 libmlir-21-dev mlir-21-tools
 
       - name: Install build tools
-        run: |
-          sudo apt-get install -y cmake ninja-build mold ccache
-          sudo ln -sf /usr/bin/mold /usr/lib/llvm-21/bin/ld.lld || true
+        run: sudo apt-get install -y cmake ninja-build ccache
 
       - name: Configure
-        run: cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_LINKER_TYPE=MOLD -DLLVM_DIR=/usr/lib/llvm-21/lib/cmake/llvm -DMLIR_DIR=/usr/lib/llvm-21/lib/cmake/mlir
+        run: cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DLLVM_DIR=/usr/lib/llvm-21/lib/cmake/llvm -DMLIR_DIR=/usr/lib/llvm-21/lib/cmake/mlir
 
       - name: Build
         run: ninja -C build
@@ -51,13 +49,11 @@ jobs:
           sudo apt-get install -y libclang-21-dev
 
       - name: Install build tools
-        run: |
-          sudo apt-get install -y cmake ninja-build mold ccache
-          sudo ln -sf /usr/bin/mold /usr/lib/llvm-21/bin/ld.lld || true
+        run: sudo apt-get install -y cmake ninja-build ccache
 
       - name: Build release binary
         run: |
-          cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_LINKER_TYPE=MOLD -DLLVM_DIR=/usr/lib/llvm-21/lib/cmake/llvm
+          cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DLLVM_DIR=/usr/lib/llvm-21/lib/cmake/llvm
           ninja -C build
 
       - name: Package
