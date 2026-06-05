@@ -48,6 +48,18 @@
 #include <unistd.h>
 #endif
 #include <cstdint>
+#include <cmath>
+
+// Math wrapper functions for JIT symbol resolution on platforms where
+// the CRT may not export them as dlsym-able symbols (e.g. MSVC Windows).
+namespace {
+double flux_exp2_wrapper(double x) { return std::exp2(x); }
+double flux_tgamma_wrapper(double x) { return std::tgamma(x); }
+double flux_lgamma_wrapper(double x) { return std::lgamma(x); }
+double flux_cbrt_wrapper(double x) { return std::cbrt(x); }
+double flux_erf_wrapper(double x) { return std::erf(x); }
+double flux_erfc_wrapper(double x) { return std::erfc(x); }
+}
 
 // Complex number helper functions (C linkage for easy JIT binding)
 extern "C" {
@@ -423,6 +435,7 @@ FluxJIT::FluxJIT(OptimizationLevel optLevel) : m_dataLayout(""), m_optLevel(optL
     mainJD.addToLinkOrder(*m_runtimeDylib);
 
     registerComplexHelpers();
+    registerMathHelpers();
 }
 
 void FluxJIT::registerComplexHelpers()
@@ -439,6 +452,26 @@ void FluxJIT::registerComplexHelpers()
     registerSym("complex_real", reinterpret_cast<void*>(&complex_real));
     registerSym("complex_imag", reinterpret_cast<void*>(&complex_imag));
     registerSym("println_string", reinterpret_cast<void*>(&println_string));
+}
+
+void FluxJIT::registerMathHelpers()
+{
+    if (!m_lljit || !m_runtimeDylib)
+        return;
+
+    auto registerSym = [&](const std::string& name, void* ptr) {
+        llvm::orc::SymbolMap sym;
+        sym[m_lljit->mangleAndIntern(name)] = {llvm::orc::ExecutorAddr::fromPtr(ptr), llvm::JITSymbolFlags::Exported};
+        (void)m_runtimeDylib->define(llvm::orc::absoluteSymbols(std::move(sym)));
+    };
+
+    // Wrap math functions that may not be exported on all platforms (MSVC CRT)
+    registerSym("exp2", reinterpret_cast<void*>(&flux_exp2_wrapper));
+    registerSym("tgamma", reinterpret_cast<void*>(&flux_tgamma_wrapper));
+    registerSym("lgamma", reinterpret_cast<void*>(&flux_lgamma_wrapper));
+    registerSym("cbrt", reinterpret_cast<void*>(&flux_cbrt_wrapper));
+    registerSym("erf", reinterpret_cast<void*>(&flux_erf_wrapper));
+    registerSym("erfc", reinterpret_cast<void*>(&flux_erfc_wrapper));
 }
 
 FluxJIT::~FluxJIT() = default;

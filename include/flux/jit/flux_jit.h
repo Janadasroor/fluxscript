@@ -254,6 +254,7 @@ public:
 private:
     void registerNativeFunctions();
     void registerComplexHelpers();
+    void registerMathHelpers();
     void optimizeModule(llvm::Module* M, OptimizationLevel level);
     void prepareModule(llvm::Module& M);
     bool redirectFunction(const std::string& Name, void* oldAddr, void* newAddr);
