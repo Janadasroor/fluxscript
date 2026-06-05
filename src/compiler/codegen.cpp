@@ -83,9 +83,12 @@ static void resolveUserStructType(FluxType& type, CodegenContext& context)
                 type.StructTypeId = it->second;
             }
         }
-        if (type.StructTypeId >= 0 && !type.StructLLVMType) {
+        if (type.StructTypeId >= 0) {
             if (type.StructTypeId < static_cast<int>(context.StructTypes.size())) {
-                type.StructLLVMType = context.StructTypes[type.StructTypeId].LLVMType;
+                if (!type.StructLLVMType) {
+                    type.StructLLVMType = context.StructTypes[type.StructTypeId].LLVMType;
+                }
+                type.isCopy = context.StructTypes[type.StructTypeId].isCopy;
             }
         }
     }
@@ -100,9 +103,12 @@ static void resolveUserEnumType(FluxType& type, CodegenContext& context)
                 type.EnumTypeId = it->second;
             }
         }
-        if (type.EnumTypeId >= 0 && !type.EnumLLVMType) {
+        if (type.EnumTypeId >= 0) {
             if (type.EnumTypeId < static_cast<int>(context.EnumTypes.size())) {
-                type.EnumLLVMType = context.EnumTypes[type.EnumTypeId].LLVMType;
+                if (!type.EnumLLVMType) {
+                    type.EnumLLVMType = context.EnumTypes[type.EnumTypeId].LLVMType;
+                }
+                type.isCopy = context.EnumTypes[type.EnumTypeId].isCopy;
             }
         }
     }
@@ -390,13 +396,9 @@ static bool shouldPassByPointer(const FluxType& type, CodegenContext& context)
 
 static bool isCopyType(const FluxType& type)
 {
-    // All types are Copy by default in current FluxScript. Everything is
-    // passed by value (or readonly pointer for large structs). Move semantics
-    // will be introduced when explicit Copy/move traits are implemented.
-    //
-    // Return false for a type only if it explicitly opts out of copy semantics
-    // via a Move-only trait. Currently no types do this, so all are Copy.
-    (void)type;
+    // Return false for types that explicitly opt out via ~Copy annotation
+    if (type.Kind == TypeKind::UserStruct || type.Kind == TypeKind::UserEnum)
+        return type.isCopy;
     return true;
 }
 
@@ -1664,6 +1666,12 @@ TypedValue BinaryExprAST::codegen(CodegenContext& context)
                 std::cerr << "Type error: cannot compare different enum types" << std::endl;
                 return TypedValue();
             }
+        } else if (L.Type.Kind == TypeKind::Vector && R.Type.Kind == TypeKind::Vector) {
+            if (Op != static_cast<int>(TokenType::tok_equal) &&
+                Op != static_cast<int>(TokenType::tok_not_equal)) {
+                std::cerr << "Type error: cannot use vector in operation '" << (char)Op << "'" << std::endl;
+                return TypedValue();
+            }
         } else if (L.Type.Kind != TypeKind::String && R.Type.Kind != TypeKind::String &&
                    (!isNumeric(L.Type.Kind) || !isNumeric(R.Type.Kind))) {
             std::cerr << "Type error: invalid operand types for operator '" << (char)Op << "' ("
@@ -2012,6 +2020,37 @@ TypedValue BinaryExprAST::codegen(CodegenContext& context)
             llvm::Value* IsNe = context.Builder.CreateFCmpONE(CmpRes, Zero, "strne");
             return TypedValue(context.Builder.CreateUIToFP(IsNe, DoubleTy, "booltmp"), TypeKind::Bool);
         }
+    }
+
+    // Vector equality / inequality
+    if (L.Type.Kind == TypeKind::Vector && R.Type.Kind == TypeKind::Vector &&
+        (Op == static_cast<int>(TokenType::tok_equal) ||
+         Op == static_cast<int>(TokenType::tok_not_equal))) {
+        llvm::Type* DoubleTy = llvm::Type::getDoubleTy(context.TheContext);
+        llvm::Type* Int32Ty = llvm::Type::getInt32Ty(context.TheContext);
+        llvm::Type* VoidPtrTy = llvm::PointerType::get(context.TheContext, 0);
+        llvm::Function* VecEqF = context.TheModule->getFunction("flux_vec_eq");
+        if (!VecEqF) {
+            llvm::FunctionType* FTy =
+                llvm::FunctionType::get(DoubleTy, {VoidPtrTy, Int32Ty, VoidPtrTy, Int32Ty}, false);
+            VecEqF = llvm::Function::Create(FTy, llvm::Function::ExternalLinkage, "flux_vec_eq",
+                                            context.TheModule);
+        }
+        llvm::Value* LData = context.Builder.CreateExtractValue(L.Val, 0, "l_vec_ptr");
+        llvm::Value* LLen = context.Builder.CreateExtractValue(L.Val, 1, "l_vec_len");
+        llvm::Value* RData = context.Builder.CreateExtractValue(R.Val, 0, "r_vec_ptr");
+        llvm::Value* RLen = context.Builder.CreateExtractValue(R.Val, 1, "r_vec_len");
+        llvm::Value* IsEq = context.Builder.CreateCall(VecEqF, {LData, LLen, RData, RLen}, "veceq");
+        if (Op == static_cast<int>(TokenType::tok_equal))
+            return TypedValue(context.Builder.CreateUIToFP(
+                                  context.Builder.CreateFCmpOEQ(IsEq, llvm::ConstantFP::get(DoubleTy, 1.0), "veceq_cmp"),
+                                  DoubleTy, "booltmp"),
+                              TypeKind::Bool);
+        else
+            return TypedValue(context.Builder.CreateUIToFP(
+                                  context.Builder.CreateFCmpONE(IsEq, llvm::ConstantFP::get(DoubleTy, 1.0), "vecne_cmp"),
+                                  DoubleTy, "booltmp"),
+                              TypeKind::Bool);
     }
 
     llvm::Value* LV = L.Val;
@@ -2408,6 +2447,32 @@ TypedValue UnaryExprAST::codegen(CodegenContext& context)
     case static_cast<int>(TokenType::tok_logical_not): {
         llvm::Value* Cond = boolCondition(V, context.Builder, context.TheContext);
         return TypedValue(context.Builder.CreateNot(Cond, "lognot"), TypeKind::Bool);
+    }
+    case static_cast<int>(TokenType::tok_bitwise_and):
+    case static_cast<int>(TokenType::tok_bitwise_and) + 2600: {
+        // &expr or &mut expr: create alloca, store operand, return pointer
+        bool isMut = (Op == static_cast<int>(TokenType::tok_bitwise_and) + 2600);
+        llvm::Type* ValTy = V->getType();
+        llvm::Value* Alloca = context.Builder.CreateAlloca(ValTy, nullptr, "ref_slot");
+        context.Builder.CreateStore(V, Alloca);
+        return TypedValue(Alloca, FluxType::reference(OperandTV.Type, isMut));
+    }
+    case '*': {
+        // *expr: dereference — operand must be a Ref type (pointer)
+        if (!V->getType()->isPointerTy()) {
+            std::cerr << "[FLUX ERROR] Cannot dereference non-pointer type" << std::endl;
+            return TypedValue();
+        }
+        FluxType innerType = (OperandTV.Type.Kind == TypeKind::Ref && OperandTV.Type.RefInnerType)
+                                 ? *OperandTV.Type.RefInnerType
+                                 : TypeKind::Double;
+        llvm::Type* InnerLLVMTy = innerType.getLLVMType(context.TheContext);
+        if (!InnerLLVMTy) {
+            std::cerr << "[FLUX ERROR] Cannot dereference: unknown inner type" << std::endl;
+            return TypedValue();
+        }
+        llvm::Value* Loaded = context.Builder.CreateLoad(InnerLLVMTy, V, "deref");
+        return TypedValue(Loaded, innerType);
     }
     default:
         std::cerr << "[FLUX ERROR] Unsupported unary operator" << std::endl;
@@ -3358,7 +3423,9 @@ TypedValue CallExprAST::codegen(CodegenContext& context)
                     context.Builder.CreateStore(fieldVal.Val, gep);
                 }
                 llvm::Value* loaded = context.Builder.CreateLoad(llvmStructTy, alloca, Name);
-                return TypedValue(loaded, FluxType::userStruct(typeId, llvmStructTy));
+                FluxType resultType = FluxType::userStruct(typeId, llvmStructTy);
+                resolveUserStructType(resultType, context);
+                return TypedValue(loaded, resultType);
             }
         }
     }
@@ -4391,10 +4458,68 @@ TypedValue VectorExprAST::codegen(CodegenContext& context)
     if (!MallocF)
         MallocF = llvm::Function::Create(llvm::FunctionType::get(VoidPtrTy, {Int64Ty}, false),
                                          llvm::Function::ExternalLinkage, "malloc", context.TheModule);
+
+    // Codegen all elements first to determine types
+    std::vector<TypedValue> elemTVs;
+    elemTVs.reserve(Elements.size());
+    FluxType elementType(TypeKind::Double);
+    bool hasVectorElements = false;
+    for (auto& elem : Elements) {
+        TypedValue etv = elem->codegen(context);
+        elemTVs.push_back(etv);
+        if (etv.Val && etv.Type.Kind == TypeKind::Vector) {
+            hasVectorElements = true;
+            elementType = etv.Type;
+        }
+    }
+
+    if (hasVectorElements) {
+        // Nested vector: store pointers to heap-allocated inner vectors
+        llvm::Value* DataSize = llvm::ConstantInt::get(Int64Ty, Elements.size() * 8);
+        llvm::Value* DataPtr = context.Builder.CreateCall(MallocF, {DataSize}, "vec_data");
+        llvm::Type* VecStructTy = FluxType(TypeKind::Vector).getLLVMType(context.TheContext);
+        for (size_t i = 0; i < Elements.size(); ++i) {
+            TypedValue& ElemTV = elemTVs[i];
+            if (!ElemTV.Val) continue;
+            if (ElemTV.Type.Kind == TypeKind::Vector) {
+                // Allocate heap space for inner vector struct, store it, store pointer
+                llvm::Value* HeapVec = context.Builder.CreateCall(MallocF,
+                    llvm::ConstantInt::get(Int64Ty, 16), "inner_vec_heap");
+                llvm::Value* VecPtr = context.Builder.CreatePointerCast(HeapVec,
+                    llvm::PointerType::get(context.TheContext, 0), "inner_vec_ptr");
+                context.Builder.CreateStore(ElemTV.Val, VecPtr);
+                // Bitcast pointer to double for storage in the double data array
+                llvm::Value* PtrAsInt = context.Builder.CreatePtrToInt(HeapVec, Int64Ty, "heap_i64");
+                llvm::Value* PtrAsDouble = context.Builder.CreateBitCast(PtrAsInt, DoubleTy, "ptr_as_dbl");
+                llvm::Value* ElemPtr = context.Builder.CreateInBoundsGEP(DoubleTy, DataPtr,
+                    {llvm::ConstantInt::get(Int64Ty, i)}, "elem_ptr");
+                context.Builder.CreateStore(PtrAsDouble, ElemPtr);
+            } else {
+                // Scalar element in mixed vector — convert to double and store
+                llvm::Value* Val = ElemTV.Val;
+                if (Val->getType()->isIntegerTy())
+                    Val = context.Builder.CreateSIToFP(Val, DoubleTy, "elem_dbl");
+                else if (Val->getType()->isFloatTy())
+                    Val = context.Builder.CreateFPExt(Val, DoubleTy, "elem_dbl");
+                llvm::Value* ElemPtr = context.Builder.CreateInBoundsGEP(DoubleTy, DataPtr,
+                    {llvm::ConstantInt::get(Int64Ty, i)}, "elem_ptr");
+                context.Builder.CreateStore(Val, ElemPtr);
+            }
+        }
+        FluxType vecType(TypeKind::Vector);
+        vecType.VecElementType = new FluxType(elementType);
+        llvm::StructType* VecSTy = llvm::cast<llvm::StructType>(vecType.getLLVMType(context.TheContext));
+        llvm::Value* VecVal = llvm::PoisonValue::get(VecSTy);
+        VecVal = context.Builder.CreateInsertValue(VecVal, DataPtr, 0);
+        VecVal = context.Builder.CreateInsertValue(VecVal, llvm::ConstantInt::get(Int32Ty, Elements.size()), 1);
+        return TypedValue(VecVal, vecType);
+    }
+
+    // Scalar elements: flat double array (original behavior)
     llvm::Value* DataSize = llvm::ConstantInt::get(Int64Ty, Elements.size() * 8);
     llvm::Value* DataPtr = context.Builder.CreateCall(MallocF, {DataSize}, "vec_data");
     for (size_t i = 0; i < Elements.size(); ++i) {
-        TypedValue ElemTV = Elements[i]->codegen(context);
+        TypedValue& ElemTV = elemTVs[i];
         if (ElemTV.Val) {
             llvm::Value* Val = ElemTV.Val;
             if (Val->getType()->isIntegerTy())
@@ -4407,6 +4532,7 @@ TypedValue VectorExprAST::codegen(CodegenContext& context)
         }
     }
     FluxType vecType(TypeKind::Vector);
+    // VecElementType left nullptr (nullptr = Double elements)
     llvm::StructType* VecSTy = llvm::cast<llvm::StructType>(vecType.getLLVMType(context.TheContext));
     llvm::Value* VecVal = llvm::PoisonValue::get(VecSTy);
     VecVal = context.Builder.CreateInsertValue(VecVal, DataPtr, 0);
@@ -4507,6 +4633,19 @@ TypedValue IndexExprAST::codegen(CodegenContext& context)
             IdxV = context.Builder.CreateFPToSI(IdxV, Int32Ty, "idx_int");
         else if (IdxV->getType()->isIntegerTy(64))
             IdxV = context.Builder.CreateTrunc(IdxV, Int32Ty, "idx_int");
+
+        // Check if vector contains nested vectors (VecElementType non-null and Kind == Vector)
+        if (ArrayTV.Type.VecElementType && ArrayTV.Type.VecElementType->Kind == TypeKind::Vector) {
+            // Load bit-cast pointer from data slot, inttoptr, then load inner vector struct
+            llvm::Value* Idx64 = context.Builder.CreateSExt(IdxV, Int64Ty, "idx_64");
+            llvm::Value* ElemSlot = context.Builder.CreateInBoundsGEP(DoubleTy, DataPtr, {Idx64}, "elem_slot");
+            llvm::Value* DblBits = context.Builder.CreateLoad(DoubleTy, ElemSlot, "ptr_bits_as_dbl");
+            llvm::Value* PtrInt = context.Builder.CreateBitCast(DblBits, Int64Ty, "ptr_bits_i64");
+            llvm::Value* InnerVecVoidPtr = context.Builder.CreateIntToPtr(PtrInt, VoidPtrTy, "inner_vec_raw");
+            llvm::Value* InnerVecVal = context.Builder.CreateLoad(
+                FluxType(TypeKind::Vector).getLLVMType(context.TheContext), InnerVecVoidPtr, "inner_vec");
+            return TypedValue(InnerVecVal, *ArrayTV.Type.VecElementType);
+        }
 
         llvm::Value* Idx64 = context.Builder.CreateSExt(IdxV, Int64Ty, "idx_64");
         llvm::Value* ElemPtr = context.Builder.CreateInBoundsGEP(DoubleTy, DataPtr, {Idx64}, "elem_ptr");
@@ -4882,6 +5021,7 @@ void StructDeclAST::codegen(CodegenContext& context)
     info.ParentName = ParentName;
     info.Fields = Fields;
     info.LLVMType = llvmStructTy;
+    info.isCopy = !IsNoCopy;
     context.StructTypes.push_back(std::move(info));
     context.StructTypeIndex[Name] = structId;
     setStructTypeId(structId);
@@ -5151,7 +5291,9 @@ TypedValue StructConstructExprAST::codegen(CodegenContext& context)
 
     // Load the struct value (e.g. for passing to functions)
     llvm::Value* loaded = context.Builder.CreateLoad(llvmStructTy, alloca, resolvedName);
-    return TypedValue(loaded, FluxType::userStruct(typeId, llvmStructTy));
+    FluxType resultType = FluxType::userStruct(typeId, llvmStructTy);
+    resolveUserStructType(resultType, context);
+    return TypedValue(loaded, resultType);
 }
 
 // ============================================================================
@@ -5210,6 +5352,7 @@ void EnumDeclAST::codegen(CodegenContext& context)
         info.LLVMType = taggedUnionTy;
     }
 
+    info.isCopy = !IsNoCopy;
     context.EnumTypes.push_back(std::move(info));
     context.EnumTypeIndex[Name] = enumId;
     setEnumTypeId(enumId);
@@ -5770,6 +5913,12 @@ llvm::Function* FunctionAST::codegen(CodegenContext& context)
     if (isAsync) {
         context.Builder.SetInsertPoint(context.AwaitResumeTargets[0]);
     }
+
+    // Codegen local enum and anonymous struct declarations
+    for (auto& S : LocalAnonStructs)
+        S->codegen(context);
+    for (auto& E : LocalEnums)
+        E->codegen(context);
 
     if (TypedValue RetTV = Body->codegen(context)) {
         llvm::Value* RetVal = RetTV.Val;

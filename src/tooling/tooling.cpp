@@ -142,8 +142,14 @@ std::unique_ptr<llvm::TargetMachine> createTargetMachine(const OptimizationLevel
 
     auto relocModel = pic ? llvm::Reloc::PIC_ : llvm::Reloc::Static;
 
+    // Build features string from actual host features (respects kernel-disabled
+    // features like AVX-512, which the CPU name alone would incorrectly enable).
+    std::string features;
+    for (const auto& f : llvm::sys::getHostCPUFeatures())
+        features += (f.second ? "+" : "-") + f.first().str() + ",";
+
     return std::unique_ptr<llvm::TargetMachine>(
-        target->createTargetMachine(llvm::Triple(triple), llvm::sys::getHostCPUName().str(), "", options, relocModel,
+        target->createTargetMachine(llvm::Triple(triple), llvm::sys::getHostCPUName().str(), features, options, relocModel,
                                     std::nullopt, codegenLevel));
 }
 

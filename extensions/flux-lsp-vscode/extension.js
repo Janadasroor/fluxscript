@@ -4,21 +4,45 @@ const fs = require('fs');
 
 let client;
 
-function activate(context) {
+function findServerPath(context) {
   const config = vscode.workspace.getConfiguration('fluxscript');
-  const serverPath = config.get('lspPath') ||
-    path.join(context.extensionPath, '..', '..', 'build', 'flux-lsp');
+  const configured = config.get('lspPath');
+  if (configured && fs.existsSync(configured)) return configured;
+
+  // Try relative to extension
+  const candidates = [
+    path.join(context.extensionPath, '..', '..', 'build', 'flux-lsp'),
+    path.join(context.extensionPath, '..', '..', '..', 'build', 'flux-lsp'),
+    '/home/jnd/qt_projects/fluxscript/build/flux-lsp',
+  ];
+  for (const p of candidates) {
+    if (fs.existsSync(p)) return p;
+  }
+  // Try workspace folders
+  const folders = vscode.workspace.workspaceFolders || [];
+  for (const f of folders) {
+    const p = path.join(f.uri.fsPath, 'build', 'flux-lsp');
+    if (fs.existsSync(p)) return p;
+  }
+  return candidates[0]; // return first candidate even if it doesn't exist
+}
+
+async function activate(context) {
+  const serverPath = findServerPath(context);
+
+  const outputChannel = vscode.window.createOutputChannel('FluxScript LSP');
+  context.subscriptions.push(outputChannel);
+  outputChannel.appendLine(`flux-lsp path: ${serverPath}`);
 
   if (!fs.existsSync(serverPath)) {
+    outputChannel.appendLine('ERROR: binary not found');
     vscode.window.showErrorMessage(
-      `flux-lsp not found at "${serverPath}". Build the project first or set fluxscript.lspPath.`
+      `flux-lsp not found. Build the project first, or set fluxscript.lspPath in settings.`
     );
     return;
   }
 
-  const outputChannel = vscode.window.createOutputChannel('FluxScript LSP');
-  context.subscriptions.push(outputChannel);
-  outputChannel.appendLine(`Starting flux-lsp from: ${serverPath}`);
+  outputChannel.appendLine('Starting server...');
 
   const serverOptions = {
     run: { command: serverPath, args: ['--stdio'] },
@@ -33,12 +57,15 @@ function activate(context) {
 
   const lsp = require('vscode-languageclient/node');
   client = new lsp.LanguageClient('fluxscript', 'FluxScript LSP', serverOptions, clientOptions);
-  context.subscriptions.push(client.start());
-  client.onReady().then(() => {
+
+  try {
+    await client.start();
     outputChannel.appendLine('FluxScript LSP ready');
-  }).catch(err => {
-    outputChannel.appendLine(`FluxScript LSP error: ${err}`);
-  });
+    await client.onReady();
+  } catch (err) {
+    outputChannel.appendLine(`ERROR: ${err.message}`);
+    outputChannel.appendLine(err.stack || '');
+  }
 }
 
 function deactivate() {

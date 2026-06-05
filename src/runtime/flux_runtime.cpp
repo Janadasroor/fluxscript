@@ -14,7 +14,9 @@
 #include "flux/runtime/flux_runtime.h"
 #include "flux/ai/surrogate.h"
 #include "flux/analysis/advanced_analysis.h"
+#ifndef FLUX_RUNTIME_STANDALONE
 #include "flux/jit/flux_jit.h"
+#endif
 #include "flux/runtime/advanced_math.h"
 #include "flux/runtime/symbolic_engine.h"
 
@@ -314,6 +316,15 @@ extern "C" double flux_strcmp(double a_ptr, double b_ptr)
     if (!a || !b)
         return (a == b) ? 0.0 : 1.0;
     return static_cast<double>(std::strcmp(a, b));
+}
+
+extern "C" double flux_vec_eq(double* a_data, int a_size, double* b_data, int b_size)
+{
+    if (a_size != b_size) return 0.0;
+    for (int i = 0; i < a_size; ++i) {
+        if (a_data[i] != b_data[i]) return 0.0;
+    }
+    return 1.0;
 }
 
 extern "C" double flux_strlen(double s_ptr)
@@ -1706,6 +1717,7 @@ extern "C" void flux_rwlock_write_lock(double rw);
 extern "C" void flux_rwlock_unlock(double rw);
 extern "C" void flux_rwlock_destroy(double rw);
 
+#ifndef FLUX_RUNTIME_STANDALONE
 void registerRuntimeFunctions(FluxJIT& jit)
 {
     jit.registerFunction("flux_create_matrix", (void*)&flux_create_matrix);
@@ -2106,6 +2118,7 @@ void registerRuntimeFunctions(FluxJIT& jit)
     jit.registerFunction("flux_rwlock_unlock", (void*)&flux_rwlock_unlock);
     jit.registerFunction("flux_rwlock_destroy", (void*)&flux_rwlock_destroy);
 }
+#endif
 
 // Fixed-size worker thread pool with work-stealing for parallel for loops.
 // Threads are created once and reused across all parallel_for calls.

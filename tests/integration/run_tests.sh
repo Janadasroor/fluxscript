@@ -1,9 +1,153 @@
 #!/bin/bash
 # FluxScript Integration Test Runner
 # Tests features with syntax that actually works
+#
+# Usage:
+#   ./run_tests.sh           # sequential (default)
+#   ./run_tests.sh -P 4      # parallel with 4 workers
+#   ./run_tests.sh --worker <test_dir> <results_dir>   # internal: single test worker
+#   ./run_tests.sh --help
 
+MODE="sequential"
+PARALLEL_JOBS=1
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
+
+# ==============================================================================
+# Internal worker mode: run a single pre-registered test and write result
+# ==============================================================================
+if [ "${1:-}" = "--worker" ]; then
+    FLUX_BIN="${FLUX_BIN:-$PROJECT_DIR/build/flux}"
+    OPT="${OPT:-}"
+    FLUX_SELFHOST_BIN="${FLUX_SELFHOST_BIN:-}"
+    test_dir="$2"
+    results_dir="$3"
+    [ -z "$test_dir" ] && echo "Missing test_dir" && exit 1
+    [ -z "$results_dir" ] && echo "Missing results_dir" && exit 1
+
+    type="$(cat "$test_dir/type" 2>/dev/null)"
+    name="$(cat "$test_dir/name" 2>/dev/null)"
+    code_file="$test_dir/code.flux"
+    result_file="$results_dir/$(basename "$test_dir").result"
+    output_file="$results_dir/$(basename "$test_dir").output"
+
+    if [ ! -f "$code_file" ]; then
+        echo "FAIL|$name" > "$result_file"
+        echo "No code file" > "$output_file"
+        exit 0
+    fi
+
+    status=1
+    case "$type" in
+        jit)
+            output=$("$FLUX_BIN" --cache=0 "$code_file" 2>&1)
+            status=$?
+            ;;
+        check)
+            output=$("$FLUX_BIN" --emit=check --cache=0 "$code_file" 2>&1)
+            if echo "$output" | grep -q "OK"; then status=0; else status=1; fi
+            ;;
+        aot)
+            FLUXC="${FLUXC:-$PROJECT_DIR/build/fluxc}"
+            BUILD_DIR="${BUILD_DIR:-$PROJECT_DIR/build}"
+            objfile="${code_file}.o"
+            binfile="${code_file}.bin"
+            if ! "$FLUXC" "$code_file" -o "$objfile" 2>/dev/null; then
+                output="AOT compilation failed"; status=1
+            else
+                anon_sym=$(nm "$objfile" 2>/dev/null | grep "_anon_expr" | awk '{print $3}' | head -1 || true)
+                has_user_main=$(nm "$objfile" 2>/dev/null | grep -c " T main$" || true)
+                if [ -z "$anon_sym" ]; then
+                    output="No entry symbol found"; status=1
+                else
+                    obj_fixed="${code_file}.fixed.o"
+                    if [ "$has_user_main" -gt 0 ]; then
+                        objcopy --redefine-sym "$anon_sym=__flux_entry" --redefine-sym "main=__user_main" "$objfile" "$obj_fixed"
+                        wrapper="${code_file}_wrapper.cpp"
+                        cat > "$wrapper" << 'WRAPEOF'
+#include <cstdio>
+extern "C" double __flux_entry();
+int main() {
+    double result = __flux_entry();
+    fprintf(stdout, "Result: %g\n", result);
+    return 0;
+}
+WRAPEOF
+                        c++ -no-pie -o "$binfile" "$obj_fixed" "$wrapper" -L"$BUILD_DIR" -lFluxRuntime -lpthread -ldl -lm 2>/dev/null
+                        status=$?
+                        rm -f "$wrapper"
+                    else
+                        objcopy --redefine-sym "$anon_sym=main" "$objfile" "$obj_fixed"
+                        c++ -no-pie -o "$binfile" "$obj_fixed" -L"$BUILD_DIR" -lFluxRuntime -lpthread -ldl -lm 2>/dev/null
+                        status=$?
+                    fi
+                    rm -f "$obj_fixed"
+                    if [ $status -eq 0 ] && [ -x "$binfile" ]; then
+                        output=$("$binfile" 2>&1)
+                        status=$?
+                    else
+                        output="AOT linking failed"; status=1
+                    fi
+                fi
+            fi
+            rm -f "$objfile" "$binfile"
+            ;;
+        selfhost)
+            if [ -n "$OPT" ]; then
+                if [ -n "$FLUX_SELFHOST_BIN" ] && [ -x "$FLUX_SELFHOST_BIN" ]; then
+                    output=$(FLUX_INPUT="$code_file" "$FLUX_SELFHOST_BIN" 2>/dev/null | \
+                        awk '/^; ModuleID/ {found=1} found && !/^(Compiled|JIT cache|Result)/' | \
+                        "$OPT" -passes=verify -S 2>&1)
+                    status=$?
+                else
+                    output=$(FLUX_INPUT="$code_file" "$FLUX_BIN" --cache=0 "$PROJECT_DIR/src/fluxc/main.flux" 2>/dev/null | \
+                        awk '/^; ModuleID/ {found=1} found && !/^(Compiled|JIT cache|Result)/' | \
+                        "$OPT" -passes=verify -S 2>&1)
+                    status=$?
+                fi
+            else
+                status=0
+                output=""
+            fi
+            ;;
+        *)
+            output="Unknown test type: $type"
+            status=1
+            ;;
+    esac
+
+    if [ $status -eq 0 ]; then
+        echo "PASS" > "$result_file"
+        echo "" > "$output_file"
+    else
+        echo "FAIL" > "$result_file"
+        echo "$output" > "$output_file"
+    fi
+
+    # Print one-line result for live aggregation
+    if [ $status -eq 0 ]; then echo "OK|${name}"; else echo "FAIL|${name}"; fi
+    exit 0
+fi
+
+if [ "${1:-}" = "--help" ]; then
+    echo "Usage: $0 [-P N]"
+    echo "  -P N    Run tests with N parallel workers (default: 1 = sequential)"
+    exit 0
+fi
+
+# Parse -P flag
+while getopts "P:" opt; do
+    case "$opt" in
+        P) PARALLEL_JOBS="$OPTARG" ;;
+        *) echo "Usage: $0 [-P N]"; exit 1 ;;
+    esac
+done
+shift $((OPTIND-1))
+
+if [ "$PARALLEL_JOBS" -gt 1 ]; then
+    MODE="parallel"
+fi
+
 FLUX_BIN="$PROJECT_DIR/build/flux"
 if [ ! -x "$FLUX_BIN" ]; then
     if [ -x "$PROJECT_DIR/build/flux.exe" ]; then
@@ -111,6 +255,12 @@ RED='\033[0;31m'
 YELLOW='\033[0;33m'
 NC='\033[0m'
 
+# Parallel mode setup
+TEST_DIRS=()
+if [ "$MODE" = "parallel" ]; then
+    echo "Parallel mode enabled: $PARALLEL_JOBS workers"
+fi
+
 echo "========================================"
 echo "  FluxScript Integration Tests"  
 echo "========================================"
@@ -133,19 +283,29 @@ fi
 run_test() {
     local test_name="$1"
     local test_code="$2"
-    
+
+    if [ "$MODE" = "parallel" ]; then
+        local tmpdir=$(mktemp -d "/tmp/fluxtest_parallel_XXXXXX")
+        echo "$test_code" > "$tmpdir/code.flux"
+        echo "jit" > "$tmpdir/type"
+        echo "$test_name" > "$tmpdir/name"
+        TEST_DIRS+=("$tmpdir")
+        return
+    fi
+
     TOTAL=$((TOTAL + 1))
     echo -n "$test_name... "
     
-    echo "$test_code" > flux_test.flux
+    local tmpfile=$(mktemp /tmp/fluxtest_XXXXXX.flux)
+    echo "$test_code" > "$tmpfile"
     
     local cmd_status
     local test_output
     if [ -n "$TIMEOUT_CMD" ]; then
-        test_output=$($TIMEOUT_CMD 5 "$FLUX_BIN" --cache=0 flux_test.flux 2>&1)
+        test_output=$($TIMEOUT_CMD 5 "$FLUX_BIN" --cache=0 "$tmpfile" 2>&1)
         cmd_status=$?
     else
-        test_output=$("$FLUX_BIN" --cache=0 flux_test.flux 2>&1)
+        test_output=$("$FLUX_BIN" --cache=0 "$tmpfile" 2>&1)
         cmd_status=$?
     fi
 
@@ -160,7 +320,101 @@ run_test() {
         FAILED=$((FAILED + 1))
     fi
     
-    rm -f flux_test.flux
+    rm -f "$tmpfile"
+}
+
+# AOT standalone test: compile with fluxc, link with FluxRuntime, run executable
+run_aot_test() {
+    local test_name="$1"
+    local test_code="$2"
+
+    FLUXC="${FLUXC:-$PROJECT_DIR/build/fluxc}"
+    BUILD_DIR="${BUILD_DIR:-$PROJECT_DIR/build}"
+
+    if [ "$MODE" = "parallel" ]; then
+        local tmpdir=$(mktemp -d "/tmp/fluxtest_parallel_XXXXXX")
+        echo "$test_code" > "$tmpdir/code.flux"
+        echo "aot" > "$tmpdir/type"
+        echo "$test_name" > "$tmpdir/name"
+        TEST_DIRS+=("$tmpdir")
+        return
+    fi
+
+    TOTAL=$((TOTAL + 1))
+    echo -n "$test_name (AOT)... "
+
+    local tmpfile=$(mktemp /tmp/fluxtest_aot_XXXXXX.flux)
+    echo "$test_code" > "$tmpfile"
+
+    local objfile="${tmpfile}.o"
+    local binfile="${tmpfile}.bin"
+
+    local cmd_status=1
+    local test_output=""
+
+    # Compile to object file
+    if ! "$FLUXC" "$tmpfile" -o "$objfile" 2>/dev/null; then
+        test_output="AOT compilation failed"
+        cmd_status=1
+    else
+        # Find entry symbol
+        local anon_sym=$(nm "$objfile" 2>/dev/null | grep "_anon_expr" | awk '{print $3}' | head -1 || true)
+        local has_user_main=$(nm "$objfile" 2>/dev/null | grep -c " T main$" || true)
+
+        if [ -n "$anon_sym" ]; then
+            local obj_fixed="${tmpfile}.fixed.o"
+            if [ "$has_user_main" -gt 0 ]; then
+                # User defined main(): rename anon_expr -> __flux_entry
+                objcopy --redefine-sym "$anon_sym=__flux_entry" --redefine-sym "main=__user_main" "$objfile" "$obj_fixed"
+                # Build wrapper
+                local wrapper="${tmpfile}_wrapper.cpp"
+                cat > "$wrapper" << 'WRAPEOF'
+#include <cstdio>
+extern "C" double __flux_entry();
+int main() {
+    double result = __flux_entry();
+    fprintf(stdout, "Result: %g\n", result);
+    return 0;
+}
+WRAPEOF
+                c++ -no-pie -o "$binfile" "$obj_fixed" "$wrapper" \
+                    -L"$BUILD_DIR" -lFluxRuntime -lpthread -ldl -lm 2>/dev/null
+                cmd_status=$?
+                rm -f "$wrapper"
+            else
+                # No user main: rename anon_expr -> main directly
+                objcopy --redefine-sym "$anon_sym=main" "$objfile" "$obj_fixed"
+                c++ -no-pie -o "$binfile" "$obj_fixed" \
+                    -L"$BUILD_DIR" -lFluxRuntime -lpthread -ldl -lm 2>/dev/null
+                cmd_status=$?
+            fi
+            rm -f "$obj_fixed"
+
+            if [ $cmd_status -eq 0 ] && [ -x "$binfile" ]; then
+                test_output=$("$binfile" 2>&1)
+                cmd_status=$?
+            else
+                test_output="AOT linking failed (exit $cmd_status)"
+                cmd_status=1
+            fi
+        else
+            test_output="No entry symbol found in object file"
+            cmd_status=1
+        fi
+    fi
+
+    if [ $cmd_status -eq 0 ]; then
+        echo -e "${GREEN} PASSED${NC}"
+        PASSED=$((PASSED + 1))
+    else
+        echo -e "${RED} FAILED${NC}"
+        echo "=== AOT TEST OUTPUT FOR $test_name ==="
+        echo "$test_output"
+        echo "========================================"
+        FAILED=$((FAILED + 1))
+    fi
+
+    rm -f "$tmpfile" "$objfile" "$binfile"
 }
 
 # Self-hosting compiler test: generate IR via bootstrap or C++ compiler, verify with opt-21
@@ -168,27 +422,37 @@ run_selfhost_test() {
     local test_name="$1"
     local test_code="$2"
 
+    if [ "$MODE" = "parallel" ]; then
+        local tmpdir=$(mktemp -d "/tmp/fluxtest_parallel_XXXXXX")
+        echo "$test_code" > "$tmpdir/code.flux"
+        echo "selfhost" > "$tmpdir/type"
+        echo "$test_name" > "$tmpdir/name"
+        TEST_DIRS+=("$tmpdir")
+        return
+    fi
+
     TOTAL=$((TOTAL + 1))
     echo -n "$test_name... "
 
-    echo "$test_code" > /tmp/flux_selfhost.flux
+    local tmpfile=$(mktemp /tmp/fluxtest_selfhost_XXXXXX.flux)
+    echo "$test_code" > "$tmpfile"
 
     if [ -z "$OPT" ]; then
         echo -e "${YELLOW} SKIP (opt not found)${NC}"
         PASSED=$((PASSED + 1))
-        rm -f /tmp/flux_selfhost.flux
+        rm -f "$tmpfile"
         return
     fi
 
     local test_output
     local cmd_status
     if [ -n "$FLUX_SELFHOST_BIN" ] && [ -x "$FLUX_SELFHOST_BIN" ]; then
-        test_output=$(FLUX_INPUT=/tmp/flux_selfhost.flux "$FLUX_SELFHOST_BIN" 2>/dev/null | \
+        test_output=$(FLUX_INPUT="$tmpfile" "$FLUX_SELFHOST_BIN" 2>/dev/null | \
             awk '/^; ModuleID/ {found=1} found && !/^(Compiled|JIT cache|Result)/' | \
             $OPT -passes=verify -S 2>&1)
         cmd_status=$?
     else
-        test_output=$(FLUX_INPUT=/tmp/flux_selfhost.flux "$FLUX_BIN" --cache=0 "$PROJECT_DIR/src/fluxc/main.flux" 2>/dev/null | \
+        test_output=$(FLUX_INPUT="$tmpfile" "$FLUX_BIN" --cache=0 "$PROJECT_DIR/src/fluxc/main.flux" 2>/dev/null | \
             awk '/^; ModuleID/ {found=1} found && !/^(Compiled|JIT cache|Result)/' | \
             $OPT -passes=verify -S 2>&1)
         cmd_status=$?
@@ -205,7 +469,7 @@ run_selfhost_test() {
         FAILED=$((FAILED + 1))
     fi
 
-    rm -f /tmp/flux_selfhost.flux
+    rm -f "$tmpfile"
 }
 
 # Modified run_test for parser-only validation (uses --emit=check)
@@ -213,19 +477,29 @@ run_check_test() {
     local test_name="$1"
     local test_code="$2"
 
+    if [ "$MODE" = "parallel" ]; then
+        local tmpdir=$(mktemp -d "/tmp/fluxtest_parallel_XXXXXX")
+        echo "$test_code" > "$tmpdir/code.flux"
+        echo "check" > "$tmpdir/type"
+        echo "$test_name" > "$tmpdir/name"
+        TEST_DIRS+=("$tmpdir")
+        return
+    fi
+
     TOTAL=$((TOTAL + 1))
     echo -n "$test_name... "
 
-    echo "$test_code" > flux_test.flux
+    local tmpfile=$(mktemp /tmp/fluxtest_check_XXXXXX.flux)
+    echo "$test_code" > "$tmpfile"
 
     local cmd_status
     local test_output
     if [ -n "$TIMEOUT_CMD" ]; then
-        test_output=$($TIMEOUT_CMD 5 "$FLUX_BIN" --emit=check --cache=0 flux_test.flux 2>&1)
+        test_output=$($TIMEOUT_CMD 5 "$FLUX_BIN" --emit=check --cache=0 "$tmpfile" 2>&1)
         echo "$test_output" | grep -q "OK"
         cmd_status=$?
     else
-        test_output=$("$FLUX_BIN" --emit=check --cache=0 flux_test.flux 2>&1)
+        test_output=$("$FLUX_BIN" --emit=check --cache=0 "$tmpfile" 2>&1)
         echo "$test_output" | grep -q "OK"
         cmd_status=$?
     fi
@@ -241,7 +515,7 @@ run_check_test() {
         FAILED=$((FAILED + 1))
     fi
 
-    rm -f flux_test.flux
+    rm -f "$tmpfile"
 }
 
 # Test 1: Basic For Loop (baseline)
@@ -1242,6 +1516,144 @@ def run_check() -> Double {
 run_check()
 '
 
+# Test 64a: Switch basic — literal match, returns case value
+run_test "Switch basic" '
+let a = 1.0
+switch (a) {
+    1.0 => 10.0,
+    2.0 => 20.0,
+    ~ => 0.0
+}
+'
+
+# Test 64b: Switch with default fallthrough
+run_test "Switch default" '
+let a = 99.0
+switch (a) {
+    1.0 => 10.0,
+    2.0 => 20.0,
+    ~ => -1.0
+}
+'
+
+# Test 64c: Switch with let-binding + code after
+run_test "Switch let binding + after" '
+let a = 1.0;
+let r = switch (a) {
+    1.0 => 10.0,
+    ~ => 0.0
+};
+r * 2.0
+'
+
+# Test 64d: Switch with return in case
+run_test "Switch return case" '
+let a = 1.0
+switch (a) {
+    1.0 => { return 99.0 }
+    ~ => { return 0.0 }
+}
+'
+
+# Test 64e: Switch with mixed return/non-return + code after
+run_test "Switch mixed return + after" '
+let a = 5.0
+switch (a) {
+    1.0 => { return 99.0 }
+    ~ => { 0.0 }
+}
+a * 2.0
+'
+
+# Test 64f: Switch with case/colon syntax (original)
+run_test "Switch colon syntax" '
+let a = 2.0
+switch (a) {
+    case 1.0: 10.0,
+    case 2.0: 20.0,
+    default: 0.0
+}
+'
+
+# Test 64g: Switch with enum-like body (block in each case)
+run_test "Switch block body" '
+let a = 3.0
+switch (a) {
+    1.0 => {
+        100.0
+    }
+    ~ => {
+        a + 1.0
+    }
+}
+'
+
+# Test 64h: Switch nested in expression
+run_test "Switch in expression" '
+let a = 2.0;
+let r = 1.0 + switch (a) { 1.0 => 10.0, ~ => 0.0 };
+r
+'
+
+# Test 64i: Switch with multiple cases, one matches
+run_test "Switch multi case match" '
+let a = 3.0
+switch (a) {
+    1.0 => 10.0,
+    2.0 => 20.0,
+    3.0 => 30.0,
+    ~ => -1.0
+}
+'
+
+# Test 65a: ~Copy annotation on struct — basic creation and field access
+run_test "~Copy struct basic" '
+struct NoCopy ~Copy {
+    val: Double
+}
+let a = NoCopy { val: 42.0 };
+a.val
+'
+
+# Test 65b: ~Copy struct — function parameter passing
+run_test "~Copy struct function param" '
+struct NoCopy ~Copy {
+    val: Double
+}
+def get_val(x: NoCopy) -> Double { x.val }
+let a = NoCopy { val: 42.0 };
+get_val(a)
+'
+
+# Test 65c: ~Copy enum — declaration and match
+run_test "~Copy enum match" '
+enum Opt ~Copy { Some { val: Double }, None }
+let x = Opt.Some { val: 42.0 };
+match x {
+    Opt.Some(v) -> v,
+    Opt.None -> 0.0
+}
+'
+
+# Test 65d: ~Copy struct — let-binding assignment
+run_test "~Copy struct let assign" '
+struct NoCopy ~Copy {
+    val: Double
+}
+let a = NoCopy { val: 42.0 };
+let b = a;
+b.val
+'
+
+# Test 65e: Copy struct (no ~Copy) still works as expected
+run_test "Copy struct defaults to copy" '
+struct Normal {
+    val: Double
+}
+let a = Normal { val: 7.0 };
+a.val * 3.0
+'
+
 # Test 65: Async from async with let (no cross-await usage)
 run_test "Async - let before await" '
 async def helper() -> Double { await 1.0; 5.0 }
@@ -2147,6 +2559,828 @@ def main() -> Double {
 }
 '
 
+# ==============================================================================
+# Deep Core Tests — comprehensive edge case coverage
+# ==============================================================================
+
+# --- Recursion & Mutual Recursion ---
+run_test "Recursive Factorial" '
+def fact(n: Double) -> Double {
+    if n <= 1.0 then 1.0 else n * fact(n - 1.0)
+}
+def main() -> Double {
+    assert(fact(0.0) == 1.0, "fact(0) wrong");
+    assert(fact(1.0) == 1.0, "fact(1) wrong");
+    assert(fact(5.0) == 120.0, "fact(5) wrong");
+    assert(fact(10.0) == 3628800.0, "fact(10) wrong");
+    1.0
+}
+main()
+'
+
+run_test "Mutual Recursion Even/Odd" '
+def is_even(n: Double) -> Double {
+    if n == 0.0 then 1.0 else is_odd(n - 1.0)
+}
+def is_odd(n: Double) -> Double {
+    if n == 0.0 then 0.0 else is_even(n - 1.0)
+}
+def main() -> Double {
+    assert(is_even(0.0) == 1.0, "even(0) should be true");
+    assert(is_even(2.0) == 1.0, "even(2) should be true");
+    assert(is_even(3.0) == 0.0, "even(3) should be false");
+    assert(is_odd(1.0) == 1.0, "odd(1) should be true");
+    assert(is_odd(4.0) == 0.0, "odd(4) should be false");
+    1.0
+}
+main()
+'
+
+run_test "Indirect Mutual Recursion" '
+def a(x: Double) -> Double {
+    if x <= 0.0 then 0.0 else b(x - 1.0) + 1.0
+}
+def b(x: Double) -> Double {
+    if x <= 0.0 then 0.0 else a(x - 1.0) + 1.0
+}
+def main() -> Double {
+    assert(a(0.0) == 0.0, "a(0) wrong");
+    assert(a(5.0) == 5.0, "a(5) wrong");
+    assert(b(0.0) == 0.0, "b(0) wrong");
+    assert(b(3.0) == 3.0, "b(3) wrong");
+    1.0
+}
+main()
+'
+
+# --- Nested Control Flow ---
+run_test "Deeply Nested If-Else Chains" '
+def classify(x: Double) -> Double {
+    if x < 0.0 then
+        if x < -10.0 then
+            if x < -100.0 then -3.0 else -2.0
+        else -1.0
+    else
+        if x == 0.0 then 0.0
+        else if x < 10.0 then 1.0
+        else if x < 100.0 then 2.0
+        else 3.0
+}
+def main() -> Double {
+    assert(classify(-200.0) == -3.0, "very negative wrong");
+    assert(classify(-50.0) == -2.0, "moderate negative wrong");
+    assert(classify(-5.0) == -1.0, "slight negative wrong");
+    assert(classify(0.0) == 0.0, "zero wrong");
+    assert(classify(5.0) == 1.0, "small positive wrong");
+    assert(classify(50.0) == 2.0, "medium positive wrong");
+    assert(classify(500.0) == 3.0, "large positive wrong");
+    1.0
+}
+main()
+'
+
+run_test "Nested For Loops Product" '
+def main() -> Double {
+    var s = 0.0;
+    for i in 0, 3 do
+        for j in 0, 3 do
+            s = s + i * j;
+    assert(s == 36.0, "nested for sum wrong");
+    1.0
+}
+main()
+'
+
+run_test "For Loop With Break" '
+def main() -> Double {
+    var s = 0.0;
+    var i = 0.0;
+    for i in 1, 10 do {
+        s = s + i;
+        if i >= 5.0 then break;
+    }
+    assert(s == 15.0, "for-break sum wrong");
+    assert(i == 5.0, "for-break i should be 5");
+    1.0
+}
+main()
+'
+
+run_test "For Loop With Continue" '
+def main() -> Double {
+    var sum_odd = 0.0;
+    for i in 1, 10 do {
+        if i % 2.0 == 0.0 then continue;
+        sum_odd = sum_odd + i;
+    }
+    assert(sum_odd == 25.0, "for-continue odd sum wrong");
+    1.0
+}
+main()
+'
+
+run_test "While Loop Basic" '
+def main() -> Double {
+    var i = 0.0;
+    var s = 0.0;
+    while i < 10.0 do {
+        s = s + i;
+        i = i + 1.0;
+    }
+    assert(s == 45.0, "while sum wrong");
+    assert(i == 10.0, "while count wrong");
+    1.0
+}
+main()
+'
+
+run_test "While Loop Break" '
+def main() -> Double {
+    var s = 0.0;
+    var i = 0.0;
+    while i < 100.0 do {
+        s = s + i;
+        i = i + 1.0;
+        if s > 20.0 then break;
+    }
+    assert(s == 28.0, "while-break sum wrong");
+    assert(i == 8.0, "while-break count wrong");
+    1.0
+}
+main()
+'
+
+# --- Struct Deep Tests ---
+run_test "Nested Structs" '
+struct Inner { val: Double }
+struct Outer { inner: Inner, scale: Double }
+def main() -> Double {
+    let inner = Inner { val: 5.0 };
+    let outer = Outer { inner: inner, scale: 2.0 };
+    assert(outer.inner.val == 5.0, "nested struct inner field wrong");
+    assert(outer.scale == 2.0, "nested struct scale wrong");
+    let result = outer.inner.val * outer.scale;
+    assert(result == 10.0, "nested struct computed value wrong");
+    1.0
+}
+main()
+'
+
+run_test "Struct Mutation" '
+struct Point { x: Double, y: Double }
+def main() -> Double {
+    var p = Point { x: 1.0, y: 2.0 };
+    assert(p.x == 1.0, "init x wrong");
+    assert(p.y == 2.0, "init y wrong");
+    p.x = 10.0;
+    p.y = p.x * 2.0;
+    assert(p.x == 10.0, "mut x wrong");
+    assert(p.y == 20.0, "mut y wrong");
+    1.0
+}
+main()
+'
+
+run_test "Struct Return From Function" '
+struct Vec3 { x: Double, y: Double, z: Double }
+def make_vec3(x: Double, y: Double, z: Double) -> Vec3 {
+    Vec3 { x: x, y: y, z: z }
+}
+def main() -> Double {
+    let v = make_vec3(1.0, 2.0, 3.0);
+    assert(v.x == 1.0, "struct return x wrong");
+    assert(v.y == 2.0, "struct return y wrong");
+    assert(v.z == 3.0, "struct return z wrong");
+    1.0
+}
+main()
+'
+
+run_test "Struct As Function Parameter" '
+struct Pair { a: Double, b: Double }
+def sum_pair(p: Pair) -> Double { p.a + p.b }
+def main() -> Double {
+    let p = Pair { a: 10.0, b: 20.0 };
+    let r = sum_pair(p);
+    assert(r == 30.0, "struct param sum wrong");
+    1.0
+}
+main()
+'
+
+# --- Enum Deep Tests ---
+run_test "Enum Tagged Union Multiple Variants" '
+enum Shape { Circle { radius: Double }, Rect { w: Double, h: Double }, Nothing }
+def area(s: Shape) -> Double {
+    match s {
+        Shape.Circle(r) -> 3.14159 * r * r,
+        Shape.Rect(w, h) -> w * h,
+        default -> 0.0
+    }
+}
+def main() -> Double {
+    let c = Shape.Circle(2.0);
+    let r = Shape.Rect(3.0, 4.0);
+    let n = Shape.Nothing;
+    assert(abs(area(c) - 12.56636) < 0.001, "circle area wrong");
+    assert(area(r) == 12.0, "rect area wrong");
+    assert(area(n) == 0.0, "nothing area wrong");
+    1.0
+}
+main()
+'
+
+run_test "Enum As Function Parameter" '
+enum Opt { Some { value: Double }, None }
+def unwrap_or_default(x: Opt, def_val: Double) -> Double {
+    match x {
+        Opt.Some(v) -> v,
+        default -> def_val
+    }
+}
+def main() -> Double {
+    let a = Opt.Some(42.0);
+    let b = Opt.None;
+    assert(unwrap_or_default(a, 0.0) == 42.0, "unwrap some wrong");
+    assert(unwrap_or_default(b, 99.0) == 99.0, "unwrap none wrong");
+    1.0
+}
+main()
+'
+
+run_test "Enum Nested In Struct" '
+enum Status { Active { id: Double }, Inactive }
+struct Record { name: Double, status: Status }
+def main() -> Double {
+    let r = Record { name: 1.0, status: Status.Active(100.0) };
+    assert(r.status.id == 100.0, "nested enum field access wrong");
+    1.0
+}
+main()
+'
+
+# --- Switch/Case Deep Tests ---
+run_test "Switch Default Branch Returns" '
+def main() -> Double {
+    var x = 1.0;
+    var result = switch (x) {
+        0.0 => 100.0,
+        1.0 => 200.0,
+        ~ => 300.0
+    };
+    assert(result == 200.0, "switch matching 1.0 wrong");
+    x = 99.0;
+    result = switch (x) {
+        0.0 => 100.0,
+        1.0 => 200.0,
+        ~ => 300.0
+    };
+    assert(result == 300.0, "switch default wrong");
+    1.0
+}
+main()
+'
+
+run_test "Switch With Multi-Character Cases" '
+def main() -> Double {
+    let result = switch (10.0) {
+        5.0 => 1.0,
+        10.0 => 2.0,
+        15.0 => 3.0,
+        ~ => 0.0
+    };
+    assert(result == 2.0, "switch multi-char case wrong");
+    1.0
+}
+main()
+'
+
+# --- Operator Deep Tests ---
+run_test "Complex Arithmetic Expression" '
+def main() -> Double {
+    let r = (1.0 + 2.0) * (3.0 + 4.0) / (5.0 - 1.0) - 2.0;
+    assert(abs(r - 3.25) < 0.001, "complex arith wrong");
+    let r2 = ((1.0 + 2.0 * 3.0) - 4.0 / 2.0) * 5.0;
+    assert(r2 == 25.0, "complex arith 2 wrong");
+    1.0
+}
+main()
+'
+
+run_test "Boolean Logic Combinations" '
+def main() -> Double {
+    let a = true;
+    let b = false;
+    let c = true;
+    assert(a && b == false, "true && false should be false");
+    assert(a || b == true, "true || false should be true");
+    assert(!a == false, "!true should be false");
+    assert(!b == true, "!false should be true");
+    assert((a || b) && c == true, "(true||false)&&true should be true");
+    assert((a && b) || (b && c) || (a && c) == true, "complex bool wrong");
+    assert(!(a && b) == true, "not(false) should be true");
+    1.0
+}
+main()
+'
+
+run_test "Operator Precedence Chain" '
+def main() -> Double {
+    let r = 2.0 + 3.0 * 4.0 - 6.0 / 2.0;
+    assert(r == 11.0, "precedence 2+3*4-6/2 should be 11");
+    let r2 = 10.0 / 2.0 + 3.0 * 2.0 - 1.0;
+    assert(r2 == 10.0, "precedence 10/2+3*2-1 should be 10");
+    let r3 = 100.0 / 4.0 / 5.0;
+    assert(r3 == 5.0, "left assoc 100/4/5 should be 5");
+    1.0
+}
+main()
+'
+
+run_test "Modulo And Negation" '
+def main() -> Double {
+    assert(10.0 % 3.0 == 1.0, "10%%3 should be 1");
+    assert(7.0 % 2.5 == 2.0, "7%%2.5 should be 2.0");
+    assert(-5.0 == -5.0, "negation -5 should be -5");
+    assert(-(3.0 + 2.0) == -5.0, "negated expr should be -5");
+    let x = 7.0;
+    assert(-x == -7.0, "negated var should be -7");
+    1.0
+}
+main()
+'
+
+run_test "Comparison Chain" '
+def main() -> Double {
+    assert(1.0 < 2.0 == true, "1<2 should be true");
+    assert(2.0 < 2.0 == false, "2<2 should be false");
+    assert(2.0 <= 2.0 == true, "2<=2 should be true");
+    assert(3.0 > 2.0 == true, "3>2 should be true");
+    assert(3.0 >= 3.0 == true, "3>=3 should be true");
+    assert(1.0 != 2.0 == true, "1!=2 should be true");
+    assert(1.0 == 1.0 == true, "1==1 should be true");
+    assert(1.0 == 2.0 == false, "1==2 should be false");
+    1.0
+}
+main()
+'
+
+# --- Complex Expression Tests ---
+run_test "Nested Ternary Chains" '
+def main() -> Double {
+    let x = 5.0;
+    let r = if x < 0.0 then -1.0
+            else if x == 0.0 then 0.0
+            else if x < 10.0 then 1.0
+            else if x < 100.0 then 2.0
+            else 3.0;
+    assert(r == 1.0, "nested ternary chain wrong");
+    let x2 = -5.0;
+    let r2 = if x2 < 0.0 then -1.0 else if x2 == 0.0 then 0.0 else 1.0;
+    assert(r2 == -1.0, "neg ternary chain wrong");
+    1.0
+}
+main()
+'
+
+run_test "Expression As Function Body" '
+def f1(x: Double) -> Double { x * 2.0 }
+def f2(x: Double) -> Double { x + 1.0 }
+def composite(x: Double) -> Double { f2(f1(x)) }
+def main() -> Double {
+    assert(composite(5.0) == 11.0, "composite 5*2+1 should be 11");
+    assert(composite(0.0) == 1.0, "composite 0*2+1 should be 1");
+    1.0
+}
+main()
+'
+
+run_test "Implicit Return Last Expression" '
+def compute(a: Double, b: Double) -> Double { a * a + b * b }
+def main() -> Double {
+    let r = compute(3.0, 4.0);
+    assert(r == 25.0, "implicit return 3^2+4^2 should be 25");
+    let r2 = compute(5.0, 12.0);
+    assert(r2 == 169.0, "implicit return 5^2+12^2 should be 169");
+    1.0
+}
+main()
+'
+
+# --- Variable Scope & Shadowing ---
+run_test "Variable Shadowing" '
+def main() -> Double {
+    let x = 1.0;
+    let r1 = x;
+    let x = 2.0;
+    let r2 = x;
+    {
+        let x = 3.0;
+        let r3 = x;
+        assert(r3 == 3.0, "inner shadow should be 3");
+    };
+    assert(r1 == 1.0, "original x should still be 1");
+    assert(r2 == 2.0, "shadow x should be 2");
+    x = 4.0;
+    assert(x == 4.0, "reassigned shadow should be 4");
+    1.0
+}
+main()
+'
+
+run_test "Var Mutable In Block" '
+def main() -> Double {
+    var x = 1.0;
+    {
+        x = 2.0;
+    };
+    assert(x == 2.0, "var mutated inside block should persist");
+    1.0
+}
+main()
+'
+
+# --- Generics Deep Tests ---
+run_test "Generic Identity Multi-Type" '
+def id[T](x: T) -> T { x }
+def main() -> Double {
+    assert(id[Double](42.0) == 42.0, "generic id double wrong");
+    let s = id[Double](3.14);
+    assert(abs(s - 3.14) < 0.001, "generic id pi wrong");
+    1.0
+}
+main()
+'
+
+run_test "Generic Struct Direct Use" '
+struct Box[T] { val: T }
+def main() -> Double {
+    let b = Box[Double] { val: 42.0 };
+    assert(b.val == 42.0, "generic struct field wrong");
+    1.0
+}
+main()
+'
+
+# --- Reference/Pointer Deep Tests ---
+run_test "Ref Param Swap" '
+def swap(a: &mut Double, b: &mut Double) {
+    let tmp = *a;
+    *a = *b;
+    *b = tmp;
+}
+def main() -> Double {
+    var x = 1.0;
+    var y = 2.0;
+    swap(&mut x, &mut y);
+    assert(x == 2.0, "swap x should be 2");
+    assert(y == 1.0, "swap y should be 1");
+    1.0
+}
+main()
+'
+
+run_test "Ref To Struct Field" '
+struct Point { x: Double, y: Double }
+def main() -> Double {
+    var p = Point { x: 1.0, y: 2.0 };
+    let px = &mut p.x;
+    *px = 10.0;
+    assert(p.x == 10.0, "ref to struct field mutate wrong");
+    assert(p.y == 2.0, "other field unchanged");
+    1.0
+}
+main()
+'
+
+# --- Match Variable Type Regression ---
+run_test "Match Variable Arithmetic" '
+enum Wrap { Value { x: Double }, Empty }
+def sq(w: Wrap) -> Double {
+    match w {
+        Wrap.Value(v) -> v * v,
+        default -> 0.0
+    }
+}
+def main() -> Double {
+    assert(sq(Wrap.Value(3.0)) == 9.0, "match var multiply wrong");
+    assert(sq(Wrap.Value(0.0)) == 0.0, "match var zero wrong");
+    assert(sq(Wrap.Empty) == 0.0, "match var default wrong");
+    1.0
+}
+main()
+'
+
+run_test "Match Variable Add" '
+enum Opt { Some { value: Double }, None }
+def add_one(x: Opt) -> Double {
+    match x {
+        Opt.Some(v) -> v + 1.0,
+        default -> 0.0
+    }
+}
+def main() -> Double {
+    assert(add_one(Opt.Some(41.0)) == 42.0, "match var add wrong");
+    assert(add_one(Opt.None) == 0.0, "match var none wrong");
+    1.0
+}
+main()
+'
+
+# --- Fibonacci Performance Check ---
+run_test "Fibonacci Recursive" '
+def fib(n: Double) -> Double {
+    if n <= 1.0 then n else fib(n - 1.0) + fib(n - 2.0)
+}
+def main() -> Double {
+    assert(fib(0.0) == 0.0, "fib(0) should be 0");
+    assert(fib(1.0) == 1.0, "fib(1) should be 1");
+    assert(fib(10.0) == 55.0, "fib(10) should be 55");
+    assert(fib(20.0) == 6765.0, "fib(20) should be 6765");
+    1.0
+}
+main()
+'
+run_aot_test "AOT Fibonacci Recursive" '
+def fib(n: Double) -> Double {
+    if n <= 1.0 then n else fib(n - 1.0) + fib(n - 2.0)
+}
+def main() -> Double {
+    assert(fib(0.0) == 0.0, "fib(0) should be 0");
+    assert(fib(1.0) == 1.0, "fib(1) should be 1");
+    assert(fib(10.0) == 55.0, "fib(10) should be 55");
+    assert(fib(20.0) == 6765.0, "fib(20) should be 6765");
+    1.0
+}
+main()
+'
+
+# --- Builtins ---
+run_aot_test "AOT Nested Structs" '
+struct Inner { val: Double }
+struct Outer { inner: Inner, scale: Double }
+def main() -> Double {
+    let inner = Inner { val: 5.0 };
+    let outer = Outer { inner: inner, scale: 2.0 };
+    assert(outer.inner.val == 5.0, "nested struct inner field wrong");
+    assert(outer.scale == 2.0, "nested struct scale wrong");
+    let result = outer.inner.val * outer.scale;
+    assert(result == 10.0, "nested struct computed value wrong");
+    1.0
+}
+main()
+'
+
+run_aot_test "AOT Enum Multiple Variants" '
+enum Shape { Circle { radius: Double }, Rect { w: Double, h: Double }, Nothing }
+def area(s: Shape) -> Double {
+    match s {
+        Shape.Circle(r) -> 3.14159 * r * r,
+        Shape.Rect(w, h) -> w * h,
+        default -> 0.0
+    }
+}
+def main() -> Double {
+    let c = Shape.Circle(2.0);
+    let r = Shape.Rect(3.0, 4.0);
+    let n = Shape.Nothing;
+    assert(abs(area(c) - 12.56636) < 0.001, "circle area wrong");
+    assert(area(r) == 12.0, "rect area wrong");
+    assert(area(n) == 0.0, "nothing area wrong");
+    1.0
+}
+main()
+'
+
+run_aot_test "AOT Switch Default" '
+def main() -> Double {
+    var x = 1.0;
+    var result = switch (x) {
+        0.0 => 100.0,
+        1.0 => 200.0,
+        ~ => 300.0
+    };
+    assert(result == 200.0, "switch matching 1.0 wrong");
+    x = 99.0;
+    result = switch (x) {
+        0.0 => 100.0,
+        1.0 => 200.0,
+        ~ => 300.0
+    };
+    assert(result == 300.0, "switch default wrong");
+    1.0
+}
+main()
+'
+
+run_aot_test "AOT Complex Arithmetic" '
+def main() -> Double {
+    let r = (1.0 + 2.0) * (3.0 + 4.0) / (5.0 - 1.0) - 2.0;
+    assert(abs(r - 3.25) < 0.001, "complex arith wrong");
+    let r2 = ((1.0 + 2.0 * 3.0) - 4.0 / 2.0) * 5.0;
+    assert(r2 == 25.0, "complex arith 2 wrong");
+    1.0
+}
+main()
+'
+
+run_aot_test "AOT Ref Param Swap" '
+def swap(a: &mut Double, b: &mut Double) {
+    let tmp = *a;
+    *a = *b;
+    *b = tmp;
+}
+def main() -> Double {
+    var x = 1.0;
+    var y = 2.0;
+    swap(&mut x, &mut y);
+    assert(x == 2.0, "swap x should be 2");
+    assert(y == 1.0, "swap y should be 1");
+    1.0
+}
+main()
+'
+
+run_aot_test "AOT Match Variable Arithmetic" '
+enum Wrap { Value { x: Double }, Empty }
+def sq(w: Wrap) -> Double {
+    match w {
+        Wrap.Value(v) -> v * v,
+        default -> 0.0
+    }
+}
+def main() -> Double {
+    assert(sq(Wrap.Value(3.0)) == 9.0, "match var multiply wrong");
+    assert(sq(Wrap.Value(0.0)) == 0.0, "match var zero wrong");
+    assert(sq(Wrap.Empty) == 0.0, "match var default wrong");
+    1.0
+}
+main()
+'
+
+run_aot_test "AOT Generic Identity" '
+def id[T](x: T) -> T { x }
+def main() -> Double {
+    assert(id[Double](42.0) == 42.0, "generic id double wrong");
+    let s = id[Double](3.14);
+    assert(abs(s - 3.14) < 0.001, "generic id pi wrong");
+    1.0
+}
+main()
+'
+
+run_aot_test "AOT For Loop Break" '
+def main() -> Double {
+    var s = 0.0;
+    var i = 0.0;
+    for i in 1, 10 do {
+        s = s + i;
+        if i >= 5.0 then break;
+    }
+    assert(s == 15.0, "for-break sum wrong");
+    assert(i == 5.0, "for-break i should be 5");
+    1.0
+}
+main()
+'
+
+run_test "Abs Builtin" '
+def main() -> Double {
+    assert(abs(-5.0) == 5.0, "abs(-5) should be 5");
+    assert(abs(0.0) == 0.0, "abs(0) should be 0");
+    assert(abs(3.0) == 3.0, "abs(3) should be 3");
+    assert(abs(-0.0) == 0.0, "abs(-0) should be 0");
+    1.0
+}
+main()
+'
+
+# --- Error-Handling: Try/Catch/Throw ---
+run_test "Try Catch Basic" '
+def main() -> Double {
+    var caught = 0.0;
+    try {
+        throw "error";
+    } catch e {
+        caught = 1.0;
+    };
+    assert(caught == 1.0, "catch should have been triggered");
+    1.0
+}
+main()
+'
+
+run_test "Try Catch No Throw" '
+def main() -> Double {
+    var caught = 0.0;
+    var value = 0.0;
+    try {
+        value = 42.0;
+    } catch e {
+        caught = 1.0;
+    };
+    assert(caught == 0.0, "catch should not trigger");
+    assert(value == 42.0, "value should be set");
+    1.0
+}
+main()
+'
+
+run_test "Try Catch Finally" '
+def main() -> Double {
+    var caught = 0.0;
+    var finalized = 0.0;
+    try {
+        throw "err";
+    } catch e {
+        caught = 1.0;
+    } finally {
+        finalized = 1.0;
+    };
+    assert(caught == 1.0, "catch should trigger");
+    assert(finalized == 1.0, "finally should trigger");
+    1.0
+}
+main()
+'
+
+
+# ==============================================================================
+# Parallel executor — run all queued tests using xargs -P
+# ==============================================================================
+run_parallel_tests() {
+    local total=${#TEST_DIRS[@]}
+    [ "$total" -eq 0 ] && return
+
+    local results_dir=$(mktemp -d "/tmp/fluxtest_results_XXXXXX")
+    local workers=$PARALLEL_JOBS
+
+    echo "Running $total tests with $workers parallel workers..."
+
+    # Export env vars needed by --worker subprocesses
+    export FLUX_BIN PROJECT_DIR OPT FLUX_SELFHOST_BIN
+
+    # Count test types for progress
+    local jit_count=0 check_count=0 selfhost_count=0
+    for d in "${TEST_DIRS[@]}"; do
+        local t=$(cat "$d/type")
+        case "$t" in
+            jit) jit_count=$((jit_count + 1)) ;;
+            check) check_count=$((check_count + 1)) ;;
+            selfhost) selfhost_count=$((selfhost_count + 1)) ;;
+        esac
+    done
+
+    echo "  JIT: $jit_count  Check: $check_count  SelfHost: $selfhost_count"
+    echo ""
+
+    # Launch workers via xargs -P
+    printf '%s\n' "${TEST_DIRS[@]}" | \
+        xargs -P "$workers" -I{} "$SCRIPT_DIR/run_tests.sh" --worker {} "$results_dir" 2>/dev/null
+
+    # Collect results
+    PASSED=0
+    FAILED=0
+    for result_file in "$results_dir"/*.result; do
+        [ -f "$result_file" ] || continue
+        local result=$(cat "$result_file")
+        local base=$(basename "$result_file" .result)
+        local name=""
+        for d in "${TEST_DIRS[@]}"; do
+            if [ "$(basename "$d")" = "$base" ]; then
+                name=$(cat "$d/name")
+                break
+            fi
+        done
+
+        if [ "$result" = "PASS" ]; then
+            PASSED=$((PASSED + 1))
+        else
+            FAILED=$((FAILED + 1))
+            local output_file="$results_dir/${base}.output"
+            if [ -f "$output_file" ] && [ -s "$output_file" ]; then
+                echo "=== FAILED: $name ==="
+                cat "$output_file"
+                echo "========================"
+            fi
+        fi
+    done
+
+    TOTAL=$((PASSED + FAILED))
+
+    # Cleanup
+    rm -rf "$results_dir"
+    for d in "${TEST_DIRS[@]}"; do
+        rm -rf "$d"
+    done
+}
+
+# ==============================================================================
+# Execute tests (sequential or parallel)
+# ==============================================================================
+if [ "$MODE" = "parallel" ]; then
+    run_parallel_tests
+fi
 
 echo ""
 echo "========================================"  

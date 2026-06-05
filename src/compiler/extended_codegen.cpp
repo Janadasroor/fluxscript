@@ -505,6 +505,14 @@ TypedValue MatchExprAST::codegen(CodegenContext& context)
         return TypedValue();
     }
 
+    // If the match value is a pointer (e.g. struct/enum passed by reference),
+    // load it first to get the struct value for further processing.
+    if (MatchValTV.Val->getType()->isPointerTy()) {
+        llvm::Type* loadedTy = MatchValTV.Type.getLLVMType(context.TheContext);
+        if (!loadedTy) loadedTy = llvm::Type::getDoubleTy(context.TheContext);
+        MatchValTV.Val = context.Builder.CreateLoad(loadedTy, MatchValTV.Val, "match_val_loaded");
+    }
+
     bool isEnumMatch = MatchValTV.Type.isEnum();
     bool isPayloadEnum = isEnumMatch && MatchValTV.Val->getType()->isStructTy();
 
@@ -798,12 +806,34 @@ TypedValue MatchExprAST::codegen(CodegenContext& context)
                         payloadPtr, llvm::PointerType::get(concretePayloadLLVMTy, 0), "concrete_payload_ptr");
                 }
 
-                if (armBindings.size() == 1 && !concretePayloadLLVMTy->isStructTy()) {
-                    // Single scalar binding: load and store entire payload
+                if (armBindings.size() == 1 && concretePayloadLLVMTy->isStructTy() &&
+                    concretePayloadType.StructTypeId >= 0 &&
+                    concretePayloadType.StructTypeId < static_cast<int>(context.StructTypes.size())) {
+                    // Single binding: extract the first field from the payload struct
+                    auto& structInfo = context.StructTypes[concretePayloadType.StructTypeId];
+                    if (structInfo.Fields.size() == 1) {
+                        llvm::Value* fieldPtr = context.Builder.CreateStructGEP(concretePayloadLLVMTy, concretePayloadPtr, 0, armBindings[0]);
+                        llvm::Type* fieldTy = concretePayloadLLVMTy->getStructElementType(0);
+                        llvm::Value* FieldVal = context.Builder.CreateLoad(fieldTy, fieldPtr, armBindings[0] + "_val");
+                        llvm::AllocaInst* FieldAlloca = context.Builder.CreateAlloca(fieldTy, nullptr, armBindings[0]);
+                        context.Builder.CreateStore(FieldVal, FieldAlloca);
+                        context.NamedValues[armBindings[0]] = FieldAlloca;
+                        context.NamedTypes[armBindings[0]] = structInfo.Fields[0].second;
+                    } else {
+                        // Multi-field payload with single binding: capture entire struct
+                        llvm::Value* val = context.Builder.CreateLoad(concretePayloadLLVMTy, concretePayloadPtr, "struct_payload");
+                        llvm::AllocaInst* BindingAlloca = context.Builder.CreateAlloca(concretePayloadLLVMTy, nullptr, armBindings[0]);
+                        context.Builder.CreateStore(val, BindingAlloca);
+                        context.NamedValues[armBindings[0]] = BindingAlloca;
+                        context.NamedTypes[armBindings[0]] = concretePayloadType;
+                    }
+                } else if (armBindings.size() == 1) {
+                    // Single scalar binding: load scalar value directly
                     llvm::Value* val = context.Builder.CreateLoad(concretePayloadLLVMTy, concretePayloadPtr, "scalar_payload");
                     llvm::AllocaInst* BindingAlloca = context.Builder.CreateAlloca(concretePayloadLLVMTy, nullptr, armBindings[0]);
                     context.Builder.CreateStore(val, BindingAlloca);
                     context.NamedValues[armBindings[0]] = BindingAlloca;
+                    context.NamedTypes[armBindings[0]] = concretePayloadType;
                 } else {
                     // Multiple bindings: extract each field from the concrete payload struct
                     for (size_t bi = 0; bi < armBindings.size(); ++bi) {
@@ -813,6 +843,14 @@ TypedValue MatchExprAST::codegen(CodegenContext& context)
                         llvm::AllocaInst* FieldAlloca = context.Builder.CreateAlloca(fieldTy, nullptr, armBindings[bi]);
                         context.Builder.CreateStore(FieldVal, FieldAlloca);
                         context.NamedValues[armBindings[bi]] = FieldAlloca;
+                        // Set NamedTypes from payload struct field info
+                        if (concretePayloadType.StructTypeId >= 0 &&
+                            concretePayloadType.StructTypeId < static_cast<int>(context.StructTypes.size())) {
+                            auto& structInfo = context.StructTypes[concretePayloadType.StructTypeId];
+                            if (bi < structInfo.Fields.size()) {
+                                context.NamedTypes[armBindings[bi]] = structInfo.Fields[bi].second;
+                            }
+                        }
                     }
                 }
             }

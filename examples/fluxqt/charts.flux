@@ -22,7 +22,7 @@ def main() {
   let win = flux_qt_create_mainwindow("FluxScript Qt Charts")
   flux_qt_set_window_size(win, 840, 580)
 
-  let tab = flux_qt_create_tabwidget()
+  let tab = s o()
   flux_qt_set_central_widget(win, tab)
 
   # ── 1: Line vs Spline ──

@@ -447,6 +447,7 @@ public:
         size_t lineStart;
         size_t currentTokenOffset;
         size_t currentTokenLength;
+        std::vector<LexerDiagnostic> errors;
     };
 
     SavedState saveState() const;

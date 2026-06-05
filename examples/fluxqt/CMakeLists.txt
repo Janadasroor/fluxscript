@@ -44,7 +44,7 @@ llvm_map_components_to_libnames(llvm_libs
 )
 
 # Qt
-find_package(Qt6 REQUIRED COMPONENTS Widgets SvgWidgets Charts)
+find_package(Qt6 REQUIRED COMPONENTS Widgets SvgWidgets Charts Multimedia MultimediaWidgets PrintSupport SerialPort Bluetooth Network WebSockets OpenGLWidgets Sensors)
 
 # ── Main executable ──────────────────────────────────────────────────────
 add_executable(fluxqt
@@ -56,6 +56,15 @@ target_link_libraries(fluxqt PRIVATE
     Qt6::Widgets
     Qt6::SvgWidgets
     Qt6::Charts
+    Qt6::Multimedia
+    Qt6::MultimediaWidgets
+    Qt6::PrintSupport
+    Qt6::SerialPort
+    Qt6::Bluetooth
+    Qt6::Network
+    Qt6::WebSockets
+    Qt6::OpenGLWidgets
+    Qt6::Sensors
     FluxScript
     ${llvm_libs}
     dl

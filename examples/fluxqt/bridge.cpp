@@ -61,6 +61,44 @@
 #include <QShortcut>
 #include <QSystemTrayIcon>
 #include <QMenu>
+#include <QFontComboBox>
+#include <QDateEdit>
+#include <QTimeEdit>
+#include <QDateTimeEdit>
+#include <QProcess>
+#include <QWizard>
+#include <QMediaPlayer>
+#include <QVideoWidget>
+#include <QAudioOutput>
+#include <QPrinter>
+#include <QPrintPreviewDialog>
+#include <QGraphicsView>
+#include <QGraphicsScene>
+#include <QGraphicsRectItem>
+#include <QGraphicsEllipseItem>
+#include <QGraphicsLineItem>
+#include <QGraphicsTextItem>
+#include <QGraphicsPixmapItem>
+#include <QPen>
+#include <QBrush>
+#include <QColor>
+#include <QSerialPort>
+#include <QSerialPortInfo>
+#include <QBluetoothDeviceDiscoveryAgent>
+#include <QBluetoothDeviceInfo>
+#include <QBluetoothLocalDevice>
+#include <QNetworkAccessManager>
+#include <QNetworkReply>
+#include <QNetworkRequest>
+#include <QWebSocket>
+#include <QSensor>
+#include <QSensorReading>
+#include <QAccelerometer>
+#include <QGyroscope>
+#include <QLightSensor>
+#include <QMagnetometer>
+#include <QCompass>
+#include <QProximitySensor>
 #include <QDragEnterEvent>
 #include <QDropEvent>
 #include <QMimeData>
@@ -157,9 +195,52 @@ void FluxQtBridge::clearRegistry() {
 
 void FluxQtBridge::setPersistentWindow(QMainWindow* win) {
     m_persistentWindow = win;
-    if (win) registerObject(win);
 }
 
+// ===========================================================================
+// QGraphicsItem registry (QGraphicsItem is not QObject)
+// ===========================================================================
+static std::vector<QGraphicsItem*>& graphicsItems() {
+    static std::vector<QGraphicsItem*> items;
+    return items;
+}
+
+static double registerGraphicsItem(QGraphicsItem* item) {
+    graphicsItems().push_back(item);
+    return ptr_to_double(item);
+}
+
+static QGraphicsItem* resolveGraphicsItem(double handle) {
+    auto* raw = static_cast<QGraphicsItem*>(double_to_ptr(handle));
+    auto& items = graphicsItems();
+    if (std::find(items.begin(), items.end(), raw) != items.end())
+        return raw;
+    return nullptr;
+}
+
+// ===========================================================================
+// QPrinter registry (QPrinter is not QObject)
+// ===========================================================================
+static std::vector<QPrinter*>& printerItems() {
+    static std::vector<QPrinter*> items;
+    return items;
+}
+
+static double registerPrinter(QPrinter* p) {
+    printerItems().push_back(p);
+    return ptr_to_double(p);
+}
+
+static QPrinter* resolvePrinter(double handle) {
+    auto* raw = static_cast<QPrinter*>(double_to_ptr(handle));
+    auto& items = printerItems();
+    if (std::find(items.begin(), items.end(), raw) != items.end())
+        return raw;
+    return nullptr;
+}
+
+// ===========================================================================
+// Image handle from flux_qt_render_image — forwards declare
 // ===========================================================================
 // Property helpers
 // ===========================================================================
@@ -1797,6 +1878,783 @@ static void flux_qt_on_selection_changed_by_name(double h, double name_dbl) {
     FluxQtBridge::instance().connectSignalByName(h, "selectionChanged()", dbl_to_str(name_dbl));
 }
 
+// ===========================================================================
+// QFontComboBox / QDateEdit / QTimeEdit / QDateTimeEdit
+// ===========================================================================
+static double flux_qt_create_fontcombobox() {
+    auto* f = new QFontComboBox;
+    return FluxQtBridge::instance().registerObject(f);
+}
+
+static double flux_qt_create_dateedit() {
+    auto* d = new QDateEdit;
+    d->setCalendarPopup(true);
+    return FluxQtBridge::instance().registerObject(d);
+}
+
+static double flux_qt_create_timeedit() {
+    auto* t = new QTimeEdit;
+    return FluxQtBridge::instance().registerObject(t);
+}
+
+static double flux_qt_create_datetimeedit() {
+    auto* dt = new QDateTimeEdit;
+    dt->setCalendarPopup(true);
+    return FluxQtBridge::instance().registerObject(dt);
+}
+
+static double flux_qt_dateedit_date(double h) {
+    auto* d = qobject_cast<QDateEdit*>(FluxQtBridge::instance().resolveHandle(h));
+    if (!d) return 0.0;
+    auto s = d->date().toString("yyyy-MM-dd").toUtf8();
+    return ptr_to_double(strdup(s.constData()));
+}
+
+static void flux_qt_dateedit_set_date(double h, double year, double month, double day) {
+    auto* d = qobject_cast<QDateEdit*>(FluxQtBridge::instance().resolveHandle(h));
+    if (d) d->setDate(QDate(static_cast<int>(year), static_cast<int>(month), static_cast<int>(day)));
+}
+
+static double flux_qt_timeedit_time(double h) {
+    auto* t = qobject_cast<QTimeEdit*>(FluxQtBridge::instance().resolveHandle(h));
+    if (!t) return 0.0;
+    auto s = t->time().toString("HH:mm:ss").toUtf8();
+    return ptr_to_double(strdup(s.constData()));
+}
+
+static void flux_qt_timeedit_set_time(double h, double hour, double min, double sec) {
+    auto* t = qobject_cast<QTimeEdit*>(FluxQtBridge::instance().resolveHandle(h));
+    if (t) t->setTime(QTime(static_cast<int>(hour), static_cast<int>(min), static_cast<int>(sec)));
+}
+
+// ===========================================================================
+// QProcess — launch external programs
+// ===========================================================================
+static double flux_qt_process_start(double program_dbl, double args_dbl) {
+    auto* p = new QProcess;
+    QStringList args;
+    const char* args_str = dbl_to_str(args_dbl);
+    if (std::strlen(args_str) > 0) {
+        for (auto& s : QString::fromUtf8(args_str).split(' ', Qt::SkipEmptyParts))
+            args << s.trimmed();
+    }
+    p->start(QString::fromUtf8(dbl_to_str(program_dbl)), args);
+    return FluxQtBridge::instance().registerObject(p);
+}
+
+static double flux_qt_process_read_stdout(double h) {
+    auto* p = qobject_cast<QProcess*>(FluxQtBridge::instance().resolveHandle(h));
+    if (!p) return 0.0;
+    auto data = p->readAllStandardOutput();
+    auto s = QString::fromUtf8(data).toUtf8();
+    return ptr_to_double(strdup(s.constData()));
+}
+
+static double flux_qt_process_read_stderr(double h) {
+    auto* p = qobject_cast<QProcess*>(FluxQtBridge::instance().resolveHandle(h));
+    if (!p) return 0.0;
+    auto data = p->readAllStandardError();
+    auto s = QString::fromUtf8(data).toUtf8();
+    return ptr_to_double(strdup(s.constData()));
+}
+
+static double flux_qt_process_wait(double h, double timeout) {
+    auto* p = qobject_cast<QProcess*>(FluxQtBridge::instance().resolveHandle(h));
+    if (!p) return 0.0;
+    return p->waitForFinished(static_cast<int>(timeout)) ? 1.0 : 0.0;
+}
+
+static double flux_qt_process_exit_code(double h) {
+    auto* p = qobject_cast<QProcess*>(FluxQtBridge::instance().resolveHandle(h));
+    if (!p) return -1.0;
+    return static_cast<double>(p->exitCode());
+}
+
+static double flux_qt_process_running(double h) {
+    auto* p = qobject_cast<QProcess*>(FluxQtBridge::instance().resolveHandle(h));
+    if (!p) return 0.0;
+    return p->state() == QProcess::Running ? 1.0 : 0.0;
+}
+
+static void flux_qt_process_kill(double h) {
+    auto* p = qobject_cast<QProcess*>(FluxQtBridge::instance().resolveHandle(h));
+    if (p) p->kill();
+}
+
+static void flux_qt_process_on_finished(double h, double name_dbl) {
+    FluxQtBridge::instance().connectSignalByName(h, "finished(int, QProcess::ExitStatus)", dbl_to_str(name_dbl));
+}
+
+// ===========================================================================
+// QWizard — multi-step dialogs
+// ===========================================================================
+static double flux_qt_create_wizard(double title_dbl) {
+    auto* w = new QWizard;
+    w->setWindowTitle(QString::fromUtf8(dbl_to_str(title_dbl)));
+    w->setAttribute(Qt::WA_DeleteOnClose);
+    return FluxQtBridge::instance().registerObject(w);
+}
+
+static void flux_qt_wizard_add_page(double wizard_h, double widget_h, double title_dbl) {
+    auto* w = qobject_cast<QWizard*>(FluxQtBridge::instance().resolveHandle(wizard_h));
+    auto* page = qobject_cast<QWidget*>(FluxQtBridge::instance().resolveHandle(widget_h));
+    if (w && page) {
+        auto* wp = new QWizardPage;
+        auto* lay = new QVBoxLayout(wp);
+        lay->addWidget(page);
+        w->addPage(wp);
+    }
+}
+
+static double flux_qt_wizard_current_page(double wizard_h) {
+    auto* w = qobject_cast<QWizard*>(FluxQtBridge::instance().resolveHandle(wizard_h));
+    if (!w) return -1.0;
+    return static_cast<double>(w->currentId());
+}
+
+static double flux_qt_wizard_page_count(double wizard_h) {
+    auto* w = qobject_cast<QWizard*>(FluxQtBridge::instance().resolveHandle(wizard_h));
+    if (!w) return 0.0;
+    return static_cast<double>(w->pageIds().size());
+}
+
+static void flux_qt_wizard_restart(double wizard_h) {
+    auto* w = qobject_cast<QWizard*>(FluxQtBridge::instance().resolveHandle(wizard_h));
+    if (w) w->restart();
+}
+
+static void flux_qt_wizard_on_finished(double h, double name_dbl) {
+    FluxQtBridge::instance().connectSignalByName(h, "finished(int)", dbl_to_str(name_dbl));
+}
+
+// ===========================================================================
+// QVideoWidget / QMediaPlayer — video playback
+// ===========================================================================
+static double flux_qt_create_videowidget() {
+    auto* vw = new QVideoWidget;
+    return FluxQtBridge::instance().registerObject(vw);
+}
+
+static double flux_qt_create_mediaplayer() {
+    auto* mp = new QMediaPlayer;
+    auto* ao = new QAudioOutput;
+    mp->setAudioOutput(ao);
+    // Register both player and audio output; return player handle
+    FluxQtBridge::instance().registerObject(ao);      // stored but not returned
+    return FluxQtBridge::instance().registerObject(mp);
+}
+
+static void flux_qt_mediaplayer_set_source(double h, double path_dbl) {
+    auto* mp = qobject_cast<QMediaPlayer*>(FluxQtBridge::instance().resolveHandle(h));
+    if (mp) mp->setSource(QUrl::fromLocalFile(QString::fromUtf8(dbl_to_str(path_dbl))));
+}
+
+static void flux_qt_mediaplayer_play(double h) {
+    auto* mp = qobject_cast<QMediaPlayer*>(FluxQtBridge::instance().resolveHandle(h));
+    if (mp) mp->play();
+}
+
+static void flux_qt_mediaplayer_pause(double h) {
+    auto* mp = qobject_cast<QMediaPlayer*>(FluxQtBridge::instance().resolveHandle(h));
+    if (mp) mp->pause();
+}
+
+static void flux_qt_mediaplayer_stop(double h) {
+    auto* mp = qobject_cast<QMediaPlayer*>(FluxQtBridge::instance().resolveHandle(h));
+    if (mp) mp->stop();
+}
+
+static void flux_qt_mediaplayer_set_loops(double h, double count) {
+    auto* mp = qobject_cast<QMediaPlayer*>(FluxQtBridge::instance().resolveHandle(h));
+    if (mp) mp->setLoops(static_cast<int>(count));
+}
+
+static double flux_qt_mediaplayer_duration(double h) {
+    auto* mp = qobject_cast<QMediaPlayer*>(FluxQtBridge::instance().resolveHandle(h));
+    if (!mp) return 0.0;
+    return static_cast<double>(mp->duration());
+}
+
+static double flux_qt_mediaplayer_position(double h) {
+    auto* mp = qobject_cast<QMediaPlayer*>(FluxQtBridge::instance().resolveHandle(h));
+    if (!mp) return 0.0;
+    return static_cast<double>(mp->position());
+}
+
+static void flux_qt_mediaplayer_set_volume(double h, double vol) {
+    auto* mp = qobject_cast<QMediaPlayer*>(FluxQtBridge::instance().resolveHandle(h));
+    if (mp) {
+        auto* ao = mp->audioOutput();
+        if (ao) ao->setVolume(vol / 100.0);
+    }
+}
+
+static void flux_qt_mediaplayer_set_video_output(double player_h, double video_h) {
+    auto* mp = qobject_cast<QMediaPlayer*>(FluxQtBridge::instance().resolveHandle(player_h));
+    auto* vw = qobject_cast<QVideoWidget*>(FluxQtBridge::instance().resolveHandle(video_h));
+    if (mp && vw) mp->setVideoOutput(vw);
+}
+
+static void flux_qt_mediaplayer_on_state_changed(double h, double name_dbl) {
+    FluxQtBridge::instance().connectSignalByName(h, "playbackStateChanged(QMediaPlayer::PlaybackState)", dbl_to_str(name_dbl));
+}
+
+// ===========================================================================
+// QPrinter / QPrintPreviewDialog — printing
+// ===========================================================================
+static double flux_qt_create_printer() {
+    return registerPrinter(new QPrinter(QPrinter::HighResolution));
+}
+
+static void flux_qt_printer_set_output_file_name(double h, double path_dbl) {
+    auto* p = resolvePrinter(h);
+    if (p) p->setOutputFileName(QString::fromUtf8(dbl_to_str(path_dbl)));
+}
+
+static void flux_qt_printer_set_output_format(double h, double fmt_dbl) {
+    auto* p = resolvePrinter(h);
+    if (p) p->setOutputFormat(static_cast<QPrinter::OutputFormat>(static_cast<int>(fmt_dbl)));
+}
+
+static double flux_qt_create_print_preview_dialog(double printer_h) {
+    auto* p = resolvePrinter(printer_h);
+    if (!p) return 0.0;
+    auto* dlg = new QPrintPreviewDialog(p);
+    return FluxQtBridge::instance().registerObject(dlg);
+}
+
+static double flux_qt_print_preview_dialog_exec(double h) {
+    auto* dlg = qobject_cast<QPrintPreviewDialog*>(FluxQtBridge::instance().resolveHandle(h));
+    if (!dlg) return 0.0;
+    return static_cast<double>(dlg->exec());
+}
+
+static void flux_qt_print_preview_dialog_on_paint_requested(double h, double name_dbl) {
+    FluxQtBridge::instance().connectSignalByName(h, "paintRequested(QPrinter*)", dbl_to_str(name_dbl));
+}
+
+// ===========================================================================
+// QGraphicsScene / QGraphicsView — 2D canvas
+// ===========================================================================
+static double flux_qt_create_graphics_scene() {
+    return FluxQtBridge::instance().registerObject(new QGraphicsScene);
+}
+
+static void flux_qt_graphics_scene_set_scene_rect(double h, double x, double y, double w, double h_) {
+    auto* s = qobject_cast<QGraphicsScene*>(FluxQtBridge::instance().resolveHandle(h));
+    if (s) s->setSceneRect(x, y, w, h_);
+}
+
+static void flux_qt_graphics_scene_clear(double h) {
+    auto* s = qobject_cast<QGraphicsScene*>(FluxQtBridge::instance().resolveHandle(h));
+    if (s) s->clear();
+}
+
+static double flux_qt_graphics_scene_width(double h) {
+    auto* s = qobject_cast<QGraphicsScene*>(FluxQtBridge::instance().resolveHandle(h));
+    return s ? s->width() : 0.0;
+}
+
+static double flux_qt_graphics_scene_height(double h) {
+    auto* s = qobject_cast<QGraphicsScene*>(FluxQtBridge::instance().resolveHandle(h));
+    return s ? s->height() : 0.0;
+}
+
+static double flux_qt_graphics_scene_add_rect(double h, double x, double y, double w, double h_) {
+    auto* s = qobject_cast<QGraphicsScene*>(FluxQtBridge::instance().resolveHandle(h));
+    if (!s) return 0.0;
+    return registerGraphicsItem(s->addRect(x, y, w, h_));
+}
+
+static double flux_qt_graphics_scene_add_ellipse(double h, double x, double y, double w, double h_) {
+    auto* s = qobject_cast<QGraphicsScene*>(FluxQtBridge::instance().resolveHandle(h));
+    if (!s) return 0.0;
+    return registerGraphicsItem(s->addEllipse(x, y, w, h_));
+}
+
+static double flux_qt_graphics_scene_add_line(double h, double x1, double y1, double x2, double y2) {
+    auto* s = qobject_cast<QGraphicsScene*>(FluxQtBridge::instance().resolveHandle(h));
+    if (!s) return 0.0;
+    return registerGraphicsItem(s->addLine(x1, y1, x2, y2));
+}
+
+static double flux_qt_graphics_scene_add_text(double h, double text_dbl, double x, double y) {
+    auto* s = qobject_cast<QGraphicsScene*>(FluxQtBridge::instance().resolveHandle(h));
+    if (!s) return 0.0;
+    auto* item = s->addText(QString::fromUtf8(dbl_to_str(text_dbl)));
+    item->setPos(x, y);
+    return registerGraphicsItem(item);
+}
+
+static double flux_qt_graphics_scene_add_pixmap(double h, double image_h, double x, double y) {
+    auto* s = qobject_cast<QGraphicsScene*>(FluxQtBridge::instance().resolveHandle(h));
+    if (!s) return 0.0;
+    auto* img = static_cast<QImage*>(double_to_ptr(image_h));
+    auto* item = s->addPixmap(QPixmap::fromImage(*img));
+    item->setPos(x, y);
+    return registerGraphicsItem(item);
+}
+
+static double flux_qt_create_graphics_view(double scene_h) {
+    auto* s = qobject_cast<QGraphicsScene*>(FluxQtBridge::instance().resolveHandle(scene_h));
+    if (!s) return 0.0;
+    return FluxQtBridge::instance().registerObject(new QGraphicsView(s));
+}
+
+static void flux_qt_graphics_view_fit_in_view(double h, double mode) {
+    auto* v = qobject_cast<QGraphicsView*>(FluxQtBridge::instance().resolveHandle(h));
+    if (v) v->fitInView(v->sceneRect(), static_cast<Qt::AspectRatioMode>(static_cast<int>(mode)));
+}
+
+static void flux_qt_graphics_view_center_on(double h, double x, double y) {
+    auto* v = qobject_cast<QGraphicsView*>(FluxQtBridge::instance().resolveHandle(h));
+    if (v) v->centerOn(x, y);
+}
+
+static void flux_qt_graphics_view_set_drag_mode(double h, double mode) {
+    auto* v = qobject_cast<QGraphicsView*>(FluxQtBridge::instance().resolveHandle(h));
+    if (v) v->setDragMode(static_cast<QGraphicsView::DragMode>(static_cast<int>(mode)));
+}
+
+static void flux_qt_graphics_view_set_render_hint(double h, double hint) {
+    auto* v = qobject_cast<QGraphicsView*>(FluxQtBridge::instance().resolveHandle(h));
+    if (v) v->setRenderHint(static_cast<QPainter::RenderHint>(static_cast<int>(hint)));
+}
+
+static void flux_qt_graphics_view_set_background_brush(double h, double r, double g, double b, double a) {
+    auto* v = qobject_cast<QGraphicsView*>(FluxQtBridge::instance().resolveHandle(h));
+    if (v) v->setBackgroundBrush(QColor(static_cast<int>(r), static_cast<int>(g), static_cast<int>(b), static_cast<int>(a)));
+}
+
+static void flux_qt_graphics_view_scale(double h, double sx, double sy) {
+    auto* v = qobject_cast<QGraphicsView*>(FluxQtBridge::instance().resolveHandle(h));
+    if (v) v->scale(sx, sy);
+}
+
+static void flux_qt_graphics_view_rotate(double h, double angle) {
+    auto* v = qobject_cast<QGraphicsView*>(FluxQtBridge::instance().resolveHandle(h));
+    if (v) v->rotate(angle);
+}
+
+static void flux_qt_graphics_item_set_pos(double h, double x, double y) {
+    auto* item = resolveGraphicsItem(h);
+    if (item) item->setPos(x, y);
+}
+
+static double flux_qt_graphics_item_pos_x(double h) {
+    auto* item = resolveGraphicsItem(h);
+    return item ? item->pos().x() : 0.0;
+}
+
+static double flux_qt_graphics_item_pos_y(double h) {
+    auto* item = resolveGraphicsItem(h);
+    return item ? item->pos().y() : 0.0;
+}
+
+static void flux_qt_graphics_item_set_rotation(double h, double angle) {
+    auto* item = resolveGraphicsItem(h);
+    if (item) item->setRotation(angle);
+}
+
+static double flux_qt_graphics_item_rotation(double h) {
+    auto* item = resolveGraphicsItem(h);
+    return item ? item->rotation() : 0.0;
+}
+
+static void flux_qt_graphics_item_set_scale(double h, double s) {
+    auto* item = resolveGraphicsItem(h);
+    if (item) item->setScale(s);
+}
+
+static void flux_qt_graphics_item_set_pen(double h, double r, double g, double b, double a, double width) {
+    auto* item = resolveGraphicsItem(h);
+    if (!item) return;
+    auto* shape = dynamic_cast<QAbstractGraphicsShapeItem*>(item);
+    if (shape) shape->setPen(QPen(QColor(static_cast<int>(r), static_cast<int>(g), static_cast<int>(b), static_cast<int>(a)), width));
+}
+
+static void flux_qt_graphics_item_set_brush(double h, double r, double g, double b, double a) {
+    auto* item = resolveGraphicsItem(h);
+    if (!item) return;
+    auto* shape = dynamic_cast<QAbstractGraphicsShapeItem*>(item);
+    if (shape) shape->setBrush(QBrush(QColor(static_cast<int>(r), static_cast<int>(g), static_cast<int>(b), static_cast<int>(a))));
+}
+
+static void flux_qt_graphics_item_set_z_value(double h, double z) {
+    auto* item = resolveGraphicsItem(h);
+    if (item) item->setZValue(z);
+}
+
+static void flux_qt_graphics_item_set_visible(double h, double v) {
+    auto* item = resolveGraphicsItem(h);
+    if (item) item->setVisible(v > 0.0);
+}
+
+static void flux_qt_graphics_item_remove(double h) {
+    auto* item = resolveGraphicsItem(h);
+    if (item) {
+        auto* s = item->scene();
+        if (s) s->removeItem(item);
+    }
+}
+
+// ===========================================================================
+// QSerialPort — serial communication
+// ===========================================================================
+static double flux_qt_create_serial_port() {
+    return FluxQtBridge::instance().registerObject(new QSerialPort);
+}
+
+static void flux_qt_serial_set_port_name(double h, double name_dbl) {
+    auto* sp = qobject_cast<QSerialPort*>(FluxQtBridge::instance().resolveHandle(h));
+    if (sp) sp->setPortName(QString::fromUtf8(dbl_to_str(name_dbl)));
+}
+
+static void flux_qt_serial_set_baud_rate(double h, double rate) {
+    auto* sp = qobject_cast<QSerialPort*>(FluxQtBridge::instance().resolveHandle(h));
+    if (sp) sp->setBaudRate(static_cast<qint32>(rate));
+}
+
+static void flux_qt_serial_set_data_bits(double h, double bits) {
+    auto* sp = qobject_cast<QSerialPort*>(FluxQtBridge::instance().resolveHandle(h));
+    if (sp) sp->setDataBits(static_cast<QSerialPort::DataBits>(static_cast<int>(bits)));
+}
+
+static void flux_qt_serial_set_parity(double h, double parity) {
+    auto* sp = qobject_cast<QSerialPort*>(FluxQtBridge::instance().resolveHandle(h));
+    if (sp) sp->setParity(static_cast<QSerialPort::Parity>(static_cast<int>(parity)));
+}
+
+static void flux_qt_serial_set_stop_bits(double h, double bits) {
+    auto* sp = qobject_cast<QSerialPort*>(FluxQtBridge::instance().resolveHandle(h));
+    if (sp) sp->setStopBits(static_cast<QSerialPort::StopBits>(static_cast<int>(bits)));
+}
+
+static void flux_qt_serial_set_flow_control(double h, double flow) {
+    auto* sp = qobject_cast<QSerialPort*>(FluxQtBridge::instance().resolveHandle(h));
+    if (sp) sp->setFlowControl(static_cast<QSerialPort::FlowControl>(static_cast<int>(flow)));
+}
+
+static double flux_qt_serial_open(double h, double mode) {
+    auto* sp = qobject_cast<QSerialPort*>(FluxQtBridge::instance().resolveHandle(h));
+    if (!sp) return 0.0;
+    return sp->open(static_cast<QIODeviceBase::OpenModeFlag>(static_cast<int>(mode))) ? 1.0 : 0.0;
+}
+
+static void flux_qt_serial_close(double h) {
+    auto* sp = qobject_cast<QSerialPort*>(FluxQtBridge::instance().resolveHandle(h));
+    if (sp) sp->close();
+}
+
+static double flux_qt_serial_is_open(double h) {
+    auto* sp = qobject_cast<QSerialPort*>(FluxQtBridge::instance().resolveHandle(h));
+    return (sp && sp->isOpen()) ? 1.0 : 0.0;
+}
+
+static double flux_qt_serial_write(double h, double data_dbl) {
+    auto* sp = qobject_cast<QSerialPort*>(FluxQtBridge::instance().resolveHandle(h));
+    if (!sp) return 0.0;
+    QByteArray ba(dbl_to_str(data_dbl));
+    return static_cast<double>(sp->write(ba));
+}
+
+static double flux_qt_serial_read_all(double h) {
+    auto* sp = qobject_cast<QSerialPort*>(FluxQtBridge::instance().resolveHandle(h));
+    if (!sp) return 0.0;
+    QByteArray data = sp->readAll();
+    auto* buf = new char[data.size() + 1];
+    std::memcpy(buf, data.constData(), data.size());
+    buf[data.size()] = '\0';
+    return ptr_to_double(buf);
+}
+
+static double flux_qt_serial_read_line(double h) {
+    auto* sp = qobject_cast<QSerialPort*>(FluxQtBridge::instance().resolveHandle(h));
+    if (!sp) return 0.0;
+    QByteArray data = sp->readLine();
+    auto* buf = new char[data.size() + 1];
+    std::memcpy(buf, data.constData(), data.size());
+    buf[data.size()] = '\0';
+    return ptr_to_double(buf);
+}
+
+static double flux_qt_serial_bytes_available(double h) {
+    auto* sp = qobject_cast<QSerialPort*>(FluxQtBridge::instance().resolveHandle(h));
+    return sp ? static_cast<double>(sp->bytesAvailable()) : 0.0;
+}
+
+static double flux_qt_serial_wait_for_ready_read(double h, double timeout_ms) {
+    auto* sp = qobject_cast<QSerialPort*>(FluxQtBridge::instance().resolveHandle(h));
+    return (sp && sp->waitForReadyRead(static_cast<int>(timeout_ms))) ? 1.0 : 0.0;
+}
+
+static double flux_qt_serial_wait_for_bytes_written(double h, double timeout_ms) {
+    auto* sp = qobject_cast<QSerialPort*>(FluxQtBridge::instance().resolveHandle(h));
+    return (sp && sp->waitForBytesWritten(static_cast<int>(timeout_ms))) ? 1.0 : 0.0;
+}
+
+static void flux_qt_serial_flush(double h) {
+    auto* sp = qobject_cast<QSerialPort*>(FluxQtBridge::instance().resolveHandle(h));
+    if (sp) sp->flush();
+}
+
+static void flux_qt_serial_clear(double h) {
+    auto* sp = qobject_cast<QSerialPort*>(FluxQtBridge::instance().resolveHandle(h));
+    if (sp) sp->clear();
+}
+
+static void flux_qt_serial_on_ready_read(double h, double name_dbl) {
+    FluxQtBridge::instance().connectSignalByName(h, "readyRead()", dbl_to_str(name_dbl));
+}
+
+static void flux_qt_serial_on_error_occurred(double h, double name_dbl) {
+    FluxQtBridge::instance().connectSignalByName(h, "errorOccurred(QSerialPort::SerialPortError)", dbl_to_str(name_dbl));
+}
+
+// ===========================================================================
+// QBluetooth — device discovery
+// ===========================================================================
+static double flux_qt_bluetooth_local_device_name() {
+    return ptr_to_double(strdup(QBluetoothLocalDevice().name().toUtf8().constData()));
+}
+
+static double flux_qt_bluetooth_local_device_address() {
+    return ptr_to_double(strdup(QBluetoothLocalDevice().address().toString().toUtf8().constData()));
+}
+
+static double flux_qt_create_discovery_agent() {
+    return FluxQtBridge::instance().registerObject(new QBluetoothDeviceDiscoveryAgent);
+}
+
+static void flux_qt_discovery_agent_start(double h) {
+    auto* a = qobject_cast<QBluetoothDeviceDiscoveryAgent*>(FluxQtBridge::instance().resolveHandle(h));
+    if (a) a->start();
+}
+
+static void flux_qt_discovery_agent_stop(double h) {
+    auto* a = qobject_cast<QBluetoothDeviceDiscoveryAgent*>(FluxQtBridge::instance().resolveHandle(h));
+    if (a) a->stop();
+}
+
+static double flux_qt_discovery_agent_is_active(double h) {
+    auto* a = qobject_cast<QBluetoothDeviceDiscoveryAgent*>(FluxQtBridge::instance().resolveHandle(h));
+    return (a && a->isActive()) ? 1.0 : 0.0;
+}
+
+static void flux_qt_discovery_agent_on_device_discovered(double h, double name_dbl) {
+    FluxQtBridge::instance().connectSignalByName(h, "deviceDiscovered(QBluetoothDeviceInfo)", dbl_to_str(name_dbl));
+}
+
+static void flux_qt_discovery_agent_on_finished(double h, double name_dbl) {
+    FluxQtBridge::instance().connectSignalByName(h, "finished()", dbl_to_str(name_dbl));
+}
+
+// ===========================================================================
+// QNetworkAccessManager — HTTP requests
+// ===========================================================================
+static double flux_qt_create_network_manager() {
+    return FluxQtBridge::instance().registerObject(new QNetworkAccessManager);
+}
+
+static double flux_qt_nam_get(double h, double url_dbl) {
+    auto* mgr = qobject_cast<QNetworkAccessManager*>(FluxQtBridge::instance().resolveHandle(h));
+    if (!mgr) return 0.0;
+    auto* reply = mgr->get(QNetworkRequest(QUrl(QString::fromUtf8(dbl_to_str(url_dbl)))));
+    return FluxQtBridge::instance().registerObject(reply);
+}
+
+static double flux_qt_nam_post(double h, double url_dbl, double data_dbl) {
+    auto* mgr = qobject_cast<QNetworkAccessManager*>(FluxQtBridge::instance().resolveHandle(h));
+    if (!mgr) return 0.0;
+    QByteArray data(dbl_to_str(data_dbl));
+    auto* reply = mgr->post(QNetworkRequest(QUrl(QString::fromUtf8(dbl_to_str(url_dbl)))), data);
+    return FluxQtBridge::instance().registerObject(reply);
+}
+
+static void flux_qt_nam_on_finished(double h, double name_dbl) {
+    auto* reply = qobject_cast<QNetworkReply*>(FluxQtBridge::instance().resolveHandle(h));
+    if (!reply) {
+        // Listen on the manager instead — connect to its finished signal
+        FluxQtBridge::instance().connectSignalByName(h, "finished(QNetworkReply*)", dbl_to_str(name_dbl));
+        return;
+    }
+    FluxQtBridge::instance().connectSignalByName(h, "finished()", dbl_to_str(name_dbl));
+}
+
+static double flux_qt_reply_read_all(double h) {
+    auto* reply = qobject_cast<QNetworkReply*>(FluxQtBridge::instance().resolveHandle(h));
+    if (!reply) return 0.0;
+    QByteArray data = reply->readAll();
+    auto* buf = new char[data.size() + 1];
+    std::memcpy(buf, data.constData(), data.size());
+    buf[data.size()] = '\0';
+    return ptr_to_double(buf);
+}
+
+static double flux_qt_reply_error_string(double h) {
+    auto* reply = qobject_cast<QNetworkReply*>(FluxQtBridge::instance().resolveHandle(h));
+    if (!reply) return 0.0;
+    return ptr_to_double(strdup(reply->errorString().toUtf8().constData()));
+}
+
+static double flux_qt_reply_status_code(double h) {
+    auto* reply = qobject_cast<QNetworkReply*>(FluxQtBridge::instance().resolveHandle(h));
+    if (!reply) return 0.0;
+    return static_cast<double>(reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt());
+}
+
+static double flux_qt_reply_url(double h) {
+    auto* reply = qobject_cast<QNetworkReply*>(FluxQtBridge::instance().resolveHandle(h));
+    if (!reply) return 0.0;
+    return ptr_to_double(strdup(reply->url().toString().toUtf8().constData()));
+}
+
+static double flux_qt_reply_header(double h, double header_dbl) {
+    auto* reply = qobject_cast<QNetworkReply*>(FluxQtBridge::instance().resolveHandle(h));
+    if (!reply) return 0.0;
+    auto value = reply->rawHeader(QByteArray::number(static_cast<int>(header_dbl)));
+    return ptr_to_double(strdup(value.constData()));
+}
+
+// ===========================================================================
+// QWebSocket — WebSocket client
+// ===========================================================================
+static double flux_qt_create_web_socket() {
+    return FluxQtBridge::instance().registerObject(new QWebSocket);
+}
+
+static void flux_qt_ws_open(double h, double url_dbl) {
+    auto* ws = qobject_cast<QWebSocket*>(FluxQtBridge::instance().resolveHandle(h));
+    if (ws) ws->open(QUrl(QString::fromUtf8(dbl_to_str(url_dbl))));
+}
+
+static void flux_qt_ws_send_text(double h, double msg_dbl) {
+    auto* ws = qobject_cast<QWebSocket*>(FluxQtBridge::instance().resolveHandle(h));
+    if (ws) ws->sendTextMessage(QString::fromUtf8(dbl_to_str(msg_dbl)));
+}
+
+static void flux_qt_ws_close(double h) {
+    auto* ws = qobject_cast<QWebSocket*>(FluxQtBridge::instance().resolveHandle(h));
+    if (ws) ws->close();
+}
+
+static void flux_qt_ws_on_text_message_received(double h, double name_dbl) {
+    FluxQtBridge::instance().connectSignalByName(h, "textMessageReceived(QString)", dbl_to_str(name_dbl));
+}
+
+static void flux_qt_ws_on_binary_message_received(double h, double name_dbl) {
+    FluxQtBridge::instance().connectSignalByName(h, "binaryMessageReceived(QByteArray)", dbl_to_str(name_dbl));
+}
+
+static void flux_qt_ws_on_connected(double h, double name_dbl) {
+    FluxQtBridge::instance().connectSignalByName(h, "connected()", dbl_to_str(name_dbl));
+}
+
+static void flux_qt_ws_on_disconnected(double h, double name_dbl) {
+    FluxQtBridge::instance().connectSignalByName(h, "disconnected()", dbl_to_str(name_dbl));
+}
+
+static void flux_qt_ws_on_error(double h, double name_dbl) {
+    FluxQtBridge::instance().connectSignalByName(h, "errorOccurred(QAbstractSocket::SocketError)", dbl_to_str(name_dbl));
+}
+
+// ===========================================================================
+// QOpenGLWidget — OpenGL rendering canvas
+// ===========================================================================
+static double flux_qt_create_opengl_widget() {
+    return FluxQtBridge::instance().registerObject(new FluxQtOpenGLWidget);
+}
+
+static void flux_qt_opengl_set_initialize_callback(double h, double name_dbl) {
+    auto* w = qobject_cast<FluxQtOpenGLWidget*>(FluxQtBridge::instance().resolveHandle(h));
+    if (w) w->setInitCallback(dbl_to_str(name_dbl));
+}
+
+static void flux_qt_opengl_set_paint_callback(double h, double name_dbl) {
+    auto* w = qobject_cast<FluxQtOpenGLWidget*>(FluxQtBridge::instance().resolveHandle(h));
+    if (w) w->setPaintCallback(dbl_to_str(name_dbl));
+}
+
+static void flux_qt_opengl_set_resize_callback(double h, double name_dbl) {
+    auto* w = qobject_cast<FluxQtOpenGLWidget*>(FluxQtBridge::instance().resolveHandle(h));
+    if (w) w->setResizeCallback(dbl_to_str(name_dbl));
+}
+
+static void flux_qt_opengl_update(double h) {
+    auto* w = qobject_cast<FluxQtOpenGLWidget*>(FluxQtBridge::instance().resolveHandle(h));
+    if (w) w->update();
+}
+
+static void flux_qt_opengl_make_current(double h) {
+    auto* w = qobject_cast<FluxQtOpenGLWidget*>(FluxQtBridge::instance().resolveHandle(h));
+    if (w) w->makeCurrent();
+}
+
+static void flux_qt_opengl_done_current(double h) {
+    auto* w = qobject_cast<FluxQtOpenGLWidget*>(FluxQtBridge::instance().resolveHandle(h));
+    if (w) w->doneCurrent();
+}
+
+static void flux_qt_opengl_set_auto_update(double h, double fps) {
+    auto* w = qobject_cast<FluxQtOpenGLWidget*>(FluxQtBridge::instance().resolveHandle(h));
+    if (w) {
+        if (fps > 0.0) w->startAutoUpdate(static_cast<int>(fps));
+        else w->stopAutoUpdate();
+    }
+}
+
+// ===========================================================================
+// QSensor — hardware sensors (accelerometer, gyroscope, light, etc.)
+// ===========================================================================
+static double flux_qt_create_sensor(double type_dbl) {
+    const char* types[] = {
+        "QAccelerometer", "QGyroscope", "QMagnetometer",
+        "QLightSensor", "QProximitySensor", "QCompass"
+    };
+    int idx = static_cast<int>(type_dbl);
+    if (idx < 0 || idx >= 6) return 0.0;
+    return FluxQtBridge::instance().registerObject(new QSensor(QByteArray(types[idx])));
+}
+
+static void flux_qt_sensor_start(double h) {
+    auto* s = qobject_cast<QSensor*>(FluxQtBridge::instance().resolveHandle(h));
+    if (s) s->start();
+}
+
+static void flux_qt_sensor_stop(double h) {
+    auto* s = qobject_cast<QSensor*>(FluxQtBridge::instance().resolveHandle(h));
+    if (s) s->stop();
+}
+
+static double flux_qt_sensor_is_active(double h) {
+    auto* s = qobject_cast<QSensor*>(FluxQtBridge::instance().resolveHandle(h));
+    return (s && s->isActive()) ? 1.0 : 0.0;
+}
+
+static double flux_qt_sensor_reading(double h) {
+    auto* s = qobject_cast<QSensor*>(FluxQtBridge::instance().resolveHandle(h));
+    if (!s || !s->reading()) return 0.0;
+    return FluxQtBridge::instance().registerObject(s->reading());
+}
+
+static double flux_qt_sensor_reading_value(double h, double idx) {
+    auto* r = qobject_cast<QSensorReading*>(FluxQtBridge::instance().resolveHandle(h));
+    return r ? r->value(static_cast<int>(idx)).toDouble() : 0.0;
+}
+
+static void flux_qt_sensor_set_data_rate(double h, double rate) {
+    auto* s = qobject_cast<QSensor*>(FluxQtBridge::instance().resolveHandle(h));
+    if (s) s->setDataRate(static_cast<int>(rate));
+}
+
+static void flux_qt_sensor_on_reading_changed(double h, double name_dbl) {
+    FluxQtBridge::instance().connectSignalByName(h, "readingChanged()", dbl_to_str(name_dbl));
+}
+
+static void flux_qt_sensor_on_active_changed(double h, double name_dbl) {
+    FluxQtBridge::instance().connectSignalByName(h, "activeChanged()", dbl_to_str(name_dbl));
+}
+
 } // extern "C"
 
 // ===========================================================================
@@ -2035,6 +2893,138 @@ void registerFluxQtSymbols(Flux::JITEngine& jit) {
         {"flux_qt_on_text_changed_by_name",(void*)&flux_qt_on_text_changed_by_name},
         {"flux_qt_on_current_row_changed_by_name",(void*)&flux_qt_on_current_row_changed_by_name},
         {"flux_qt_on_selection_changed_by_name",(void*)&flux_qt_on_selection_changed_by_name},
+        {"flux_qt_create_fontcombobox",    (void*)&flux_qt_create_fontcombobox},
+        {"flux_qt_create_dateedit",        (void*)&flux_qt_create_dateedit},
+        {"flux_qt_create_timeedit",        (void*)&flux_qt_create_timeedit},
+        {"flux_qt_create_datetimeedit",    (void*)&flux_qt_create_datetimeedit},
+        {"flux_qt_dateedit_date",          (void*)&flux_qt_dateedit_date},
+        {"flux_qt_dateedit_set_date",      (void*)&flux_qt_dateedit_set_date},
+        {"flux_qt_timeedit_time",          (void*)&flux_qt_timeedit_time},
+        {"flux_qt_timeedit_set_time",      (void*)&flux_qt_timeedit_set_time},
+        {"flux_qt_process_start",          (void*)&flux_qt_process_start},
+        {"flux_qt_process_read_stdout",    (void*)&flux_qt_process_read_stdout},
+        {"flux_qt_process_read_stderr",    (void*)&flux_qt_process_read_stderr},
+        {"flux_qt_process_wait",           (void*)&flux_qt_process_wait},
+        {"flux_qt_process_exit_code",      (void*)&flux_qt_process_exit_code},
+        {"flux_qt_process_running",        (void*)&flux_qt_process_running},
+        {"flux_qt_process_kill",           (void*)&flux_qt_process_kill},
+        {"flux_qt_process_on_finished",    (void*)&flux_qt_process_on_finished},
+        {"flux_qt_create_wizard",          (void*)&flux_qt_create_wizard},
+        {"flux_qt_wizard_add_page",        (void*)&flux_qt_wizard_add_page},
+        {"flux_qt_wizard_current_page",    (void*)&flux_qt_wizard_current_page},
+        {"flux_qt_wizard_page_count",      (void*)&flux_qt_wizard_page_count},
+        {"flux_qt_wizard_restart",         (void*)&flux_qt_wizard_restart},
+        {"flux_qt_wizard_on_finished",     (void*)&flux_qt_wizard_on_finished},
+        {"flux_qt_create_videowidget",     (void*)&flux_qt_create_videowidget},
+        {"flux_qt_create_mediaplayer",     (void*)&flux_qt_create_mediaplayer},
+        {"flux_qt_mediaplayer_set_source", (void*)&flux_qt_mediaplayer_set_source},
+        {"flux_qt_mediaplayer_play",       (void*)&flux_qt_mediaplayer_play},
+        {"flux_qt_mediaplayer_pause",      (void*)&flux_qt_mediaplayer_pause},
+        {"flux_qt_mediaplayer_stop",       (void*)&flux_qt_mediaplayer_stop},
+        {"flux_qt_mediaplayer_set_loops",  (void*)&flux_qt_mediaplayer_set_loops},
+        {"flux_qt_mediaplayer_duration",   (void*)&flux_qt_mediaplayer_duration},
+        {"flux_qt_mediaplayer_position",   (void*)&flux_qt_mediaplayer_position},
+        {"flux_qt_mediaplayer_set_volume", (void*)&flux_qt_mediaplayer_set_volume},
+        {"flux_qt_mediaplayer_set_video_output",(void*)&flux_qt_mediaplayer_set_video_output},
+        {"flux_qt_mediaplayer_on_state_changed",(void*)&flux_qt_mediaplayer_on_state_changed},
+        {"flux_qt_create_printer",               (void*)&flux_qt_create_printer},
+        {"flux_qt_printer_set_output_file_name", (void*)&flux_qt_printer_set_output_file_name},
+        {"flux_qt_printer_set_output_format",    (void*)&flux_qt_printer_set_output_format},
+        {"flux_qt_create_print_preview_dialog",  (void*)&flux_qt_create_print_preview_dialog},
+        {"flux_qt_print_preview_dialog_exec",    (void*)&flux_qt_print_preview_dialog_exec},
+        {"flux_qt_print_preview_dialog_on_paint_requested",(void*)&flux_qt_print_preview_dialog_on_paint_requested},
+        {"flux_qt_create_graphics_scene",      (void*)&flux_qt_create_graphics_scene},
+        {"flux_qt_graphics_scene_set_scene_rect",(void*)&flux_qt_graphics_scene_set_scene_rect},
+        {"flux_qt_graphics_scene_clear",       (void*)&flux_qt_graphics_scene_clear},
+        {"flux_qt_graphics_scene_width",       (void*)&flux_qt_graphics_scene_width},
+        {"flux_qt_graphics_scene_height",      (void*)&flux_qt_graphics_scene_height},
+        {"flux_qt_graphics_scene_add_rect",    (void*)&flux_qt_graphics_scene_add_rect},
+        {"flux_qt_graphics_scene_add_ellipse", (void*)&flux_qt_graphics_scene_add_ellipse},
+        {"flux_qt_graphics_scene_add_line",    (void*)&flux_qt_graphics_scene_add_line},
+        {"flux_qt_graphics_scene_add_text",    (void*)&flux_qt_graphics_scene_add_text},
+        {"flux_qt_graphics_scene_add_pixmap",  (void*)&flux_qt_graphics_scene_add_pixmap},
+        {"flux_qt_create_graphics_view",       (void*)&flux_qt_create_graphics_view},
+        {"flux_qt_graphics_view_fit_in_view",  (void*)&flux_qt_graphics_view_fit_in_view},
+        {"flux_qt_graphics_view_center_on",    (void*)&flux_qt_graphics_view_center_on},
+        {"flux_qt_graphics_view_set_drag_mode",(void*)&flux_qt_graphics_view_set_drag_mode},
+        {"flux_qt_graphics_view_set_render_hint",(void*)&flux_qt_graphics_view_set_render_hint},
+        {"flux_qt_graphics_view_set_background_brush",(void*)&flux_qt_graphics_view_set_background_brush},
+        {"flux_qt_graphics_view_scale",        (void*)&flux_qt_graphics_view_scale},
+        {"flux_qt_graphics_view_rotate",       (void*)&flux_qt_graphics_view_rotate},
+        {"flux_qt_graphics_item_set_pos",      (void*)&flux_qt_graphics_item_set_pos},
+        {"flux_qt_graphics_item_pos_x",        (void*)&flux_qt_graphics_item_pos_x},
+        {"flux_qt_graphics_item_pos_y",        (void*)&flux_qt_graphics_item_pos_y},
+        {"flux_qt_graphics_item_set_rotation", (void*)&flux_qt_graphics_item_set_rotation},
+        {"flux_qt_graphics_item_rotation",     (void*)&flux_qt_graphics_item_rotation},
+        {"flux_qt_graphics_item_set_scale",    (void*)&flux_qt_graphics_item_set_scale},
+        {"flux_qt_graphics_item_set_pen",      (void*)&flux_qt_graphics_item_set_pen},
+        {"flux_qt_graphics_item_set_brush",    (void*)&flux_qt_graphics_item_set_brush},
+        {"flux_qt_graphics_item_set_z_value",  (void*)&flux_qt_graphics_item_set_z_value},
+        {"flux_qt_graphics_item_set_visible",  (void*)&flux_qt_graphics_item_set_visible},
+        {"flux_qt_graphics_item_remove",       (void*)&flux_qt_graphics_item_remove},
+        {"flux_qt_create_serial_port",           (void*)&flux_qt_create_serial_port},
+        {"flux_qt_serial_set_port_name",         (void*)&flux_qt_serial_set_port_name},
+        {"flux_qt_serial_set_baud_rate",         (void*)&flux_qt_serial_set_baud_rate},
+        {"flux_qt_serial_set_data_bits",         (void*)&flux_qt_serial_set_data_bits},
+        {"flux_qt_serial_set_parity",            (void*)&flux_qt_serial_set_parity},
+        {"flux_qt_serial_set_stop_bits",         (void*)&flux_qt_serial_set_stop_bits},
+        {"flux_qt_serial_set_flow_control",      (void*)&flux_qt_serial_set_flow_control},
+        {"flux_qt_serial_open",                  (void*)&flux_qt_serial_open},
+        {"flux_qt_serial_close",                 (void*)&flux_qt_serial_close},
+        {"flux_qt_serial_is_open",               (void*)&flux_qt_serial_is_open},
+        {"flux_qt_serial_write",                 (void*)&flux_qt_serial_write},
+        {"flux_qt_serial_read_all",              (void*)&flux_qt_serial_read_all},
+        {"flux_qt_serial_read_line",             (void*)&flux_qt_serial_read_line},
+        {"flux_qt_serial_bytes_available",       (void*)&flux_qt_serial_bytes_available},
+        {"flux_qt_serial_wait_for_ready_read",   (void*)&flux_qt_serial_wait_for_ready_read},
+        {"flux_qt_serial_wait_for_bytes_written",(void*)&flux_qt_serial_wait_for_bytes_written},
+        {"flux_qt_serial_flush",                 (void*)&flux_qt_serial_flush},
+        {"flux_qt_serial_clear",                 (void*)&flux_qt_serial_clear},
+        {"flux_qt_serial_on_ready_read",         (void*)&flux_qt_serial_on_ready_read},
+        {"flux_qt_serial_on_error_occurred",     (void*)&flux_qt_serial_on_error_occurred},
+        {"flux_qt_bluetooth_local_device_name",  (void*)&flux_qt_bluetooth_local_device_name},
+        {"flux_qt_bluetooth_local_device_address",(void*)&flux_qt_bluetooth_local_device_address},
+        {"flux_qt_create_discovery_agent",       (void*)&flux_qt_create_discovery_agent},
+        {"flux_qt_discovery_agent_start",        (void*)&flux_qt_discovery_agent_start},
+        {"flux_qt_discovery_agent_stop",         (void*)&flux_qt_discovery_agent_stop},
+        {"flux_qt_discovery_agent_is_active",    (void*)&flux_qt_discovery_agent_is_active},
+        {"flux_qt_discovery_agent_on_device_discovered",(void*)&flux_qt_discovery_agent_on_device_discovered},
+        {"flux_qt_discovery_agent_on_finished",  (void*)&flux_qt_discovery_agent_on_finished},
+        {"flux_qt_create_network_manager",       (void*)&flux_qt_create_network_manager},
+        {"flux_qt_nam_get",                      (void*)&flux_qt_nam_get},
+        {"flux_qt_nam_post",                     (void*)&flux_qt_nam_post},
+        {"flux_qt_nam_on_finished",              (void*)&flux_qt_nam_on_finished},
+        {"flux_qt_reply_read_all",               (void*)&flux_qt_reply_read_all},
+        {"flux_qt_reply_error_string",           (void*)&flux_qt_reply_error_string},
+        {"flux_qt_reply_status_code",            (void*)&flux_qt_reply_status_code},
+        {"flux_qt_reply_url",                    (void*)&flux_qt_reply_url},
+        {"flux_qt_reply_header",                 (void*)&flux_qt_reply_header},
+        {"flux_qt_create_web_socket",            (void*)&flux_qt_create_web_socket},
+        {"flux_qt_ws_open",                      (void*)&flux_qt_ws_open},
+        {"flux_qt_ws_send_text",                 (void*)&flux_qt_ws_send_text},
+        {"flux_qt_ws_close",                     (void*)&flux_qt_ws_close},
+        {"flux_qt_ws_on_text_message_received",  (void*)&flux_qt_ws_on_text_message_received},
+        {"flux_qt_ws_on_binary_message_received",(void*)&flux_qt_ws_on_binary_message_received},
+        {"flux_qt_ws_on_connected",              (void*)&flux_qt_ws_on_connected},
+        {"flux_qt_ws_on_disconnected",           (void*)&flux_qt_ws_on_disconnected},
+        {"flux_qt_ws_on_error",                  (void*)&flux_qt_ws_on_error},
+        {"flux_qt_create_opengl_widget",          (void*)&flux_qt_create_opengl_widget},
+        {"flux_qt_opengl_set_initialize_callback",(void*)&flux_qt_opengl_set_initialize_callback},
+        {"flux_qt_opengl_set_paint_callback",     (void*)&flux_qt_opengl_set_paint_callback},
+        {"flux_qt_opengl_set_resize_callback",    (void*)&flux_qt_opengl_set_resize_callback},
+        {"flux_qt_opengl_update",                 (void*)&flux_qt_opengl_update},
+        {"flux_qt_opengl_make_current",           (void*)&flux_qt_opengl_make_current},
+        {"flux_qt_opengl_done_current",           (void*)&flux_qt_opengl_done_current},
+        {"flux_qt_opengl_set_auto_update",        (void*)&flux_qt_opengl_set_auto_update},
+        {"flux_qt_create_sensor",                  (void*)&flux_qt_create_sensor},
+        {"flux_qt_sensor_start",                   (void*)&flux_qt_sensor_start},
+        {"flux_qt_sensor_stop",                    (void*)&flux_qt_sensor_stop},
+        {"flux_qt_sensor_is_active",               (void*)&flux_qt_sensor_is_active},
+        {"flux_qt_sensor_reading",                 (void*)&flux_qt_sensor_reading},
+        {"flux_qt_sensor_reading_value",           (void*)&flux_qt_sensor_reading_value},
+        {"flux_qt_sensor_set_data_rate",           (void*)&flux_qt_sensor_set_data_rate},
+        {"flux_qt_sensor_on_reading_changed",      (void*)&flux_qt_sensor_on_reading_changed},
+        {"flux_qt_sensor_on_active_changed",       (void*)&flux_qt_sensor_on_active_changed},
         {"flux_qt_create_shortcut",        (void*)&flux_qt_create_shortcut},
         {"flux_qt_create_tray_icon",       (void*)&flux_qt_create_tray_icon},
         {"flux_qt_tray_set_visible",       (void*)&flux_qt_tray_set_visible},

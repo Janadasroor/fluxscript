@@ -124,6 +124,7 @@ private:
     std::map<std::string, llvm::Function*> m_overloadedFunctions; // signature -> function
     std::set<std::string> m_importedModules;
     std::string m_cacheDirectory;
+    OptimizationLevel m_optLevel = OptimizationLevel::O2;
     bool m_cacheEnabled = true;
     bool m_lastCompileUsedCache = false;
     bool m_initialized = false;

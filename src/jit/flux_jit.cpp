@@ -446,6 +446,27 @@ FluxJIT::~FluxJIT() = default;
 void FluxJIT::setOptimizationLevel(OptimizationLevel level)
 {
     m_optLevel = level;
+
+    // Update the target machine's codegen opt level to match.
+    // This affects lazy compilation in ORC and standalone AOT codegen.
+    if (m_targetMachine) {
+        llvm::CodeGenOptLevel cgLevel = llvm::CodeGenOptLevel::Default;
+        switch (level) {
+        case OptimizationLevel::O0:
+            cgLevel = llvm::CodeGenOptLevel::None;
+            break;
+        case OptimizationLevel::O1:
+            cgLevel = llvm::CodeGenOptLevel::Less;
+            break;
+        case OptimizationLevel::O2:
+            cgLevel = llvm::CodeGenOptLevel::Default;
+            break;
+        case OptimizationLevel::O3:
+            cgLevel = llvm::CodeGenOptLevel::Aggressive;
+            break;
+        }
+        m_targetMachine->setOptLevel(cgLevel);
+    }
 }
 
 void FluxJIT::setSIMDOptions(const SIMDOptions& options)
@@ -615,10 +636,11 @@ void FluxJIT::addModule(std::unique_ptr<llvm::Module> M, std::unique_ptr<llvm::L
         }
     }
 
-    // Initial compilation at O0 for fast startup and safe symbol resolution.
-    // The tiered-JIT system will promote hot functions to higher levels
-    // (O2/O3) via promoteFunction() when call-count thresholds are exceeded.
-    optimizeModule(M.get(), OptimizationLevel::O0);
+    // Initial compilation at the requested optimization level.
+    // If the user specified --opt3, the module gets the full pipeline.
+    // The tiered-JIT system will promote hot functions further
+    // when call-count thresholds are exceeded.
+    optimizeModule(M.get(), m_optLevel);
 
     auto TSM = llvm::orc::ThreadSafeModule(std::move(M), std::move(Ctx));
     auto Err = m_lljit->addIRModule(std::move(TSM));
