@@ -378,7 +378,8 @@ run_aot_test() {
             local obj_fixed="${tmpfile}.fixed.o"
             if [ "$has_user_main" -gt 0 ]; then
                 # User defined main(): rename anon_expr -> __flux_entry
-                objcopy --redefine-sym "$anon_sym=__flux_entry" --redefine-sym "main=__user_main" "$objfile" "$obj_fixed"
+                "$OBJCOPY" --redefine-sym "$anon_sym=__flux_entry" --redefine-sym "main=__user_main" "$objfile" "$obj_fixed"
+
                 # Build wrapper
                 local wrapper="${tmpfile}_wrapper.cpp"
                 cat > "$wrapper" << 'WRAPEOF'
@@ -396,7 +397,7 @@ WRAPEOF
                 rm -f "$wrapper"
             else
                 # No user main: rename anon_expr -> main directly
-                objcopy --redefine-sym "$anon_sym=main" "$objfile" "$obj_fixed"
+                "$OBJCOPY" --redefine-sym "$anon_sym=main" "$objfile" "$obj_fixed"
                 c++ -no-pie -o "$binfile" "$obj_fixed" \
                     -L"$BUILD_DIR" -lFluxRuntime -lpthread -ldl -lm 2>/dev/null
                 cmd_status=$?

@@ -2627,10 +2627,34 @@ extern "C" double fft_snr(void* sig, double sr) { return flux_fft_snr(sig, sr); 
 
 // IMPORTANT: thread_local std::vector and even trivial thread_local structs
 // interact badly with the LLVM ORC JIT runtime (process exits with non-zero
-// code at lib load). Use a regular static + pthread_getspecific to back the
-// jmp_buf stack so no thread_local storage is needed at all.
-#include <pthread.h>
+// code at lib load). Use a regular static + TLS to back the jmp_buf stack
+// so no thread_local storage is needed at all.
+#if defined(_WIN32)
+#include <windows.h>
+static DWORD g_jmp_key;
+static bool g_jmp_key_init = false;
 
+static void jmp_key_init() {
+    g_jmp_key = TlsAlloc();
+    g_jmp_key_init = true;
+}
+
+struct JmpBufStack {
+    jmp_buf* slots[256];
+    int depth;
+};
+
+static JmpBufStack* get_jmp_stack() {
+    if (!g_jmp_key_init) jmp_key_init();
+    void* p = TlsGetValue(g_jmp_key);
+    if (!p) {
+        p = calloc(1, sizeof(JmpBufStack));
+        TlsSetValue(g_jmp_key, p);
+    }
+    return static_cast<JmpBufStack*>(p);
+}
+#else
+#include <pthread.h>
 static pthread_key_t g_jmp_key;
 static pthread_once_t g_jmp_once = PTHREAD_ONCE_INIT;
 
@@ -2654,6 +2678,7 @@ static JmpBufStack* get_jmp_stack() {
     }
     return static_cast<JmpBufStack*>(p);
 }
+#endif
 
 static double g_last_thrown_value = 0.0;
 static const char* g_last_thrown_msg = nullptr;
