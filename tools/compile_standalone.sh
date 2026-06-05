@@ -19,6 +19,13 @@ if [ -z "$OBJCOPY" ]; then
     exit 1
 fi
 
+# Linker flags (macOS doesn't support -no-pie)
+if [ "$(uname)" = "Darwin" ]; then
+    LDFLAGS_NOPIE=""
+else
+    LDFLAGS_NOPIE="-no-pie"
+fi
+
 FLUXC="${FLUXC:-build/fluxc}"
 FLUX="${FLUX:-build/flux}"
 BUILD_DIR="${BUILD_DIR:-build}"
@@ -80,14 +87,14 @@ int main() {
     return 0;
 }
 EOF
-    c++ -no-pie -o "$output" "$obj_fixed" "$wrapper" \
+    c++ $LDFLAGS_NOPIE -o "$output" "$obj_fixed" "$wrapper" \
         -L"$BUILD_DIR" -lFluxRuntime \
         -lpthread -ldl -lm 2>&1
     rm -f "$wrapper"
 else
     # No user main: just rename anon_expr -> main
     "$OBJCOPY" --redefine-sym "$anon_sym=main" "$obj" "$obj_fixed"
-    c++ -no-pie -o "$output" "$obj_fixed" \
+    c++ $LDFLAGS_NOPIE -o "$output" "$obj_fixed" \
         -L"$BUILD_DIR" -lFluxRuntime \
         -lpthread -ldl -lm 2>&1
 fi
