@@ -13,6 +13,19 @@ PARALLEL_JOBS=1
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
+# Find an objcopy-compatible tool (prefer llvm-objcopy, then system objcopy)
+OBJCOPY=""
+for cmd in llvm-objcopy-21 llvm-objcopy objcopy; do
+    if command -v "$cmd" &>/dev/null; then
+        OBJCOPY="$cmd"
+        break
+    fi
+done
+# macOS Homebrew LLVM keg-only path
+if [ -z "$OBJCOPY" ] && [ -x "/opt/homebrew/opt/llvm@21/bin/llvm-objcopy" ]; then
+    OBJCOPY="/opt/homebrew/opt/llvm@21/bin/llvm-objcopy"
+fi
+
 # ==============================================================================
 # Internal worker mode: run a single pre-registered test and write result
 # ==============================================================================
@@ -62,7 +75,7 @@ if [ "${1:-}" = "--worker" ]; then
                 else
                     obj_fixed="${code_file}.fixed.o"
                     if [ "$has_user_main" -gt 0 ]; then
-                        objcopy --redefine-sym "$anon_sym=__flux_entry" --redefine-sym "main=__user_main" "$objfile" "$obj_fixed"
+                        "$OBJCOPY" --redefine-sym "$anon_sym=__flux_entry" --redefine-sym "main=__user_main" "$objfile" "$obj_fixed"
                         wrapper="${code_file}_wrapper.cpp"
                         cat > "$wrapper" << 'WRAPEOF'
 #include <cstdio>
@@ -77,7 +90,7 @@ WRAPEOF
                         status=$?
                         rm -f "$wrapper"
                     else
-                        objcopy --redefine-sym "$anon_sym=main" "$objfile" "$obj_fixed"
+                        "$OBJCOPY" --redefine-sym "$anon_sym=main" "$objfile" "$obj_fixed"
                         c++ -no-pie -o "$binfile" "$obj_fixed" -L"$BUILD_DIR" -lFluxRuntime -lpthread -ldl -lm 2>/dev/null
                         status=$?
                     fi

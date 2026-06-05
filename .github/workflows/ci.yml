@@ -261,10 +261,13 @@ jobs:
         shell: pwsh
         run: Get-ChildItem -Path third_party -Recurse -Depth 2 | Select-Object -First 20
 
-      - name: Build
+      - name: Setup MSVC dev command prompt
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Build (configure)
         run: cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DLLVM_DIR="$env:LLVM_DIR" -DEIGEN3_INCLUDE_DIR="${{ github.workspace }}\third_party\eigen-3.4.0" -DFLUX_BUILD_TESTS=ON
 
-      - name: Build
+      - name: Build (compile)
         run: ninja -C build
 
       - name: Test

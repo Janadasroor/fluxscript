@@ -3,6 +3,22 @@
 # Usage: ./tools/compile_standalone.sh input.flux [output]
 set -euo pipefail
 
+# Find objcopy (prefer llvm-objcopy for macOS compat)
+OBJCOPY=""
+for cmd in llvm-objcopy-21 llvm-objcopy objcopy; do
+    if command -v "$cmd" &>/dev/null; then
+        OBJCOPY="$cmd"
+        break
+    fi
+done
+if [ -z "$OBJCOPY" ] && [ -x "/opt/homebrew/opt/llvm@21/bin/llvm-objcopy" ]; then
+    OBJCOPY="/opt/homebrew/opt/llvm@21/bin/llvm-objcopy"
+fi
+if [ -z "$OBJCOPY" ]; then
+    echo "Error: no objcopy found (install llvm-objcopy or binutils)" >&2
+    exit 1
+fi
+
 FLUXC="${FLUXC:-build/fluxc}"
 FLUX="${FLUX:-build/flux}"
 BUILD_DIR="${BUILD_DIR:-build}"
@@ -48,7 +64,7 @@ obj_fixed="${output}.fixed.o"
 
 if [ "$has_user_main" -gt 0 ]; then
     # User defined main(): rename both anon_expr -> __flux_main, main -> user_main
-    objcopy \
+    "$OBJCOPY" \
         --redefine-sym "$anon_sym=__flux_entry" \
         --redefine-sym "main=__user_main" \
         "$obj" "$obj_fixed"
@@ -70,7 +86,7 @@ EOF
     rm -f "$wrapper"
 else
     # No user main: just rename anon_expr -> main
-    objcopy --redefine-sym "$anon_sym=main" "$obj" "$obj_fixed"
+    "$OBJCOPY" --redefine-sym "$anon_sym=main" "$obj" "$obj_fixed"
     c++ -no-pie -o "$output" "$obj_fixed" \
         -L"$BUILD_DIR" -lFluxRuntime \
         -lpthread -ldl -lm 2>&1
