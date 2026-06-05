@@ -35,8 +35,8 @@ TypedValue AssertDeclAST::codegen(CodegenContext& context)
     // Generate call to assertion runtime
     llvm::Value* NodePtr = context.Builder.CreateGlobalString(Node, "assert_node");
     llvm::Value* OpPtr = context.Builder.CreateGlobalString(Operator, "assert_op");
-    llvm::Value* BoundVal = llvm::ConstantFP::get(context.TheContext, llvm::APFloat(Bound));
-    llvm::Value* WithinVal = llvm::ConstantFP::get(context.TheContext, llvm::APFloat(WithinTime));
+    llvm::Value* BoundVal = llvm::ConstantFP::get(llvm::Type::getDoubleTy(context.TheContext), Bound);
+    llvm::Value* WithinVal = llvm::ConstantFP::get(llvm::Type::getDoubleTy(context.TheContext), WithinTime);
     llvm::Value* MsgPtr = context.Builder.CreateGlobalString(Message, "assert_msg");
 
     llvm::Function* AssertF = context.TheModule->getFunction("flux_assert_voltage");
@@ -61,8 +61,8 @@ TypedValue SettleDeclAST::codegen(CodegenContext& context)
               << std::endl;
 
     llvm::Value* NodePtr = context.Builder.CreateGlobalString(Node, "settle_node");
-    llvm::Value* TolVal = llvm::ConstantFP::get(context.TheContext, llvm::APFloat(TolerancePercent));
-    llvm::Value* AfterVal = llvm::ConstantFP::get(context.TheContext, llvm::APFloat(AfterTime));
+    llvm::Value* TolVal = llvm::ConstantFP::get(llvm::Type::getDoubleTy(context.TheContext), TolerancePercent);
+    llvm::Value* AfterVal = llvm::ConstantFP::get(llvm::Type::getDoubleTy(context.TheContext), AfterTime);
 
     llvm::Function* SettleF = context.TheModule->getFunction("flux_check_settling");
     if (!SettleF) {
@@ -108,7 +108,7 @@ TypedValue GoldenDeclAST::codegen(CodegenContext& context)
 
     context.Builder.CreateCall(RegisterF, {NamePtr});
 
-    return TypedValue(llvm::ConstantFP::get(context.TheContext, llvm::APFloat(1.0)), TypeKind::Double);
+    return TypedValue(llvm::ConstantFP::get(llvm::Type::getDoubleTy(context.TheContext), 1.0), TypeKind::Double);
 }
 
 TypedValue CompareDeclAST::codegen(CodegenContext& context)
@@ -118,7 +118,7 @@ TypedValue CompareDeclAST::codegen(CodegenContext& context)
 
     llvm::Value* NodePtr = context.Builder.CreateGlobalString(Node, "compare_node");
     llvm::Value* GoldenPtr = context.Builder.CreateGlobalString(GoldenName, "golden_name");
-    llvm::Value* TolVal = llvm::ConstantFP::get(context.TheContext, llvm::APFloat(TolerancePercent));
+    llvm::Value* TolVal = llvm::ConstantFP::get(llvm::Type::getDoubleTy(context.TheContext), TolerancePercent);
 
     llvm::Function* CompareF = context.TheModule->getFunction("flux_compare_waveform");
     if (!CompareF) {
@@ -144,7 +144,7 @@ TypedValue ConvergeDeclAST::codegen(CodegenContext& context)
 
     llvm::Value* NodePtr = context.Builder.CreateGlobalString(Node, "converge_node");
     llvm::Value* MaxIterVal = llvm::ConstantInt::get(context.TheContext, llvm::APInt(32, MaxIterations));
-    llvm::Value* EpsVal = llvm::ConstantFP::get(context.TheContext, llvm::APFloat(Epsilon));
+    llvm::Value* EpsVal = llvm::ConstantFP::get(llvm::Type::getDoubleTy(context.TheContext), Epsilon);
 
     llvm::Function* ConvergeF = context.TheModule->getFunction("flux_check_convergence");
     if (!ConvergeF) {
@@ -167,7 +167,7 @@ TypedValue DiscontinuityDeclAST::codegen(CodegenContext& context)
     std::cout << "[CodeGen] Discontinuity: V(" << Node << ") threshold=" << Threshold << std::endl;
 
     llvm::Value* NodePtr = context.Builder.CreateGlobalString(Node, "disc_node");
-    llvm::Value* ThreshVal = llvm::ConstantFP::get(context.TheContext, llvm::APFloat(Threshold));
+    llvm::Value* ThreshVal = llvm::ConstantFP::get(llvm::Type::getDoubleTy(context.TheContext), Threshold);
 
     llvm::Function* DiscF = context.TheModule->getFunction("flux_detect_discontinuity");
     if (!DiscF) {
@@ -224,7 +224,7 @@ TypedValue VerifyBlockAST::codegen(CodegenContext& context)
         diag->codegen(context);
     }
 
-    return TypedValue(llvm::ConstantFP::get(context.TheContext, llvm::APFloat(1.0)), TypeKind::Double);
+    return TypedValue(llvm::ConstantFP::get(llvm::Type::getDoubleTy(context.TheContext), 1.0), TypeKind::Double);
 }
 
 TypedValue ToleranceDeclAST::codegen(CodegenContext& context)
@@ -232,8 +232,8 @@ TypedValue ToleranceDeclAST::codegen(CodegenContext& context)
     std::cout << "[CodeGen] Tolerance: abs=" << AbsoluteTolerance << " rel=" << RelativeTolerancePercent << "%"
               << std::endl;
 
-    llvm::Value* AbsVal = llvm::ConstantFP::get(context.TheContext, llvm::APFloat(AbsoluteTolerance));
-    llvm::Value* RelVal = llvm::ConstantFP::get(context.TheContext, llvm::APFloat(RelativeTolerancePercent));
+    llvm::Value* AbsVal = llvm::ConstantFP::get(llvm::Type::getDoubleTy(context.TheContext), AbsoluteTolerance);
+    llvm::Value* RelVal = llvm::ConstantFP::get(llvm::Type::getDoubleTy(context.TheContext), RelativeTolerancePercent);
 
     llvm::Function* TolF = context.TheModule->getFunction("flux_set_tolerance");
     if (!TolF) {
@@ -246,7 +246,7 @@ TypedValue ToleranceDeclAST::codegen(CodegenContext& context)
 
     context.Builder.CreateCall(TolF, {AbsVal, RelVal});
 
-    return TypedValue(llvm::ConstantFP::get(context.TheContext, llvm::APFloat(1.0)), TypeKind::Double);
+    return TypedValue(llvm::ConstantFP::get(llvm::Type::getDoubleTy(context.TheContext), 1.0), TypeKind::Double);
 }
 
 TypedValue DiagnosticDeclAST::codegen(CodegenContext& context)
@@ -274,7 +274,7 @@ TypedValue DiagnosticDeclAST::codegen(CodegenContext& context)
                                        llvm::ConstantFP::get(llvm::Type::getDoubleTy(context.TheContext), Threshold)},
                                "diag_res");
 
-    return TypedValue(llvm::ConstantFP::get(context.TheContext, llvm::APFloat(1.0)), TypeKind::Double);
+    return TypedValue(llvm::ConstantFP::get(llvm::Type::getDoubleTy(context.TheContext), 1.0), TypeKind::Double);
 }
 
 } // namespace Flux

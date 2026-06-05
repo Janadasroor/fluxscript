@@ -1,0 +1,27 @@
+{
+  "name": "flux-lsp-vscode",
+  "displayName": "FluxScript LSP",
+  "description": "FluxScript language support via LSP",
+  "version": "0.1.0",
+  "publisher": "fluxscript",
+  "engines": { "vscode": "^1.85.0" },
+  "categories": ["Programming Languages"],
+  "activationEvents": ["onLanguage:fluxscript"],
+  "main": "./extension.js",
+  "contributes": {
+    "languages": [{
+      "id": "fluxscript",
+      "aliases": ["FluxScript", "fluxscript", "flux"],
+      "extensions": [".flux"],
+      "configuration": "./language-configuration.json"
+    }],
+    "grammars": [{
+      "language": "fluxscript",
+      "scopeName": "source.flux",
+      "path": "./syntaxes/fluxscript.tmLanguage.json"
+    }]
+  },
+  "dependencies": {
+    "vscode-languageclient": "^9.0.1"
+  }
+}

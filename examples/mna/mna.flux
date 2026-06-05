@@ -1,67 +1,212 @@
-# MNA: Modified Nodal Analysis Examples
-# All examples run via: flux --entry=<fn> --cache=false examples/mna.flux
+# mna.flux — Modified Nodal Analysis Library
+#
+# Functions to build and solve MNA linear systems.
+# Component types (t):
+#   0 = Resistor    1 = Capacitor    2 = Inductor (DC short)
+#   3 = VDC         4 = IDC          5 = VSin
+#   6 = ISin        7 = VCVS         8 = VCCS
+#
+# comps matrix columns: [t, n_plus, n_minus, n3, n4, val]
+# ctrl matrix: [N_nodes, N_comps]
 
-# ---------------------------------------------------------------------------
-# Example 1: Voltage Divider
-#    1 ---R1--- 2
-#    V1=5V      R2
-#    0 ---------0
-# R1=1k, R2=2k
-# Expected: V2 = 5 * 2k / (1k + 2k) = 3.333V
-# ---------------------------------------------------------------------------
-def voltage_divider() {
-    var G1 = 1.0 / 1000.0
-    var G2 = 1.0 / 2000.0
-    var A = matrix_zeros(3, 3)
-    matrix_set(A, 0, 0, G1);  matrix_set(A, 0, 1, -G1); matrix_set(A, 0, 2, 1.0)
-    matrix_set(A, 1, 0, -G1); matrix_set(A, 1, 1, G1+G2)
-    matrix_set(A, 2, 0, 1.0)
-    var b = matrix_zeros(3, 1)
-    matrix_set(b, 2, 0, 5.0)
-    matrix_get(matrix_solve(A, b), 1, 0)
-}
+def mna_ndx(n: Double) -> Double { n - 1.0 }
 
-# ---------------------------------------------------------------------------
-# Example 2: RC Circuit Transient (one step)
-#    1 ---R--- 2
-#    V1=5V     |
-#              C=1uF
-#              |
-#              0
-# Expected: V2(t) = 5 * (1 - exp(-t/RC))
-# At t=1ms, RC=1k*1uF=1ms, V2 = 5 * (1 - 1/e) = 3.16V
-# ---------------------------------------------------------------------------
-def rc_transient() {
-    var R = 1000.0; var C = 1e-6
-    var tau = R * C; var t = 0.001; var dt = 1e-5
-    var V2 = 0.0; var n = t / dt
-    for i in 0, n do {
-        var dV = (5.0 - V2) / tau * dt
-        V2 = V2 + dV
+def mna_stamp_g(A: matrix, np: Double, nm: Double, g: Double, N: Double) {
+    if (np > 0.0 && np <= N) {
+        var r = mna_ndx(np)
+        var v = matrix_get(A, r, r) + g
+        matrix_set(A, r, r, v)
     }
-    V2
+    if (nm > 0.0 && nm <= N) {
+        var r = mna_ndx(nm)
+        var v = matrix_get(A, r, r) + g
+        matrix_set(A, r, r, v)
+    }
+    if (np > 0.0 && nm > 0.0 && np <= N && nm <= N) {
+        var rp = mna_ndx(np)
+        var rm = mna_ndx(nm)
+        var v1 = matrix_get(A, rp, rm) - g
+        var v2 = matrix_get(A, rm, rp) - g
+        matrix_set(A, rp, rm, v1)
+        matrix_set(A, rm, rp, v2)
+    }
 }
 
-# ---------------------------------------------------------------------------
-# Example 3: Build MNA matrix with helper functions
-# ---------------------------------------------------------------------------
-def build_mna_matrix() {
-    var n = 3
-    var A = matrix_zeros(n, n)
-    var G1 = 1.0 / 1000.0
-    var G2 = 1.0 / 2000.0
-    matrix_set(A, 0, 0, G1);  matrix_set(A, 0, 1, -G1); matrix_set(A, 0, 2, 1.0)
-    matrix_set(A, 1, 0, -G1); matrix_set(A, 1, 1, G1+G2)
-    matrix_set(A, 2, 0, 1.0)
-    matrix_rank(A)
+def mna_stamp_vsource(A: matrix, b: matrix, np: Double, nm: Double, v_val: Double, N: Double, bi: Double) {
+    var br = N + bi
+    if (np > 0.0 && np <= N) {
+        matrix_set(A, mna_ndx(np), br, 1.0)
+        matrix_set(A, br, mna_ndx(np), 1.0)
+    }
+    if (nm > 0.0 && nm <= N) {
+        matrix_set(A, mna_ndx(nm), br, -1.0)
+        matrix_set(A, br, mna_ndx(nm), -1.0)
+    }
+    matrix_set(b, br, 0.0, v_val)
 }
 
-# ---------------------------------------------------------------------------
-# Example 4: Matrix identity and concatenation
-# ---------------------------------------------------------------------------
-def matrix_ops_demo() {
-    var I = matrix_eye(3)
-    var O = matrix_ones(3, 1)
-    var C = matrix_hcat(I, O)
-    matrix_get(C, 0, 0) + matrix_get(C, 0, 3)
+def mna_stamp_isource(b: matrix, np: Double, nm: Double, i_val: Double) {
+    if (np > 0.0) {
+        var v = matrix_get(b, mna_ndx(np), 0.0) - i_val
+        matrix_set(b, mna_ndx(np), 0.0, v)
+    }
+    if (nm > 0.0) {
+        var v = matrix_get(b, mna_ndx(nm), 0.0) + i_val
+        matrix_set(b, mna_ndx(nm), 0.0, v)
+    }
+}
+
+def mna_stamp_vcvs(A: matrix, np: Double, nm: Double, n_ctrl_p: Double, n_ctrl_n: Double, gain: Double, N: Double, bi: Double) {
+    var br = N + bi
+    if (np > 0.0 && np <= N) {
+        matrix_set(A, mna_ndx(np), br, 1.0)
+        matrix_set(A, br, mna_ndx(np), 1.0)
+    }
+    if (nm > 0.0 && nm <= N) {
+        matrix_set(A, mna_ndx(nm), br, -1.0)
+        matrix_set(A, br, mna_ndx(nm), -1.0)
+    }
+    if (n_ctrl_p > 0.0 && n_ctrl_p <= N) {
+        var v = matrix_get(A, br, mna_ndx(n_ctrl_p)) - gain
+        matrix_set(A, br, mna_ndx(n_ctrl_p), v)
+    }
+    if (n_ctrl_n > 0.0 && n_ctrl_n <= N) {
+        var v = matrix_get(A, br, mna_ndx(n_ctrl_n)) + gain
+        matrix_set(A, br, mna_ndx(n_ctrl_n), v)
+    }
+}
+
+def mna_stamp_vccs(A: matrix, np: Double, nm: Double, n_ctrl_p: Double, n_ctrl_n: Double, gm: Double, N: Double) {
+    if (np > 0.0 && np <= N && n_ctrl_p > 0.0 && n_ctrl_p <= N) {
+        var v = matrix_get(A, mna_ndx(np), mna_ndx(n_ctrl_p)) - gm
+        matrix_set(A, mna_ndx(np), mna_ndx(n_ctrl_p), v)
+    }
+    if (np > 0.0 && np <= N && n_ctrl_n > 0.0 && n_ctrl_n <= N) {
+        var v = matrix_get(A, mna_ndx(np), mna_ndx(n_ctrl_n)) + gm
+        matrix_set(A, mna_ndx(np), mna_ndx(n_ctrl_n), v)
+    }
+    if (nm > 0.0 && nm <= N && n_ctrl_p > 0.0 && n_ctrl_p <= N) {
+        var v = matrix_get(A, mna_ndx(nm), mna_ndx(n_ctrl_p)) + gm
+        matrix_set(A, mna_ndx(nm), mna_ndx(n_ctrl_p), v)
+    }
+    if (nm > 0.0 && nm <= N && n_ctrl_n > 0.0 && n_ctrl_n <= N) {
+        var v = matrix_get(A, mna_ndx(nm), mna_ndx(n_ctrl_n)) - gm
+        matrix_set(A, mna_ndx(nm), mna_ndx(n_ctrl_n), v)
+    }
+}
+
+def mna_count_branches(comps: matrix) -> Double {
+    var nc = matrix_rows(comps)
+    var M = 0.0
+    var ci = 0.0
+    while (ci < nc) {
+        var t = matrix_get(comps, ci, 0.0)
+        if (t == 2.0 || t == 3.0 || t == 5.0 || t == 7.0) { M = M + 1.0 }
+        ci = ci + 1.0
+    }
+    M
+}
+
+def mna_dc_solve(comps: matrix, N: Double) -> matrix {
+    var nc = matrix_rows(comps)
+    var M = mna_count_branches(comps)
+    var dim = N + M
+    var A = matrix_zeros(dim, dim)
+    var b = matrix_zeros(dim, 1.0)
+    var bi = 0.0
+    var ci = 0.0
+    while (ci < nc) {
+        var t = matrix_get(comps, ci, 0.0)
+        var np = matrix_get(comps, ci, 1.0)
+        var nm = matrix_get(comps, ci, 2.0)
+        if (t == 0.0) {
+            var r = matrix_get(comps, ci, 5.0)
+            if (r > 1e-15) { mna_stamp_g(A, np, nm, 1.0 / r, N) }
+        } else if (t == 1.0) {
+        } else if (t == 2.0) {
+            mna_stamp_vsource(A, b, np, nm, 0.0, N, bi)
+            bi = bi + 1.0
+        } else if (t == 3.0 || t == 5.0) {
+            var v_val = matrix_get(comps, ci, 5.0)
+            mna_stamp_vsource(A, b, np, nm, v_val, N, bi)
+            bi = bi + 1.0
+        } else if (t == 4.0 || t == 6.0) {
+            var i_val = matrix_get(comps, ci, 5.0)
+            mna_stamp_isource(b, np, nm, i_val)
+        } else if (t == 7.0) {
+            var n3 = matrix_get(comps, ci, 3.0)
+            var n4 = matrix_get(comps, ci, 4.0)
+            var gain = matrix_get(comps, ci, 5.0)
+            mna_stamp_vcvs(A, np, nm, n3, n4, gain, N, bi)
+            bi = bi + 1.0
+        } else if (t == 8.0) {
+            var n3 = matrix_get(comps, ci, 3.0)
+            var n4 = matrix_get(comps, ci, 4.0)
+            var gm = matrix_get(comps, ci, 5.0)
+            mna_stamp_vccs(A, np, nm, n3, n4, gm, N)
+        }
+        ci = ci + 1.0
+    }
+    var x = matrix_solve(A, b)
+    var sol = matrix_zeros(dim + 2.0, 1.0)
+    matrix_set(sol, 0.0, 0.0, N)
+    matrix_set(sol, 1.0, 0.0, M)
+    var ri = 0.0
+    while (ri < dim) {
+        matrix_set(sol, ri + 2.0, 0.0, matrix_get(x, ri, 0.0))
+        ri = ri + 1.0
+    }
+    sol
+}
+
+def mna_node_voltage(sol: matrix, nd: Double) -> Double {
+    var N = matrix_get(sol, 0.0, 0.0)
+    if (nd == 0.0) { 0.0 }
+    else if (nd <= N) { matrix_get(sol, nd + 1.0, 0.0) }
+    else { 0.0 }
+}
+
+def mna_branch_current(sol: matrix, branch_idx: Double) -> Double {
+    var N = matrix_get(sol, 0.0, 0.0)
+    var M = matrix_get(sol, 1.0, 0.0)
+    if (branch_idx >= 0.0 && branch_idx < M) {
+        matrix_get(sol, N + 2.0 + branch_idx, 0.0)
+    } else { 0.0 }
+}
+
+def mna_extract_voltages(sol: matrix) -> matrix {
+    var N = matrix_get(sol, 0.0, 0.0)
+    var V = matrix_zeros(N + 1.0, 1.0)
+    var i = 1.0
+    while (i <= N) {
+        matrix_set(V, i, 0.0, mna_node_voltage(sol, i))
+        i = i + 1.0
+    }
+    V
+}
+
+def mna_dc_sweep(comps: matrix, N: Double, sweep_row: Double, v_start: Double, v_stop: Double, v_step: Double) -> matrix {
+    var nsteps = 0.0
+    var v = v_start
+    while (v <= v_stop + 1e-15) {
+        nsteps = nsteps + 1.0
+        v = v + v_step
+    }
+    var results = matrix_zeros(nsteps, N + 1.0)
+    var vi = 0.0
+    v = v_start
+    while (vi < nsteps) {
+        var c = matrix_copy(comps)
+        matrix_set(c, sweep_row, 5.0, v)
+        var sol = mna_dc_solve(c, N)
+        matrix_set(results, vi, 0.0, v)
+        var nd = 1.0
+        while (nd <= N) {
+            matrix_set(results, vi, nd, mna_node_voltage(sol, nd))
+            nd = nd + 1.0
+        }
+        v = v + v_step
+        vi = vi + 1.0
+    }
+    results
 }

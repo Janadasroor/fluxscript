@@ -40,19 +40,58 @@ std::unique_ptr<ExprAST> Parser::ParseSwitchExpr()
 
     getNextToken(); // eat )
 
+    // Expect opening brace of switch body
+    if (CurTok != static_cast<int>(TokenType::tok_lbrace)) {
+        ReportError("expected '{' after switch condition");
+        return nullptr;
+    }
+    getNextToken(); // eat {
+
     std::vector<CaseClauseAST> cases;
     std::vector<std::unique_ptr<ExprAST>> defaultBody;
 
-    // Parse cases
+    // Parse cases — supports both `case value: body` and `expr => body` syntax,
+    // as well as `default:` / `~ => body` / `_ => body` for default.
     while (CurTok != static_cast<int>(TokenType::tok_eof)) {
+        // Skip commas between case clauses
+        if (CurTok == ',') {
+            getNextToken();
+            continue;
+        }
+
+        // Check for bare `~` or `_` as default indicator
+        bool isDefault = (CurTok == static_cast<int>(TokenType::tok_bitwise_not));
+        if (isDefault) {
+            getNextToken(); // eat ~ or _
+
+            if (CurTok != static_cast<int>(TokenType::tok_fat_arrow)) {
+                ReportError("expected '=>' after '~'");
+                return nullptr;
+            }
+            getNextToken(); // eat =>
+
+            // Parse default body
+            if (CurTok != static_cast<int>(TokenType::tok_rbrace) &&
+                CurTok != static_cast<int>(TokenType::tok_eof)) {
+                defaultBody.push_back(ParseExpression());
+            }
+            continue;
+        }
+
         if (CurTok == static_cast<int>(TokenType::tok_case)) {
             getNextToken(); // eat case
 
+            // Temporarily remove ':' as a binary range operator so it is not
+            // consumed by ParseExpression (which would turn `case 2.0:` into a
+            // RangeExprAST). The ':' after the case value is the case separator.
+            int savedColonPrec = m_binopPrecedence[static_cast<int>(TokenType::tok_colon)];
+            m_binopPrecedence[static_cast<int>(TokenType::tok_colon)] = 0;
             auto caseValue = ParseExpression();
+            m_binopPrecedence[static_cast<int>(TokenType::tok_colon)] = savedColonPrec;
             if (!caseValue)
                 return nullptr;
 
-            if (CurTok != ':') {
+            if (CurTok != static_cast<int>(TokenType::tok_colon)) {
                 ReportError("expected ':' after case value");
                 return nullptr;
             }
@@ -60,18 +99,22 @@ std::unique_ptr<ExprAST> Parser::ParseSwitchExpr()
 
             // Parse case body
             std::vector<std::unique_ptr<ExprAST>> body;
-            while (CurTok != static_cast<int>(TokenType::tok_eof) && CurTok != static_cast<int>(TokenType::tok_case) &&
+            while (CurTok != static_cast<int>(TokenType::tok_eof) &&
+                   CurTok != static_cast<int>(TokenType::tok_case) &&
                    CurTok != static_cast<int>(TokenType::tok_default) &&
-                   CurTok != static_cast<int>(TokenType::tok_switch)) {
+                   CurTok != static_cast<int>(TokenType::tok_switch) &&
+                   CurTok != static_cast<int>(TokenType::tok_rbrace) &&
+                   CurTok != ',' &&
+                   CurTok != static_cast<int>(TokenType::tok_end)) {
 
                 if (CurTok == static_cast<int>(TokenType::tok_return)) {
                     getNextToken();
-                    body.push_back(ParseExpression());
-                    break; // return ends the case
+                    body.push_back(std::make_unique<ReturnExprAST>(ParseExpression()));
+                    break;
                 } else if (CurTok == static_cast<int>(TokenType::tok_break)) {
                     body.push_back(std::make_unique<BreakExprAST>());
                     getNextToken();
-                    break; // break ends the case
+                    break;
                 } else if (CurTok == static_cast<int>(TokenType::tok_semicolon)) {
                     getNextToken();
                 } else {
@@ -87,7 +130,7 @@ std::unique_ptr<ExprAST> Parser::ParseSwitchExpr()
         } else if (CurTok == static_cast<int>(TokenType::tok_default)) {
             getNextToken(); // eat default
 
-            if (CurTok != ':') {
+            if (CurTok != static_cast<int>(TokenType::tok_colon)) {
                 ReportError("expected ':' after default");
                 return nullptr;
             }
@@ -95,7 +138,10 @@ std::unique_ptr<ExprAST> Parser::ParseSwitchExpr()
 
             // Parse default body
             while (CurTok != static_cast<int>(TokenType::tok_eof) &&
-                   CurTok != static_cast<int>(TokenType::tok_switch)) {
+                   CurTok != static_cast<int>(TokenType::tok_switch) &&
+                   CurTok != static_cast<int>(TokenType::tok_rbrace) &&
+                   CurTok != ',' &&
+                   CurTok != static_cast<int>(TokenType::tok_end)) {
 
                 if (CurTok == static_cast<int>(TokenType::tok_return)) {
                     getNextToken();
@@ -115,11 +161,39 @@ std::unique_ptr<ExprAST> Parser::ParseSwitchExpr()
                 }
             }
 
-        } else if (CurTok == static_cast<int>(TokenType::tok_rbrace) ||
-                   CurTok == static_cast<int>(TokenType::tok_eof)) {
+        } else if (CurTok == static_cast<int>(TokenType::tok_rbrace)) {
+            getNextToken(); // eat the closing }
             break;
+        } else if (CurTok == static_cast<int>(TokenType::tok_eof) ||
+                   CurTok == static_cast<int>(TokenType::tok_end)) {
+            break;
+        } else if (CurTok == static_cast<int>(TokenType::tok_fat_arrow)) {
+            ReportError("expected case value or '~' before '=>'");
+            return nullptr;
         } else {
-            getNextToken();
+            // Bare expression case value syntax: `value => body`
+            // Temporarily remove ':' as a binary range operator, similar to above
+            int savedColonPrec = m_binopPrecedence[static_cast<int>(TokenType::tok_colon)];
+            m_binopPrecedence[static_cast<int>(TokenType::tok_colon)] = 0;
+            auto caseValue = ParseExpression();
+            m_binopPrecedence[static_cast<int>(TokenType::tok_colon)] = savedColonPrec;
+            if (!caseValue)
+                return nullptr;
+
+            if (CurTok != static_cast<int>(TokenType::tok_fat_arrow)) {
+                ReportError("expected '=>' after case value");
+                return nullptr;
+            }
+            getNextToken(); // eat =>
+
+            // Parse case body (single expression)
+            std::vector<std::unique_ptr<ExprAST>> body;
+            if (CurTok != static_cast<int>(TokenType::tok_rbrace) &&
+                CurTok != static_cast<int>(TokenType::tok_eof)) {
+                body.push_back(ParseExpression());
+            }
+
+            cases.emplace_back(std::move(caseValue), std::move(body));
         }
     }
 

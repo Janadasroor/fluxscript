@@ -116,27 +116,39 @@ public:
     llvm::Type* EnumLLVMType = nullptr; // LLVM tagged union type for UserEnum with payload
     int TraitObjectTypeId = 0;     // Trait ID for TypeKind::TraitObject (index into CodegenContext.Traits)
     llvm::Type* TraitObjectVTableTy = nullptr; // LLVM vtable struct type for this trait object
+    // Generic type args for UserStruct/UserEnum (e.g., [Double, Double] for Result[Double, Double])
+    std::vector<FluxType> GenericArgs;
+
+    // Element type for TypeKind::Vector (e.g., nested vectors: Vector<Vector<Double>>)
+    // Nullptr means scalar (Double) elements.
+    FluxType* VecElementType = nullptr;
 
     // Reference type fields (TypeKind::Ref)
     FluxType* RefInnerType = nullptr;
     bool RefIsMut = false;
     std::string Lifetime;   // e.g., "a" for &'a T (empty = elided)
 
+    // Copy semantics flag: true = Copy by value (default), false = ~Copy (move-only)
+    bool isCopy = true;
+
     FluxType(TypeKind K = TypeKind::Double, UnitDimensions D = {}) : Kind(K), Dimensions(D) {}
 
     FluxType(TypeKind K, int bits, int fract) : Kind(K), Bits(bits), Fract(fract) {}
 
-    // Destructor, copy/move for RefInnerType management
-    ~FluxType() { delete RefInnerType; }
+    // Destructor, copy/move for RefInnerType and VecElementType management
+    ~FluxType() { delete RefInnerType; delete VecElementType; }
     FluxType(const FluxType& other)
         : Kind(other.Kind), Dimensions(other.Dimensions), Bits(other.Bits), Fract(other.Fract),
           GenericName(other.GenericName), StructTypeId(other.StructTypeId), StructLLVMType(other.StructLLVMType),
           EnumTypeId(other.EnumTypeId), EnumLLVMType(other.EnumLLVMType),
           TraitObjectTypeId(other.TraitObjectTypeId), TraitObjectVTableTy(other.TraitObjectVTableTy),
-          RefIsMut(other.RefIsMut), Lifetime(other.Lifetime)
+          GenericArgs(other.GenericArgs),
+          RefIsMut(other.RefIsMut), Lifetime(other.Lifetime), isCopy(other.isCopy)
     {
         if (other.RefInnerType)
             RefInnerType = new FluxType(*other.RefInnerType);
+        if (other.VecElementType)
+            VecElementType = new FluxType(*other.VecElementType);
     }
     FluxType(FluxType&& other) noexcept
         : Kind(other.Kind), Dimensions(other.Dimensions), Bits(other.Bits), Fract(other.Fract),
@@ -144,9 +156,13 @@ public:
           StructLLVMType(other.StructLLVMType),
           EnumTypeId(other.EnumTypeId), EnumLLVMType(other.EnumLLVMType),
           TraitObjectTypeId(other.TraitObjectTypeId), TraitObjectVTableTy(other.TraitObjectVTableTy),
-          RefInnerType(other.RefInnerType), RefIsMut(other.RefIsMut), Lifetime(std::move(other.Lifetime))
+          GenericArgs(std::move(other.GenericArgs)),
+          VecElementType(other.VecElementType),
+          RefInnerType(other.RefInnerType), RefIsMut(other.RefIsMut), Lifetime(std::move(other.Lifetime)),
+          isCopy(other.isCopy)
     {
         other.RefInnerType = nullptr;
+        other.VecElementType = nullptr;
     }
     FluxType& operator=(const FluxType& other)
     {
@@ -155,9 +171,12 @@ public:
             GenericName = other.GenericName; StructTypeId = other.StructTypeId; StructLLVMType = other.StructLLVMType;
             EnumTypeId = other.EnumTypeId; EnumLLVMType = other.EnumLLVMType;
             TraitObjectTypeId = other.TraitObjectTypeId; TraitObjectVTableTy = other.TraitObjectVTableTy;
-            RefIsMut = other.RefIsMut; Lifetime = other.Lifetime;
+            GenericArgs = other.GenericArgs;
+            RefIsMut = other.RefIsMut; Lifetime = other.Lifetime; isCopy = other.isCopy;
             delete RefInnerType;
             RefInnerType = other.RefInnerType ? new FluxType(*other.RefInnerType) : nullptr;
+            delete VecElementType;
+            VecElementType = other.VecElementType ? new FluxType(*other.VecElementType) : nullptr;
         }
         return *this;
     }
@@ -169,10 +188,12 @@ public:
             StructLLVMType = other.StructLLVMType;
             EnumTypeId = other.EnumTypeId; EnumLLVMType = other.EnumLLVMType;
             TraitObjectTypeId = other.TraitObjectTypeId; TraitObjectVTableTy = other.TraitObjectVTableTy;
-            RefIsMut = other.RefIsMut; Lifetime = std::move(other.Lifetime);
-            delete RefInnerType;
+            GenericArgs = std::move(other.GenericArgs);
+            VecElementType = other.VecElementType;
             RefInnerType = other.RefInnerType;
+            RefIsMut = other.RefIsMut; Lifetime = std::move(other.Lifetime); isCopy = other.isCopy;
             other.RefInnerType = nullptr;
+            other.VecElementType = nullptr;
         }
         return *this;
     }
@@ -442,6 +463,11 @@ public:
     // Returns true on success, stores error string on failure.
     std::function<bool(const std::string&, const std::string&, const std::vector<std::string>&)> importModuleFn;
 
+    // Set of imported module namespace names (e.g., "defs" for `import defs`).
+    // These survive NamedValues.clear() in FunctionAST::codegen so that
+    // namespace-qualified calls like defs.func() can be resolved.
+    std::set<std::string> ModuleNamespaces;
+
     // Names of functions that exist in selectively-imported modules but
     // were not selected. Used to produce clear error messages when the
     // user tries to call a non-imported function.
@@ -464,6 +490,7 @@ public:
         std::string ParentName;
         std::vector<std::pair<std::string, FluxType>> Fields;
         llvm::StructType* LLVMType = nullptr;
+        bool isCopy = true;
     };
     std::vector<StructTypeInfo> StructTypes;
     std::map<std::string, int> StructTypeIndex; // name → index
@@ -475,6 +502,7 @@ public:
         std::vector<FluxType> VariantPayloads; // payload type per variant (Void if none)
         llvm::StructType* LLVMType = nullptr; // { i32, union_of_payloads }
         std::vector<bool> VariantIsBoxed; // whether variant payload is heap-allocated (boxed)
+        bool isCopy = true;
     };
     std::vector<EnumTypeInfo> EnumTypes;
     std::map<std::string, int> EnumTypeIndex; // name → index
@@ -778,11 +806,16 @@ public:
 class VariableExprAST : public ExprAST
 {
     std::string Name;
+    std::vector<FluxType> TypeArgs;
 
 public:
     VariableExprAST(const std::string& Name) : Name(Name) {}
+    VariableExprAST(const std::string& Name, std::vector<FluxType> TypeArgs)
+        : Name(Name), TypeArgs(std::move(TypeArgs)) {}
     TypedValue codegen(CodegenContext& context) override;
     const std::string& getName() const { return Name; }
+    const std::vector<FluxType>& getTypeArgs() const { return TypeArgs; }
+    void setTypeArgs(std::vector<FluxType> Args) { TypeArgs = std::move(Args); }
 };
 
 class MemberExprAST : public ExprAST
@@ -1438,6 +1471,20 @@ public:
     bool containsYield() const override { return Exception->containsYield(); }
 };
 
+// `expr?` — early-return propagation for Result/Option enums.
+// If the inner expression's tag is the error/None variant, branch to a
+// per-function early-return block passing the value through unchanged.
+// Otherwise, extract the Ok/Some payload and use it as the result.
+class TryPropagateExprAST : public ExprAST
+{
+    std::unique_ptr<ExprAST> Inner;
+
+public:
+    explicit TryPropagateExprAST(std::unique_ptr<ExprAST> Inner) : Inner(std::move(Inner)) {}
+    TypedValue codegen(CodegenContext& context) override;
+    bool containsYield() const override { return Inner->containsYield(); }
+};
+
 // Assert
 class AssertExprAST : public ExprAST
 {
@@ -1803,6 +1850,9 @@ class FunctionAST
     std::unique_ptr<ExprAST> Body;
 
 public:
+    std::vector<std::unique_ptr<EnumDeclAST>> LocalEnums;
+    std::vector<std::unique_ptr<StructDeclAST>> LocalAnonStructs;
+
     FunctionAST(std::unique_ptr<PrototypeAST> Proto, std::unique_ptr<ExprAST> Body)
         : Proto(std::move(Proto)), Body(std::move(Body))
     {
@@ -1831,6 +1881,8 @@ class StructDeclAST
     std::vector<LifetimeParam> LifetimeParams;
 
 public:
+    bool IsNoCopy = false;
+
     StructDeclAST(const std::string& Name,
                   std::vector<std::pair<std::string, FluxType>> Fields,
                   const std::string& ParentName = "")
@@ -1907,6 +1959,8 @@ class EnumDeclAST
     std::vector<std::string> GenericParams;
 
 public:
+    bool IsNoCopy = false;
+
     EnumDeclAST(const std::string& Name, std::vector<std::string> Variants,
                 std::vector<FluxType> VariantPayloads = {})
         : Name(Name), Variants(std::move(Variants)),

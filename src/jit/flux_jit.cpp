@@ -28,6 +28,10 @@
 
 #include "llvm/Bitcode/BitcodeReader.h"
 #include "llvm/Bitcode/BitcodeWriter.h"
+
+#ifndef _WIN32
+#include <sys/resource.h>
+#endif
 #include "llvm/ExecutionEngine/Orc/ExecutionUtils.h"
 #include "llvm/IR/MDBuilder.h"
 #include "llvm/Support/FileSystem.h"
@@ -324,6 +328,28 @@ KernelAutoTuner::TuneResult KernelAutoTuner::autoTuneFunction(const std::string&
 
 FluxJIT::FluxJIT(OptimizationLevel optLevel) : m_dataLayout(""), m_optLevel(optLevel)
 {
+    // Increase stack limit to 64 MB so long-running loops don't overflow the
+    // stack. LLVM's fast register allocator may emit lea -N(%rsp),%rsp inside
+    // loops, which grows the stack on each iteration.
+#ifndef _WIN32
+    struct rlimit rl;
+    if (getrlimit(RLIMIT_STACK, &rl) == 0) {
+        rlim_t target = 256UL * 1024 * 1024; // target: 256 MB
+        // Try to raise both soft and hard limits
+        if (rl.rlim_max < target)
+            rl.rlim_max = target;
+        if (rl.rlim_cur < target)
+            rl.rlim_cur = target;
+        if (setrlimit(RLIMIT_STACK, &rl) != 0) {
+            // May not have CAP_SYS_RESOURCE; try just the soft limit
+            rl.rlim_cur = target;
+            if (rl.rlim_cur > rl.rlim_max)
+                rl.rlim_cur = rl.rlim_max;
+            setrlimit(RLIMIT_STACK, &rl);
+        }
+    }
+#endif
+
     llvm::InitializeNativeTarget();
     llvm::InitializeNativeTargetAsmPrinter();
     llvm::InitializeNativeTargetAsmParser();
@@ -335,7 +361,11 @@ FluxJIT::FluxJIT(OptimizationLevel optLevel) : m_dataLayout(""), m_optLevel(optL
         logError(JTMB.takeError(), "Failed to detect host");
         return;
     }
-    JTMB->setCodeModel(llvm::CodeModel::Large);
+    // Use O2 (Default) code gen level to force greedy register allocator,
+    // avoiding dynamic stack spills in loop bodies (fast allocator at O0 may
+    // generate lea -N(%rsp),%rsp inside loops, causing stack overflow).
+    JTMB->setCodeGenOptLevel(llvm::CodeGenOptLevel::Default);
+    JTMB->setCodeModel(llvm::CodeModel::Small);
     JTMB->setRelocationModel(llvm::Reloc::PIC_);
 
     // Create a target machine for potential standalone compilation
@@ -416,6 +446,27 @@ FluxJIT::~FluxJIT() = default;
 void FluxJIT::setOptimizationLevel(OptimizationLevel level)
 {
     m_optLevel = level;
+
+    // Update the target machine's codegen opt level to match.
+    // This affects lazy compilation in ORC and standalone AOT codegen.
+    if (m_targetMachine) {
+        llvm::CodeGenOptLevel cgLevel = llvm::CodeGenOptLevel::Default;
+        switch (level) {
+        case OptimizationLevel::O0:
+            cgLevel = llvm::CodeGenOptLevel::None;
+            break;
+        case OptimizationLevel::O1:
+            cgLevel = llvm::CodeGenOptLevel::Less;
+            break;
+        case OptimizationLevel::O2:
+            cgLevel = llvm::CodeGenOptLevel::Default;
+            break;
+        case OptimizationLevel::O3:
+            cgLevel = llvm::CodeGenOptLevel::Aggressive;
+            break;
+        }
+        m_targetMachine->setOptLevel(cgLevel);
+    }
 }
 
 void FluxJIT::setSIMDOptions(const SIMDOptions& options)
@@ -527,8 +578,8 @@ void FluxJIT::prepareModule(llvm::Module& M)
         return;
     M.setDataLayout(m_dataLayout);
     M.setTargetTriple(llvm::Triple(m_targetTriple));
-    M.setCodeModel(llvm::CodeModel::Large);
-    M.setPICLevel(llvm::PICLevel::BigPIC);
+    M.setCodeModel(llvm::CodeModel::Small);
+    M.setPICLevel(llvm::PICLevel::SmallPIC);
 }
 
 void FluxJIT::addModule(std::unique_ptr<llvm::Module> M, std::unique_ptr<llvm::LLVMContext> Ctx)
@@ -585,10 +636,11 @@ void FluxJIT::addModule(std::unique_ptr<llvm::Module> M, std::unique_ptr<llvm::L
         }
     }
 
-    // Initial compilation at O0 for fast startup and safe symbol resolution.
-    // The tiered-JIT system will promote hot functions to higher levels
-    // (O2/O3) via promoteFunction() when call-count thresholds are exceeded.
-    optimizeModule(M.get(), OptimizationLevel::O0);
+    // Initial compilation at the requested optimization level.
+    // If the user specified --opt3, the module gets the full pipeline.
+    // The tiered-JIT system will promote hot functions further
+    // when call-count thresholds are exceeded.
+    optimizeModule(M.get(), m_optLevel);
 
     auto TSM = llvm::orc::ThreadSafeModule(std::move(M), std::move(Ctx));
     auto Err = m_lljit->addIRModule(std::move(TSM));
@@ -744,8 +796,8 @@ void* FluxJIT::promoteFunction(const std::string& Name, OptimizationLevel target
             F->eraseFromParent();
     }
 
-    fnModule->setCodeModel(llvm::CodeModel::Large);
-    fnModule->setPICLevel(llvm::PICLevel::BigPIC);
+    fnModule->setCodeModel(llvm::CodeModel::Small);
+    fnModule->setPICLevel(llvm::PICLevel::SmallPIC);
 
     optimizeModule(fnModule, targetLevel);
 

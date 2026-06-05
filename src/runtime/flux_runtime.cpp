@@ -14,7 +14,9 @@
 #include "flux/runtime/flux_runtime.h"
 #include "flux/ai/surrogate.h"
 #include "flux/analysis/advanced_analysis.h"
+#ifndef FLUX_RUNTIME_STANDALONE
 #include "flux/jit/flux_jit.h"
+#endif
 #include "flux/runtime/advanced_math.h"
 #include "flux/runtime/symbolic_engine.h"
 
@@ -27,6 +29,7 @@
 #include <queue>
 #include <shared_mutex>
 #include <cstdio>
+#include <csetjmp>
 #include <cstring>
 #include <fstream>
 #include <iomanip>
@@ -313,6 +316,15 @@ extern "C" double flux_strcmp(double a_ptr, double b_ptr)
     if (!a || !b)
         return (a == b) ? 0.0 : 1.0;
     return static_cast<double>(std::strcmp(a, b));
+}
+
+extern "C" double flux_vec_eq(double* a_data, int a_size, double* b_data, int b_size)
+{
+    if (a_size != b_size) return 0.0;
+    for (int i = 0; i < a_size; ++i) {
+        if (a_data[i] != b_data[i]) return 0.0;
+    }
+    return 1.0;
 }
 
 extern "C" double flux_strlen(double s_ptr)
@@ -645,7 +657,8 @@ extern "C" void* flux_matrix_transpose(void* m_ptr)
 extern "C" int flux_matrix_rows(void* m_ptr)
 {
     auto* M = g_matrix_tracker.get_matrix(m_ptr);
-    return M ? (int)M->rows() : 0;
+    int r = M ? (int)M->rows() : 0;
+    return r;
 }
 
 extern "C" int flux_matrix_cols(void* m_ptr)
@@ -663,15 +676,21 @@ extern "C" double flux_matrix_det(void* m_ptr)
 extern "C" void flux_matrix_set(void* m_ptr, int row, int col, double val)
 {
     auto* M = g_matrix_tracker.get_matrix(m_ptr);
-    if (M && row >= 0 && row < M->rows() && col >= 0 && col < M->cols())
-        (*M)(row, col) = val;
+    if (!M) {
+        return;
+    }
+    if (row < 0 || row >= M->rows() || col < 0 || col >= M->cols()) {
+        return;
+    }
+    (*M)(row, col) = val;
 }
 
 extern "C" void* flux_matrix_zeros(int rows, int cols)
 {
     auto mat = std::make_unique<Eigen::MatrixXd>(rows, cols);
     mat->setZero();
-    return g_matrix_tracker.register_matrix(std::move(mat));
+    void* ptr = g_matrix_tracker.register_matrix(std::move(mat));
+    return ptr;
 }
 
 extern "C" void* flux_create_range_sum(double start, double step, double end)
@@ -814,9 +833,14 @@ extern "C" void* flux_matrix_solve(void* a_ptr, void* b_ptr)
 extern "C" double flux_matrix_get(void* m_ptr, int row, int col)
 {
     auto* M = g_matrix_tracker.get_matrix(m_ptr);
-    if (!M || row < 0 || row >= M->rows() || col < 0 || col >= M->cols())
+    if (!M) {
         return 0.0;
-    return (*M)(row, col);
+    }
+    if (row < 0 || row >= M->rows() || col < 0 || col >= M->cols()) {
+        return 0.0;
+    }
+    double val = (*M)(row, col);
+    return val;
 }
 
 extern "C" void* flux_create_complex_matrix(std::complex<double>* data, int rows, int cols)
@@ -1693,6 +1717,7 @@ extern "C" void flux_rwlock_write_lock(double rw);
 extern "C" void flux_rwlock_unlock(double rw);
 extern "C" void flux_rwlock_destroy(double rw);
 
+#ifndef FLUX_RUNTIME_STANDALONE
 void registerRuntimeFunctions(FluxJIT& jit)
 {
     jit.registerFunction("flux_create_matrix", (void*)&flux_create_matrix);
@@ -2093,6 +2118,7 @@ void registerRuntimeFunctions(FluxJIT& jit)
     jit.registerFunction("flux_rwlock_unlock", (void*)&flux_rwlock_unlock);
     jit.registerFunction("flux_rwlock_destroy", (void*)&flux_rwlock_destroy);
 }
+#endif
 
 // Fixed-size worker thread pool with work-stealing for parallel for loops.
 // Threads are created once and reused across all parallel_for calls.
@@ -2587,3 +2613,80 @@ extern "C" double fft_thd(void* sig, double sr) { return flux_fft_thd(sig, sr); 
 
 extern "C" double fft_snr(void*, double);
 extern "C" double fft_snr(void* sig, double sr) { return flux_fft_snr(sig, sr); }
+
+// ============================================================================
+// try / catch / throw runtime support
+// ----------------------------------------------------------------------------
+// The codegen emits a per-try alloca for a jmp_buf, calls `setjmp` from JIT'd
+// code (linked from libc), and branches on the return value. On `throw`,
+// `flux_throw_error` longjmps to the topmost jmp_buf on this thread's stack,
+// so nested try/catch unwinds correctly. The most recent thrown value is
+// preserved in thread-local storage so the catch handler can bind it to the
+// catch variable.
+// ============================================================================
+
+// IMPORTANT: thread_local std::vector and even trivial thread_local structs
+// interact badly with the LLVM ORC JIT runtime (process exits with non-zero
+// code at lib load). Use a regular static + pthread_getspecific to back the
+// jmp_buf stack so no thread_local storage is needed at all.
+#include <pthread.h>
+
+static pthread_key_t g_jmp_key;
+static pthread_once_t g_jmp_once = PTHREAD_ONCE_INIT;
+
+static void jmp_key_destructor(void* p) { free(p); }
+
+static void jmp_key_init() {
+    pthread_key_create(&g_jmp_key, jmp_key_destructor);
+}
+
+struct JmpBufStack {
+    jmp_buf* slots[256];
+    int depth;
+};
+
+static JmpBufStack* get_jmp_stack() {
+    pthread_once(&g_jmp_once, jmp_key_init);
+    void* p = pthread_getspecific(g_jmp_key);
+    if (!p) {
+        p = calloc(1, sizeof(JmpBufStack));
+        pthread_setspecific(g_jmp_key, p);
+    }
+    return static_cast<JmpBufStack*>(p);
+}
+
+static double g_last_thrown_value = 0.0;
+static const char* g_last_thrown_msg = nullptr;
+
+extern "C" void flux_push_jmp_buf(void* buf)
+{
+    JmpBufStack* s = get_jmp_stack();
+    if (s->depth < 256) {
+        s->slots[s->depth++] = static_cast<jmp_buf*>(buf);
+    } else {
+        std::fprintf(stderr, "[FATAL] jmp_buf stack overflow\n");
+        std::abort();
+    }
+}
+
+extern "C" void flux_pop_jmp_buf()
+{
+    JmpBufStack* s = get_jmp_stack();
+    if (s->depth > 0) s->depth--;
+}
+
+extern "C" void flux_throw_error(double value, const char* msg)
+{
+    g_last_thrown_value = value;
+    g_last_thrown_msg = msg;
+    JmpBufStack* s = get_jmp_stack();
+    if (s->depth == 0) {
+        std::fprintf(stderr, "[FATAL] uncaught Flux exception: %s\n",
+                     msg ? msg : "(no message)");
+        std::abort();
+    }
+    longjmp(*s->slots[--s->depth], 1);
+}
+
+extern "C" double flux_last_thrown_value() { return g_last_thrown_value; }
+extern "C" const char* flux_last_thrown_msg() { return g_last_thrown_msg; }

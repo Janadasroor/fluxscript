@@ -383,6 +383,8 @@ int Lexer::gettok()
             return static_cast<int>(TokenType::tok_then);
         if (IdentifierStr == "else")
             return static_cast<int>(TokenType::tok_else);
+        if (IdentifierStr == "elif")
+            return static_cast<int>(TokenType::tok_elif);
         if (IdentifierStr == "for")
             return static_cast<int>(TokenType::tok_for);
         if (IdentifierStr == "in")
@@ -1214,6 +1216,10 @@ int Lexer::gettok()
             advance();
             return static_cast<int>(TokenType::tok_equal);
         }
+        if (m_lastChar == '>') {
+            advance();
+            return static_cast<int>(TokenType::tok_fat_arrow);
+        }
         return '='; // Assignment (not used in expressions currently)
     }
 
@@ -1228,6 +1234,11 @@ int Lexer::gettok()
             return static_cast<int>(TokenType::tok_bitwise_shr);
         }
         return '>';
+    }
+
+    if (m_lastChar == '?') {
+        advance();
+        return static_cast<int>(TokenType::tok_question);
     }
 
     if (m_lastChar == '~') {
@@ -1321,6 +1332,28 @@ int Lexer::peekToken()
     m_errors.resize(savedErrorCount);
 
     return nextTok;
+}
+
+Lexer::SavedState Lexer::saveState() const
+{
+    return {m_pos, m_tokenStart, m_lastChar, m_line, m_column,
+            m_currentTokenLine, m_currentTokenColumn, m_lineStart,
+            m_currentTokenOffset, m_currentTokenLength, m_errors};
+}
+
+void Lexer::restoreState(const SavedState& state)
+{
+    m_pos = state.pos;
+    m_tokenStart = state.tokenStart;
+    m_lastChar = state.lastChar;
+    m_line = state.line;
+    m_column = state.column;
+    m_currentTokenLine = state.currentTokenLine;
+    m_currentTokenColumn = state.currentTokenColumn;
+    m_lineStart = state.lineStart;
+    m_currentTokenOffset = state.currentTokenOffset;
+    m_currentTokenLength = state.currentTokenLength;
+    m_errors = state.errors;
 }
 
 } // namespace Flux

@@ -475,6 +475,20 @@ bool CompilerInstance::collectImportFunctions(const std::string& moduleName,
     }
 
     Parser parser(std::string(bufferOrErr.get()->getBuffer()));
+
+    // Pre-populate known struct/enum type names from the outer context
+    // so that type annotations referring to types from previously imported
+    // modules (e.g. struct Vec3 defined in veclib and used in scene) are
+    // recognized by the parser even when a nested import is skipped.
+    if (knownStructTypeNames) {
+        for (const auto& name : *knownStructTypeNames)
+            parser.getKnownStructTypeNames().insert(name);
+    }
+    if (knownEnumTypeNames) {
+        for (const auto& name : *knownEnumTypeNames)
+            parser.getKnownEnumTypeNames().insert(name);
+    }
+
     std::vector<std::unique_ptr<FunctionAST>> localFunctions;
 
     while (parser.CurTok != static_cast<int>(TokenType::tok_eof)) {
@@ -514,8 +528,7 @@ bool CompilerInstance::collectImportFunctions(const std::string& moduleName,
             if (!collectImportFunctions(subModuleName, outFunctions, context, returnTypes, error, importedModules, subSymbols, knownStructTypeNames, knownEnumTypeNames))
                 return false;
             const std::string& alias = importExpr->getAlias().empty() ? subModuleName : importExpr->getAlias();
-            context.NamedValues[alias + ".*"] =
-                llvm::ConstantPointerNull::get(llvm::PointerType::get(context.TheContext, 0));
+            context.ModuleNamespaces.insert(alias);
         } else if (parser.CurTok == static_cast<int>(TokenType::tok_extern)) {
             auto proto = parser.ParseExtern();
             if (proto) {
@@ -977,6 +990,14 @@ static FluxType inferReturnType(
     if (dynamic_cast<const ComplexExprAST*>(expr))
         return FluxType(TypeKind::Complex);
 
+    if (auto* structCtor = dynamic_cast<const StructConstructExprAST*>(expr)) {
+        FluxType retType(TypeKind::UserStruct);
+        retType.StructTypeId = -1;
+        retType.StructLLVMType = nullptr;
+        retType.GenericName = structCtor->getStructName();
+        return retType;
+    }
+
     return TypeKind::Double;
 }
 
@@ -1348,9 +1369,13 @@ static void inferParamTypes(const std::vector<std::unique_ptr<FunctionAST>>& fun
 bool CompilerInstance::compileParser(Parser& parser, CodegenContext& context,
                                      std::map<std::string, FluxType>& returnTypes, std::string& error,
                                      std::map<std::string, bool>& importedModules,
-                                     const std::vector<std::string>& symbols,
-                                     std::vector<std::unique_ptr<FunctionAST>>* preParsedFunctions) const
+                                      const std::vector<std::string>& symbols,
+                                      std::vector<std::unique_ptr<FunctionAST>>* preParsedFunctions) const
 {
+    // --- Inject built-in generic enum type names for parser recognition ---
+    parser.getKnownEnumTypeNames().insert("Result");
+    parser.getKnownEnumTypeNames().insert("Option");
+
     // --- Pass 1: Parse all definitions (defer prototype declaration) ---
     // Prototype declaration is deferred until after selective-import
     // filtering so that only selected functions get LLVM declarations.
@@ -1403,8 +1428,7 @@ bool CompilerInstance::compileParser(Parser& parser, CodegenContext& context,
                 return false;
             }
             const std::string& alias = importExpr->getAlias().empty() ? moduleName : importExpr->getAlias();
-            context.NamedValues[alias + ".*"] =
-                llvm::ConstantPointerNull::get(llvm::PointerType::get(context.TheContext, 0));
+            context.ModuleNamespaces.insert(alias);
         } else if (parser.CurTok == static_cast<int>(TokenType::tok_extern)) {
             auto proto = parser.ParseExtern();
             if (proto) {
@@ -1492,6 +1516,82 @@ bool CompilerInstance::compileParser(Parser& parser, CodegenContext& context,
                 auto Proto = std::make_unique<PrototypeAST>(anonName, std::vector<std::pair<std::string, FluxType>>(),
                                                             RetType);
                 functions.push_back(std::make_unique<FunctionAST>(std::move(Proto), std::move(Block)));
+            }
+        }
+    }
+
+    // --- Inject built-in generic enums (Result, Option) and synthetic payload structs ---
+    {
+        bool userDeclaredResult = false;
+        bool userDeclaredOption = false;
+        for (const auto& e : enums) {
+            if (e->getName() == "Result") userDeclaredResult = true;
+            if (e->getName() == "Option") userDeclaredOption = true;
+        }
+        if (!userDeclaredResult) {
+            FluxType tGen(TypeKind::Generic);
+            tGen.GenericName = "T";
+            FluxType eGen(TypeKind::Generic);
+            eGen.GenericName = "E";
+            // Synthetic structs for braced constructor syntax: Result.Ok { value: v }
+            auto resultOkFields = std::make_unique<StructDeclAST>(
+                "__enum_Result_Ok_Fields",
+                std::vector<std::pair<std::string, FluxType>>{{"value", tGen}});
+            auto resultErrFields = std::make_unique<StructDeclAST>(
+                "__enum_Result_Err_Fields",
+                std::vector<std::pair<std::string, FluxType>>{{"value", eGen}});
+            parser.getKnownStructTypeNames().insert("__enum_Result_Ok_Fields");
+            parser.getKnownStructTypeNames().insert("__enum_Result_Err_Fields");
+            structs.push_back(std::move(resultOkFields));
+            structs.push_back(std::move(resultErrFields));
+            auto resultEnum = std::make_unique<EnumDeclAST>(
+                "Result",
+                std::vector<std::string>{"Ok", "Err"},
+                std::vector<FluxType>{tGen, eGen});
+            resultEnum->setGenericParams({"T", "E"});
+            enums.push_back(std::move(resultEnum));
+        }
+        if (!userDeclaredOption) {
+            FluxType tGen(TypeKind::Generic);
+            tGen.GenericName = "T";
+            // Synthetic struct for braced constructor syntax: Option.Some { value: v }
+            auto optionSomeFields = std::make_unique<StructDeclAST>(
+                "__enum_Option_Some_Fields",
+                std::vector<std::pair<std::string, FluxType>>{{"value", tGen}});
+            parser.getKnownStructTypeNames().insert("__enum_Option_Some_Fields");
+            structs.push_back(std::move(optionSomeFields));
+            auto optionEnum = std::make_unique<EnumDeclAST>(
+                "Option",
+                std::vector<std::string>{"Some", "None"},
+                std::vector<FluxType>{tGen, FluxType(TypeKind::Void)});
+            optionEnum->setGenericParams({"T"});
+            enums.push_back(std::move(optionEnum));
+        }
+        // Register all generic enums so the generic-enum infrastructure finds them
+        for (auto& e : enums) {
+            if (e->isGeneric()) {
+                context.GenericEnums[e->getName()] = e.get();
+            }
+        }
+    }
+
+    // --- Inject synthetic payload structs for enum variants with bare payloads ---
+    // For braced constructor syntax (e.g., MyEnum.Variant { value: expr }),
+    // we need __enum_<Enum>_<Variant>_Fields to exist in the struct registry.
+    // Variants declared with named fields (e.g., Some { value: T }) are already
+    // handled by ParseEnumDecl; bare payload variants (e.g., Some(T)) need injection.
+    for (const auto& e : enums) {
+        const auto& variants = e->getVariants();
+        const auto& payloads = e->getVariantPayloads();
+        for (size_t i = 0; i < variants.size(); ++i) {
+            if (payloads[i].Kind != TypeKind::Void && payloads[i].Kind != TypeKind::UserStruct) {
+                std::string anonName = "__enum_" + e->getName() + "_" + variants[i] + "_Fields";
+                if (!parser.getKnownStructTypeNames().count(anonName)) {
+                    parser.getKnownStructTypeNames().insert(anonName);
+                    structs.push_back(
+                        std::make_unique<StructDeclAST>(anonName,
+                            std::vector<std::pair<std::string, FluxType>>{{"value", payloads[i]}}));
+                }
             }
         }
     }
@@ -1628,7 +1728,8 @@ bool CompilerInstance::compileParser(Parser& parser, CodegenContext& context,
         FluxType inferred = inferReturnType(func->getBody(), context.ExternFuncTypes, &context.FuncReturnTypes,
                                             &paramTypeMap, nullptr);
         if (inferred.Kind == TypeKind::Matrix || inferred.Kind == TypeKind::ComplexMatrix ||
-            inferred.Kind == TypeKind::Vector) {
+            inferred.Kind == TypeKind::Vector || inferred.Kind == TypeKind::UserStruct ||
+            inferred.Kind == TypeKind::UserEnum) {
             func->getProto()->setReturnType(inferred);
         }
         // Update return type map immediately so subsequent functions
@@ -1654,6 +1755,9 @@ bool CompilerInstance::compileParser(Parser& parser, CodegenContext& context,
     }
 
     // --- Fix up anonymous function return types for struct/enum returns ---
+    // Only consider the LAST expression of the block; intermediate let/if/while
+    // statements that call struct/enum-returning functions should NOT override
+    // the anon return type.
     for (auto& func : functions) {
         const std::string& name = func->getProto()->getName();
         if (name.find("anon_expr") == std::string::npos)
@@ -1661,8 +1765,16 @@ bool CompilerInstance::compileParser(Parser& parser, CodegenContext& context,
         FluxType protoRet = func->getProto()->getReturnType();
         if (protoRet.Kind == TypeKind::UserStruct || protoRet.Kind == TypeKind::UserEnum)
             continue;
+        const ExprAST* lastExpr = nullptr;
+        if (auto* block = dynamic_cast<const BlockExprAST*>(func->getBody())) {
+            const auto& stmts = block->getStatements();
+            if (!stmts.empty())
+                lastExpr = stmts.back().get();
+        }
+        if (!lastExpr)
+            continue;
         FluxType fixRet(TypeKind::Void);
-        findStructReturnCalls(func->getBody(), context.FuncReturnTypes, fixRet);
+        findStructReturnCalls(lastExpr, context.FuncReturnTypes, fixRet);
         if (fixRet.Kind == TypeKind::UserStruct || fixRet.Kind == TypeKind::UserEnum) {
             func->getProto()->setReturnType(fixRet);
             returnTypes[name] = fixRet;
@@ -1686,8 +1798,7 @@ bool CompilerInstance::compileParser(Parser& parser, CodegenContext& context,
         if (SavedInsertBlock)
             context.Builder.SetInsertPoint(SavedInsertBlock);
         const std::string& nsAlias = alias.empty() ? moduleName : alias;
-        context.NamedValues[nsAlias + ".*"] =
-            llvm::ConstantPointerNull::get(llvm::PointerType::get(context.TheContext, 0));
+        context.ModuleNamespaces.insert(nsAlias);
         return true;
     };
 

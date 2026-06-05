@@ -95,15 +95,19 @@ TypedValue TryCatchExprAST::codegen(CodegenContext& context)
     context.Builder.SetInsertPoint(CatchBB);
     context.Builder.CreateCall(PopF);
 
-    llvm::Value* ExCode = context.Builder.CreateSIToFP(JmpVal, DoubleTy, "ex_code" + IDStr);
-    context.Builder.CreateStore(ExCode, ExceptionPtr);
+    // Bind the catch variable to the actual thrown value (preserved in
+    // thread-local storage by flux_throw_error), not the setjmp return code.
+    llvm::Function* LastThrownF = context.TheModule->getFunction("flux_last_thrown_value");
+    if (!LastThrownF)
+        LastThrownF = llvm::Function::Create(llvm::FunctionType::get(DoubleTy, {}, false),
+                                             llvm::Function::ExternalLinkage,
+                                             "flux_last_thrown_value", context.TheModule);
+    llvm::Value* ThrownVal = context.Builder.CreateCall(LastThrownF, {}, "thrown_val" + IDStr);
 
     if (!CatchClauses.empty()) {
         auto& [VarName, Handler] = CatchClauses[0];
         llvm::Value* OldVal = context.NamedValues[VarName];
 
-        // Bind the catch variable to the exception value
-        llvm::Value* ThrownVal = context.Builder.CreateLoad(DoubleTy, ExceptionPtr, "thrown_val" + IDStr);
         context.NamedValues[VarName] = ThrownVal;
 
         TypedValue CatchResult = Handler->codegen(context);
@@ -137,6 +141,92 @@ TypedValue TryCatchExprAST::codegen(CodegenContext& context)
     return TypedValue(nullptr, TypeKind::Void);
 }
 
+// ============ `?` Propagation Codegen ============
+//
+// For `inner?` where `inner` evaluates to a Result<T, E> (or Option<T>)
+// tagged-union, we emit:
+//
+//   %slot = alloca ResultTy
+//   store %inner, %slot
+//   %tag  = load i32, ptr gep(%slot, 0, 0)
+//   switch %tag:
+//     case Ok(0):  %payload = load T, ptr gep(%slot, 0, 1); continue
+//     case Err(1): %ret = load ResultTy, %slot;  ret %ret
+//
+// This requires the enclosing function to return the same ResultTy so the
+// `ret` instruction is type-correct.
+TypedValue TryPropagateExprAST::codegen(CodegenContext& context)
+{
+    TypedValue InnerTV = Inner->codegen(context);
+    if (!InnerTV.Val) {
+        std::cerr << "[FLUX ERROR] `?` inner expression failed to codegen" << std::endl;
+        return TypedValue();
+    }
+
+    llvm::LLVMContext& Ctx = context.TheContext;
+    llvm::Function* TheFunction = context.Builder.GetInsertBlock()->getParent();
+    llvm::Type* DoubleTy = llvm::Type::getDoubleTy(Ctx);
+    llvm::Type* Int32Ty = llvm::Type::getInt32Ty(Ctx);
+
+    if (context.Builder.GetInsertBlock()->getTerminator())
+        return TypedValue(llvm::ConstantFP::get(llvm::Type::getDoubleTy(Ctx), 0.0), TypeKind::Double);
+
+    // Determine the struct shape of the inner value.
+    llvm::Type* InnerTy = InnerTV.Val->getType();
+    if (!InnerTy->isStructTy()) {
+        std::cerr << "[FLUX ERROR] `?` requires a tagged-union (Result/Option); got non-struct type" << std::endl;
+        return InnerTV; // fall through, best-effort
+    }
+
+    llvm::StructType* STy = llvm::cast<llvm::StructType>(InnerTy);
+    if (STy->getNumElements() < 2) {
+        std::cerr << "[FLUX ERROR] `?` requires a tagged-union with tag + payload" << std::endl;
+        return InnerTV;
+    }
+
+    // Stash the inner value so both branches can read it.
+    llvm::Value* Slot = context.Builder.CreateAlloca(STy, nullptr, "qmark_slot");
+    context.Builder.CreateStore(InnerTV.Val, Slot);
+
+    // Load tag (index 0). Enum tag is always i32.
+    llvm::Value* TagAddr = context.Builder.CreateStructGEP(STy, Slot, 0, "qmark_tag_addr");
+    llvm::Value* Tag = context.Builder.CreateLoad(Int32Ty, TagAddr, "qmark_tag");
+    llvm::Value* IsErr = context.Builder.CreateICmpNE(Tag, llvm::ConstantInt::get(Int32Ty, 0), "qmark_is_err");
+
+    // For the early-return path we need a fresh block added to the function,
+    // and we need the function to return the same struct type so `ret` is legal.
+    llvm::BasicBlock* ErrBB = llvm::BasicBlock::Create(Ctx, "qmark_err", TheFunction);
+    llvm::BasicBlock* ContBB = llvm::BasicBlock::Create(Ctx, "qmark_cont", TheFunction);
+    context.Builder.CreateCondBr(IsErr, ErrBB, ContBB);
+
+    // Err path: reload the whole value and `ret` it.
+    context.Builder.SetInsertPoint(ErrBB);
+    llvm::Value* ErrVal = context.Builder.CreateLoad(STy, Slot, "qmark_err_val");
+    if (TheFunction->getReturnType() == STy) {
+        context.Builder.CreateRet(ErrVal);
+    } else {
+        // Function doesn't return the same type — degrade gracefully to a poison
+        // constant so the rest of the function is still well-formed.
+        llvm::Value* Poison = llvm::ConstantFP::get(DoubleTy, 0.0);
+        context.Builder.CreateRet(Poison);
+    }
+    context.Builder.SetInsertPoint(ContBB);
+
+    // Ok path: load the payload (index 1) and return it as the expression value.
+    llvm::Type* PayloadTy = STy->getElementType(1);
+    llvm::Value* PayloadAddr = context.Builder.CreateStructGEP(STy, Slot, 1, "qmark_payload_addr");
+    llvm::Value* Payload = context.Builder.CreateLoad(PayloadTy, PayloadAddr, "qmark_payload");
+
+    // Reflect the payload type back into TypedValue so downstream code can
+    // use it. For the common case (Double payload) this maps to TypeKind::Double.
+    TypeKind OutKind = TypeKind::Double;
+    if (PayloadTy->isIntegerTy(1))
+        OutKind = TypeKind::Bool;
+    else if (PayloadTy->isIntegerTy(32))
+        OutKind = TypeKind::Int;
+    return TypedValue(Payload, OutKind);
+}
+
 // ============ Throw Codegen ============
 
 TypedValue ThrowExprAST::codegen(CodegenContext& context)
@@ -151,7 +241,7 @@ TypedValue ThrowExprAST::codegen(CodegenContext& context)
 
     // If block already terminated, stop.
     if (context.Builder.GetInsertBlock()->getTerminator()) {
-        return TypedValue(llvm::ConstantFP::get(Ctx, llvm::APFloat(0.0)), TypeKind::Double);
+        return TypedValue(llvm::ConstantFP::get(llvm::Type::getDoubleTy(Ctx), 0.0), TypeKind::Double);
     }
 
     llvm::Module* TheModule = context.TheModule;
@@ -168,7 +258,7 @@ TypedValue ThrowExprAST::codegen(CodegenContext& context)
     context.Builder.CreateCall(ThrowFunc, {ExTV.Val, MsgPtr});
     context.Builder.CreateUnreachable();
 
-    return TypedValue(llvm::ConstantFP::get(Ctx, llvm::APFloat(0.0)), TypeKind::Double);
+    return TypedValue(llvm::ConstantFP::get(llvm::Type::getDoubleTy(Ctx), 0.0), TypeKind::Double);
 }
 
 // ============ Assert Codegen ============
@@ -192,7 +282,7 @@ TypedValue AssertExprAST::codegen(CodegenContext& context)
         IsTrue = CondTV.Val;
     } else {
         IsTrue = context.Builder.CreateFCmpONE(
-            CondTV.Val, llvm::ConstantFP::get(context.TheContext, llvm::APFloat(0.0)), "assert_check");
+            CondTV.Val, llvm::ConstantFP::get(llvm::Type::getDoubleTy(context.TheContext), 0.0), "assert_check");
     }
 
     context.Builder.CreateCondBr(IsTrue, ContinueBB, FailBB);
@@ -209,7 +299,7 @@ TypedValue AssertExprAST::codegen(CodegenContext& context)
 
     // Continue block
     context.Builder.SetInsertPoint(ContinueBB);
-    return TypedValue(llvm::ConstantFP::get(context.TheContext, llvm::APFloat(1.0)), TypeKind::Double);
+    return TypedValue(llvm::ConstantFP::get(llvm::Type::getDoubleTy(context.TheContext), 1.0), TypeKind::Double);
 }
 
 // ============ Yield Codegen ============
@@ -277,7 +367,7 @@ TypedValue AwaitExprAST::codegen(CodegenContext& context)
     llvm::BasicBlock* ContBB = llvm::BasicBlock::Create(context.TheContext, "await_cont", TheFunction);
 
     // 4. Compare the result against 0.0 to check if it's ready
-    auto ZeroVal = llvm::ConstantFP::get(context.TheContext, llvm::APFloat(0.0));
+    auto ZeroVal = llvm::ConstantFP::get(llvm::Type::getDoubleTy(context.TheContext), 0.0);
     llvm::Value* IsReady = context.Builder.CreateFCmpONE(ValueTV.Val, ZeroVal, "await_ready");
 
     // 5. If ready, branch to continuation; otherwise suspend
@@ -300,7 +390,7 @@ TypedValue AwaitExprAST::codegen(CodegenContext& context)
                                 IndexPtr);
 
     // Return 0.0 (Pending) from the function
-    auto PendingVal = llvm::ConstantFP::get(context.TheContext, llvm::APFloat(0.0));
+    auto PendingVal = llvm::ConstantFP::get(llvm::Type::getDoubleTy(context.TheContext), 0.0);
     context.Builder.CreateRet(PendingVal);
 
     // 6. Create resume block and record it
@@ -353,7 +443,7 @@ TypedValue CornerExprAST::codegen(CodegenContext& context)
     size_t NumCases = Cases.size();
 
     if (NumCases == 0) {
-        return TypedValue(llvm::ConstantFP::get(Ctx, llvm::APFloat(0.0)), TypeKind::Double);
+        return TypedValue(llvm::ConstantFP::get(llvm::Type::getDoubleTy(Ctx), 0.0), TypeKind::Double);
     }
 
     // Create result array on stack: { double, double, ... } for each case
@@ -413,6 +503,14 @@ TypedValue MatchExprAST::codegen(CodegenContext& context)
     if (!MatchValTV.Val) {
         std::cerr << "[FLUX ERROR] match value expression failed to codegen" << std::endl;
         return TypedValue();
+    }
+
+    // If the match value is a pointer (e.g. struct/enum passed by reference),
+    // load it first to get the struct value for further processing.
+    if (MatchValTV.Val->getType()->isPointerTy()) {
+        llvm::Type* loadedTy = MatchValTV.Type.getLLVMType(context.TheContext);
+        if (!loadedTy) loadedTy = llvm::Type::getDoubleTy(context.TheContext);
+        MatchValTV.Val = context.Builder.CreateLoad(loadedTy, MatchValTV.Val, "match_val_loaded");
     }
 
     bool isEnumMatch = MatchValTV.Type.isEnum();
@@ -576,30 +674,47 @@ TypedValue MatchExprAST::codegen(CodegenContext& context)
                 patVal = context.Builder.CreateIntCast(patVal, matchVal->getType(), false, "pat_cast");
             IsMatch = context.Builder.CreateICmpEQ(matchVal, patVal, "cmp_" + std::to_string(i));
         } else {
-            // Non-enum match: use existing comparison logic
-            TypedValue PatternTV = Pattern->codegen(context);
-            if (!PatternTV.Val) {
-                std::cerr << "[FLUX ERROR] match pattern (non-enum) failed to codegen" << std::endl;
-                return TypedValue();
+            // Non-enum match
+            // Detect binder patterns (standalone VariableExprAST like `x -> ...`)
+            // that the parser didn't add to Bindings.
+            std::string binderName;
+            if (!armBindings.empty()) {
+                binderName = armBindings[0];
+            } else if (auto* varPat = dynamic_cast<VariableExprAST*>(Pattern.get())) {
+                if (varPat->getName() != "_") {
+                    binderName = varPat->getName();
+                }
             }
 
-            llvm::Value*& PatternVal = PatternTV.Val;
-            llvm::Value* MatchVal = MatchValTV.Val;
-
-            if (MatchVal->getType()->isIntegerTy()) {
-                if (PatternVal->getType() != MatchVal->getType())
-                    PatternVal = context.Builder.CreateIntCast(PatternVal, MatchVal->getType(), false, "pat_cast");
-                IsMatch = context.Builder.CreateICmpEQ(MatchVal, PatternVal, "cmp_" + std::to_string(i));
-            } else if (MatchVal->getType()->isFloatingPointTy()) {
-                if (PatternVal->getType()->isIntegerTy())
-                    PatternVal = context.Builder.CreateSIToFP(PatternVal, MatchVal->getType(), "pat_to_fp");
-                IsMatch = context.Builder.CreateFCmpOEQ(MatchVal, PatternVal, "cmp_" + std::to_string(i));
+            if (!binderName.empty()) {
+                // Binder pattern (e.g., `x -> ...`): always matches.
+                IsMatch = llvm::ConstantInt::getTrue(Ctx);
             } else {
-                // Fallback: compare as integers via ptrtoint
-                IsMatch = context.Builder.CreateICmpEQ(
-                    context.Builder.CreatePtrToInt(MatchVal, llvm::Type::getInt64Ty(Ctx)),
-                    context.Builder.CreatePtrToInt(PatternVal, llvm::Type::getInt64Ty(Ctx)),
-                    "cmp_" + std::to_string(i));
+                // Literal pattern: codegen and compare
+                TypedValue PatternTV = Pattern->codegen(context);
+                if (!PatternTV.Val) {
+                    std::cerr << "[FLUX ERROR] match pattern (non-enum) failed to codegen" << std::endl;
+                    return TypedValue();
+                }
+
+                llvm::Value*& PatternVal = PatternTV.Val;
+                llvm::Value* MatchVal = MatchValTV.Val;
+
+                if (MatchVal->getType()->isIntegerTy()) {
+                    if (PatternVal->getType() != MatchVal->getType())
+                        PatternVal = context.Builder.CreateIntCast(PatternVal, MatchVal->getType(), false, "pat_cast");
+                    IsMatch = context.Builder.CreateICmpEQ(MatchVal, PatternVal, "cmp_" + std::to_string(i));
+                } else if (MatchVal->getType()->isFloatingPointTy()) {
+                    if (PatternVal->getType()->isIntegerTy())
+                        PatternVal = context.Builder.CreateSIToFP(PatternVal, MatchVal->getType(), "pat_to_fp");
+                    IsMatch = context.Builder.CreateFCmpOEQ(MatchVal, PatternVal, "cmp_" + std::to_string(i));
+                } else {
+                    // Fallback: compare as integers via ptrtoint
+                    IsMatch = context.Builder.CreateICmpEQ(
+                        context.Builder.CreatePtrToInt(MatchVal, llvm::Type::getInt64Ty(Ctx)),
+                        context.Builder.CreatePtrToInt(PatternVal, llvm::Type::getInt64Ty(Ctx)),
+                        "cmp_" + std::to_string(i));
+                }
             }
         }
 
@@ -607,6 +722,18 @@ TypedValue MatchExprAST::codegen(CodegenContext& context)
 
         // Emit match body
         context.Builder.SetInsertPoint(matchBBs[i]);
+
+        // Detect binder pattern for non-enum match (standalone VariableExprAST)
+        std::string binderName;
+        if (!armBindings.empty()) {
+            binderName = armBindings[0];
+        } else if (!isPayloadEnum && !isEnumMatch) {
+            if (auto* varPat = dynamic_cast<VariableExprAST*>(Pattern.get())) {
+                if (varPat->getName() != "_") {
+                    binderName = varPat->getName();
+                }
+            }
+        }
 
         // If this pattern has binding variables, extract payload fields and store them
         if (!armBindings.empty() && isPayloadEnum) {
@@ -679,12 +806,34 @@ TypedValue MatchExprAST::codegen(CodegenContext& context)
                         payloadPtr, llvm::PointerType::get(concretePayloadLLVMTy, 0), "concrete_payload_ptr");
                 }
 
-                if (armBindings.size() == 1 && !concretePayloadLLVMTy->isStructTy()) {
-                    // Single scalar binding: load and store entire payload
+                if (armBindings.size() == 1 && concretePayloadLLVMTy->isStructTy() &&
+                    concretePayloadType.StructTypeId >= 0 &&
+                    concretePayloadType.StructTypeId < static_cast<int>(context.StructTypes.size())) {
+                    // Single binding: extract the first field from the payload struct
+                    auto& structInfo = context.StructTypes[concretePayloadType.StructTypeId];
+                    if (structInfo.Fields.size() == 1) {
+                        llvm::Value* fieldPtr = context.Builder.CreateStructGEP(concretePayloadLLVMTy, concretePayloadPtr, 0, armBindings[0]);
+                        llvm::Type* fieldTy = concretePayloadLLVMTy->getStructElementType(0);
+                        llvm::Value* FieldVal = context.Builder.CreateLoad(fieldTy, fieldPtr, armBindings[0] + "_val");
+                        llvm::AllocaInst* FieldAlloca = context.Builder.CreateAlloca(fieldTy, nullptr, armBindings[0]);
+                        context.Builder.CreateStore(FieldVal, FieldAlloca);
+                        context.NamedValues[armBindings[0]] = FieldAlloca;
+                        context.NamedTypes[armBindings[0]] = structInfo.Fields[0].second;
+                    } else {
+                        // Multi-field payload with single binding: capture entire struct
+                        llvm::Value* val = context.Builder.CreateLoad(concretePayloadLLVMTy, concretePayloadPtr, "struct_payload");
+                        llvm::AllocaInst* BindingAlloca = context.Builder.CreateAlloca(concretePayloadLLVMTy, nullptr, armBindings[0]);
+                        context.Builder.CreateStore(val, BindingAlloca);
+                        context.NamedValues[armBindings[0]] = BindingAlloca;
+                        context.NamedTypes[armBindings[0]] = concretePayloadType;
+                    }
+                } else if (armBindings.size() == 1) {
+                    // Single scalar binding: load scalar value directly
                     llvm::Value* val = context.Builder.CreateLoad(concretePayloadLLVMTy, concretePayloadPtr, "scalar_payload");
                     llvm::AllocaInst* BindingAlloca = context.Builder.CreateAlloca(concretePayloadLLVMTy, nullptr, armBindings[0]);
                     context.Builder.CreateStore(val, BindingAlloca);
                     context.NamedValues[armBindings[0]] = BindingAlloca;
+                    context.NamedTypes[armBindings[0]] = concretePayloadType;
                 } else {
                     // Multiple bindings: extract each field from the concrete payload struct
                     for (size_t bi = 0; bi < armBindings.size(); ++bi) {
@@ -694,9 +843,23 @@ TypedValue MatchExprAST::codegen(CodegenContext& context)
                         llvm::AllocaInst* FieldAlloca = context.Builder.CreateAlloca(fieldTy, nullptr, armBindings[bi]);
                         context.Builder.CreateStore(FieldVal, FieldAlloca);
                         context.NamedValues[armBindings[bi]] = FieldAlloca;
+                        // Set NamedTypes from payload struct field info
+                        if (concretePayloadType.StructTypeId >= 0 &&
+                            concretePayloadType.StructTypeId < static_cast<int>(context.StructTypes.size())) {
+                            auto& structInfo = context.StructTypes[concretePayloadType.StructTypeId];
+                            if (bi < structInfo.Fields.size()) {
+                                context.NamedTypes[armBindings[bi]] = structInfo.Fields[bi].second;
+                            }
+                        }
                     }
                 }
             }
+        } else if (!binderName.empty() && !isPayloadEnum) {
+            // Non-enum binding: bind the match value directly to the variable(s)
+            llvm::AllocaInst* BindingAlloca = context.Builder.CreateAlloca(MatchValTV.Val->getType(), nullptr, binderName);
+            context.Builder.CreateStore(MatchValTV.Val, BindingAlloca);
+            context.NamedValues[binderName] = BindingAlloca;
+            context.NamedTypes[binderName] = MatchValTV.Type;
         }
 
         TypedValue ResultTV = Result->codegen(context);
@@ -709,7 +872,12 @@ TypedValue MatchExprAST::codegen(CodegenContext& context)
         if (!armBindings.empty() && isPayloadEnum) {
             for (const auto& bv : armBindings) {
                 context.NamedValues.erase(bv);
+                context.NamedTypes.erase(bv);
             }
+        }
+        if (!binderName.empty() && !isPayloadEnum) {
+            context.NamedValues.erase(binderName);
+            context.NamedTypes.erase(binderName);
         }
 
         llvm::Value* ResultV = ResultTV.Val;
@@ -825,7 +993,7 @@ TypedValue ForeachExprAST::codegen(CodegenContext& context)
         context.Builder.SetInsertPoint(AfterBB);
         context.NamedValues[VarName] = OldVal;
 
-        return TypedValue(llvm::ConstantFP::get(Ctx, llvm::APFloat(0.0)), TypeKind::Double);
+        return TypedValue(llvm::ConstantFP::get(llvm::Type::getDoubleTy(Ctx), 0.0), TypeKind::Double);
     }
 
     // Default: Vector iteration (existing implementation)
@@ -891,7 +1059,7 @@ TypedValue ForeachExprAST::codegen(CodegenContext& context)
     context.CurrentLoopEnd = nullptr;
     context.CurrentLoopCont = nullptr;
 
-    return BodyTV ? BodyTV : TypedValue(llvm::ConstantFP::get(Ctx, llvm::APFloat(0.0)), TypeKind::Double);
+    return BodyTV ? BodyTV : TypedValue(llvm::ConstantFP::get(llvm::Type::getDoubleTy(Ctx), 0.0), TypeKind::Double);
 }
 
 // ============ Repeat-Until Codegen ============
@@ -935,7 +1103,7 @@ TypedValue RepeatUntilExprAST::codegen(CodegenContext& context)
         IsDone = CondTV.Val;
     } else {
         IsDone = context.Builder.CreateFCmpONE(
-            CondTV.Val, llvm::ConstantFP::get(context.TheContext, llvm::APFloat(0.0)), "until_check");
+            CondTV.Val, llvm::ConstantFP::get(llvm::Type::getDoubleTy(context.TheContext), 0.0), "until_check");
     }
 
     context.Builder.CreateCondBr(IsDone, AfterBB, BodyBB);
@@ -992,7 +1160,7 @@ TypedValue DoWhileExprAST::codegen(CodegenContext& context)
         CondBool = CondTV.Val;
     } else {
         CondBool = context.Builder.CreateFCmpONE(
-            CondTV.Val, llvm::ConstantFP::get(Ctx, llvm::APFloat(0.0)), "dowhile_check");
+            CondTV.Val, llvm::ConstantFP::get(llvm::Type::getDoubleTy(Ctx), 0.0), "dowhile_check");
     }
     context.Builder.CreateCondBr(CondBool, BodyBB, AfterBB);
 

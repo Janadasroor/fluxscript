@@ -90,7 +90,7 @@ llvm::cl::opt<EmitMode> EmitAction(
                      clEnumValN(EmitMode::MLIR, "mlir", "Emit MLIR via the optional MLIR integration")),
     llvm::cl::init(EmitMode::JIT), llvm::cl::cat(FluxCategory));
 
-llvm::cl::opt<unsigned> OptLevel(llvm::cl::Prefix, llvm::cl::desc("LLVM optimization level 0-3 (default: 2)"),
+llvm::cl::opt<unsigned> OptLevel("opt", llvm::cl::Prefix, llvm::cl::desc("LLVM optimization level 0-3 (default: 2)"),
                                  llvm::cl::init(2), llvm::cl::cat(FluxCategory));
 
 llvm::cl::opt<std::string> EntryPoint("entry", llvm::cl::desc("Function name to invoke in JIT mode (default: top-level expression)"),

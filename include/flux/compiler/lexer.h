@@ -40,6 +40,7 @@ enum class TokenType
     tok_if = -8,
     tok_then = -9,
     tok_else = -10,
+    tok_elif = -143,
     tok_for = -11,
     tok_in = -12,
     tok_do = -13,
@@ -393,6 +394,9 @@ enum class TokenType
     // Threading primitives
     tok_spawn = -310,
     tok_join = -311,
+
+    // Postfix `?` operator (Result/Option early-return propagation)
+    tok_question = -400,
 };
 
 struct LexerDiagnostic
@@ -443,6 +447,7 @@ public:
         size_t lineStart;
         size_t currentTokenOffset;
         size_t currentTokenLength;
+        std::vector<LexerDiagnostic> errors;
     };
 
     SavedState saveState() const;

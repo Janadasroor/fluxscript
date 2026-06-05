@@ -23,35 +23,57 @@ namespace Flux {
 TypedValue SwitchExprAST::codegen(CodegenContext& context)
 {
     llvm::Function* TheFunction = context.Builder.GetInsertBlock()->getParent();
+    llvm::LLVMContext& LLVMCtx = context.TheContext;
+    llvm::Type* DoubleTy = llvm::Type::getDoubleTy(LLVMCtx);
 
     // Evaluate switch condition
     TypedValue CondTV = Condition->codegen(context);
     if (!CondTV.Val)
         return TypedValue();
 
+    llvm::Value* SwitchVal = CondTV.Val;
+
+    // Create alloca for switch result in the entry block
+    llvm::BasicBlock& EntryBB = TheFunction->getEntryBlock();
+    llvm::BasicBlock* SavedBB = context.Builder.GetInsertBlock();
+    bool entryEmpty = EntryBB.empty();
+    llvm::Value* SwitchResultAlloca = nullptr;
+    if (entryEmpty) {
+        context.Builder.SetInsertPoint(&EntryBB);
+    } else {
+        context.Builder.SetInsertPoint(&EntryBB, EntryBB.begin());
+    }
+    SwitchResultAlloca = context.Builder.CreateAlloca(DoubleTy, nullptr, "switch_result");
+    context.Builder.CreateStore(llvm::ConstantFP::get(DoubleTy, 0.0), SwitchResultAlloca);
+    context.Builder.SetInsertPoint(SavedBB);
+
     // Create basic blocks
-    llvm::BasicBlock* SwitchEndBB = llvm::BasicBlock::Create(context.TheContext, "switch_end", TheFunction);
+    llvm::BasicBlock* SwitchEndBB = llvm::BasicBlock::Create(LLVMCtx, "switch_end", TheFunction);
     context.CurrentSwitchEnd = SwitchEndBB; // Set for break statements
 
     std::vector<llvm::BasicBlock*> CaseBBs;
-    std::vector<llvm::Value*> CaseValues;
+    std::vector<llvm::BasicBlock*> CmpBBs;
 
-    // Create blocks for all cases
+    // Create comparison and case blocks for all cases
     for (size_t i = 0; i < Cases.size(); ++i) {
-        CaseBBs.push_back(llvm::BasicBlock::Create(context.TheContext, "case_" + std::to_string(i), TheFunction));
+        CmpBBs.push_back(llvm::BasicBlock::Create(LLVMCtx, "cmp_" + std::to_string(i), TheFunction));
+        CaseBBs.push_back(llvm::BasicBlock::Create(LLVMCtx, "case_" + std::to_string(i), TheFunction));
     }
 
-    llvm::BasicBlock* DefaultBB = llvm::BasicBlock::Create(context.TheContext, "default", TheFunction);
+    llvm::BasicBlock* DefaultBB = llvm::BasicBlock::Create(LLVMCtx, "default", TheFunction);
+
+    // Branch from current block to first comparison block
+    {
+        llvm::BasicBlock* FirstBB = CmpBBs.empty() ? DefaultBB : CmpBBs[0];
+        if (context.Builder.GetInsertBlock()->getTerminator() == nullptr) {
+            context.Builder.CreateBr(FirstBB);
+        }
+    }
 
     // Generate case comparison chain
-    llvm::Value* SwitchVal = CondTV.Val;
-    llvm::BasicBlock* NextBB = nullptr;
-
     for (size_t i = 0; i < Cases.size(); ++i) {
-        llvm::BasicBlock* CaseBB = CaseBBs[i];
-        llvm::BasicBlock* NextCaseBB = (i + 1 < Cases.size()) ? CaseBBs[i + 1] : DefaultBB;
+        context.Builder.SetInsertPoint(CmpBBs[i]);
 
-        // Generate comparison: if (switch_val == case_val) goto case_bb else goto next
         ExprAST* CaseVal = Cases[i].getValue();
         if (!CaseVal)
             continue;
@@ -60,41 +82,76 @@ TypedValue SwitchExprAST::codegen(CodegenContext& context)
         if (!CaseValTV.Val)
             continue;
 
-        llvm::Value* Cmp = context.Builder.CreateFCmpOEQ(SwitchVal, CaseValTV.Val, "case_cmp_" + std::to_string(i));
-        context.Builder.CreateCondBr(Cmp, CaseBB, NextCaseBB);
+        llvm::BasicBlock* NextBB = (i + 1 < Cases.size()) ? CmpBBs[i + 1] : DefaultBB;
 
-        // Move to case block
-        context.Builder.SetInsertPoint(CaseBB);
+        llvm::Value* Cmp = context.Builder.CreateFCmpOEQ(SwitchVal, CaseValTV.Val, "case_cmp_" + std::to_string(i));
+        context.Builder.CreateCondBr(Cmp, CaseBBs[i], NextBB);
 
         // Generate case body
+        context.Builder.SetInsertPoint(CaseBBs[i]);
+        llvm::BasicBlock* BeforeBody = context.Builder.GetInsertBlock();
+        TypedValue LastBodyTV(nullptr, TypeKind::Void);
         for (const auto& Stmt : Cases[i].getBody()) {
             TypedValue StmtTV = Stmt->codegen(context);
-            if (!StmtTV.Val)
+            if (!StmtTV.Val) {
+                LastBodyTV = StmtTV;
                 break;
+            }
+            LastBodyTV = StmtTV;
         }
 
-        // Jump to switch end (unless break was encountered)
-        if (context.Builder.GetInsertBlock()->getTerminator() == nullptr) {
+        // If the body already terminated (return/break), the case block has a
+        // terminator but the successor block (unreachable/after_break) may
+        // need one too. If the body did NOT terminate (normal flow), store
+        // the last expression value to switch result and branch to switch_end.
+        if (BeforeBody->getTerminator()) {
+            // Body terminated via return/break — seal successor block if open
+            llvm::BasicBlock* CurBB = context.Builder.GetInsertBlock();
+            if (CurBB != BeforeBody && CurBB->getTerminator() == nullptr) {
+                context.Builder.CreateUnreachable();
+            }
+        } else if (context.Builder.GetInsertBlock()->getTerminator() == nullptr) {
+            // Store last expression value as the switch result
+            if (LastBodyTV.Val) {
+                context.Builder.CreateStore(LastBodyTV.Val, SwitchResultAlloca);
+            }
             context.Builder.CreateBr(SwitchEndBB);
         }
     }
 
     // Generate default block
     context.Builder.SetInsertPoint(DefaultBB);
+    llvm::BasicBlock* BeforeDefault = context.Builder.GetInsertBlock();
+    TypedValue LastDefaultTV(nullptr, TypeKind::Void);
     for (const auto& Stmt : DefaultBody) {
         TypedValue StmtTV = Stmt->codegen(context);
-        if (!StmtTV.Val)
+        if (!StmtTV.Val) {
+            LastDefaultTV = StmtTV;
             break;
+        }
+        LastDefaultTV = StmtTV;
     }
-    if (context.Builder.GetInsertBlock()->getTerminator() == nullptr) {
+    if (BeforeDefault->getTerminator()) {
+        llvm::BasicBlock* CurBB = context.Builder.GetInsertBlock();
+        if (CurBB != BeforeDefault && CurBB->getTerminator() == nullptr) {
+            context.Builder.CreateUnreachable();
+        }
+    } else if (context.Builder.GetInsertBlock()->getTerminator() == nullptr) {
+        if (LastDefaultTV.Val) {
+            context.Builder.CreateStore(LastDefaultTV.Val, SwitchResultAlloca);
+        }
         context.Builder.CreateBr(SwitchEndBB);
     }
 
-    // Move to switch end
+    // Move to switch end — this is the continuation block for subsequent code.
+    // No branch to return — let the normal function epilogue handle that.
     context.Builder.SetInsertPoint(SwitchEndBB);
     context.CurrentSwitchEnd = nullptr; // Clear break target
 
-    return TypedValue(llvm::ConstantFP::get(context.TheContext, llvm::APFloat(0.0)), TypeKind::Double);
+    // Load the switch result from the dedicated alloca
+    llvm::Value* SwitchResult = context.Builder.CreateLoad(DoubleTy, SwitchResultAlloca, "switch_result");
+
+    return TypedValue(SwitchResult, TypeKind::Double);
 }
 
 // ============ Break Statement Codegen ============
@@ -126,7 +183,7 @@ TypedValue BreakExprAST::codegen(CodegenContext& context)
     llvm::BasicBlock* AfterBreakBB = llvm::BasicBlock::Create(context.TheContext, "after_break", TheFunction);
     context.Builder.SetInsertPoint(AfterBreakBB);
 
-    return TypedValue(llvm::ConstantFP::get(context.TheContext, llvm::APFloat(0.0)), TypeKind::Double);
+    return TypedValue(llvm::ConstantFP::get(llvm::Type::getDoubleTy(context.TheContext), 0.0), TypeKind::Double);
 }
 
 // ============ Continue Statement Codegen ============
@@ -149,7 +206,7 @@ TypedValue ContinueExprAST::codegen(CodegenContext& context)
     llvm::BasicBlock* AfterContBB = llvm::BasicBlock::Create(context.TheContext, "after_continue", TheFunction);
     context.Builder.SetInsertPoint(AfterContBB);
 
-    return TypedValue(llvm::ConstantFP::get(context.TheContext, llvm::APFloat(0.0)), TypeKind::Double);
+    return TypedValue(llvm::ConstantFP::get(llvm::Type::getDoubleTy(context.TheContext), 0.0), TypeKind::Double);
 }
 
 // ============ Return Statement Codegen ============

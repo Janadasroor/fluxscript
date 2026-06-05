@@ -1,0 +1,13 @@
+build/
+.git/
+*.o
+*.so
+*.a
+*.ll
+*.bc
+*.s
+__pycache__/
+*.pyc
+.cache/
+.DS_Store
+examples/fluxqt/

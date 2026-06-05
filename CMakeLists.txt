@@ -64,6 +64,9 @@ endif()
 # Find CURL for package manager (optional on Windows)
 find_package(CURL QUIET)
 
+# Find Threads (for static runtime linking)
+find_package(Threads REQUIRED)
+
 # Find ngspice for circuit simulation
 if(FLUX_VIO_MATRIXC_LIB_DIR)
     message(STATUS "Using VioMATRIXC libngspice from: ${FLUX_VIO_MATRIXC_LIB_DIR}")
@@ -265,6 +268,48 @@ else()
     add_library(FluxScript SHARED ${FLUXSCRIPT_SOURCES})
 endif()
 
+# =============================================================================
+# Runtime Static Library (for AOT standalone binaries, no LLVM dependency)
+# =============================================================================
+
+set(FLUX_RUNTIME_SOURCES
+    src/runtime/flux_runtime.cpp
+    src/runtime/advanced_runtime.cpp
+    src/runtime/advanced_math.cpp
+    src/runtime/spice_runtime.cpp
+    src/runtime/parallel_runtime.cpp
+    src/runtime/symbolic_engine.cpp
+    src/runtime/ngspice_bridge.cpp
+    src/runtime/units.cpp
+    src/runtime/mixed_signal_runtime.cpp
+    src/runtime/autodiff.cpp
+    src/runtime/time_domain_api.cpp
+    src/runtime/model_quality_engine.cpp
+    src/analysis/advanced_analysis.cpp
+    src/analysis/fft_engine.cpp
+)
+
+add_library(FluxRuntime STATIC ${FLUX_RUNTIME_SOURCES})
+target_compile_definitions(FluxRuntime PRIVATE FLUX_RUNTIME_STANDALONE)
+
+target_include_directories(FluxRuntime PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+    $<INSTALL_INTERFACE:include>
+    ${EIGEN3_INCLUDE_DIR}
+)
+
+if(NGSPICE_FOUND)
+    target_link_libraries(FluxRuntime PUBLIC ${NGSPICE_LIBRARY})
+    target_compile_definitions(FluxRuntime PUBLIC FLUX_HAS_NGSPICE)
+endif()
+
+if(CURL_FOUND)
+    target_link_libraries(FluxRuntime PUBLIC ${CURL_LIBRARIES})
+    target_compile_definitions(FluxRuntime PUBLIC FLUX_HAS_CURL)
+endif()
+
+target_link_libraries(FluxRuntime PUBLIC Threads::Threads ${CMAKE_DL_LIBS})
+
 # Work around -O2 optimizer issues in verification and JIT code
 set_source_files_properties(
     src/verification/property_testing.cpp
@@ -459,7 +504,7 @@ endif()
 # Installation
 # =============================================================================
 
-install(TARGETS FluxScript flux flux-pkg flux-spice flux-run flux-doctor flux-sweep flux-fft flux-repl fluxc flux-format flux-doc flux-test flux-instrument flux-optimize flux-lsp flux-worstcase flux-stability flux-monte-carlo
+install(TARGETS FluxScript FluxRuntime flux flux-pkg flux-spice flux-run flux-doctor flux-sweep flux-fft flux-repl fluxc flux-format flux-doc flux-test flux-instrument flux-optimize flux-lsp flux-worstcase flux-stability flux-monte-carlo
     EXPORT FluxScriptTargets
     LIBRARY DESTINATION lib
     ARCHIVE DESTINATION lib

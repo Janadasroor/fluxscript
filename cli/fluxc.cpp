@@ -57,7 +57,7 @@ llvm::cl::opt<std::string> InputFilename(llvm::cl::Positional, llvm::cl::desc("<
 llvm::cl::opt<std::string> OutputFilename("o", llvm::cl::desc("Output file"), llvm::cl::Required,
                                           llvm::cl::cat(FluxcCategory));
 
-llvm::cl::opt<unsigned> OptLevel(llvm::cl::Prefix, llvm::cl::desc("Optimization level"), llvm::cl::init(2),
+llvm::cl::opt<unsigned> OptLevel("opt", llvm::cl::Prefix, llvm::cl::desc("Optimization level"), llvm::cl::init(2),
                                  llvm::cl::cat(FluxcCategory));
 
 llvm::cl::opt<bool> EmitShared("shared", llvm::cl::desc("Emit a shared library instead of an object file"),

@@ -3,6 +3,7 @@
 !stdlib/*.flux
 !tests/integration/tests/*.flux
 !examples/fullcircuit/**/*.flux
+!examples/fluxqt/*.flux
 /build/
 /build_local/
 /build_debug/
@@ -24,5 +25,7 @@ progress.md
 .vscode/
 .spiceinit
 .flux_cache/
+*.log
 llvm.sh
 debug/
+examples/fluxqt/build/

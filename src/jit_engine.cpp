@@ -50,22 +50,21 @@ JITEngine::~JITEngine()
 
 void JITEngine::setOptimizationLevel(OptimizationLevel level)
 {
+    m_optLevel = level;
     if (m_jit)
         m_jit->setOptimizationLevel(level);
 }
 
 OptimizationLevel JITEngine::getOptimizationLevel() const
 {
-    if (m_jit)
-        return m_jit->getOptimizationLevel();
-    return OptimizationLevel::O2;
+    return m_optLevel;
 }
 
 void JITEngine::initialize()
 {
     if (m_initialized)
         return;
-    m_jit = std::make_unique<FluxJIT>(OptimizationLevel::O2);
+    m_jit = std::make_unique<FluxJIT>(m_optLevel);
     m_compilerOptions.moduleName = "FluxJITCore";
     m_compilerOptions.injectStdlib = true;
     m_compilerOptions.debugInfo = true;

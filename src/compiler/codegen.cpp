@@ -83,9 +83,12 @@ static void resolveUserStructType(FluxType& type, CodegenContext& context)
                 type.StructTypeId = it->second;
             }
         }
-        if (type.StructTypeId >= 0 && !type.StructLLVMType) {
+        if (type.StructTypeId >= 0) {
             if (type.StructTypeId < static_cast<int>(context.StructTypes.size())) {
-                type.StructLLVMType = context.StructTypes[type.StructTypeId].LLVMType;
+                if (!type.StructLLVMType) {
+                    type.StructLLVMType = context.StructTypes[type.StructTypeId].LLVMType;
+                }
+                type.isCopy = context.StructTypes[type.StructTypeId].isCopy;
             }
         }
     }
@@ -100,9 +103,12 @@ static void resolveUserEnumType(FluxType& type, CodegenContext& context)
                 type.EnumTypeId = it->second;
             }
         }
-        if (type.EnumTypeId >= 0 && !type.EnumLLVMType) {
+        if (type.EnumTypeId >= 0) {
             if (type.EnumTypeId < static_cast<int>(context.EnumTypes.size())) {
-                type.EnumLLVMType = context.EnumTypes[type.EnumTypeId].LLVMType;
+                if (!type.EnumLLVMType) {
+                    type.EnumLLVMType = context.EnumTypes[type.EnumTypeId].LLVMType;
+                }
+                type.isCopy = context.EnumTypes[type.EnumTypeId].isCopy;
             }
         }
     }
@@ -163,6 +169,210 @@ static bool checkTraitBounds(
     return true;
 }
 
+// Helper: build a suffix string from generic type args by concatenating
+// each type's name (e.g., [Double, Double] -> "Double_Double").
+static std::string buildGenericTypeSuffix(const std::vector<FluxType>& genericArgs,
+                                           CodegenContext& context)
+{
+    std::string suffix;
+    for (size_t i = 0; i < genericArgs.size(); ++i) {
+        if (i > 0) suffix += "_";
+        FluxType resolved = genericArgs[i];
+        resolveUserStructType(resolved, context);
+        resolveUserEnumType(resolved, context);
+        switch (resolved.Kind) {
+        case TypeKind::Double: suffix += "Double"; break;
+        case TypeKind::Int:    suffix += "Int"; break;
+        case TypeKind::Bool:   suffix += "Bool"; break;
+        case TypeKind::Float:  suffix += "Float"; break;
+        case TypeKind::String: suffix += "String"; break;
+        case TypeKind::Complex: suffix += "Complex"; break;
+        case TypeKind::Matrix: suffix += "Matrix"; break;
+        case TypeKind::ComplexMatrix: suffix += "Cmat"; break;
+        case TypeKind::Vector: suffix += "Vector"; break;
+        case TypeKind::Void: suffix += "Void"; break;
+        case TypeKind::UserStruct: {
+            int sid = resolved.StructTypeId;
+            if (sid >= 0 && sid < static_cast<int>(context.StructTypes.size()))
+                suffix += context.StructTypes[sid].Name;
+            else
+                suffix += "S";
+            break;
+        }
+        case TypeKind::UserEnum: {
+            int eid = resolved.EnumTypeId;
+            if (eid >= 0 && eid < static_cast<int>(context.EnumTypes.size()))
+                suffix += context.EnumTypes[eid].Name;
+            else
+                suffix += "E";
+            break;
+        }
+        case TypeKind::Generic:
+            suffix += resolved.GenericName;
+            break;
+        default:
+            suffix += "T";
+            break;
+        }
+    }
+    return suffix;
+}
+
+// Helper: specialize a generic enum with concrete type arguments.
+// Creates a synthetic enum type with substituted payloads, registers it
+// in context.EnumTypes/EnumTypeIndex, and returns the mangled name.
+// Returns empty string on failure.
+static std::string specializeGenericEnum(const std::string& enumName,
+                                          const std::vector<FluxType>& genericArgs,
+                                          CodegenContext& context)
+{
+    std::string suffix = buildGenericTypeSuffix(genericArgs, context);
+    std::string mangledName = enumName + "_" + suffix;
+
+    // Already specialized?
+    auto existingIt = context.EnumTypeIndex.find(mangledName);
+    if (existingIt != context.EnumTypeIndex.end())
+        return mangledName;
+
+    // Look up the generic enum definition
+    auto genIt = context.GenericEnums.find(enumName);
+    if (genIt == context.GenericEnums.end())
+        return "";
+
+    EnumDeclAST* genericEnum = genIt->second;
+    const auto& genericParams = genericEnum->getGenericParams();
+    const auto& variants = genericEnum->getVariants();
+    const auto& variantPayloads = genericEnum->getVariantPayloads();
+
+    if (genericArgs.size() != genericParams.size()) {
+        std::cerr << "Generic enum " << enumName << " expects " << genericParams.size()
+                  << " type args, got " << genericArgs.size() << std::endl;
+        return "";
+    }
+
+    // Build type map
+    std::map<std::string, FluxType> typeMap;
+    for (size_t i = 0; i < genericParams.size(); ++i)
+        typeMap[genericParams[i]] = genericArgs[i];
+
+    // Substitute concrete types in payloads
+    std::vector<FluxType> concretePayloads;
+    for (auto& pt : variantPayloads) {
+        FluxType concreteType = pt;
+        if (pt.isGeneric()) {
+            auto mapIt = typeMap.find(pt.GenericName);
+            if (mapIt != typeMap.end())
+                concreteType = mapIt->second;
+        }
+        concretePayloads.push_back(concreteType);
+    }
+
+    // Specialize any UserStruct payloads that may contain generic type parameters
+    for (size_t i = 0; i < concretePayloads.size(); ++i) {
+        auto& pt = concretePayloads[i];
+        if (pt.Kind == TypeKind::UserStruct && !pt.GenericName.empty()) {
+            auto structIt = context.StructTypeIndex.find(pt.GenericName);
+            if (structIt != context.StructTypeIndex.end()) {
+                int structId = structIt->second;
+                auto& structInfo = context.StructTypes[structId];
+                bool needsSpecialization = false;
+                for (auto& [fName, fType] : structInfo.Fields) {
+                    if (fType.isGeneric()) { needsSpecialization = true; break; }
+                }
+                if (needsSpecialization) {
+                    std::string specializedStructName = pt.GenericName + "_" + suffix;
+                    auto existing = context.StructTypeIndex.find(specializedStructName);
+                    if (existing == context.StructTypeIndex.end()) {
+                        std::vector<std::pair<std::string, FluxType>> concreteFields;
+                        for (auto& [fName, fType] : structInfo.Fields) {
+                            if (fType.isGeneric()) {
+                                auto mapIt = typeMap.find(fType.GenericName);
+                                if (mapIt != typeMap.end())
+                                    concreteFields.push_back({fName, mapIt->second});
+                                else
+                                    concreteFields.push_back({fName, fType});
+                            } else {
+                                concreteFields.push_back({fName, fType});
+                            }
+                        }
+                        std::vector<llvm::Type*> fieldTypes;
+                        for (auto& [fName, fType] : concreteFields) {
+                            resolveUserStructType(fType, context);
+                            resolveUserEnumType(fType, context);
+                            fieldTypes.push_back(fType.getLLVMType(context.TheContext));
+                        }
+                        auto* llvmStructTy = llvm::StructType::create(context.TheContext, fieldTypes, specializedStructName);
+                        int newId = static_cast<int>(context.StructTypes.size());
+                        CodegenContext::StructTypeInfo newInfo;
+                        newInfo.Name = specializedStructName;
+                        newInfo.Fields = concreteFields;
+                        newInfo.LLVMType = llvmStructTy;
+                        context.StructTypes.push_back(std::move(newInfo));
+                        context.StructTypeIndex[specializedStructName] = newId;
+                    }
+                    pt.StructTypeId = context.StructTypeIndex[specializedStructName];
+                    pt.GenericName = specializedStructName;
+                }
+            }
+        }
+    }
+
+    // Create synthetic enum info
+    CodegenContext::EnumTypeInfo info;
+    info.Name = mangledName;
+    info.Variants = variants;
+    info.VariantPayloads = concretePayloads;
+
+    // Create LLVM tagged union type
+    llvm::StructType* taggedUnionTy = nullptr;
+    bool hasPayload = false;
+    for (auto& pt : concretePayloads) {
+        if (pt.Kind != TypeKind::Void) {
+            hasPayload = true;
+            break;
+        }
+    }
+    if (hasPayload) {
+        llvm::SmallVector<llvm::Type*, 4> memberTypes;
+        memberTypes.push_back(llvm::Type::getInt32Ty(context.TheContext));
+        info.VariantIsBoxed.resize(concretePayloads.size(), false);
+
+        llvm::Type* largestTy = llvm::Type::getInt8Ty(context.TheContext);
+        for (size_t i = 0; i < concretePayloads.size(); ++i) {
+            auto& pt = concretePayloads[i];
+            if (pt.Kind != TypeKind::Void) {
+                resolveUserStructType(pt, context);
+                resolveUserEnumType(pt, context);
+                llvm::Type* payloadLLVM = pt.getLLVMType(context.TheContext);
+                if (!payloadLLVM) {
+                    std::cerr << "Failed to get LLVM type for payload of enum " << mangledName << std::endl;
+                    return "";
+                }
+                uint64_t sizeInBits = context.TheModule->getDataLayout().getTypeSizeInBits(payloadLLVM);
+
+                llvm::Type* effectiveLLVMTy = payloadLLVM;
+                if (sizeInBits > 128) {
+                    info.VariantIsBoxed[i] = true;
+                    effectiveLLVMTy = llvm::PointerType::get(context.TheContext, 0);
+                }
+
+                if (context.TheModule->getDataLayout().getTypeSizeInBits(effectiveLLVMTy) >
+                    context.TheModule->getDataLayout().getTypeSizeInBits(largestTy))
+                    largestTy = effectiveLLVMTy;
+            }
+        }
+        memberTypes.push_back(largestTy);
+        taggedUnionTy = llvm::StructType::create(context.TheContext, memberTypes, mangledName);
+        info.LLVMType = taggedUnionTy;
+    }
+
+    int enumId = static_cast<int>(context.EnumTypes.size());
+    context.EnumTypes.push_back(std::move(info));
+    context.EnumTypeIndex[mangledName] = enumId;
+
+    return mangledName;
+}
+
 static bool shouldPassByPointer(const FluxType& type, CodegenContext& context)
 {
     if (type.Kind != TypeKind::UserStruct && type.Kind != TypeKind::UserEnum)
@@ -186,13 +396,9 @@ static bool shouldPassByPointer(const FluxType& type, CodegenContext& context)
 
 static bool isCopyType(const FluxType& type)
 {
-    // All types are Copy by default in current FluxScript. Everything is
-    // passed by value (or readonly pointer for large structs). Move semantics
-    // will be introduced when explicit Copy/move traits are implemented.
-    //
-    // Return false for a type only if it explicitly opts out of copy semantics
-    // via a Move-only trait. Currently no types do this, so all are Copy.
-    (void)type;
+    // Return false for types that explicitly opt out via ~Copy annotation
+    if (type.Kind == TypeKind::UserStruct || type.Kind == TypeKind::UserEnum)
+        return type.isCopy;
     return true;
 }
 
@@ -274,7 +480,7 @@ static llvm::Value* boolCondition(llvm::Value* V, llvm::IRBuilder<>& Builder, ll
 {
     if (V->getType()->isIntegerTy(1))
         return V;
-    return Builder.CreateFCmpONE(V, llvm::ConstantFP::get(Ctx, llvm::APFloat(0.0)), "boolcond");
+    return Builder.CreateFCmpONE(V, llvm::ConstantFP::get(llvm::Type::getDoubleTy(Ctx), 0.0), "boolcond");
 }
 
 // Helper to promote double to complex <2 x double>
@@ -322,7 +528,7 @@ TypedValue NumberExprAST::codegen(CodegenContext& context)
             // Silently ignore unknown units for now, or report as warning
         }
     }
-    return TypedValue(llvm::ConstantFP::get(context.TheContext, llvm::APFloat(finalVal)),
+    return TypedValue(llvm::ConstantFP::get(llvm::Type::getDoubleTy(context.TheContext), finalVal),
                       FluxType(TypeKind::Double, dims));
 }
 
@@ -374,7 +580,7 @@ TypedValue ToFixedExprAST::codegen(CodegenContext& context)
 
         double scale = std::pow(2.0, Fract);
         llvm::Value* Scaled =
-            context.Builder.CreateFMul(FloatVal, llvm::ConstantFP::get(context.TheContext, llvm::APFloat(scale)));
+            context.Builder.CreateFMul(FloatVal, llvm::ConstantFP::get(llvm::Type::getDoubleTy(context.TheContext), scale));
         Res = context.Builder.CreateFPToSI(Scaled, IntTy);
     }
 
@@ -386,8 +592,8 @@ TypedValue ComplexExprAST::codegen(CodegenContext& context)
     llvm::Type* DoubleTy = llvm::Type::getDoubleTy(context.TheContext);
 
     // Create <2 x double> vector: <Real, Imag>
-    llvm::Constant* RealVal = llvm::ConstantFP::get(context.TheContext, llvm::APFloat(Real));
-    llvm::Constant* ImagVal = llvm::ConstantFP::get(context.TheContext, llvm::APFloat(Imag));
+    llvm::Constant* RealVal = llvm::ConstantFP::get(llvm::Type::getDoubleTy(context.TheContext), Real);
+    llvm::Constant* ImagVal = llvm::ConstantFP::get(llvm::Type::getDoubleTy(context.TheContext), Imag);
     llvm::Constant* Elts[] = {RealVal, ImagVal};
     llvm::Value* ComplexVal = llvm::ConstantVector::get(llvm::ArrayRef<llvm::Constant*>(Elts, 2));
 
@@ -528,7 +734,7 @@ TypedValue ImportExprAST::codegen(CodegenContext& context)
     } else {
         std::cerr << "Warning: import '" << ModuleName << "' inside function body but no import callback configured\n";
     }
-    return TypedValue(llvm::ConstantFP::get(context.TheContext, llvm::APFloat(1.0)), TypeKind::Double);
+    return TypedValue(llvm::ConstantFP::get(llvm::Type::getDoubleTy(context.TheContext), 1.0), TypeKind::Double);
 }
 
 TypedValue BlockExprAST::codegen(CodegenContext& context)
@@ -670,8 +876,8 @@ TypedValue VariableExprAST::codegen(CodegenContext& context)
         llvm::Value* LoadedV = context.Builder.CreateLoad(Ty, Alloca, Name.c_str());
 
         FluxType FTy;
-        if (context.NamedTypes.count(Name)) {
-            FTy = context.NamedTypes[Name];
+        if (context.NamedTypes.count(trimmedName)) {
+            FTy = context.NamedTypes[trimmedName];
             resolveUserStructType(FTy, context);
             resolveUserEnumType(FTy, context);
         } else {
@@ -783,6 +989,61 @@ TypedValue MemberExprAST::codegen(CodegenContext& context)
         llvm::Value* gep = context.Builder.CreateStructGEP(structInfo.LLVMType, structPtr, fieldIdx, MemberName);
         llvm::Value* loaded = context.Builder.CreateLoad(fieldLLVMType, gep, MemberName);
         return TypedValue(loaded, fieldFluxType);
+    }
+
+    // Handle enum payload field access: enum_var.field_name
+    // e.g. x.value where x : Option[Double] and Some { value: T }
+    if (objVal.Val && objVal.Type.Kind == TypeKind::UserEnum) {
+        int enumTypeId = objVal.Type.EnumTypeId;
+        if (enumTypeId >= 0 && enumTypeId < static_cast<int>(context.EnumTypes.size())) {
+            auto& enumInfo = context.EnumTypes[enumTypeId];
+            // Iterate variants to find one whose payload struct has MemberName
+            for (size_t vi = 0; vi < enumInfo.Variants.size(); ++vi) {
+                if (enumInfo.VariantPayloads[vi].Kind == TypeKind::Void)
+                    continue;
+                // Look up the synthetic payload struct (e.g. __enum_Option_Some_Fields)
+                std::string payloadStructName = "__enum_" + enumInfo.Name + "_" + enumInfo.Variants[vi] + "_Fields";
+                auto structIt = context.StructTypeIndex.find(payloadStructName);
+                if (structIt == context.StructTypeIndex.end())
+                    continue;
+                int payloadStructId = structIt->second;
+                if (payloadStructId < 0 || payloadStructId >= static_cast<int>(context.StructTypes.size()))
+                    continue;
+                auto& payloadStructInfo = context.StructTypes[payloadStructId];
+                // Find field index by name
+                int fieldIdx = -1;
+                for (size_t fi = 0; fi < payloadStructInfo.Fields.size(); ++fi) {
+                    if (payloadStructInfo.Fields[fi].first == MemberName) {
+                        fieldIdx = static_cast<int>(fi);
+                        break;
+                    }
+                }
+                if (fieldIdx < 0)
+                    continue; // field not in this variant's payload, try next
+                // Extract payload from tagged union { i32 tag, <payload> }
+                llvm::Value* structPtr = nullptr;
+                if (objVal.Val->getType()->isPointerTy()) {
+                    structPtr = objVal.Val;
+                } else {
+                    structPtr = context.Builder.CreateAlloca(objVal.Val->getType(), nullptr, "enumtmp");
+                    context.Builder.CreateStore(objVal.Val, structPtr);
+                }
+                // GEP to payload slot (element 1) in the tagged union
+                llvm::StructType* taggedTy = enumInfo.LLVMType;
+                if (!taggedTy) continue;
+                llvm::Value* payloadPtr = context.Builder.CreateStructGEP(taggedTy, structPtr, 1, "payload");
+                // Resolve the field LLVM type from the payload struct info
+                FluxType fieldFluxType = payloadStructInfo.Fields[fieldIdx].second;
+                resolveUserStructType(fieldFluxType, context);
+                resolveUserEnumType(fieldFluxType, context);
+                llvm::Type* fieldLLVMType = fieldFluxType.getLLVMType(context.TheContext);
+                // GEP into the payload struct for the specific field
+                llvm::Value* fieldPtr = context.Builder.CreateStructGEP(
+                    payloadStructInfo.LLVMType, payloadPtr, fieldIdx, MemberName);
+                llvm::Value* loaded = context.Builder.CreateLoad(fieldLLVMType, fieldPtr, MemberName);
+                return TypedValue(loaded, fieldFluxType);
+            }
+        }
     }
 
     // Check for SPICE parameter probe: device.param (only when object is a variable)
@@ -1405,6 +1666,12 @@ TypedValue BinaryExprAST::codegen(CodegenContext& context)
                 std::cerr << "Type error: cannot compare different enum types" << std::endl;
                 return TypedValue();
             }
+        } else if (L.Type.Kind == TypeKind::Vector && R.Type.Kind == TypeKind::Vector) {
+            if (Op != static_cast<int>(TokenType::tok_equal) &&
+                Op != static_cast<int>(TokenType::tok_not_equal)) {
+                std::cerr << "Type error: cannot use vector in operation '" << (char)Op << "'" << std::endl;
+                return TypedValue();
+            }
         } else if (L.Type.Kind != TypeKind::String && R.Type.Kind != TypeKind::String &&
                    (!isNumeric(L.Type.Kind) || !isNumeric(R.Type.Kind))) {
             std::cerr << "Type error: invalid operand types for operator '" << (char)Op << "' ("
@@ -1755,6 +2022,37 @@ TypedValue BinaryExprAST::codegen(CodegenContext& context)
         }
     }
 
+    // Vector equality / inequality
+    if (L.Type.Kind == TypeKind::Vector && R.Type.Kind == TypeKind::Vector &&
+        (Op == static_cast<int>(TokenType::tok_equal) ||
+         Op == static_cast<int>(TokenType::tok_not_equal))) {
+        llvm::Type* DoubleTy = llvm::Type::getDoubleTy(context.TheContext);
+        llvm::Type* Int32Ty = llvm::Type::getInt32Ty(context.TheContext);
+        llvm::Type* VoidPtrTy = llvm::PointerType::get(context.TheContext, 0);
+        llvm::Function* VecEqF = context.TheModule->getFunction("flux_vec_eq");
+        if (!VecEqF) {
+            llvm::FunctionType* FTy =
+                llvm::FunctionType::get(DoubleTy, {VoidPtrTy, Int32Ty, VoidPtrTy, Int32Ty}, false);
+            VecEqF = llvm::Function::Create(FTy, llvm::Function::ExternalLinkage, "flux_vec_eq",
+                                            context.TheModule);
+        }
+        llvm::Value* LData = context.Builder.CreateExtractValue(L.Val, 0, "l_vec_ptr");
+        llvm::Value* LLen = context.Builder.CreateExtractValue(L.Val, 1, "l_vec_len");
+        llvm::Value* RData = context.Builder.CreateExtractValue(R.Val, 0, "r_vec_ptr");
+        llvm::Value* RLen = context.Builder.CreateExtractValue(R.Val, 1, "r_vec_len");
+        llvm::Value* IsEq = context.Builder.CreateCall(VecEqF, {LData, LLen, RData, RLen}, "veceq");
+        if (Op == static_cast<int>(TokenType::tok_equal))
+            return TypedValue(context.Builder.CreateUIToFP(
+                                  context.Builder.CreateFCmpOEQ(IsEq, llvm::ConstantFP::get(DoubleTy, 1.0), "veceq_cmp"),
+                                  DoubleTy, "booltmp"),
+                              TypeKind::Bool);
+        else
+            return TypedValue(context.Builder.CreateUIToFP(
+                                  context.Builder.CreateFCmpONE(IsEq, llvm::ConstantFP::get(DoubleTy, 1.0), "vecne_cmp"),
+                                  DoubleTy, "booltmp"),
+                              TypeKind::Bool);
+    }
+
     llvm::Value* LV = L.Val;
     llvm::Value* RV = R.Val;
 
@@ -1773,7 +2071,7 @@ TypedValue BinaryExprAST::codegen(CodegenContext& context)
     auto boolCondition = [&](llvm::Value* V) -> llvm::Value* {
         if (V->getType()->isIntegerTy(1))
             return V;
-        return context.Builder.CreateFCmpONE(V, llvm::ConstantFP::get(context.TheContext, llvm::APFloat(0.0)),
+        return context.Builder.CreateFCmpONE(V, llvm::ConstantFP::get(llvm::Type::getDoubleTy(context.TheContext), 0.0),
                                              "boolcond");
     };
 
@@ -2150,6 +2448,32 @@ TypedValue UnaryExprAST::codegen(CodegenContext& context)
         llvm::Value* Cond = boolCondition(V, context.Builder, context.TheContext);
         return TypedValue(context.Builder.CreateNot(Cond, "lognot"), TypeKind::Bool);
     }
+    case static_cast<int>(TokenType::tok_bitwise_and):
+    case static_cast<int>(TokenType::tok_bitwise_and) + 2600: {
+        // &expr or &mut expr: create alloca, store operand, return pointer
+        bool isMut = (Op == static_cast<int>(TokenType::tok_bitwise_and) + 2600);
+        llvm::Type* ValTy = V->getType();
+        llvm::Value* Alloca = context.Builder.CreateAlloca(ValTy, nullptr, "ref_slot");
+        context.Builder.CreateStore(V, Alloca);
+        return TypedValue(Alloca, FluxType::reference(OperandTV.Type, isMut));
+    }
+    case '*': {
+        // *expr: dereference — operand must be a Ref type (pointer)
+        if (!V->getType()->isPointerTy()) {
+            std::cerr << "[FLUX ERROR] Cannot dereference non-pointer type" << std::endl;
+            return TypedValue();
+        }
+        FluxType innerType = (OperandTV.Type.Kind == TypeKind::Ref && OperandTV.Type.RefInnerType)
+                                 ? *OperandTV.Type.RefInnerType
+                                 : TypeKind::Double;
+        llvm::Type* InnerLLVMTy = innerType.getLLVMType(context.TheContext);
+        if (!InnerLLVMTy) {
+            std::cerr << "[FLUX ERROR] Cannot dereference: unknown inner type" << std::endl;
+            return TypedValue();
+        }
+        llvm::Value* Loaded = context.Builder.CreateLoad(InnerLLVMTy, V, "deref");
+        return TypedValue(Loaded, innerType);
+    }
     default:
         std::cerr << "[FLUX ERROR] Unsupported unary operator" << std::endl;
         return TypedValue();
@@ -2202,6 +2526,130 @@ TypedValue CallExprAST::codegen(CodegenContext& context)
         if (auto* member = dynamic_cast<MemberExprAST*>(CalleeExpr.get())) {
             if (auto* obj = dynamic_cast<const VariableExprAST*>(member->getObject())) {
                 const std::string& enumName = obj->getName();
+                // Handle generic enum: Enum[TypeArgs].Variant(args)
+                if (!obj->getTypeArgs().empty() && context.GenericEnums.count(enumName)) {
+                    std::string mangledEnumName = specializeGenericEnum(enumName, obj->getTypeArgs(), context);
+                    if (mangledEnumName.empty()) {
+                        std::cerr << "Failed to specialize generic enum: " << enumName << std::endl;
+                        return TypedValue();
+                    }
+                    auto specializedEnumIt = context.EnumTypeIndex.find(mangledEnumName);
+                    if (specializedEnumIt == context.EnumTypeIndex.end()) {
+                        std::cerr << "Specialized enum not found: " << mangledEnumName << std::endl;
+                        return TypedValue();
+                    }
+                    int enumTypeId = specializedEnumIt->second;
+                    if (enumTypeId >= 0 && enumTypeId < static_cast<int>(context.EnumTypes.size())) {
+                        auto& enumInfo = context.EnumTypes[enumTypeId];
+                        const std::string& variantName = member->getMemberName();
+                        for (size_t i = 0; i < enumInfo.Variants.size(); ++i) {
+                            if (enumInfo.Variants[i] == variantName) {
+                                int disc = static_cast<int>(i);
+                                FluxType& payloadType = enumInfo.VariantPayloads[i];
+                                if (payloadType.Kind != TypeKind::Void && !Args.empty()) {
+                                    llvm::StructType* taggedTy = enumInfo.LLVMType;
+                                    if (!taggedTy) {
+                                        std::cerr << "[FLUX ERROR] Specialized enum tagged union has no LLVM struct type" << std::endl;
+                                        return TypedValue();
+                                    }
+                                    llvm::Value* structPtr = context.Builder.CreateAlloca(taggedTy, nullptr,
+                                        mangledEnumName + "." + variantName);
+                                    llvm::Value* tagPtr = context.Builder.CreateStructGEP(taggedTy, structPtr, 0, "tag");
+                                    context.Builder.CreateStore(
+                                        llvm::ConstantInt::get(llvm::Type::getInt32Ty(context.TheContext), disc), tagPtr);
+                                    llvm::Value* payloadVal = nullptr;
+                                    if (payloadType.Kind == TypeKind::UserStruct) {
+                                        resolveUserStructType(payloadType, context);
+                                        int anonStructId = payloadType.StructTypeId;
+                                        if (anonStructId < 0) {
+                                            std::cerr << "[FLUX ERROR] Anonymous struct type ID is invalid for enum payload" << std::endl;
+                                            return TypedValue();
+                                        }
+                                        auto& anonInfo = context.StructTypes[anonStructId];
+                                        llvm::Type* anonTy = anonInfo.LLVMType;
+                                        if (!anonTy) {
+                                            std::cerr << "[FLUX ERROR] Anonymous struct has no LLVM type for enum payload" << std::endl;
+                                            return TypedValue();
+                                        }
+                                        if (Args.size() == 1) {
+                                            TypedValue argTV = Args[0]->codegen(context);
+                                            if (argTV.Val && argTV.Type.Kind == TypeKind::UserStruct) {
+                                                payloadVal = argTV.Val;
+                                            }
+                                        }
+                                        if (!payloadVal) {
+                                            llvm::AllocaInst* anonAlloca = context.Builder.CreateAlloca(anonTy, nullptr, "payload_struct");
+                                            for (size_t ai = 0; ai < Args.size() && ai < anonInfo.Fields.size(); ++ai) {
+                                                TypedValue fv = Args[ai]->codegen(context);
+                                                if (!fv.Val) {
+                                                    std::cerr << "[FLUX ERROR] Anonymous struct field expression failed to codegen" << std::endl;
+                                                    return TypedValue();
+                                                }
+                                                llvm::Value* fptr = context.Builder.CreateStructGEP(anonTy, anonAlloca, ai, anonInfo.Fields[ai].first);
+                                                context.Builder.CreateStore(fv.Val, fptr);
+                                            }
+                                            payloadVal = context.Builder.CreateLoad(anonTy, anonAlloca, "payload_loaded");
+                                        }
+                                    } else {
+                                        TypedValue argTV = Args[0]->codegen(context);
+                                        if (!argTV.Val) {
+                                            std::cerr << "[FLUX ERROR] Direct enum payload expression failed to codegen" << std::endl;
+                                            return TypedValue();
+                                        }
+                                        payloadVal = argTV.Val;
+                                    }
+                                    resolveUserStructType(payloadType, context);
+                                    resolveUserEnumType(payloadType, context);
+                                    llvm::Type* concretePayloadTy = payloadType.getLLVMType(context.TheContext);
+                                    if (payloadVal->getType()->isStructTy() && !concretePayloadTy->isStructTy()) {
+                                        if (llvm::StructType* st = llvm::dyn_cast<llvm::StructType>(payloadVal->getType())) {
+                                            if (st->getNumElements() == 1)
+                                                payloadVal = context.Builder.CreateExtractValue(payloadVal, {0}, "payload_val");
+                                        }
+                                    }
+                                    if (payloadVal->getType() != concretePayloadTy) {
+                                        if (concretePayloadTy->isFloatingPointTy() && payloadVal->getType()->isIntegerTy()) {
+                                            payloadVal = context.Builder.CreateSIToFP(payloadVal, concretePayloadTy, "payload_cast");
+                                        } else if (concretePayloadTy->isIntegerTy() && payloadVal->getType()->isFloatingPointTy()) {
+                                            payloadVal = context.Builder.CreateFPToSI(payloadVal, concretePayloadTy, "payload_cast");
+                                        } else if (concretePayloadTy->isPointerTy() && payloadVal->getType()->isPointerTy()) {
+                                            payloadVal = context.Builder.CreatePointerCast(payloadVal, concretePayloadTy, "payload_cast");
+                                        } else {
+                                            payloadVal = context.Builder.CreateBitCast(payloadVal, concretePayloadTy, "payload_cast");
+                                        }
+                                    }
+                                    bool isBoxed = disc < static_cast<int>(enumInfo.VariantIsBoxed.size()) ? enumInfo.VariantIsBoxed[disc] : false;
+                                    llvm::Value* payloadPtr = context.Builder.CreateStructGEP(taggedTy, structPtr, 1, "payload");
+                                    if (isBoxed) {
+                                        llvm::Function* mallocFn = context.TheModule->getFunction("flux_malloc");
+                                        if (!mallocFn) {
+                                            llvm::Type* sizeTy = llvm::Type::getInt64Ty(context.TheContext);
+                                            mallocFn = llvm::Function::Create(
+                                                llvm::FunctionType::get(llvm::PointerType::get(context.TheContext, 0), {sizeTy}, false),
+                                                llvm::Function::ExternalLinkage, "flux_malloc", context.TheModule);
+                                        }
+                                        uint64_t sizeInBytes = context.TheModule->getDataLayout().getTypeStoreSize(concretePayloadTy);
+                                        llvm::Value* sizeVal = llvm::ConstantInt::get(llvm::Type::getInt64Ty(context.TheContext), sizeInBytes);
+                                        llvm::Value* heapAlloc = context.Builder.CreateCall(mallocFn, {sizeVal}, "heap_alloc");
+                                        llvm::Value* concretePayloadPtr = context.Builder.CreatePointerCast(
+                                            heapAlloc, llvm::PointerType::get(context.TheContext, 0), "concrete_heap_ptr");
+                                        context.Builder.CreateStore(payloadVal, concretePayloadPtr);
+                                        llvm::Value* unionPayloadPtr = context.Builder.CreatePointerCast(
+                                            payloadPtr, llvm::PointerType::get(context.TheContext, 0), "union_payload_ptr");
+                                        context.Builder.CreateStore(heapAlloc, unionPayloadPtr);
+                                    } else {
+                                        llvm::Value* concretePayloadPtr = context.Builder.CreatePointerCast(
+                                            payloadPtr, llvm::PointerType::get(context.TheContext, 0), "concrete_payload_ptr");
+                                        context.Builder.CreateStore(payloadVal, concretePayloadPtr);
+                                    }
+                                    llvm::Value* loaded = context.Builder.CreateLoad(taggedTy, structPtr, variantName);
+                                    return TypedValue(loaded, FluxType::userEnum(enumTypeId, taggedTy));
+                                }
+                                break;
+                            }
+                        }
+                    }
+                }
                 auto enumIt = context.EnumTypeIndex.find(enumName);
                 if (enumIt != context.EnumTypeIndex.end()) {
                     int enumTypeId = enumIt->second;
@@ -2343,6 +2791,52 @@ TypedValue CallExprAST::codegen(CodegenContext& context)
                         }
                     }
                     selfIsVariable = true;
+                }
+
+                // Check if this is a module namespace access (e.g., defs.func())
+                // Module namespaces are stored as "name.*" in NamedValues
+                const std::string& objName = varExpr->getName();
+                if (context.ModuleNamespaces.count(objName)) {
+                    const std::string& fnName = member->getMemberName();
+                    llvm::Function* calleeFn = context.TheModule->getFunction(fnName);
+                    if (!calleeFn) {
+                        std::cerr << "Module '" << objName << "' has no function '" << fnName << "'" << std::endl;
+                        return TypedValue();
+                    }
+                    // Build call arguments
+                    FluxType retType = context.FuncReturnTypes.count(fnName)
+                        ? context.FuncReturnTypes[fnName]
+                        : FluxType(TypeKind::Double);
+                    resolveUserStructType(retType, context);
+                    resolveUserEnumType(retType, context);
+                    bool isSretCall = calleeFn->getReturnType()->isVoidTy() && calleeFn->arg_size() > 0 &&
+                                      calleeFn->hasParamAttribute(0, llvm::Attribute::StructRet);
+                    std::vector<llvm::Value*> callArgs;
+                    llvm::Value* sretPtr = nullptr;
+                    if (isSretCall) {
+                        llvm::Type* sretLLVMTy = retType.getLLVMType(context.TheContext);
+                        if (!sretLLVMTy) {
+                            sretLLVMTy = llvm::cast<llvm::StructType>(FluxType(TypeKind::Matrix).getLLVMType(context.TheContext));
+                        }
+                        sretPtr = context.Builder.CreateAlloca(sretLLVMTy, nullptr, "sret_ret");
+                        callArgs.push_back(sretPtr);
+                    }
+                    for (auto& Arg : Args) {
+                        TypedValue argVal = Arg->codegen(context);
+                        if (!argVal.Val) {
+                            std::cerr << "[FLUX ERROR] Module call argument failed to codegen" << std::endl;
+                            return TypedValue();
+                        }
+                        callArgs.push_back(argVal.Val);
+                    }
+                    if (isSretCall) {
+                        context.Builder.CreateCall(calleeFn, callArgs);
+                        llvm::Value* result = context.Builder.CreateLoad(
+                            retType.getLLVMType(context.TheContext), sretPtr, "sret_val");
+                        return TypedValue(result, retType);
+                    }
+                    llvm::Value* result = context.Builder.CreateCall(calleeFn, callArgs, "calltmp");
+                    return TypedValue(result, retType);
                 }
             }
             TypedValue objVal = member->getObject()->codegen(context);
@@ -2684,9 +3178,11 @@ TypedValue CallExprAST::codegen(CodegenContext& context)
                     llvm::Value* FloatVal =
                         context.Builder.CreateSIToFP(Val, llvm::Type::getDoubleTy(context.TheContext));
                     Val = context.Builder.CreateFMul(FloatVal,
-                                                     llvm::ConstantFP::get(context.TheContext, llvm::APFloat(scale)));
+                                                     llvm::ConstantFP::get(llvm::Type::getDoubleTy(context.TheContext), scale));
                 } else if (Arg.Type.Kind == TypeKind::Int && !Arg.Val->getType()->isDoubleTy()) {
                     Val = context.Builder.CreateSIToFP(Val, llvm::Type::getDoubleTy(context.TheContext));
+                } else if (Arg.Type.Kind == TypeKind::Bool) {
+                    Val = context.Builder.CreateUIToFP(Val, llvm::Type::getDoubleTy(context.TheContext));
                 }
                 PrintArgs.push_back(Val);
             }
@@ -2704,7 +3200,7 @@ TypedValue CallExprAST::codegen(CodegenContext& context)
                 context.Builder.CreateCall(PrintStr, {NewLineAsDouble});
             }
         }
-        return TypedValue(llvm::ConstantFP::get(context.TheContext, llvm::APFloat(0.0)), TypeKind::Double);
+        return TypedValue(llvm::ConstantFP::get(llvm::Type::getDoubleTy(context.TheContext), 0.0), TypeKind::Double);
     }
 
     if (Args.size() == 1) {
@@ -2847,24 +3343,24 @@ TypedValue CallExprAST::codegen(CodegenContext& context)
 
     // 2. Handle non-argument built-ins (pi, e, etc. would go here if not externs)
 
-    // 3. LLVM intrinsics for math functions (LTO: inline to single CPU instructions)
+    // 3. Math functions — call extern libm functions directly instead of LLVM
+    //    intrinsics. LLVM intrinsics for sin/cos/sqrt/exp/log get lowered to
+    //    libm calls in the backend, but under CodeModel::Small + PIC_ the
+    //    generated call-site can have misaligned stack, crashing after ~100K+
+    //    calls. Calling libm via the regular C ABI (extern symbol lookup)
+    //    guarantees correct 16-byte stack alignment.
     if (Args.size() == 1) {
         TypedValue Arg0 = Args[0]->codegen(context);
         if (Arg0.Val && Arg0.Type.Kind == TypeKind::Double) {
-            llvm::Type* DoubleTy = llvm::Type::getDoubleTy(context.TheContext);
-            if (Name == "sin") {
-                llvm::Function* F =
-                    llvm::Intrinsic::getDeclaration(context.TheModule, llvm::Intrinsic::sin, {DoubleTy});
-                return TypedValue(context.Builder.CreateCall(F, {Arg0.Val}, "sintmp"), TypeKind::Double);
-            }
-            if (Name == "cos") {
-                llvm::Function* F =
-                    llvm::Intrinsic::getDeclaration(context.TheModule, llvm::Intrinsic::cos, {DoubleTy});
-                return TypedValue(context.Builder.CreateCall(F, {Arg0.Val}, "costmp"), TypeKind::Double);
+            llvm::Function* F = context.TheModule->getFunction(Name);
+            if (!F) {
+                llvm::Type* DoubleTy = llvm::Type::getDoubleTy(context.TheContext);
+                llvm::FunctionType* FT =
+                    llvm::FunctionType::get(DoubleTy, {DoubleTy}, false);
+                F = llvm::Function::Create(FT, llvm::Function::ExternalLinkage, Name, context.TheModule);
+                F->setDoesNotRecurse();
             }
             if (Name == "sqrt") {
-                llvm::Function* F =
-                    llvm::Intrinsic::getDeclaration(context.TheModule, llvm::Intrinsic::sqrt, {DoubleTy});
                 UnitDimensions dims = Arg0.Type.Dimensions;
                 dims.mass /= 2;
                 dims.length /= 2;
@@ -2876,19 +3372,19 @@ TypedValue CallExprAST::codegen(CodegenContext& context)
                 return TypedValue(context.Builder.CreateCall(F, {Arg0.Val}, "sqrttmp"),
                                   FluxType(TypeKind::Double, dims));
             }
+            if (Name == "sin") {
+                return TypedValue(context.Builder.CreateCall(F, {Arg0.Val}, "sintmp"), TypeKind::Double);
+            }
+            if (Name == "cos") {
+                return TypedValue(context.Builder.CreateCall(F, {Arg0.Val}, "costmp"), TypeKind::Double);
+            }
             if (Name == "exp") {
-                llvm::Function* F =
-                    llvm::Intrinsic::getDeclaration(context.TheModule, llvm::Intrinsic::exp, {DoubleTy});
                 return TypedValue(context.Builder.CreateCall(F, {Arg0.Val}, "exptmp"), TypeKind::Double);
             }
             if (Name == "log" || Name == "ln") {
-                llvm::Function* F =
-                    llvm::Intrinsic::getDeclaration(context.TheModule, llvm::Intrinsic::log, {DoubleTy});
                 return TypedValue(context.Builder.CreateCall(F, {Arg0.Val}, "logtmp"), TypeKind::Double);
             }
             if (Name == "log10") {
-                llvm::Function* F =
-                    llvm::Intrinsic::getDeclaration(context.TheModule, llvm::Intrinsic::log10, {DoubleTy});
                 return TypedValue(context.Builder.CreateCall(F, {Arg0.Val}, "log10tmp"), TypeKind::Double);
             }
         }
@@ -2927,7 +3423,9 @@ TypedValue CallExprAST::codegen(CodegenContext& context)
                     context.Builder.CreateStore(fieldVal.Val, gep);
                 }
                 llvm::Value* loaded = context.Builder.CreateLoad(llvmStructTy, alloca, Name);
-                return TypedValue(loaded, FluxType::userStruct(typeId, llvmStructTy));
+                FluxType resultType = FluxType::userStruct(typeId, llvmStructTy);
+                resolveUserStructType(resultType, context);
+                return TypedValue(loaded, resultType);
             }
         }
     }
@@ -3210,7 +3708,7 @@ TypedValue CallExprAST::codegen(CodegenContext& context)
             double scale = std::pow(2.0, -ArgTVs[i].Type.Fract);
             llvm::Value* FloatVal = context.Builder.CreateSIToFP(ArgV, llvm::Type::getDoubleTy(context.TheContext));
             ArgV =
-                context.Builder.CreateFMul(FloatVal, llvm::ConstantFP::get(context.TheContext, llvm::APFloat(scale)));
+                context.Builder.CreateFMul(FloatVal, llvm::ConstantFP::get(llvm::Type::getDoubleTy(context.TheContext), scale));
         }
 
         llvm::Type* ExpectedTy = CalleeF->getArg(ArgsV.size())->getType();
@@ -3409,7 +3907,7 @@ TypedValue CallExprAST::codegen(CodegenContext& context)
 
     if (extRetIt != context.ExternFuncTypes.end() && extRetIt->second.first.Kind == TypeKind::Void) {
         context.Builder.CreateCall(CalleeF, ArgsV);
-        return TypedValue(llvm::ConstantFP::get(context.TheContext, llvm::APFloat(0.0)), TypeKind::Double);
+        return TypedValue(llvm::ConstantFP::get(llvm::Type::getDoubleTy(context.TheContext), 0.0), TypeKind::Double);
     }
     FluxType retType = typeFromLLVM(CalleeF->getReturnType());
     {
@@ -3591,7 +4089,7 @@ TypedValue ForExprAST::codegen(CodegenContext& context)
     TypedValue EndTV = End->codegen(context);
     TypedValue StepTV =
         Step ? Step->codegen(context)
-             : TypedValue(llvm::ConstantFP::get(context.TheContext, llvm::APFloat(1.0)), TypeKind::Double);
+             : TypedValue(llvm::ConstantFP::get(llvm::Type::getDoubleTy(context.TheContext), 1.0), TypeKind::Double);
     if (!StartTV.Val || !EndTV.Val || !StepTV.Val) {
         std::cerr << "[FLUX ERROR] For-loop range sub-expression failed to codegen" << std::endl;
         return TypedValue();
@@ -3771,7 +4269,7 @@ TypedValue LetExprAST::codegen(CodegenContext& context)
     if (InitV->getType() != VarTy) {
         if (VarTy->isIntegerTy(1) && InitV->getType()->isFloatingPointTy()) {
             // double → bool: compare against 0.0
-            InitV = context.Builder.CreateFCmpONE(InitV, llvm::ConstantFP::get(context.TheContext, llvm::APFloat(0.0)),
+            InitV = context.Builder.CreateFCmpONE(InitV, llvm::ConstantFP::get(llvm::Type::getDoubleTy(context.TheContext), 0.0),
                                                   "dbltobool");
         } else if (VarTy->isIntegerTy() && InitV->getType()->isIntegerTy(1)) {
             // bool → int: zero-extend i1 to i32
@@ -3947,7 +4445,7 @@ TypedValue LambdaExprAST::codegen(CodegenContext& context)
     if (OldBB)
         context.Builder.SetInsertPoint(OldBB);
     context.NamedValues = OldNamedValues;
-    return TypedValue(llvm::ConstantFP::get(context.TheContext, llvm::APFloat(0.0)), TypeKind::Double);
+    return TypedValue(llvm::ConstantFP::get(llvm::Type::getDoubleTy(context.TheContext), 0.0), TypeKind::Double);
 }
 
 TypedValue VectorExprAST::codegen(CodegenContext& context)
@@ -3960,10 +4458,68 @@ TypedValue VectorExprAST::codegen(CodegenContext& context)
     if (!MallocF)
         MallocF = llvm::Function::Create(llvm::FunctionType::get(VoidPtrTy, {Int64Ty}, false),
                                          llvm::Function::ExternalLinkage, "malloc", context.TheModule);
+
+    // Codegen all elements first to determine types
+    std::vector<TypedValue> elemTVs;
+    elemTVs.reserve(Elements.size());
+    FluxType elementType(TypeKind::Double);
+    bool hasVectorElements = false;
+    for (auto& elem : Elements) {
+        TypedValue etv = elem->codegen(context);
+        elemTVs.push_back(etv);
+        if (etv.Val && etv.Type.Kind == TypeKind::Vector) {
+            hasVectorElements = true;
+            elementType = etv.Type;
+        }
+    }
+
+    if (hasVectorElements) {
+        // Nested vector: store pointers to heap-allocated inner vectors
+        llvm::Value* DataSize = llvm::ConstantInt::get(Int64Ty, Elements.size() * 8);
+        llvm::Value* DataPtr = context.Builder.CreateCall(MallocF, {DataSize}, "vec_data");
+        llvm::Type* VecStructTy = FluxType(TypeKind::Vector).getLLVMType(context.TheContext);
+        for (size_t i = 0; i < Elements.size(); ++i) {
+            TypedValue& ElemTV = elemTVs[i];
+            if (!ElemTV.Val) continue;
+            if (ElemTV.Type.Kind == TypeKind::Vector) {
+                // Allocate heap space for inner vector struct, store it, store pointer
+                llvm::Value* HeapVec = context.Builder.CreateCall(MallocF,
+                    llvm::ConstantInt::get(Int64Ty, 16), "inner_vec_heap");
+                llvm::Value* VecPtr = context.Builder.CreatePointerCast(HeapVec,
+                    llvm::PointerType::get(context.TheContext, 0), "inner_vec_ptr");
+                context.Builder.CreateStore(ElemTV.Val, VecPtr);
+                // Bitcast pointer to double for storage in the double data array
+                llvm::Value* PtrAsInt = context.Builder.CreatePtrToInt(HeapVec, Int64Ty, "heap_i64");
+                llvm::Value* PtrAsDouble = context.Builder.CreateBitCast(PtrAsInt, DoubleTy, "ptr_as_dbl");
+                llvm::Value* ElemPtr = context.Builder.CreateInBoundsGEP(DoubleTy, DataPtr,
+                    {llvm::ConstantInt::get(Int64Ty, i)}, "elem_ptr");
+                context.Builder.CreateStore(PtrAsDouble, ElemPtr);
+            } else {
+                // Scalar element in mixed vector — convert to double and store
+                llvm::Value* Val = ElemTV.Val;
+                if (Val->getType()->isIntegerTy())
+                    Val = context.Builder.CreateSIToFP(Val, DoubleTy, "elem_dbl");
+                else if (Val->getType()->isFloatTy())
+                    Val = context.Builder.CreateFPExt(Val, DoubleTy, "elem_dbl");
+                llvm::Value* ElemPtr = context.Builder.CreateInBoundsGEP(DoubleTy, DataPtr,
+                    {llvm::ConstantInt::get(Int64Ty, i)}, "elem_ptr");
+                context.Builder.CreateStore(Val, ElemPtr);
+            }
+        }
+        FluxType vecType(TypeKind::Vector);
+        vecType.VecElementType = new FluxType(elementType);
+        llvm::StructType* VecSTy = llvm::cast<llvm::StructType>(vecType.getLLVMType(context.TheContext));
+        llvm::Value* VecVal = llvm::PoisonValue::get(VecSTy);
+        VecVal = context.Builder.CreateInsertValue(VecVal, DataPtr, 0);
+        VecVal = context.Builder.CreateInsertValue(VecVal, llvm::ConstantInt::get(Int32Ty, Elements.size()), 1);
+        return TypedValue(VecVal, vecType);
+    }
+
+    // Scalar elements: flat double array (original behavior)
     llvm::Value* DataSize = llvm::ConstantInt::get(Int64Ty, Elements.size() * 8);
     llvm::Value* DataPtr = context.Builder.CreateCall(MallocF, {DataSize}, "vec_data");
     for (size_t i = 0; i < Elements.size(); ++i) {
-        TypedValue ElemTV = Elements[i]->codegen(context);
+        TypedValue& ElemTV = elemTVs[i];
         if (ElemTV.Val) {
             llvm::Value* Val = ElemTV.Val;
             if (Val->getType()->isIntegerTy())
@@ -3976,6 +4532,7 @@ TypedValue VectorExprAST::codegen(CodegenContext& context)
         }
     }
     FluxType vecType(TypeKind::Vector);
+    // VecElementType left nullptr (nullptr = Double elements)
     llvm::StructType* VecSTy = llvm::cast<llvm::StructType>(vecType.getLLVMType(context.TheContext));
     llvm::Value* VecVal = llvm::PoisonValue::get(VecSTy);
     VecVal = context.Builder.CreateInsertValue(VecVal, DataPtr, 0);
@@ -4076,6 +4633,19 @@ TypedValue IndexExprAST::codegen(CodegenContext& context)
             IdxV = context.Builder.CreateFPToSI(IdxV, Int32Ty, "idx_int");
         else if (IdxV->getType()->isIntegerTy(64))
             IdxV = context.Builder.CreateTrunc(IdxV, Int32Ty, "idx_int");
+
+        // Check if vector contains nested vectors (VecElementType non-null and Kind == Vector)
+        if (ArrayTV.Type.VecElementType && ArrayTV.Type.VecElementType->Kind == TypeKind::Vector) {
+            // Load bit-cast pointer from data slot, inttoptr, then load inner vector struct
+            llvm::Value* Idx64 = context.Builder.CreateSExt(IdxV, Int64Ty, "idx_64");
+            llvm::Value* ElemSlot = context.Builder.CreateInBoundsGEP(DoubleTy, DataPtr, {Idx64}, "elem_slot");
+            llvm::Value* DblBits = context.Builder.CreateLoad(DoubleTy, ElemSlot, "ptr_bits_as_dbl");
+            llvm::Value* PtrInt = context.Builder.CreateBitCast(DblBits, Int64Ty, "ptr_bits_i64");
+            llvm::Value* InnerVecVoidPtr = context.Builder.CreateIntToPtr(PtrInt, VoidPtrTy, "inner_vec_raw");
+            llvm::Value* InnerVecVal = context.Builder.CreateLoad(
+                FluxType(TypeKind::Vector).getLLVMType(context.TheContext), InnerVecVoidPtr, "inner_vec");
+            return TypedValue(InnerVecVal, *ArrayTV.Type.VecElementType);
+        }
 
         llvm::Value* Idx64 = context.Builder.CreateSExt(IdxV, Int64Ty, "idx_64");
         llvm::Value* ElemPtr = context.Builder.CreateInBoundsGEP(DoubleTy, DataPtr, {Idx64}, "elem_ptr");
@@ -4193,7 +4763,7 @@ TypedValue IndexExprAST::codegen(CodegenContext& context)
         return TypedValue(context.Builder.CreateCall(GetElemF, {MatPtr, RowV, ColV}, "elem_val"), idxRetType);
     }
 
-    return TypedValue(llvm::ConstantFP::get(context.TheContext, llvm::APFloat(0.0)), TypeKind::Double);
+    return TypedValue(llvm::ConstantFP::get(llvm::Type::getDoubleTy(context.TheContext), 0.0), TypeKind::Double);
 }
 
 TypedValue RangeExprAST::codegen(CodegenContext& context)
@@ -4202,11 +4772,11 @@ TypedValue RangeExprAST::codegen(CodegenContext& context)
     TypedValue EndTV = End->codegen(context);
     TypedValue StepTV =
         Step ? Step->codegen(context)
-             : TypedValue(llvm::ConstantFP::get(context.TheContext, llvm::APFloat(1.0)), TypeKind::Double);
+             : TypedValue(llvm::ConstantFP::get(llvm::Type::getDoubleTy(context.TheContext), 1.0), TypeKind::Double);
 
     auto ensureFP = [&](TypedValue& tv) {
         if (!tv.Val) {
-            tv.Val = llvm::ConstantFP::get(context.TheContext, llvm::APFloat(0.0));
+            tv.Val = llvm::ConstantFP::get(llvm::Type::getDoubleTy(context.TheContext), 0.0);
         } else if (tv.Val->getType()->isIntegerTy()) {
             tv.Val = context.Builder.CreateSIToFP(tv.Val, llvm::Type::getDoubleTy(context.TheContext), "range_cast");
         } else if (tv.Val->getType()->isIntegerTy(1)) {
@@ -4287,6 +4857,22 @@ llvm::Function* PrototypeAST::codegen(CodegenContext& context)
     resolveUserStructType(ReturnType, context);
     resolveUserEnumType(ReturnType, context);
 
+    // Specialize generic enum return type
+    if (ReturnType.Kind == TypeKind::UserEnum && !ReturnType.GenericName.empty()
+        && !ReturnType.GenericArgs.empty() && context.GenericEnums.count(ReturnType.GenericName)) {
+        std::string mangledName = specializeGenericEnum(ReturnType.GenericName, ReturnType.GenericArgs, context);
+        if (!mangledName.empty()) {
+            auto enumIdxIt = context.EnumTypeIndex.find(mangledName);
+            if (enumIdxIt != context.EnumTypeIndex.end()) {
+                int enumTypeId = enumIdxIt->second;
+                if (enumTypeId >= 0 && enumTypeId < static_cast<int>(context.EnumTypes.size())) {
+                    auto& enumInfo = context.EnumTypes[enumTypeId];
+                    ReturnType = FluxType::userEnum(enumTypeId, enumInfo.LLVMType);
+                }
+            }
+        }
+    }
+
     std::vector<llvm::Type*> ArgTypes;
     llvm::Type* DoubleTy = llvm::Type::getDoubleTy(context.TheContext);
     llvm::Type* VoidPtrTy = llvm::PointerType::get(context.TheContext, 0);
@@ -4332,10 +4918,6 @@ llvm::Function* PrototypeAST::codegen(CodegenContext& context)
         }
     }
 
-    if (Name.find("make") != std::string::npos) {
-        std::cerr << "DEBUG PROTO " << Name << " ReturnType kind=" << (int)ReturnType.Kind << " id=" << ReturnType.StructTypeId << " llvm=" << ReturnType.StructLLVMType << std::endl;
-    }
-
     // sret returns use void return type with parameter
     llvm::Type* RetTy =
         useSRet ? llvm::Type::getVoidTy(context.TheContext)
@@ -4343,6 +4925,7 @@ llvm::Function* PrototypeAST::codegen(CodegenContext& context)
 
     llvm::FunctionType* FT = llvm::FunctionType::get(RetTy, ArgTypes, false);
     llvm::Function* F = llvm::Function::Create(FT, llvm::Function::ExternalLinkage, Name, context.TheModule);
+    F->addFnAttr("stackrealign");
 
     // Mark sret parameter with attribute
     if (useSRet) {
@@ -4438,6 +5021,7 @@ void StructDeclAST::codegen(CodegenContext& context)
     info.ParentName = ParentName;
     info.Fields = Fields;
     info.LLVMType = llvmStructTy;
+    info.isCopy = !IsNoCopy;
     context.StructTypes.push_back(std::move(info));
     context.StructTypeIndex[Name] = structId;
     setStructTypeId(structId);
@@ -4449,7 +5033,9 @@ void StructDeclAST::codegen(CodegenContext& context)
 
 TypedValue StructConstructExprAST::codegen(CodegenContext& context)
 {
-    // Handle generic struct instantiation
+
+
+    // Handle generic struct instantiation or generic enum braced payload struct
     std::string resolvedName = StructName;
     int typeId = StructTypeId;
 
@@ -4705,7 +5291,9 @@ TypedValue StructConstructExprAST::codegen(CodegenContext& context)
 
     // Load the struct value (e.g. for passing to functions)
     llvm::Value* loaded = context.Builder.CreateLoad(llvmStructTy, alloca, resolvedName);
-    return TypedValue(loaded, FluxType::userStruct(typeId, llvmStructTy));
+    FluxType resultType = FluxType::userStruct(typeId, llvmStructTy);
+    resolveUserStructType(resultType, context);
+    return TypedValue(loaded, resultType);
 }
 
 // ============================================================================
@@ -4764,6 +5352,7 @@ void EnumDeclAST::codegen(CodegenContext& context)
         info.LLVMType = taggedUnionTy;
     }
 
+    info.isCopy = !IsNoCopy;
     context.EnumTypes.push_back(std::move(info));
     context.EnumTypeIndex[Name] = enumId;
     setEnumTypeId(enumId);
@@ -5167,12 +5756,15 @@ llvm::Function* FunctionAST::codegen(CodegenContext& context)
 
     llvm::DISubprogram* subprogram = nullptr;
     if (context.DebugBuilder && context.DebugCompileUnit && context.DebugFile) {
-        auto typeArray = context.DebugBuilder->getOrCreateTypeArray({});
-        auto* subroutineType = context.DebugBuilder->createSubroutineType(typeArray);
-        subprogram = context.DebugBuilder->createFunction(context.DebugFile, Proto->getName(), Proto->getName(),
-                                                          context.DebugFile, 1, subroutineType, 1,
-                                                          llvm::DINode::FlagZero, llvm::DISubprogram::SPFlagDefinition);
-        TheFunction->setSubprogram(subprogram);
+        subprogram = TheFunction->getSubprogram();
+        if (!subprogram) {
+            auto typeArray = context.DebugBuilder->getOrCreateTypeArray({});
+            auto* subroutineType = context.DebugBuilder->createSubroutineType(typeArray);
+            subprogram = context.DebugBuilder->createFunction(context.DebugFile, Proto->getName(), Proto->getName(),
+                                                              context.DebugFile, 1, subroutineType, 1,
+                                                              llvm::DINode::FlagZero, llvm::DISubprogram::SPFlagDefinition);
+            TheFunction->setSubprogram(subprogram);
+        }
     }
 
     llvm::BasicBlock* EntryBB = llvm::BasicBlock::Create(context.TheContext, "entry", TheFunction);
@@ -5322,9 +5914,16 @@ llvm::Function* FunctionAST::codegen(CodegenContext& context)
         context.Builder.SetInsertPoint(context.AwaitResumeTargets[0]);
     }
 
+    // Codegen local enum and anonymous struct declarations
+    for (auto& S : LocalAnonStructs)
+        S->codegen(context);
+    for (auto& E : LocalEnums)
+        E->codegen(context);
+
     if (TypedValue RetTV = Body->codegen(context)) {
         llvm::Value* RetVal = RetTV.Val;
         llvm::Type* RetTy = Proto->getReturnType().getLLVMType(context.TheContext);
+
 
         {
             const auto& retDims = Proto->getReturnType().Dimensions;
@@ -5610,7 +6209,7 @@ TypedValue UpdateFuncAST::codegen(CodegenContext& context)
 
     // Create return value alloca
     llvm::Value* RetValAlloca = context.Builder.CreateAlloca(RetTy, nullptr, "retval");
-    context.Builder.CreateStore(llvm::ConstantFP::get(context.TheContext, llvm::APFloat(0.0)), RetValAlloca);
+    context.Builder.CreateStore(llvm::ConstantFP::get(llvm::Type::getDoubleTy(context.TheContext), 0.0), RetValAlloca);
 
     // Update context for nested returns
     llvm::BasicBlock* SavedRetBB = context.CurrentReturnBB;
@@ -5639,7 +6238,7 @@ TypedValue UpdateFuncAST::codegen(CodegenContext& context)
             }
         }
         if (!RetVal)
-            RetVal = llvm::ConstantFP::get(context.TheContext, llvm::APFloat(0.0));
+            RetVal = llvm::ConstantFP::get(llvm::Type::getDoubleTy(context.TheContext), 0.0);
         context.Builder.CreateStore(RetVal, RetValAlloca);
         context.Builder.CreateBr(ReturnBB);
     }
@@ -5720,7 +6319,7 @@ TypedValue ESourceExprAST::codegen(CodegenContext& context)
                                                   context.Builder.CreateGlobalString(NegativeNode),
                                                   context.Builder.CreateGlobalString(ControlPosNode),
                                                   context.Builder.CreateGlobalString(ControlNegNode),
-                                                  llvm::ConstantFP::get(context.TheContext, llvm::APFloat(GainVal))}),
+                                                  llvm::ConstantFP::get(llvm::Type::getDoubleTy(context.TheContext), GainVal)}),
                       TypeKind::Double);
 }
 
@@ -5749,7 +6348,7 @@ TypedValue FSourceExprAST::codegen(CodegenContext& context)
                                                   context.Builder.CreateGlobalString(PositiveNode),
                                                   context.Builder.CreateGlobalString(NegativeNode),
                                                   context.Builder.CreateGlobalString(VoltageSourceName),
-                                                  llvm::ConstantFP::get(context.TheContext, llvm::APFloat(GainVal))}),
+                                                  llvm::ConstantFP::get(llvm::Type::getDoubleTy(context.TheContext), GainVal)}),
                       TypeKind::Double);
 }
 
@@ -5779,7 +6378,7 @@ TypedValue GSourceExprAST::codegen(CodegenContext& context)
             {context.Builder.CreateGlobalString(Name), context.Builder.CreateGlobalString(PositiveNode),
              context.Builder.CreateGlobalString(NegativeNode), context.Builder.CreateGlobalString(ControlPosNode),
              context.Builder.CreateGlobalString(ControlNegNode),
-             llvm::ConstantFP::get(context.TheContext, llvm::APFloat(TranscondVal))}),
+             llvm::ConstantFP::get(llvm::Type::getDoubleTy(context.TheContext), TranscondVal)}),
         TypeKind::Double);
 }
 
@@ -5808,7 +6407,7 @@ TypedValue HSourceExprAST::codegen(CodegenContext& context)
             RegisterHSource,
             {context.Builder.CreateGlobalString(Name), context.Builder.CreateGlobalString(PositiveNode),
              context.Builder.CreateGlobalString(NegativeNode), context.Builder.CreateGlobalString(VoltageSourceName),
-             llvm::ConstantFP::get(context.TheContext, llvm::APFloat(TransresVal))}),
+             llvm::ConstantFP::get(llvm::Type::getDoubleTy(context.TheContext), TransresVal)}),
         TypeKind::Double);
 }
 
@@ -6067,7 +6666,7 @@ TypedValue ParamExprAST::codegen(CodegenContext& context)
 
     return TypedValue(
         context.Builder.CreateCall(RegisterParam, {context.Builder.CreateGlobalString(Name),
-                                                   llvm::ConstantFP::get(context.TheContext, llvm::APFloat(Val))}),
+                                                   llvm::ConstantFP::get(llvm::Type::getDoubleTy(context.TheContext), Val)}),
         TypeKind::Double);
 }
 
@@ -6088,7 +6687,7 @@ TypedValue ICExprAST::codegen(CodegenContext& context)
 
     return TypedValue(
         context.Builder.CreateCall(RegisterIC, {context.Builder.CreateGlobalString(NodeName),
-                                                llvm::ConstantFP::get(context.TheContext, llvm::APFloat(Val))}),
+                                                llvm::ConstantFP::get(llvm::Type::getDoubleTy(context.TheContext), Val)}),
         TypeKind::Double);
 }
 
@@ -6363,7 +6962,7 @@ TypedValue IfStmtAST::codegen(CodegenContext& context)
         IsTrue = CondTV.Val;
     } else {
         // Otherwise compare to non-zero
-        IsTrue = context.Builder.CreateFCmpONE(CondTV.Val, llvm::ConstantFP::get(Ctx, llvm::APFloat(0.0)), "ifcond");
+        IsTrue = context.Builder.CreateFCmpONE(CondTV.Val, llvm::ConstantFP::get(llvm::Type::getDoubleTy(Ctx), 0.0), "ifcond");
     }
 
     // Create basic blocks
@@ -6404,7 +7003,7 @@ TypedValue IfStmtAST::codegen(CodegenContext& context)
     // Determine if we need to continue after the if
     if (thenTerminated && elseTerminated) {
         delete MergeBB;
-        return ThenTV.Val ? ThenTV : TypedValue(llvm::ConstantFP::get(Ctx, llvm::APFloat(0.0)), TypeKind::Double);
+        return ThenTV.Val ? ThenTV : TypedValue(llvm::ConstantFP::get(llvm::Type::getDoubleTy(Ctx), 0.0), TypeKind::Double);
     }
 
     // Continue at merge
@@ -6501,7 +7100,7 @@ TypedValue ForStmtAST::codegen(CodegenContext& context)
         IsTrue = CondTV.Val;
     } else {
         // Otherwise compare to non-zero
-        IsTrue = context.Builder.CreateFCmpONE(CondTV.Val, llvm::ConstantFP::get(Ctx, llvm::APFloat(0.0)), "forcond");
+        IsTrue = context.Builder.CreateFCmpONE(CondTV.Val, llvm::ConstantFP::get(llvm::Type::getDoubleTy(Ctx), 0.0), "forcond");
     }
     context.Builder.CreateCondBr(IsTrue, BodyBB, AfterBB);
 
@@ -6528,7 +7127,7 @@ TypedValue ForStmtAST::codegen(CodegenContext& context)
     context.CurrentLoopEnd = SavedLoopEnd;
     context.CurrentLoopCont = SavedLoopCont;
 
-    return TypedValue(llvm::ConstantFP::get(Ctx, llvm::APFloat(0.0)), TypeKind::Double);
+    return TypedValue(llvm::ConstantFP::get(llvm::Type::getDoubleTy(Ctx), 0.0), TypeKind::Double);
 }
 
 TypedValue WhileStmtAST::codegen(CodegenContext& context)
@@ -6561,7 +7160,7 @@ TypedValue WhileStmtAST::codegen(CodegenContext& context)
         IsTrue = CondTV.Val;
     } else {
         // Otherwise compare to non-zero
-        IsTrue = context.Builder.CreateFCmpONE(CondTV.Val, llvm::ConstantFP::get(Ctx, llvm::APFloat(0.0)), "whilecond");
+        IsTrue = context.Builder.CreateFCmpONE(CondTV.Val, llvm::ConstantFP::get(llvm::Type::getDoubleTy(Ctx), 0.0), "whilecond");
     }
     context.Builder.CreateCondBr(IsTrue, BodyBB, AfterBB);
 
@@ -6581,7 +7180,7 @@ TypedValue WhileStmtAST::codegen(CodegenContext& context)
     context.CurrentLoopEnd = SavedLoopEnd;
     context.CurrentLoopCont = SavedLoopCont;
 
-    return TypedValue(llvm::ConstantFP::get(Ctx, llvm::APFloat(0.0)), TypeKind::Double);
+    return TypedValue(llvm::ConstantFP::get(llvm::Type::getDoubleTy(Ctx), 0.0), TypeKind::Double);
 }
 
 TypedValue TrainExprAST::codegen(CodegenContext& context)
@@ -6694,7 +7293,7 @@ TypedValue GoalExprAST::codegen(CodegenContext& context)
 
     context.Builder.CreateCall(Fn, {ExprTV.Val, TargetTV.Val});
 
-    return TypedValue(llvm::ConstantFP::get(Ctx, llvm::APFloat(0.0)), TypeKind::Double);
+    return TypedValue(llvm::ConstantFP::get(llvm::Type::getDoubleTy(Ctx), 0.0), TypeKind::Double);
 }
 
 TypedValue ThermalBlockAST::codegen(CodegenContext& context)
@@ -6838,7 +7437,7 @@ TypedValue HotSwapExprAST::codegen(CodegenContext& context)
 
     context.Builder.CreateCall(Fn, {NamePtr, ModelTV.Val});
 
-    return TypedValue(llvm::ConstantFP::get(Ctx, llvm::APFloat(1.0)), TypeKind::Double);
+    return TypedValue(llvm::ConstantFP::get(llvm::Type::getDoubleTy(Ctx), 1.0), TypeKind::Double);
 }
 
 TypedValue SpawnExprAST::codegen(CodegenContext& context)

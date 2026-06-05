@@ -92,6 +92,7 @@ private:
 
     // Statement-based control flow parsers
     std::unique_ptr<ExprAST> ParseIfStmt();
+    std::unique_ptr<ExprAST> ParseElifStmt();
     std::unique_ptr<ExprAST> ParseForStmt();
     std::unique_ptr<ExprAST> ParseWhileStmt();
     std::vector<std::unique_ptr<ExprAST>> ParseStmtBlock();
@@ -283,6 +284,20 @@ private:
     // Also store known trait names for trait bound validation
     std::unordered_set<std::string> m_knownTraitNames;
     std::map<std::string, int> m_knownTraitNameToIndex; // trait name → index for dyn resolution
+
+    // Local enum and anonymous struct declarations collected during function body parsing.
+    // Transferred to FunctionAST after the body is parsed.
+    std::vector<std::unique_ptr<EnumDeclAST>> m_localEnumDecls;
+    std::vector<std::unique_ptr<StructDeclAST>> m_localAnonStructs;
+
+public:
+    std::vector<std::unique_ptr<EnumDeclAST>> takeLocalEnumDecls() { return std::move(m_localEnumDecls); }
+    std::vector<std::unique_ptr<StructDeclAST>> takeLocalAnonStructs() { return std::move(m_localAnonStructs); }
+    void clearLocalDecls()
+    {
+        m_localEnumDecls.clear();
+        m_localAnonStructs.clear();
+    }
 };
 
 } // namespace Flux
