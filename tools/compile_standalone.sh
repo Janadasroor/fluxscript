@@ -19,11 +19,13 @@ if [ -z "$OBJCOPY" ]; then
     exit 1
 fi
 
-# Linker flags (macOS doesn't support -no-pie)
+# Linker flags (macOS doesn't support -no-pie or separate -lpthread/-ldl)
 if [ "$(uname)" = "Darwin" ]; then
     LDFLAGS_NOPIE=""
+    AOT_LIBS_EXTRA=""
 else
     LDFLAGS_NOPIE="-no-pie"
+    AOT_LIBS_EXTRA="-lpthread -ldl"
 fi
 
 FLUXC="${FLUXC:-build/fluxc}"
@@ -88,15 +90,13 @@ int main() {
 }
 EOF
     c++ $LDFLAGS_NOPIE -o "$output" "$obj_fixed" "$wrapper" \
-        -L"$BUILD_DIR" -lFluxRuntime \
-        -lpthread -ldl -lm 2>&1
+        -L"$BUILD_DIR" -lFluxRuntime $AOT_LIBS_EXTRA -lm 2>&1
     rm -f "$wrapper"
 else
     # No user main: just rename anon_expr -> main
     "$OBJCOPY" --redefine-sym "$anon_sym=main" "$obj" "$obj_fixed"
     c++ $LDFLAGS_NOPIE -o "$output" "$obj_fixed" \
-        -L"$BUILD_DIR" -lFluxRuntime \
-        -lpthread -ldl -lm 2>&1
+        -L"$BUILD_DIR" -lFluxRuntime $AOT_LIBS_EXTRA -lm 2>&1
 fi
 
 rm -f "$obj_fixed"

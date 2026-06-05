@@ -26,11 +26,14 @@ if [ -z "$OBJCOPY" ] && [ -x "/opt/homebrew/opt/llvm@21/bin/llvm-objcopy" ]; the
     OBJCOPY="/opt/homebrew/opt/llvm@21/bin/llvm-objcopy"
 fi
 
-# Linker flags for AOT test executables (macOS doesn't support -no-pie)
+# Linker flags for AOT test executables (macOS doesn't support -no-pie,
+# and doesn't have separate -lpthread / -ldl — those are in libSystem)
 if [ "$(uname)" = "Darwin" ]; then
     LDFLAGS_NOPIE=""
+    AOT_LDLIBS="-lFluxRuntime -lm"
 else
     LDFLAGS_NOPIE="-no-pie"
+    AOT_LDLIBS="-lFluxRuntime -lpthread -ldl -lm"
 fi
 
 # ==============================================================================
@@ -93,12 +96,12 @@ int main() {
     return 0;
 }
 WRAPEOF
-                        c++ $LDFLAGS_NOPIE -o "$binfile" "$obj_fixed" "$wrapper" -L"$BUILD_DIR" -lFluxRuntime -lpthread -ldl -lm 2>/dev/null
+                        c++ $LDFLAGS_NOPIE -o "$binfile" "$obj_fixed" "$wrapper" -L"$BUILD_DIR" $AOT_LDLIBS 2>/dev/null
                         status=$?
                         rm -f "$wrapper"
                     else
                         "$OBJCOPY" --redefine-sym "$anon_sym=main" "$objfile" "$obj_fixed"
-                        c++ $LDFLAGS_NOPIE -o "$binfile" "$obj_fixed" -L"$BUILD_DIR" -lFluxRuntime -lpthread -ldl -lm 2>/dev/null
+                        c++ $LDFLAGS_NOPIE -o "$binfile" "$obj_fixed" -L"$BUILD_DIR" $AOT_LDLIBS 2>/dev/null
                         status=$?
                     fi
                     rm -f "$obj_fixed"
@@ -399,14 +402,14 @@ int main() {
 }
 WRAPEOF
                 c++ $LDFLAGS_NOPIE -o "$binfile" "$obj_fixed" "$wrapper" \
-                    -L"$BUILD_DIR" -lFluxRuntime -lpthread -ldl -lm 2>/dev/null
+                    -L"$BUILD_DIR" $AOT_LDLIBS 2>/dev/null
                 cmd_status=$?
                 rm -f "$wrapper"
             else
                 # No user main: rename anon_expr -> main directly
                 "$OBJCOPY" --redefine-sym "$anon_sym=main" "$objfile" "$obj_fixed"
                 c++ $LDFLAGS_NOPIE -o "$binfile" "$obj_fixed" \
-                    -L"$BUILD_DIR" -lFluxRuntime -lpthread -ldl -lm 2>/dev/null
+                    -L"$BUILD_DIR" $AOT_LDLIBS 2>/dev/null
                 cmd_status=$?
             fi
             rm -f "$obj_fixed"

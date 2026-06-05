@@ -387,11 +387,6 @@ FluxJIT::FluxJIT(OptimizationLevel optLevel) : m_dataLayout(""), m_optLevel(optL
 
     auto JIT = llvm::orc::LLJITBuilder()
                    .setJITTargetMachineBuilder(std::move(*JTMB))
-                   .setObjectLinkingLayerCreator([&](llvm::orc::ExecutionSession& ES) {
-                       auto Layer = std::make_unique<llvm::orc::ObjectLinkingLayer>(
-                           ES, std::make_unique<llvm::jitlink::InProcessMemoryManager>(16384));
-                       return Layer;
-                   })
                    .create();
     if (!JIT) {
         logError(JIT.takeError(), "Failed to create LLJIT");
