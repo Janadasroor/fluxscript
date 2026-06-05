@@ -21,10 +21,10 @@ jobs:
           sudo apt-get install -y libclang-21-dev clang-tidy-21 libmlir-21-dev mlir-21-tools
 
       - name: Install build tools
-        run: sudo apt-get install -y cmake ninja-build ccache
+        run: sudo apt-get install -y cmake ninja-build ccache libeigen3-dev libcurl4-openssl-dev
 
       - name: Configure
-        run: cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DLLVM_DIR=/usr/lib/llvm-21/lib/cmake/llvm -DMLIR_DIR=/usr/lib/llvm-21/lib/cmake/mlir
+        run: cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DLLVM_DIR=/usr/lib/llvm-21/lib/cmake/llvm -DMLIR_DIR=/usr/lib/llvm-21/lib/cmake/mlir -DNGSPICE_FOUND=OFF
 
       - name: Build
         run: ninja -C build
@@ -49,11 +49,11 @@ jobs:
           sudo apt-get install -y libclang-21-dev
 
       - name: Install build tools
-        run: sudo apt-get install -y cmake ninja-build ccache
+        run: sudo apt-get install -y cmake ninja-build ccache libeigen3-dev libcurl4-openssl-dev
 
       - name: Build release binary
         run: |
-          cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DLLVM_DIR=/usr/lib/llvm-21/lib/cmake/llvm
+          cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DLLVM_DIR=/usr/lib/llvm-21/lib/cmake/llvm -DNGSPICE_FOUND=OFF
           ninja -C build
 
       - name: Package
