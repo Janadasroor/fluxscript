@@ -161,6 +161,13 @@ bool JITEngine::executeString(const std::string& code, std::string* error)
     return true;
 }
 
+void JITEngine::addModule(std::unique_ptr<llvm::Module> M, std::unique_ptr<llvm::LLVMContext> Ctx)
+{
+    if (!m_initialized)
+        initialize();
+    m_jit->addModule(std::move(M), std::move(Ctx));
+}
+
 void* JITEngine::getFunctionPointer(const std::string& name)
 {
     if (!m_initialized)

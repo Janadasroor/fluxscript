@@ -131,9 +131,9 @@ public:
     // Copy semantics flag: true = Copy by value (default), false = ~Copy (move-only)
     bool isCopy = true;
 
-    FluxType(TypeKind K = TypeKind::Double, UnitDimensions D = {}) : Kind(K), Dimensions(D) {}
+    FluxType(TypeKind K = TypeKind::Double, UnitDimensions D = {}) : Kind(K), Dimensions(D), VecElementType(nullptr), RefInnerType(nullptr) {}
 
-    FluxType(TypeKind K, int bits, int fract) : Kind(K), Bits(bits), Fract(fract) {}
+    FluxType(TypeKind K, int bits, int fract) : Kind(K), Bits(bits), Fract(fract), VecElementType(nullptr), RefInnerType(nullptr) {}
 
     // Destructor, copy/move for RefInnerType and VecElementType management
     ~FluxType() { delete RefInnerType; delete VecElementType; }
@@ -183,6 +183,7 @@ public:
     FluxType& operator=(FluxType&& other) noexcept
     {
         if (this != &other) {
+            delete RefInnerType; delete VecElementType;
             Kind = other.Kind; Dimensions = other.Dimensions; Bits = other.Bits; Fract = other.Fract;
             GenericName = std::move(other.GenericName); StructTypeId = other.StructTypeId;
             StructLLVMType = other.StructLLVMType;

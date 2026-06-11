@@ -2715,3 +2715,8 @@ extern "C" void flux_throw_error(double value, const char* msg)
 
 extern "C" double flux_last_thrown_value() { return g_last_thrown_value; }
 extern "C" const char* flux_last_thrown_msg() { return g_last_thrown_msg; }
+
+extern "C" void println_string(const char* str)
+{
+    printf("%s\n", str);
+}

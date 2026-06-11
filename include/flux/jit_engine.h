@@ -93,6 +93,9 @@ public:
 
     CodegenContext& context() { return *m_codegenCtx; }
 
+    // Add an externally-built LLVM module to the JIT engine.
+    void addModule(std::unique_ptr<llvm::Module> M, std::unique_ptr<llvm::LLVMContext> Ctx);
+
     // Call a compiled function.
     FluxValue callFunction(const std::string& name, const std::vector<double>& args, std::string* error = nullptr);
     void* getFunctionPointer(const std::string& name);

@@ -1620,6 +1620,25 @@ bool CompilerInstance::compileParser(Parser& parser, CodegenContext& context,
                          std::make_move_iterator(preParsedFunctions->end()));
     }
 
+    // --- Deduplicate functions ---
+    // Pre-parsed (stdlib) functions are before user functions in the vector.
+    // When a user function has the same name as a pre-parsed function,
+    // remove the pre-parsed version so the user's definition wins.
+    {
+        std::unordered_set<std::string> seen;
+        std::vector<std::unique_ptr<FunctionAST>> deduped;
+        // Process in reverse so the LAST definition (user's) wins.
+        for (auto it = functions.rbegin(); it != functions.rend(); ++it) {
+            const std::string& name = (*it)->getProto()->getName();
+            if (seen.insert(name).second)
+                deduped.push_back(std::move(*it));
+            else
+                std::cerr << "[Flux] Warning: duplicate function '" << name << "' — keeping the last definition\n";
+        }
+        std::reverse(deduped.begin(), deduped.end());
+        functions = std::move(deduped);
+    }
+
     // --- Selective import filtering ---
     if (!symbols.empty()) {
         std::vector<std::unique_ptr<FunctionAST>> filtered;
@@ -1721,6 +1740,8 @@ bool CompilerInstance::compileParser(Parser& parser, CodegenContext& context,
         return false;
     for (size_t fi = 0; fi < numFunctions; ++fi) {
         auto& func = functions[fi];
+        const std::string& fname = func->getProto()->getName();
+
         // Build parameter name -> type map from the prototype
         std::map<std::string, FluxType> paramTypeMap;
         for (auto& arg : func->getProto()->getArgs())

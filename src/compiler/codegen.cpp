@@ -169,6 +169,91 @@ static bool checkTraitBounds(
     return true;
 }
 
+// Forward declarations for helpers used by ensureGenericTypeArgSpecialized
+static std::string buildGenericTypeSuffix(const std::vector<FluxType>& genericArgs,
+                                           CodegenContext& context);
+static std::string specializeGenericEnum(const std::string& enumName,
+                                          const std::vector<FluxType>& genericArgs,
+                                          CodegenContext& context);
+
+// Recursively specialize a generic type argument (struct or enum)
+// so that its StructTypeId/EnumTypeId and LLVM type are resolved.
+// Handles nested generics like Pair[Pair[Double, Double], Double].
+static void ensureGenericTypeArgSpecialized(FluxType& typeArg, CodegenContext& context)
+{
+    if (typeArg.Kind == TypeKind::UserStruct && typeArg.StructTypeId < 0 && !typeArg.GenericArgs.empty()) {
+        for (auto& nestedArg : typeArg.GenericArgs)
+            ensureGenericTypeArgSpecialized(nestedArg, context);
+
+        auto genIt = context.GenericStructs.find(typeArg.GenericName);
+        if (genIt == context.GenericStructs.end()) return;
+        const auto& genericParams = genIt->second->getGenericParams();
+        if (typeArg.GenericArgs.size() != genericParams.size()) return;
+
+        std::string suffix = "_" + buildGenericTypeSuffix(typeArg.GenericArgs, context);
+        std::string resolvedName = typeArg.GenericName + suffix;
+
+        auto existingIt = context.StructTypeIndex.find(resolvedName);
+        if (existingIt != context.StructTypeIndex.end()) {
+            typeArg.StructTypeId = existingIt->second;
+            typeArg.StructLLVMType = context.StructTypes[existingIt->second].LLVMType;
+            typeArg.GenericName = resolvedName;
+            return;
+        }
+
+        context.CompiledStructSpecializations.insert(resolvedName);
+
+        std::map<std::string, FluxType> typeMap;
+        for (size_t i = 0; i < genericParams.size(); ++i)
+            typeMap[genericParams[i]] = typeArg.GenericArgs[i];
+
+        const auto& genericFields = genIt->second->getFields();
+        std::vector<std::pair<std::string, FluxType>> concreteFields;
+        for (auto& [fName, fType] : genericFields) {
+            FluxType concreteType = fType;
+            if (fType.isGeneric()) {
+                auto mapIt = typeMap.find(fType.GenericName);
+                if (mapIt != typeMap.end())
+                    concreteType = mapIt->second;
+            }
+            ensureGenericTypeArgSpecialized(concreteType, context);
+            concreteFields.push_back({fName, concreteType});
+        }
+        std::vector<llvm::Type*> fieldTypes;
+        for (auto& [_, ft] : concreteFields)
+            fieldTypes.push_back(ft.getLLVMType(context.TheContext));
+
+        auto* llvmStructTy = llvm::StructType::create(context.TheContext, fieldTypes, resolvedName);
+        int newId = static_cast<int>(context.StructTypes.size());
+        CodegenContext::StructTypeInfo info;
+        info.Name = resolvedName;
+        info.ParentName = genIt->second->getParentName();
+        info.Fields = concreteFields;
+        info.LLVMType = llvmStructTy;
+        context.StructTypes.push_back(std::move(info));
+        context.StructTypeIndex[resolvedName] = newId;
+
+        typeArg.StructTypeId = newId;
+        typeArg.StructLLVMType = llvmStructTy;
+        typeArg.GenericName = resolvedName;
+    }
+
+    if (typeArg.Kind == TypeKind::UserEnum && typeArg.EnumTypeId < 0 && !typeArg.GenericArgs.empty()) {
+        for (auto& nestedArg : typeArg.GenericArgs)
+            ensureGenericTypeArgSpecialized(nestedArg, context);
+
+        std::string mangled = specializeGenericEnum(typeArg.GenericName, typeArg.GenericArgs, context);
+        if (!mangled.empty()) {
+            auto it = context.EnumTypeIndex.find(mangled);
+            if (it != context.EnumTypeIndex.end()) {
+                typeArg.EnumTypeId = it->second;
+                typeArg.EnumLLVMType = context.EnumTypes[it->second].LLVMType;
+                typeArg.GenericName = mangled;
+            }
+        }
+    }
+}
+
 // Helper: build a suffix string from generic type args by concatenating
 // each type's name (e.g., [Double, Double] -> "Double_Double").
 static std::string buildGenericTypeSuffix(const std::vector<FluxType>& genericArgs,
@@ -226,7 +311,13 @@ static std::string specializeGenericEnum(const std::string& enumName,
                                           const std::vector<FluxType>& genericArgs,
                                           CodegenContext& context)
 {
-    std::string suffix = buildGenericTypeSuffix(genericArgs, context);
+    // Deep-copy generic args and recursively specialize nested generic types
+    // (e.g., Option[Pair[Double, Double]]) before building the type map.
+    std::vector<FluxType> concreteGenericArgs = genericArgs;
+    for (auto& arg : concreteGenericArgs)
+        ensureGenericTypeArgSpecialized(arg, context);
+
+    std::string suffix = buildGenericTypeSuffix(concreteGenericArgs, context);
     std::string mangledName = enumName + "_" + suffix;
 
     // Already specialized?
@@ -244,16 +335,16 @@ static std::string specializeGenericEnum(const std::string& enumName,
     const auto& variants = genericEnum->getVariants();
     const auto& variantPayloads = genericEnum->getVariantPayloads();
 
-    if (genericArgs.size() != genericParams.size()) {
+    if (concreteGenericArgs.size() != genericParams.size()) {
         std::cerr << "Generic enum " << enumName << " expects " << genericParams.size()
-                  << " type args, got " << genericArgs.size() << std::endl;
+                  << " type args, got " << concreteGenericArgs.size() << std::endl;
         return "";
     }
 
-    // Build type map
+    // Build type map from the now-fully-specialized type args
     std::map<std::string, FluxType> typeMap;
     for (size_t i = 0; i < genericParams.size(); ++i)
-        typeMap[genericParams[i]] = genericArgs[i];
+        typeMap[genericParams[i]] = concreteGenericArgs[i];
 
     // Substitute concrete types in payloads
     std::vector<FluxType> concretePayloads;
@@ -264,6 +355,7 @@ static std::string specializeGenericEnum(const std::string& enumName,
             if (mapIt != typeMap.end())
                 concreteType = mapIt->second;
         }
+        ensureGenericTypeArgSpecialized(concreteType, context);
         concretePayloads.push_back(concreteType);
     }
 
@@ -4303,7 +4395,17 @@ TypedValue LetExprAST::codegen(CodegenContext& context)
         }
     }
 
+    // For async functions, place allocas in the entry block so they dominate
+    // all resume points (BUG #13 fix: avoid "Instruction does not dominate all uses!")
+    llvm::BasicBlock* SavedInsertBB = nullptr;
+    if (context.AsyncStateAlloca) {
+        SavedInsertBB = context.Builder.GetInsertBlock();
+        context.Builder.SetInsertPoint(&SavedInsertBB->getParent()->getEntryBlock(),
+                                        SavedInsertBB->getParent()->getEntryBlock().getFirstInsertionPt());
+    }
     llvm::AllocaInst* Alloca = context.Builder.CreateAlloca(VarTy, nullptr, VarName.c_str());
+    if (SavedInsertBB)
+        context.Builder.SetInsertPoint(SavedInsertBB);
     context.Builder.CreateStore(InitV, Alloca);
     llvm::Value* OldVal = context.NamedValues[VarName];
     FluxType OldType = context.NamedTypes[VarName];
@@ -4653,6 +4755,19 @@ TypedValue IndexExprAST::codegen(CodegenContext& context)
         return TypedValue(ElemVal, TypeKind::Double);
     }
 
+    if (ArrayTV.Type.Kind == TypeKind::Double && ArrayTV.Val->getType()->isPointerTy()) {
+        TypedValue IdxTV = RowIndex->codegen(context);
+        if (!IdxTV.Val) return TypedValue();
+        llvm::Value* IdxV = IdxTV.Val;
+        if (IdxV->getType()->isFloatingPointTy())
+            IdxV = context.Builder.CreateFPToSI(IdxV, Int32Ty, "idx_int");
+        else if (IdxV->getType()->isIntegerTy(64))
+            IdxV = context.Builder.CreateTrunc(IdxV, Int32Ty, "idx_int");
+        llvm::Value* Idx64 = context.Builder.CreateSExt(IdxV, Int64Ty, "idx_64");
+        llvm::Value* ElemPtr = context.Builder.CreateGEP(DoubleTy, ArrayTV.Val, {Idx64}, "raw_ptr_idx");
+        llvm::Value* ElemVal = context.Builder.CreateLoad(DoubleTy, ElemPtr, "raw_elem_val");
+        return TypedValue(ElemVal, TypeKind::Double);
+    }
     if (ArrayTV.Type.Kind != TypeKind::Matrix) {
         std::cerr << "Can only index into matrices or vectors." << std::endl;
         return TypedValue();
@@ -5056,26 +5171,17 @@ TypedValue StructConstructExprAST::codegen(CodegenContext& context)
             return TypedValue();
         }
 
-        // Build type map
+        // Recursively specialize nested generic type args (e.g., Pair[Pair[Double, Double], Double])
+        for (auto& arg : GenericTypeArgs)
+            ensureGenericTypeArgSpecialized(arg, context);
+
+        // Build type map from the now-fully-specialized type args
         std::map<std::string, FluxType> typeMap;
         for (size_t i = 0; i < genericParams.size(); ++i)
             typeMap[genericParams[i]] = GenericTypeArgs[i];
 
-        // Build suffix
-        std::string suffix = "_";
-        for (size_t i = 0; i < genericParams.size(); ++i) {
-            switch (GenericTypeArgs[i].Kind) {
-            case TypeKind::Double: suffix += "Double"; break;
-            case TypeKind::Int:    suffix += "Int"; break;
-            case TypeKind::Bool:   suffix += "Bool"; break;
-            case TypeKind::Float:  suffix += "Float"; break;
-            case TypeKind::String: suffix += "String"; break;
-            case TypeKind::Complex: suffix += "Complex"; break;
-            case TypeKind::Matrix: suffix += "Matrix"; break;
-            default:               suffix += "Unknown"; break;
-            }
-        }
-
+        // Build suffix using the fully resolved type args
+        std::string suffix = "_" + buildGenericTypeSuffix(GenericTypeArgs, context);
         resolvedName = StructName + suffix;
 
         // Check if already specialized

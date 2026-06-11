@@ -199,6 +199,12 @@ std::unique_ptr<ExprAST> Parser::ParseInputsExpr()
     } else if (CurTok == static_cast<int>(TokenType::tok_number)) {
         node = std::to_string((int)m_lexer.NumVal);
         getNextToken();
+    } else if (CurTok == static_cast<int>(TokenType::tok_number)) {
+        node = std::to_string((int)m_lexer.NumVal);
+        getNextToken();
+    } else if (CurTok == static_cast<int>(TokenType::tok_integer)) {
+        node = std::to_string(m_lexer.IntVal);
+        getNextToken();
     } else {
         ReportError("[ABI-SYNC] expected node name or index in inputs");
         return nullptr;

@@ -17,6 +17,7 @@
 #include "llvm/ExecutionEngine/Orc/ThreadSafeModule.h"
 #include "llvm/ExecutionEngine/SectionMemoryManager.h"
 #include "llvm/IR/LLVMContext.h"
+extern "C" void println_string(const char*);
 #include "llvm/IR/Verifier.h"
 #include "llvm/Support/CodeGen.h"
 #include "llvm/Support/DynamicLibrary.h"
@@ -78,10 +79,6 @@ double complex_make_real(double r, double i)
 double complex_make_imag(double r, double i)
 {
     return i;
-}
-void println_string(const char* str)
-{
-    printf("%s\n", str);
 }
 }
 
@@ -434,6 +431,7 @@ void FluxJIT::registerComplexHelpers()
     registerSym("complex_real", reinterpret_cast<void*>(&complex_real));
     registerSym("complex_imag", reinterpret_cast<void*>(&complex_imag));
     registerSym("println_string", reinterpret_cast<void*>(&println_string));
+    registerSym("exit", reinterpret_cast<void*>(&exit));
 }
 
 void FluxJIT::registerMathHelpers()

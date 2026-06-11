@@ -203,6 +203,7 @@ set(FLUXSCRIPT_SOURCES
     src/runtime/symbolic_engine.cpp
     src/runtime/parallel_runtime.cpp
     src/runtime/ngspice_bridge.cpp
+    src/runtime/flux_model_bridge.cpp
     src/runtime/spice_runtime.cpp
     src/tooling/tooling.cpp
     src/tooling/package_manager.cpp

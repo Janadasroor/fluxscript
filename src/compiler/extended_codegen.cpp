@@ -287,15 +287,26 @@ TypedValue AssertExprAST::codegen(CodegenContext& context)
 
     context.Builder.CreateCondBr(IsTrue, ContinueBB, FailBB);
 
-    // Fail block - would print error message
+    // Fail block - print message and abort
     context.Builder.SetInsertPoint(FailBB);
     llvm::Value* MsgPtr =
         context.Builder.CreateGlobalString(Message.empty() ? "Assertion failed!" : Message, "assert_msg");
     llvm::Function* PrintF = context.TheModule->getFunction("println_string");
-    if (PrintF) {
-        context.Builder.CreateCall(PrintF, {MsgPtr});
+    if (!PrintF) {
+        llvm::Type* CharPtrTy = llvm::PointerType::get(context.TheContext, 0);
+        PrintF = llvm::Function::Create(
+            llvm::FunctionType::get(llvm::Type::getInt32Ty(context.TheContext), {CharPtrTy}, false),
+            llvm::Function::ExternalLinkage, "println_string", context.TheModule);
     }
-    context.Builder.CreateBr(ContinueBB);
+    context.Builder.CreateCall(PrintF, {MsgPtr});
+    llvm::Function* ExitF = context.TheModule->getFunction("exit");
+    if (!ExitF) {
+        ExitF = llvm::Function::Create(
+            llvm::FunctionType::get(llvm::Type::getVoidTy(context.TheContext), {llvm::Type::getInt32Ty(context.TheContext)}, false),
+            llvm::Function::ExternalLinkage, "exit", context.TheModule);
+    }
+    context.Builder.CreateCall(ExitF, {llvm::ConstantInt::get(llvm::Type::getInt32Ty(context.TheContext), 1)});
+    context.Builder.CreateUnreachable();
 
     // Continue block
     context.Builder.SetInsertPoint(ContinueBB);
