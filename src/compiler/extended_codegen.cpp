@@ -491,10 +491,12 @@ TypedValue CornerExprAST::codegen(CodegenContext& context)
 // ============ Pattern Match Codegen ============
 
 void MatchExprAST::addArm(std::unique_ptr<ExprAST> pattern, std::unique_ptr<ExprAST> result,
-                          const std::vector<std::string>& bindings)
+                          const std::vector<std::string>& bindings,
+                          const std::vector<std::pair<std::string,std::string>>& namedBindings)
 {
     Arms.emplace_back(std::move(pattern), std::move(result));
     Bindings.push_back(bindings);
+    NamedFieldBindings.push_back(namedBindings);
 }
 
 void MatchExprAST::setDefault(std::unique_ptr<ExprAST> arm)
@@ -503,6 +505,7 @@ void MatchExprAST::setDefault(std::unique_ptr<ExprAST> arm)
 }
 
 static const std::vector<std::string> emptyBindings;
+static const std::vector<std::pair<std::string,std::string>> emptyNamedBindings;
 
 TypedValue MatchExprAST::codegen(CodegenContext& context)
 {
@@ -596,6 +599,7 @@ TypedValue MatchExprAST::codegen(CodegenContext& context)
     for (size_t i = 0; i < Arms.size(); ++i) {
         auto& [Pattern, Result] = Arms[i];
         const auto& armBindings = i < Bindings.size() ? Bindings[i] : emptyBindings;
+        const auto& armNamedBindings = i < NamedFieldBindings.size() ? NamedFieldBindings[i] : emptyNamedBindings;
 
         // Determine which block to branch to when this check fails
         llvm::BasicBlock* NextBB;
@@ -817,7 +821,40 @@ TypedValue MatchExprAST::codegen(CodegenContext& context)
                         payloadPtr, llvm::PointerType::get(concretePayloadLLVMTy, 0), "concrete_payload_ptr");
                 }
 
-                if (armBindings.size() == 1 && concretePayloadLLVMTy->isStructTy() &&
+                if (!armNamedBindings.empty() && concretePayloadLLVMTy->isStructTy() &&
+                    concretePayloadType.StructTypeId >= 0 &&
+                    concretePayloadType.StructTypeId < static_cast<int>(context.StructTypes.size())) {
+                    // Named-field bindings: `Enum.Variant { field1: v1, field2: v2 } =>`
+                    // Look up each field by name so ordering doesn't matter.
+                    auto& structInfo = context.StructTypes[concretePayloadType.StructTypeId];
+                    for (const auto& [fieldName, varName] : armNamedBindings) {
+                        // Find field index by name
+                        size_t fieldIdx = static_cast<size_t>(-1);
+                        for (size_t fi = 0; fi < structInfo.Fields.size(); ++fi) {
+                            if (structInfo.Fields[fi].first == fieldName) {
+                                fieldIdx = fi;
+                                break;
+                            }
+                        }
+                        if (fieldIdx == static_cast<size_t>(-1)) {
+                            std::cerr << "[FLUX ERROR] match named-field pattern: field '" << fieldName
+                                      << "' not found in struct '" << structInfo.Name << "'" << std::endl;
+                            continue;
+                        }
+                        llvm::Value* fieldPtr = context.Builder.CreateStructGEP(
+                            concretePayloadLLVMTy, concretePayloadPtr,
+                            static_cast<unsigned>(fieldIdx), varName);
+                        llvm::Type* fieldTy = concretePayloadLLVMTy->getStructElementType(
+                            static_cast<unsigned>(fieldIdx));
+                        llvm::Value* FieldVal = context.Builder.CreateLoad(
+                            fieldTy, fieldPtr, varName + "_val");
+                        llvm::AllocaInst* FieldAlloca = context.Builder.CreateAlloca(
+                            fieldTy, nullptr, varName);
+                        context.Builder.CreateStore(FieldVal, FieldAlloca);
+                        context.NamedValues[varName] = FieldAlloca;
+                        context.NamedTypes[varName] = structInfo.Fields[fieldIdx].second;
+                    }
+                } else if (armBindings.size() == 1 && concretePayloadLLVMTy->isStructTy() &&
                     concretePayloadType.StructTypeId >= 0 &&
                     concretePayloadType.StructTypeId < static_cast<int>(context.StructTypes.size())) {
                     // Single binding: extract the first field from the payload struct
@@ -846,7 +883,7 @@ TypedValue MatchExprAST::codegen(CodegenContext& context)
                     context.NamedValues[armBindings[0]] = BindingAlloca;
                     context.NamedTypes[armBindings[0]] = concretePayloadType;
                 } else {
-                    // Multiple bindings: extract each field from the concrete payload struct
+                    // Multiple positional bindings: extract each field from the concrete payload struct
                     for (size_t bi = 0; bi < armBindings.size(); ++bi) {
                         llvm::Value* fieldPtr = context.Builder.CreateStructGEP(concretePayloadLLVMTy, concretePayloadPtr, bi, armBindings[bi]);
                         llvm::Type* fieldTy = concretePayloadLLVMTy->getStructElementType(bi);
@@ -884,6 +921,12 @@ TypedValue MatchExprAST::codegen(CodegenContext& context)
             for (const auto& bv : armBindings) {
                 context.NamedValues.erase(bv);
                 context.NamedTypes.erase(bv);
+            }
+        }
+        if (!armNamedBindings.empty() && isPayloadEnum) {
+            for (const auto& [fn, vn] : armNamedBindings) {
+                context.NamedValues.erase(vn);
+                context.NamedTypes.erase(vn);
             }
         }
         if (!binderName.empty() && !isPayloadEnum) {

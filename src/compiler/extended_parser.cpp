@@ -249,17 +249,67 @@ std::unique_ptr<ExprAST> Parser::ParseMatchExpr()
                         return nullptr;
                 }
 
-                // Extract binding variables from enum variant patterns (e.g., Option.Some(v) or Item.Label(txt, val) -> ...)
+                // Named-field pattern: `Enum.Variant { field1: var1, field2: var2 } =>`
+                // After parsing the variant as a MemberExprAST, if next token is '{',
+                // parse the braced named-field bindings.
                 std::vector<std::string> bindings;
-                if (auto* call = dynamic_cast<CallExprAST*>(pattern.get())) {
-                    if (call->hasCalleeExpr()) {
-                        if (auto* member = dynamic_cast<MemberExprAST*>(call->getCalleeExpr())) {
-                            if (auto* obj = dynamic_cast<VariableExprAST*>(member->getObject())) {
-                                if (m_knownEnumTypeNames.count(obj->getName())) {
-                                    const auto& args = call->getArgs();
-                                    for (auto& arg : args) {
-                                        if (auto* var = dynamic_cast<VariableExprAST*>(arg.get())) {
-                                            bindings.push_back(var->getName());
+                std::vector<std::pair<std::string,std::string>> namedBindings;
+
+                // Check if this is a named-field pattern (MemberExprAST followed by '{')
+                bool hasNamedFields = false;
+                if (CurTok == static_cast<int>(TokenType::tok_lbrace)) {
+                    // Verify the pattern is Enum.Variant (a MemberExprAST on a known enum)
+                    MemberExprAST* memberPat = dynamic_cast<MemberExprAST*>(pattern.get());
+                    if (memberPat) {
+                        VariableExprAST* objPat = dynamic_cast<VariableExprAST*>(memberPat->getObject());
+                        if (objPat && m_knownEnumTypeNames.count(objPat->getName())) {
+                            hasNamedFields = true;
+                            getNextToken(); // eat {
+                            // Parse field: var pairs
+                            while (CurTok != static_cast<int>(TokenType::tok_rbrace) &&
+                                   CurTok != static_cast<int>(TokenType::tok_eof)) {
+                                if (CurTok != static_cast<int>(TokenType::tok_identifier)) {
+                                    ReportError("expected field name in match named-field pattern");
+                                    return nullptr;
+                                }
+                                std::string fieldName = m_lexer.IdentifierStr;
+                                getNextToken(); // eat field name
+                                if (CurTok != ':') {
+                                    ReportError("expected ':' after field name in match named-field pattern");
+                                    return nullptr;
+                                }
+                                getNextToken(); // eat :
+                                if (CurTok != static_cast<int>(TokenType::tok_identifier)) {
+                                    ReportError("expected binding variable name in match named-field pattern");
+                                    return nullptr;
+                                }
+                                std::string varName = m_lexer.IdentifierStr;
+                                getNextToken(); // eat var name
+                                namedBindings.push_back({fieldName, varName});
+                                // Also populate positional bindings for compatibility
+                                bindings.push_back(varName);
+                                if (CurTok == ',')
+                                    getNextToken(); // eat ,
+                            }
+                            if (CurTok == static_cast<int>(TokenType::tok_rbrace))
+                                getNextToken(); // eat }
+                        }
+                    }
+                }
+
+                // Positional binding extraction from call-style patterns (e.g., Option.Some(v))
+                // Only if we didn't parse named fields
+                if (!hasNamedFields) {
+                    if (auto* call = dynamic_cast<CallExprAST*>(pattern.get())) {
+                        if (call->hasCalleeExpr()) {
+                            if (auto* member = dynamic_cast<MemberExprAST*>(call->getCalleeExpr())) {
+                                if (auto* obj = dynamic_cast<VariableExprAST*>(member->getObject())) {
+                                    if (m_knownEnumTypeNames.count(obj->getName())) {
+                                        const auto& args = call->getArgs();
+                                        for (auto& arg : args) {
+                                            if (auto* var = dynamic_cast<VariableExprAST*>(arg.get())) {
+                                                bindings.push_back(var->getName());
+                                            }
                                         }
                                     }
                                 }
@@ -278,7 +328,7 @@ std::unique_ptr<ExprAST> Parser::ParseMatchExpr()
                 if (!result)
                     return nullptr;
 
-                expr->addArm(std::move(pattern), std::move(result), bindings);
+                expr->addArm(std::move(pattern), std::move(result), bindings, namedBindings);
 
                 if (CurTok == ',') {
                     getNextToken();
