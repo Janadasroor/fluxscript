@@ -3165,6 +3165,25 @@ def main() -> Double {
 main()
 '
 
+run_test "Match Payload Generic Struct" '
+struct Pair[T, U] { first: T, second: U }
+enum Opt { Some(Pair[Double, Double]), None }
+def pick(opt: Opt) -> Double {
+    match opt {
+        Opt.Some(p) -> p.first + p.second,
+        Opt.None -> -1.0
+    }
+}
+def main() -> Double {
+    let a = Opt.Some(Pair[Double, Double] { first: 3.0, second: 4.0 });
+    let b = Opt.None;
+    assert(pick(a) == 7.0, "generic struct match payload sum wrong");
+    assert(pick(b) == -1.0, "generic struct match none wrong");
+    1.0
+}
+main()
+'
+
 # --- Fibonacci Performance Check ---
 run_test "Fibonacci Recursive" '
 def fib(n: Double) -> Double {
@@ -3600,6 +3619,23 @@ def main() -> Double {
     assert(id[Double](99.0) + classify(Shape.Circle(5.0)) == 109.0, "combined id+classify wrong");
     let pair_nest = Pair[Pair[Double, Double], Double] { first: Pair[Double, Double]{first:7.0,second:8.0}, second: 9.0 };
     assert(pair_nest.first.first + pair_nest.first.second + pair_nest.second == 24.0, "inline nested pair wrong");
+    1.0
+}
+main()
+'
+
+# --- Boxed enum payload struct > 16 bytes ---
+run_test "Boxed enum payload struct > 16 bytes" '
+struct Triple { a: Double, b: Double, c: Double }
+enum Container { Item { value: Triple }, Empty }
+def main() -> Double {
+    let t = Triple { a: 10.0, b: 20.0, c: 30.0 }
+    let c = Container.Item { value: t }
+    let m = match c { Container.Item(v) -> v.a + v.b + v.c, Container.Empty -> -1.0 }
+    let v = c.value
+    let f = v.a + v.b + v.c
+    assert(m == 60.0, "match boxed enum wrong")
+    assert(f == 60.0, "field boxed enum wrong")
     1.0
 }
 main()

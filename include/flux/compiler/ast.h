@@ -450,11 +450,13 @@ public:
 
     // Generator context
     llvm::Value* GeneratorStateAlloca = nullptr;       // Struct containing state index and locals
+    llvm::Type* GeneratorStateStructTy = nullptr;      // Struct type for generator state
     std::vector<llvm::BasicBlock*> YieldTargets;       // Blocks to resume from
     llvm::BasicBlock* GeneratorDispatcherBB = nullptr; // Entry dispatcher
 
     // Async context
     llvm::Value* AsyncStateAlloca = nullptr;           // Struct containing state index
+    llvm::Type* AsyncStateStructTy = nullptr;          // Struct type for async state
     llvm::Value* AsyncResultAlloca = nullptr;          // Alloca for await result value
     std::vector<llvm::BasicBlock*> AwaitResumeTargets; // Blocks to resume from after await
     llvm::BasicBlock* AsyncDispatcherBB = nullptr;     // Entry dispatcher

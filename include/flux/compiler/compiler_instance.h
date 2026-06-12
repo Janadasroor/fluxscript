@@ -24,6 +24,7 @@
 #include <llvm/ADT/StringRef.h>
 
 #include "flux/compiler/ast.h"
+#include "flux/compiler/lexer.h"
 #include "flux/compiler/module_loader.h"
 #include "flux/jit/flux_jit.h"
 
@@ -70,6 +71,7 @@ struct CompileArtifacts
     std::unique_ptr<CodegenContext> codegenContext;
     std::map<std::string, FluxType> functionReturnTypes;
     CompileProgressCallback compileProgress = nullptr;
+    std::vector<LexerDiagnostic> diagnostics;
 };
 
 struct ParsedAST

@@ -1129,9 +1129,22 @@ TypedValue MemberExprAST::codegen(CodegenContext& context)
                 resolveUserStructType(fieldFluxType, context);
                 resolveUserEnumType(fieldFluxType, context);
                 llvm::Type* fieldLLVMType = fieldFluxType.getLLVMType(context.TheContext);
-                // GEP into the payload struct for the specific field
-                llvm::Value* fieldPtr = context.Builder.CreateStructGEP(
-                    payloadStructInfo.LLVMType, payloadPtr, fieldIdx, MemberName);
+                // Check if this variant is boxed (heap-allocated payload)
+                bool isBoxed = vi < enumInfo.VariantIsBoxed.size() ? enumInfo.VariantIsBoxed[vi] : false;
+                llvm::Value* fieldPtr = nullptr;
+                if (isBoxed) {
+                    // Boxed: load heap pointer from union slot, then GEP into heap
+                    llvm::Value* heapPtr = context.Builder.CreateLoad(
+                        llvm::PointerType::get(context.TheContext, 0), payloadPtr, "heap_ptr");
+                    llvm::Value* concretePtr = context.Builder.CreatePointerCast(
+                        heapPtr, llvm::PointerType::get(payloadStructInfo.LLVMType, 0), "concrete_ptr");
+                    fieldPtr = context.Builder.CreateStructGEP(
+                        payloadStructInfo.LLVMType, concretePtr, fieldIdx, MemberName);
+                } else {
+                    // Non-boxed: direct GEP into the union's payload slot
+                    fieldPtr = context.Builder.CreateStructGEP(
+                        payloadStructInfo.LLVMType, payloadPtr, fieldIdx, MemberName);
+                }
                 llvm::Value* loaded = context.Builder.CreateLoad(fieldLLVMType, fieldPtr, MemberName);
                 return TypedValue(loaded, fieldFluxType);
             }
@@ -3563,6 +3576,20 @@ TypedValue CallExprAST::codegen(CodegenContext& context)
                 }
                 for (size_t i = 0; i < genericParams.size(); ++i)
                     typeMap[genericParams[i]] = GenericTypeArgs[i];
+                // Argument-based inference: if explicit type args still contain
+                // generic placeholders (e.g., T from an outer generic scope),
+                // infer them from the argument types.
+                for (size_t i = 0; i < genericParams.size(); ++i) {
+                    if (typeMap[genericParams[i]].isGeneric()) {
+                        for (size_t j = 0; j < protoArgs.size() && j < ArgTVs.size(); ++j) {
+                            if (protoArgs[j].second.isGeneric() &&
+                                protoArgs[j].second.GenericName == genericParams[i]) {
+                                typeMap[genericParams[i]] = ArgTVs[j].Type;
+                                break;
+                            }
+                        }
+                    }
+                }
             } else {
                 for (size_t i = 0; i < genericParams.size(); ++i) {
                     for (size_t j = 0; j < protoArgs.size() && j < ArgTVs.size(); ++j) {
@@ -3622,6 +3649,15 @@ TypedValue CallExprAST::codegen(CodegenContext& context)
                 }
 
                 std::string specializedName = Name + suffix;
+                std::cerr << "[CALL GEN] Name=" << Name << " suffix=" << suffix << " specializedName=" << specializedName << std::endl;
+                if (!GenericTypeArgs.empty()) {
+                    std::cerr << "[CALL GEN] generic arg 0 kind=" << static_cast<int>(GenericTypeArgs[0].Kind)
+                              << " name='" << GenericTypeArgs[0].GenericName << "'" << std::endl;
+                }
+                for (auto& [gp, gt] : typeMap) {
+                    std::cerr << "[CALL GEN] typeMap " << gp << " -> kind=" << static_cast<int>(gt.Kind)
+                              << " name='" << gt.GenericName << "'" << std::endl;
+                }
                 CalleeF = context.TheModule->getFunction(specializedName);
 
                 if (!CalleeF && !context.CompiledSpecializations.count(specializedName)) {
@@ -3698,6 +3734,8 @@ TypedValue CallExprAST::codegen(CodegenContext& context)
     bool needsAsyncState = false;
     bool needsSret = false;
 
+    std::cerr << "[CALL ARGS] Name=" << Name << " Callee=" << Callee << " numArgs=" << Args.size()
+              << " calleeArgSz=" << CalleeF->arg_size() << " isAsyncFn=" << (CalleeF->arg_size() > (isSretCall ? 1 : 0) ? (CalleeF->arg_begin() + (isSretCall ? 1 : 0))->getName().str() : "?") << std::endl;
     if (CalleeF->arg_size() != Args.size()) {
         // Check for async state param
         {
@@ -3705,6 +3743,7 @@ TypedValue CallExprAST::codegen(CodegenContext& context)
             if (CalleeF->arg_size() > offset) {
                 auto ArgIt = CalleeF->arg_begin();
                 if (isSretCall) ++ArgIt;
+                std::cerr << "[CALL ASYNC] check arg name='" << ArgIt->getName().str() << "'" << std::endl;
                 if (ArgIt->getName() == "__async_state")
                     needsAsyncState = true;
                 else if (ArgIt->getName() == "__gen_state")
@@ -5416,8 +5455,6 @@ void EnumDeclAST::codegen(CodegenContext& context)
     CodegenContext::EnumTypeInfo info;
     info.Name = Name;
     info.Variants = Variants;
-    info.VariantPayloads = VariantPayloads;
-
     // Create the LLVM tagged union type if any variant has a payload
     llvm::StructType* taggedUnionTy = nullptr;
     bool hasPayload = false;
@@ -5436,6 +5473,11 @@ void EnumDeclAST::codegen(CodegenContext& context)
         for (size_t i = 0; i < VariantPayloads.size(); ++i) {
             auto& pt = VariantPayloads[i];
             if (pt.Kind != TypeKind::Void) {
+                // Specialize generic struct/enum payload types so the stored
+                // VariantPayloads resolve to concrete types (e.g., Pair_Double_Double
+                // instead of the generic Pair template). This ensures later
+                // match-payload bindings get correct field types.
+                ensureGenericTypeArgSpecialized(pt, context);
                 // Resolve anonymous struct/enum payload types
                 resolveUserStructType(pt, context);
                 resolveUserEnumType(pt, context);
@@ -5453,9 +5495,14 @@ void EnumDeclAST::codegen(CodegenContext& context)
                     largestTy = effectiveLLVMTy;
             }
         }
+        // Copy resolved variant payloads into info after specialization/resolution
+        info.VariantPayloads = VariantPayloads;
         memberTypes.push_back(largestTy);
         taggedUnionTy = llvm::StructType::create(context.TheContext, memberTypes, Name);
         info.LLVMType = taggedUnionTy;
+    } else {
+        // No payloads — copy as-is (all Void)
+        info.VariantPayloads = VariantPayloads;
     }
 
     info.isCopy = !IsNoCopy;
@@ -5802,6 +5849,7 @@ void TraitDeclAST::codegen(CodegenContext& context)
 
 llvm::Function* FunctionAST::codegen(CodegenContext& context)
 {
+    std::cerr << "[CODEGEN] " << Proto->getName() << " isAsync=" << Proto->isAsync() << " isGenerator=" << Body->containsYield() << std::endl;
     bool isGenerator = Body->containsYield();
     if (isGenerator)
         Proto->setGenerator(true);
@@ -5878,13 +5926,28 @@ llvm::Function* FunctionAST::codegen(CodegenContext& context)
     context.Builder.SetInsertPoint(EntryBB);
     context.Builder.SetCurrentDebugLocation(llvm::DebugLoc());
 
+    // Save outer context fields (async/gen state) for restoration after nested codegen
+    auto SavedCatchBB = context.CurrentCatchBB;
+    auto SavedExAlloca = context.CurrentExceptionAlloca;
+    auto SavedGenState = context.GeneratorStateAlloca;
+    auto SavedGenStructTy = context.GeneratorStateStructTy;
+    auto SavedGenDisp = context.GeneratorDispatcherBB;
+    auto SavedYieldTgts = std::move(context.YieldTargets);
+    auto SavedAsyncState = context.AsyncStateAlloca;
+    auto SavedAsyncStructTy = context.AsyncStateStructTy;
+    auto SavedAsyncResult = context.AsyncResultAlloca;
+    auto SavedAwaitTgts = std::move(context.AwaitResumeTargets);
+    auto SavedAsyncDisp = context.AsyncDispatcherBB;
+
     // Initialize context for this function
     context.CurrentCatchBB = nullptr;
     context.CurrentExceptionAlloca = nullptr;
     context.GeneratorStateAlloca = nullptr;
+    context.GeneratorStateStructTy = nullptr;
     context.GeneratorDispatcherBB = nullptr;
     context.YieldTargets.clear();
     context.AsyncStateAlloca = nullptr;
+    context.AsyncStateStructTy = nullptr;
     context.AsyncResultAlloca = nullptr;
     context.AwaitResumeTargets.clear();
     context.AsyncDispatcherBB = nullptr;
@@ -5903,7 +5966,6 @@ llvm::Function* FunctionAST::codegen(CodegenContext& context)
         context.Builder.CreateStore(llvm::Constant::getNullValue(RetTy), RetValAlloca);
     }
 
-    // Update context for nested returns
     llvm::BasicBlock* SavedRetBB = context.CurrentReturnBB;
     llvm::Value* SavedRetAlloca = context.CurrentReturnValueAlloca;
     context.CurrentReturnBB = ReturnBB;
@@ -5913,6 +5975,7 @@ llvm::Function* FunctionAST::codegen(CodegenContext& context)
         // Generator state struct: { i32 state_index }
         std::vector<llvm::Type*> StateTypes = {llvm::Type::getInt32Ty(context.TheContext)};
         llvm::Type* StateTy = llvm::StructType::get(context.TheContext, StateTypes);
+        context.GeneratorStateStructTy = StateTy;
         llvm::Value* StatePtr = &(*TheFunction->arg_begin());
 
         context.GeneratorStateAlloca = StatePtr;
@@ -5930,6 +5993,7 @@ llvm::Function* FunctionAST::codegen(CodegenContext& context)
         // Async state struct: { i32 state_index }
         std::vector<llvm::Type*> StateTypes = {llvm::Type::getInt32Ty(context.TheContext)};
         llvm::Type* StateTy = llvm::StructType::get(context.TheContext, StateTypes);
+        context.AsyncStateStructTy = StateTy;
         // For async, the hidden state param is the second hidden param (after sret if any)
         auto ArgIt = TheFunction->arg_begin();
         if (useSRet)
@@ -6048,8 +6112,12 @@ llvm::Function* FunctionAST::codegen(CodegenContext& context)
 
         if (isGenerator) {
             // End of generator: set state to -1
-            std::vector<llvm::Type*> StateTypes = {llvm::Type::getInt32Ty(context.TheContext)};
-            llvm::Type* StateTy = llvm::StructType::get(context.TheContext, StateTypes);
+            llvm::Type* StateTy = context.GeneratorStateStructTy;
+            if (!StateTy) {
+                std::vector<llvm::Type*> StateTypes = {llvm::Type::getInt32Ty(context.TheContext)};
+                StateTy = llvm::StructType::get(context.TheContext, StateTypes);
+            }
+            std::cerr << "[CODEGEN GEP] gen_end for " << Proto->getName() << std::endl;
             llvm::Value* IndexPtr = context.Builder.CreateStructGEP(StateTy, context.GeneratorStateAlloca, 0);
             context.Builder.CreateStore(llvm::ConstantInt::get(llvm::Type::getInt32Ty(context.TheContext), -1),
                                         IndexPtr);
@@ -6057,8 +6125,11 @@ llvm::Function* FunctionAST::codegen(CodegenContext& context)
 
         if (isAsync) {
             // End of async function: set state to -1
-            std::vector<llvm::Type*> StateTypes = {llvm::Type::getInt32Ty(context.TheContext)};
-            llvm::Type* StateTy = llvm::StructType::get(context.TheContext, StateTypes);
+            llvm::Type* StateTy = context.AsyncStateStructTy;
+            if (!StateTy) {
+                std::vector<llvm::Type*> StateTypes = {llvm::Type::getInt32Ty(context.TheContext)};
+                StateTy = llvm::StructType::get(context.TheContext, StateTypes);
+            }
             llvm::Value* IndexPtr = context.Builder.CreateStructGEP(StateTy, context.AsyncStateAlloca, 0);
             context.Builder.CreateStore(llvm::ConstantInt::get(llvm::Type::getInt32Ty(context.TheContext), -1),
                                         IndexPtr);
@@ -6111,15 +6182,15 @@ llvm::Function* FunctionAST::codegen(CodegenContext& context)
             context.Builder.CreateRetVoid();
         }
 
-        // Restore context
-        context.CurrentReturnBB = SavedRetBB;
-        context.CurrentReturnValueAlloca = SavedRetAlloca;
-
         if (isGenerator) {
             // Generate dispatcher switch
             context.Builder.SetInsertPoint(context.GeneratorDispatcherBB);
-            std::vector<llvm::Type*> StateTypes = {llvm::Type::getInt32Ty(context.TheContext)};
-            llvm::Type* StateTy = llvm::StructType::get(context.TheContext, StateTypes);
+            llvm::Type* StateTy = context.GeneratorStateStructTy;
+            if (!StateTy) {
+                std::vector<llvm::Type*> StateTypes = {llvm::Type::getInt32Ty(context.TheContext)};
+                StateTy = llvm::StructType::get(context.TheContext, StateTypes);
+            }
+            std::cerr << "[CODEGEN GEP] gen_dispatch for " << Proto->getName() << std::endl;
             llvm::Value* IndexPtr = context.Builder.CreateStructGEP(StateTy, context.GeneratorStateAlloca, 0);
             llvm::Value* StateIndex = context.Builder.CreateLoad(llvm::Type::getInt32Ty(context.TheContext), IndexPtr);
 
@@ -6134,8 +6205,12 @@ llvm::Function* FunctionAST::codegen(CodegenContext& context)
         if (isAsync) {
             // Generate async dispatcher switch
             context.Builder.SetInsertPoint(context.AsyncDispatcherBB);
-            std::vector<llvm::Type*> StateTypes = {llvm::Type::getInt32Ty(context.TheContext)};
-            llvm::Type* StateTy = llvm::StructType::get(context.TheContext, StateTypes);
+            llvm::Type* StateTy = context.AsyncStateStructTy;
+            if (!StateTy) {
+                std::vector<llvm::Type*> StateTypes = {llvm::Type::getInt32Ty(context.TheContext)};
+                StateTy = llvm::StructType::get(context.TheContext, StateTypes);
+                context.AsyncStateStructTy = StateTy;
+            }
             llvm::Value* IndexPtr = context.Builder.CreateStructGEP(StateTy, context.AsyncStateAlloca, 0);
             llvm::Value* StateIndex = context.Builder.CreateLoad(llvm::Type::getInt32Ty(context.TheContext), IndexPtr);
 
@@ -6147,6 +6222,21 @@ llvm::Function* FunctionAST::codegen(CodegenContext& context)
             }
         }
 
+        // Restore context (after dispatchers, which still need current function's values)
+        context.CurrentReturnBB = SavedRetBB;
+        context.CurrentReturnValueAlloca = SavedRetAlloca;
+        context.CurrentCatchBB = SavedCatchBB;
+        context.CurrentExceptionAlloca = SavedExAlloca;
+        context.GeneratorStateAlloca = SavedGenState;
+        context.GeneratorStateStructTy = SavedGenStructTy;
+        context.GeneratorDispatcherBB = SavedGenDisp;
+        context.YieldTargets = std::move(SavedYieldTgts);
+        context.AsyncStateAlloca = SavedAsyncState;
+        context.AsyncStateStructTy = SavedAsyncStructTy;
+        context.AsyncResultAlloca = SavedAsyncResult;
+        context.AwaitResumeTargets = std::move(SavedAwaitTgts);
+        context.AsyncDispatcherBB = SavedAsyncDisp;
+
         if (llvm::verifyFunction(*TheFunction, &llvm::errs())) {
             std::cerr << "LLVM IR Verification FAILED for standard function. Dumping IR:" << std::endl;
             TheFunction->print(llvm::errs());
@@ -6155,6 +6245,20 @@ llvm::Function* FunctionAST::codegen(CodegenContext& context)
         return TheFunction;
     }
 
+    // Restore context on failure path too
+    context.CurrentReturnBB = SavedRetBB;
+    context.CurrentReturnValueAlloca = SavedRetAlloca;
+    context.CurrentCatchBB = SavedCatchBB;
+    context.CurrentExceptionAlloca = SavedExAlloca;
+    context.GeneratorStateAlloca = SavedGenState;
+    context.GeneratorStateStructTy = SavedGenStructTy;
+    context.GeneratorDispatcherBB = SavedGenDisp;
+    context.YieldTargets = std::move(SavedYieldTgts);
+    context.AsyncStateAlloca = SavedAsyncState;
+    context.AsyncStateStructTy = SavedAsyncStructTy;
+    context.AsyncResultAlloca = SavedAsyncResult;
+    context.AwaitResumeTargets = std::move(SavedAwaitTgts);
+    context.AsyncDispatcherBB = SavedAsyncDisp;
     if (subprogram) context.LexicalBlocks.pop_back();
     TheFunction->eraseFromParent();
     return nullptr;

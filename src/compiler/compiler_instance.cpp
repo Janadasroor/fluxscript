@@ -1602,6 +1602,14 @@ bool CompilerInstance::compileParser(Parser& parser, CodegenContext& context,
         s->codegen(context);
     }
 
+    // Pre-populate GenericStructs so enum codegen below can specialize
+    // generic struct payloads (e.g., Option.Some(Pair[Double, Double])).
+    for (auto& s : structs) {
+        if (s->isGeneric()) {
+            context.GenericStructs[s->getName()] = s.get();
+        }
+    }
+
     // Process enum declarations: register enum types
     for (auto& e : enums) {
         e->codegen(context);
@@ -2063,8 +2071,17 @@ std::unique_ptr<CompileArtifacts> CompilerInstance::compileToIR(const std::strin
     std::string compileError;
     if (!compileParser(parser, *artifacts->codegenContext, artifacts->functionReturnTypes, compileError,
                        importedModules, {}, &preParsedFunctions)) {
-        if (error)
-            *error = compileError;
+        if (error) {
+            // Use structured diagnostic if available
+            auto diags = parser.getErrors();
+            if (!diags.empty()) {
+                auto& d = diags.front();
+                *error = "Error at line " + std::to_string(d.line) +
+                         ", column " + std::to_string(d.column) + ": " + d.message;
+            } else {
+                *error = compileError;
+            }
+        }
         return nullptr;
     }
 
