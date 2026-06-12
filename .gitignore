@@ -22,6 +22,7 @@ progress.md
 /*.csv
 /*.json
 
+.kilo/
 .vscode/
 .spiceinit
 .flux_cache/
