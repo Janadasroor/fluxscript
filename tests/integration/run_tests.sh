@@ -845,6 +845,24 @@ match five {
 }
 '
 
+# Test 39.5: Match Or-Patterns
+run_test "Match Or-Patterns" '
+enum MyEnum { Val1 { value: Double }, Val2 { value: Double }, Val3 }
+def test_match(x: MyEnum) -> Double {
+    match x {
+        MyEnum.Val1(v) | MyEnum.Val2(v) -> v,
+        MyEnum.Val3 -> 100.0
+    }
+}
+def main() -> Double {
+    assert(test_match(MyEnum.Val1(42.0)) == 42.0, "or arm 1 failed");
+    assert(test_match(MyEnum.Val2(55.0)) == 55.0, "or arm 2 failed");
+    assert(test_match(MyEnum.Val3) == 100.0, "val3 failed");
+    1.0
+}
+main()
+'
+
 # Test 40: Nested enum payload constructions and matches
 run_test "Enum Nested Payload" '
 enum Result { Ok { value: Double }, Err { msg: String } }
@@ -2575,6 +2593,48 @@ def main() -> Double {
     let a = step1()?;
     let b = step2(a)?;
     b
+}
+'
+
+# Test S43: Variable Shadowing inside let-in and for loop variables
+run_selfhost_test "SelfHost: let in and for shadowing" '
+def test_let_shadow(x: Double) -> Double {
+    let x = 42.0 in {
+        let x = 100.0 in {
+            x
+        }
+    } + x
+}
+
+def test_for_shadow() -> Double {
+    var sum = 0.0;
+    let i = 1000.0;
+    for i in 1, 3 do {
+        sum = sum + i
+    };
+    sum + i
+}
+
+def main() -> Double {
+    let r1 = test_let_shadow(5.0);
+    let r2 = test_for_shadow();
+    if (r1 == 105.0 && r2 == 1006.0) { 1.0 } else { 0.0 }
+}
+'
+
+run_selfhost_test "SelfHost: match or-patterns" '
+enum MyEnum { Val1 { value: Double }, Val2 { value: Double }, Val3 }
+def test_match(x: MyEnum) -> Double {
+    match x {
+        MyEnum.Val1(v) | MyEnum.Val2(v) -> v,
+        MyEnum.Val3 -> 100.0
+    }
+}
+def main() -> Double {
+    let r1 = test_match(MyEnum.Val1(42.0));
+    let r2 = test_match(MyEnum.Val2(55.0));
+    let r3 = test_match(MyEnum.Val3);
+    if (r1 == 42.0 && r2 == 55.0 && r3 == 100.0) { 1.0 } else { 0.0 }
 }
 '
 

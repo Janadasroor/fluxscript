@@ -850,6 +850,8 @@ public:
     int getOp() const { return Op; }
     const ExprAST* getLHS() const { return LHS.get(); }
     const ExprAST* getRHS() const { return RHS.get(); }
+    std::unique_ptr<ExprAST> takeLHS() { return std::move(LHS); }
+    std::unique_ptr<ExprAST> takeRHS() { return std::move(RHS); }
     bool containsYield() const override { return LHS->containsYield() || RHS->containsYield(); }
 };
 
@@ -1653,7 +1655,7 @@ public:
 class MatchExprAST : public ExprAST
 {
     std::unique_ptr<ExprAST> Value;
-    std::vector<std::pair<std::unique_ptr<ExprAST>, std::unique_ptr<ExprAST>>> Arms; // (pattern, result)
+    std::vector<std::pair<std::vector<std::unique_ptr<ExprAST>>, std::unique_ptr<ExprAST>>> Arms; // (patterns, result)
     std::unique_ptr<ExprAST> DefaultArm;
     std::vector<std::vector<std::string>> Bindings; // variable names for payload extraction per arm (empty means none)
     // Named-field bindings per arm: pairs of (field_name, binding_var_name) for `{ field: var }` patterns.
@@ -1663,12 +1665,12 @@ class MatchExprAST : public ExprAST
 public:
     MatchExprAST(std::unique_ptr<ExprAST> Value) : Value(std::move(Value)) {}
     TypedValue codegen(CodegenContext& context) override;
-    void addArm(std::unique_ptr<ExprAST> pattern, std::unique_ptr<ExprAST> result,
+    void addArm(std::vector<std::unique_ptr<ExprAST>> patterns, std::unique_ptr<ExprAST> result,
                 const std::vector<std::string>& bindings = {},
                 const std::vector<std::pair<std::string, std::string>>& namedBindings = {});
     void setDefault(std::unique_ptr<ExprAST> arm);
     const ExprAST* getValue() const { return Value.get(); }
-    const std::vector<std::pair<std::unique_ptr<ExprAST>, std::unique_ptr<ExprAST>>>& getArms() const { return Arms; }
+    const std::vector<std::pair<std::vector<std::unique_ptr<ExprAST>>, std::unique_ptr<ExprAST>>>& getArms() const { return Arms; }
     const std::vector<std::vector<std::string>>& getBindings() const { return Bindings; }
     const std::vector<std::vector<std::pair<std::string,std::string>>>& getNamedFieldBindings() const { return NamedFieldBindings; }
     const ExprAST* getDefaultArm() const { return DefaultArm.get(); }

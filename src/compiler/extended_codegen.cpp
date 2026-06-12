@@ -490,13 +490,72 @@ TypedValue CornerExprAST::codegen(CodegenContext& context)
 
 // ============ Pattern Match Codegen ============
 
-void MatchExprAST::addArm(std::unique_ptr<ExprAST> pattern, std::unique_ptr<ExprAST> result,
+void MatchExprAST::addArm(std::vector<std::unique_ptr<ExprAST>> patterns, std::unique_ptr<ExprAST> result,
                           const std::vector<std::string>& bindings,
                           const std::vector<std::pair<std::string,std::string>>& namedBindings)
 {
-    Arms.emplace_back(std::move(pattern), std::move(result));
+    Arms.emplace_back(std::move(patterns), std::move(result));
     Bindings.push_back(bindings);
     NamedFieldBindings.push_back(namedBindings);
+}
+
+static bool extractEnumVariant(ExprAST* pattern, CodegenContext& context, std::string& enumName, std::string& variantName) {
+    if (!pattern) return false;
+
+    // Case 1: MemberExprAST (e.g. MyEnum.Val3)
+    if (auto* memberPat = dynamic_cast<MemberExprAST*>(pattern)) {
+        if (auto* objPat = dynamic_cast<VariableExprAST*>(memberPat->getObject())) {
+            std::string possibleEnum = objPat->getName();
+            if (context.EnumTypeIndex.count(possibleEnum)) {
+                enumName = possibleEnum;
+                variantName = memberPat->getMemberName();
+                return true;
+            }
+        }
+    }
+
+    // Case 2: CallExprAST (e.g. MyEnum.Val1(v))
+    if (auto* callPat = dynamic_cast<CallExprAST*>(pattern)) {
+        if (callPat->hasCalleeExpr()) {
+            if (auto* memberPat = dynamic_cast<MemberExprAST*>(callPat->getCalleeExpr())) {
+                if (auto* objPat = dynamic_cast<VariableExprAST*>(memberPat->getObject())) {
+                    std::string possibleEnum = objPat->getName();
+                    if (context.EnumTypeIndex.count(possibleEnum)) {
+                        enumName = possibleEnum;
+                        variantName = memberPat->getMemberName();
+                        return true;
+                    }
+                }
+            }
+        } else {
+            std::string callee = callPat->getCallee();
+            size_t pos = callee.find("::");
+            if (pos != std::string::npos) {
+                std::string possibleEnum = callee.substr(0, pos);
+                if (context.EnumTypeIndex.count(possibleEnum)) {
+                    enumName = possibleEnum;
+                    variantName = callee.substr(pos + 2);
+                    return true;
+                }
+            }
+        }
+    }
+
+    // Case 3: VariableExprAST (e.g. MyEnum::Val3)
+    if (auto* varPat = dynamic_cast<VariableExprAST*>(pattern)) {
+        std::string name = varPat->getName();
+        size_t pos = name.find("::");
+        if (pos != std::string::npos) {
+            std::string possibleEnum = name.substr(0, pos);
+            if (context.EnumTypeIndex.count(possibleEnum)) {
+                enumName = possibleEnum;
+                variantName = name.substr(pos + 2);
+                return true;
+            }
+        }
+    }
+
+    return false;
 }
 
 void MatchExprAST::setDefault(std::unique_ptr<ExprAST> arm)
@@ -537,14 +596,12 @@ TypedValue MatchExprAST::codegen(CodegenContext& context)
         if (enumTypeId >= 0 && enumTypeId < static_cast<int>(context.EnumTypes.size())) {
             auto& enumInfo = context.EnumTypes[enumTypeId];
             std::set<std::string> matchedVariants;
-            for (auto const& [Pattern, _] : Arms) {
-                if (auto* callPat = dynamic_cast<CallExprAST*>(Pattern.get())) {
-                    if (callPat->hasCalleeExpr()) {
-                        if (auto* memberPat = dynamic_cast<MemberExprAST*>(callPat->getCalleeExpr()))
-                            matchedVariants.insert(memberPat->getMemberName());
+            for (auto const& [Patterns, _] : Arms) {
+                for (auto const& Pattern : Patterns) {
+                    std::string enumName, variantName;
+                    if (extractEnumVariant(Pattern.get(), context, enumName, variantName)) {
+                        matchedVariants.insert(variantName);
                     }
-                } else if (auto* memberPat = dynamic_cast<MemberExprAST*>(Pattern.get())) {
-                    matchedVariants.insert(memberPat->getMemberName());
                 }
             }
             for (auto const& variant : enumInfo.Variants) {
@@ -563,11 +620,15 @@ TypedValue MatchExprAST::codegen(CodegenContext& context)
     llvm::BasicBlock* MergeBB = llvm::BasicBlock::Create(Ctx, "match_merge");
     llvm::AllocaInst* ResultAlloc = context.Builder.CreateAlloca(ResultTy, nullptr, "match_result");
 
-    // Build chained checks: each arm gets a check block and a match body block
-    std::vector<llvm::BasicBlock*> checkBBs;
+    // Build chained checks: each arm gets one check block per pattern, and a match body block
+    std::vector<std::vector<llvm::BasicBlock*>> checkBBs;
     std::vector<llvm::BasicBlock*> matchBBs;
     for (size_t i = 0; i < Arms.size(); ++i) {
-        checkBBs.push_back(llvm::BasicBlock::Create(Ctx, "match_check_" + std::to_string(i), TheFunction));
+        std::vector<llvm::BasicBlock*> armCheckBBs;
+        for (size_t p = 0; p < Arms[i].first.size(); ++p) {
+            armCheckBBs.push_back(llvm::BasicBlock::Create(Ctx, "match_check_" + std::to_string(i) + "_" + std::to_string(p), TheFunction));
+        }
+        checkBBs.push_back(armCheckBBs);
         matchBBs.push_back(llvm::BasicBlock::Create(Ctx, "match_arm_" + std::to_string(i), TheFunction));
     }
 
@@ -591,323 +652,386 @@ TypedValue MatchExprAST::codegen(CodegenContext& context)
         return TypedValue(ResultVal, TypeKind::Double);
     }
 
-    // Branch from current block to the first check
-    context.Builder.CreateBr(checkBBs[0]);
+    // 1. Pre-create shared allocas and types for all arms in the current entry block
+    std::vector<std::map<std::string, llvm::AllocaInst*>> allSharedAllocas(Arms.size());
+    std::vector<std::map<std::string, FluxType>> allSharedTypes(Arms.size());
+
+    for (size_t i = 0; i < Arms.size(); ++i) {
+        auto& [Patterns, Result] = Arms[i];
+        const auto& armBindings = i < Bindings.size() ? Bindings[i] : emptyBindings;
+        const auto& armNamedBindings = i < NamedFieldBindings.size() ? NamedFieldBindings[i] : emptyNamedBindings;
+
+        if (!armBindings.empty()) {
+            if (isPayloadEnum) {
+                // Use the first pattern to determine types
+                auto& firstPattern = Patterns[0];
+                std::string enumName, variantName;
+                extractEnumVariant(firstPattern.get(), context, enumName, variantName);
+
+                int enumTypeId = MatchValTV.Type.EnumTypeId;
+                int matchedVarIdx = -1;
+                if (enumTypeId >= 0 && enumTypeId < static_cast<int>(context.EnumTypes.size())) {
+                    auto& enumInfo = context.EnumTypes[enumTypeId];
+                    for (size_t vi = 0; vi < enumInfo.Variants.size(); ++vi) {
+                        if (enumInfo.Variants[vi] == variantName) {
+                            matchedVarIdx = static_cast<int>(vi);
+                            break;
+                        }
+                    }
+                }
+
+                if (matchedVarIdx >= 0) {
+                    auto& enumInfo = context.EnumTypes[enumTypeId];
+                    FluxType concretePayloadType = enumInfo.VariantPayloads[matchedVarIdx];
+                    if (concretePayloadType.Kind == TypeKind::UserStruct && concretePayloadType.StructTypeId < 0 && !concretePayloadType.GenericName.empty()) {
+                        auto it = context.StructTypeIndex.find(concretePayloadType.GenericName);
+                        if (it != context.StructTypeIndex.end()) {
+                            concretePayloadType.StructTypeId = it->second;
+                            if (it->second >= 0 && it->second < static_cast<int>(context.StructTypes.size())) {
+                                concretePayloadType.StructLLVMType = context.StructTypes[it->second].LLVMType;
+                            }
+                        }
+                    }
+                    if (concretePayloadType.Kind == TypeKind::UserEnum && concretePayloadType.EnumTypeId < 0 && !concretePayloadType.GenericName.empty()) {
+                        auto it = context.EnumTypeIndex.find(concretePayloadType.GenericName);
+                        if (it != context.EnumTypeIndex.end()) {
+                            concretePayloadType.EnumTypeId = it->second;
+                            if (it->second >= 0 && it->second < static_cast<int>(context.EnumTypes.size())) {
+                                concretePayloadType.EnumLLVMType = context.EnumTypes[it->second].LLVMType;
+                            }
+                        }
+                    }
+
+                    llvm::Type* concretePayloadLLVMTy = concretePayloadType.getLLVMType(Ctx);
+
+                    if (!armNamedBindings.empty() && concretePayloadLLVMTy->isStructTy() &&
+                        concretePayloadType.StructTypeId >= 0 &&
+                        concretePayloadType.StructTypeId < static_cast<int>(context.StructTypes.size())) {
+                        auto& structInfo = context.StructTypes[concretePayloadType.StructTypeId];
+                        for (const auto& [fieldName, varName] : armNamedBindings) {
+                            int fieldIdx = -1;
+                            for (size_t fi = 0; fi < structInfo.Fields.size(); ++fi) {
+                                if (structInfo.Fields[fi].first == fieldName) {
+                                    fieldIdx = static_cast<int>(fi);
+                                    break;
+                                }
+                            }
+                            if (fieldIdx >= 0) {
+                                llvm::Type* fieldTy = concretePayloadLLVMTy->getStructElementType(static_cast<unsigned>(fieldIdx));
+                                allSharedAllocas[i][varName] = context.Builder.CreateAlloca(fieldTy, nullptr, varName + "_alloca");
+                                allSharedTypes[i][varName] = structInfo.Fields[fieldIdx].second;
+                            }
+                        }
+                    } else if (armBindings.size() == 1 && concretePayloadLLVMTy->isStructTy() &&
+                               concretePayloadType.StructTypeId >= 0 &&
+                               concretePayloadType.StructTypeId < static_cast<int>(context.StructTypes.size())) {
+                        auto& structInfo = context.StructTypes[concretePayloadType.StructTypeId];
+                        if (structInfo.Fields.size() == 1) {
+                            llvm::Type* fieldTy = concretePayloadLLVMTy->getStructElementType(0);
+                            allSharedAllocas[i][armBindings[0]] = context.Builder.CreateAlloca(fieldTy, nullptr, armBindings[0] + "_alloca");
+                            allSharedTypes[i][armBindings[0]] = structInfo.Fields[0].second;
+                        } else {
+                            allSharedAllocas[i][armBindings[0]] = context.Builder.CreateAlloca(concretePayloadLLVMTy, nullptr, armBindings[0] + "_alloca");
+                            allSharedTypes[i][armBindings[0]] = concretePayloadType;
+                        }
+                    } else if (armBindings.size() == 1) {
+                        allSharedAllocas[i][armBindings[0]] = context.Builder.CreateAlloca(concretePayloadLLVMTy, nullptr, armBindings[0] + "_alloca");
+                        allSharedTypes[i][armBindings[0]] = concretePayloadType;
+                    } else {
+                        for (size_t bi = 0; bi < armBindings.size(); ++bi) {
+                            llvm::Type* fieldTy = concretePayloadLLVMTy->getStructElementType(bi);
+                            allSharedAllocas[i][armBindings[bi]] = context.Builder.CreateAlloca(fieldTy, nullptr, armBindings[bi] + "_alloca");
+                            if (concretePayloadType.StructTypeId >= 0 &&
+                                concretePayloadType.StructTypeId < static_cast<int>(context.StructTypes.size())) {
+                                auto& structInfo = context.StructTypes[concretePayloadType.StructTypeId];
+                                if (bi < structInfo.Fields.size()) {
+                                    allSharedTypes[i][armBindings[bi]] = structInfo.Fields[bi].second;
+                                }
+                            }
+                        }
+                    }
+                }
+            } else {
+                // Non-enum binding (always matches, e.g., `x -> ...`)
+                std::string binderName = armBindings[0];
+                allSharedAllocas[i][binderName] = context.Builder.CreateAlloca(MatchValTV.Val->getType(), nullptr, binderName + "_alloca");
+                allSharedTypes[i][binderName] = MatchValTV.Type;
+            }
+        }
+    }
+
+    // Branch from current block to the first check of the first arm
+    context.Builder.CreateBr(checkBBs[0][0]);
 
     // Generate each arm
     llvm::BasicBlock* DefaultFallbackBB = nullptr;
     for (size_t i = 0; i < Arms.size(); ++i) {
-        auto& [Pattern, Result] = Arms[i];
+        auto& [Patterns, Result] = Arms[i];
         const auto& armBindings = i < Bindings.size() ? Bindings[i] : emptyBindings;
         const auto& armNamedBindings = i < NamedFieldBindings.size() ? NamedFieldBindings[i] : emptyNamedBindings;
 
-        // Determine which block to branch to when this check fails
-        llvm::BasicBlock* NextBB;
-        if (i + 1 < Arms.size()) {
-            NextBB = checkBBs[i + 1];
-        } else if (DefaultArm) {
-            NextBB = llvm::BasicBlock::Create(Ctx, "match_default", TheFunction);
-            DefaultFallbackBB = NextBB;
-        } else {
-            NextBB = MergeBB;
-        }
+        // 1. Get pre-created allocas and types for this arm's bindings
+        std::map<std::string, llvm::AllocaInst*> sharedAllocas = allSharedAllocas[i];
+        std::map<std::string, FluxType> sharedTypes = allSharedTypes[i];
 
-        // Emit check in the check block
-        context.Builder.SetInsertPoint(checkBBs[i]);
+        // 2. Generate check blocks for all patterns of this arm
+        for (size_t p = 0; p < Patterns.size(); ++p) {
+            auto& Pattern = Patterns[p];
 
-        llvm::Value* IsMatch = nullptr;
+            // Next check block or fallback
+            llvm::BasicBlock* NextBB;
+            if (p + 1 < Patterns.size()) {
+                NextBB = checkBBs[i][p + 1];
+            } else if (i + 1 < Arms.size()) {
+                NextBB = checkBBs[i + 1][0];
+            } else if (DefaultArm) {
+                NextBB = llvm::BasicBlock::Create(Ctx, "match_default", TheFunction);
+                DefaultFallbackBB = NextBB;
+            } else {
+                NextBB = MergeBB;
+            }
 
-        if (isPayloadEnum) {
-            // Extract discriminant (i32 tag) from tagged union struct value
-            llvm::Value* TagVal = context.Builder.CreateExtractValue(
-                MatchValTV.Val, {0}, "tag");
+            context.Builder.SetInsertPoint(checkBBs[i][p]);
 
-            llvm::Value* PatDiscVal = nullptr;
+            llvm::Value* IsMatch = nullptr;
 
-            // If pattern has a binding variable, compute discriminant from AST without
-            // codegen'ing the pattern (which would fail on the unbounded binding variable).
-            if (!armBindings.empty()) {
-                if (auto* callPat = dynamic_cast<CallExprAST*>(Pattern.get())) {
-                    if (auto* memberPat = dynamic_cast<MemberExprAST*>(callPat->getCalleeExpr())) {
-                        if (auto* objPat = dynamic_cast<VariableExprAST*>(memberPat->getObject())) {
-                            std::string enumName = objPat->getName();
-                            std::string varName = memberPat->getMemberName();
-                            auto enumIt = context.EnumTypeIndex.find(enumName);
-                            if (enumIt != context.EnumTypeIndex.end()) {
-                                int enumId = enumIt->second;
-                                if (enumId >= 0 && enumId < static_cast<int>(context.EnumTypes.size())) {
-                                    auto& enumInfo = context.EnumTypes[enumId];
-                                    for (size_t vi = 0; vi < enumInfo.Variants.size(); ++vi) {
-                                        if (enumInfo.Variants[vi] == varName) {
-                                            PatDiscVal = llvm::ConstantInt::get(
-                                                llvm::Type::getInt32Ty(Ctx), vi);
-                                            break;
-                                        }
+            if (isPayloadEnum) {
+                llvm::Value* TagVal = context.Builder.CreateExtractValue(MatchValTV.Val, {0}, "tag");
+                llvm::Value* PatDiscVal = nullptr;
+
+                {
+                    std::string enumName, varName;
+                    if (extractEnumVariant(Pattern.get(), context, enumName, varName)) {
+                        auto enumIt = context.EnumTypeIndex.find(enumName);
+                        if (enumIt != context.EnumTypeIndex.end()) {
+                            int enumId = enumIt->second;
+                            if (enumId >= 0 && enumId < static_cast<int>(context.EnumTypes.size())) {
+                                auto& enumInfo = context.EnumTypes[enumId];
+                                for (size_t vi = 0; vi < enumInfo.Variants.size(); ++vi) {
+                                    if (enumInfo.Variants[vi] == varName) {
+                                        PatDiscVal = llvm::ConstantInt::get(llvm::Type::getInt32Ty(Ctx), vi);
+                                        break;
                                     }
                                 }
                             }
                         }
                     }
                 }
-            }
 
-            // Fallback: codegen pattern normally (works for bindless patterns like Option.Some(5.0))
-            if (!PatDiscVal) {
+                if (!PatDiscVal) {
+                    TypedValue PatternTV = Pattern->codegen(context);
+                    if (!PatternTV.Val) {
+                        std::cerr << "[FLUX ERROR] match pattern (payload enum) failed to codegen" << std::endl;
+                        return TypedValue();
+                    }
+                    PatDiscVal = PatternTV.Val;
+                    if (PatDiscVal->getType()->isStructTy()) {
+                        PatDiscVal = context.Builder.CreateExtractValue(PatDiscVal, {0}, "pat_tag");
+                    }
+                }
+
+                if (PatDiscVal->getType() != llvm::Type::getInt32Ty(Ctx))
+                    PatDiscVal = context.Builder.CreateIntCast(PatDiscVal, llvm::Type::getInt32Ty(Ctx), false, "pat_tag_casted");
+                IsMatch = context.Builder.CreateICmpEQ(TagVal, PatDiscVal, "tag_cmp_" + std::to_string(i) + "_" + std::to_string(p));
+            } else if (isEnumMatch) {
                 TypedValue PatternTV = Pattern->codegen(context);
                 if (!PatternTV.Val) {
-                    std::cerr << "[FLUX ERROR] match pattern (payload enum) failed to codegen" << std::endl;
+                    std::cerr << "[FLUX ERROR] match pattern (simple enum) failed to codegen" << std::endl;
                     return TypedValue();
                 }
-                PatDiscVal = PatternTV.Val;
-                if (PatDiscVal->getType()->isStructTy()) {
-                    PatDiscVal = context.Builder.CreateExtractValue(PatDiscVal, {0}, "pat_tag");
+                llvm::Value* patVal = PatternTV.Val;
+                if (patVal->getType()->isStructTy()) {
+                    patVal = context.Builder.CreateExtractValue(patVal, {0}, "pat_tag");
                 }
-            }
-
-            // Cast to i32 if needed
-            if (PatDiscVal->getType() != llvm::Type::getInt32Ty(Ctx))
-                PatDiscVal = context.Builder.CreateIntCast(PatDiscVal, llvm::Type::getInt32Ty(Ctx), false, "pat_tag_casted");
-            IsMatch = context.Builder.CreateICmpEQ(TagVal, PatDiscVal, "tag_cmp_" + std::to_string(i));
-        } else if (isEnumMatch) {
-            // Simple enum (i32 discriminant) — or tagged union if payload enum exists
-            TypedValue PatternTV = Pattern->codegen(context);
-            if (!PatternTV.Val) {
-                std::cerr << "[FLUX ERROR] match pattern (simple enum) failed to codegen" << std::endl;
-                return TypedValue();
-            }
-            llvm::Value* patVal = PatternTV.Val;
-            // If pattern produced a struct, extract its tag (i32)
-            if (patVal->getType()->isStructTy()) {
-                patVal = context.Builder.CreateExtractValue(patVal, {0}, "pat_tag");
-            }
-            llvm::Value* matchVal = MatchValTV.Val;
-            // If match value is a struct, extract its tag
-            if (matchVal->getType()->isStructTy()) {
-                matchVal = context.Builder.CreateExtractValue(matchVal, {0}, "val_tag");
-            }
-            if (patVal->getType() != matchVal->getType())
-                patVal = context.Builder.CreateIntCast(patVal, matchVal->getType(), false, "pat_cast");
-            IsMatch = context.Builder.CreateICmpEQ(matchVal, patVal, "cmp_" + std::to_string(i));
-        } else {
-            // Non-enum match
-            // Detect binder patterns (standalone VariableExprAST like `x -> ...`)
-            // that the parser didn't add to Bindings.
-            std::string binderName;
-            if (!armBindings.empty()) {
-                binderName = armBindings[0];
-            } else if (auto* varPat = dynamic_cast<VariableExprAST*>(Pattern.get())) {
-                if (varPat->getName() != "_") {
-                    binderName = varPat->getName();
+                llvm::Value* matchVal = MatchValTV.Val;
+                if (matchVal->getType()->isStructTy()) {
+                    matchVal = context.Builder.CreateExtractValue(matchVal, {0}, "val_tag");
                 }
-            }
-
-            if (!binderName.empty()) {
-                // Binder pattern (e.g., `x -> ...`): always matches.
-                IsMatch = llvm::ConstantInt::getTrue(Ctx);
+                if (patVal->getType() != matchVal->getType())
+                    patVal = context.Builder.CreateIntCast(patVal, matchVal->getType(), false, "pat_cast");
+                IsMatch = context.Builder.CreateICmpEQ(matchVal, patVal, "cmp_" + std::to_string(i) + "_" + std::to_string(p));
             } else {
-                // Literal pattern: codegen and compare
-                TypedValue PatternTV = Pattern->codegen(context);
-                if (!PatternTV.Val) {
-                    std::cerr << "[FLUX ERROR] match pattern (non-enum) failed to codegen" << std::endl;
-                    return TypedValue();
+                std::string binderName;
+                if (!armBindings.empty()) {
+                    binderName = armBindings[0];
+                } else if (auto* varPat = dynamic_cast<VariableExprAST*>(Pattern.get())) {
+                    if (varPat->getName() != "_") {
+                        binderName = varPat->getName();
+                    }
                 }
 
-                llvm::Value*& PatternVal = PatternTV.Val;
-                llvm::Value* MatchVal = MatchValTV.Val;
-
-                if (MatchVal->getType()->isIntegerTy()) {
-                    if (PatternVal->getType() != MatchVal->getType())
-                        PatternVal = context.Builder.CreateIntCast(PatternVal, MatchVal->getType(), false, "pat_cast");
-                    IsMatch = context.Builder.CreateICmpEQ(MatchVal, PatternVal, "cmp_" + std::to_string(i));
-                } else if (MatchVal->getType()->isFloatingPointTy()) {
-                    if (PatternVal->getType()->isIntegerTy())
-                        PatternVal = context.Builder.CreateSIToFP(PatternVal, MatchVal->getType(), "pat_to_fp");
-                    IsMatch = context.Builder.CreateFCmpOEQ(MatchVal, PatternVal, "cmp_" + std::to_string(i));
+                if (!binderName.empty()) {
+                    IsMatch = llvm::ConstantInt::getTrue(Ctx);
                 } else {
-                    // Fallback: compare as integers via ptrtoint
-                    IsMatch = context.Builder.CreateICmpEQ(
-                        context.Builder.CreatePtrToInt(MatchVal, llvm::Type::getInt64Ty(Ctx)),
-                        context.Builder.CreatePtrToInt(PatternVal, llvm::Type::getInt64Ty(Ctx)),
-                        "cmp_" + std::to_string(i));
+                    TypedValue PatternTV = Pattern->codegen(context);
+                    if (!PatternTV.Val) {
+                        std::cerr << "[FLUX ERROR] match pattern (non-enum) failed to codegen" << std::endl;
+                        return TypedValue();
+                    }
+
+                    llvm::Value*& PatternVal = PatternTV.Val;
+                    llvm::Value* MatchVal = MatchValTV.Val;
+
+                    if (MatchVal->getType()->isIntegerTy()) {
+                        if (PatternVal->getType() != MatchVal->getType())
+                            PatternVal = context.Builder.CreateIntCast(PatternVal, MatchVal->getType(), false, "pat_cast");
+                        IsMatch = context.Builder.CreateICmpEQ(MatchVal, PatternVal, "cmp_" + std::to_string(i) + "_" + std::to_string(p));
+                    } else if (MatchVal->getType()->isFloatingPointTy()) {
+                        if (PatternVal->getType()->isIntegerTy())
+                            PatternVal = context.Builder.CreateSIToFP(PatternVal, MatchVal->getType(), "pat_to_fp");
+                        IsMatch = context.Builder.CreateFCmpOEQ(MatchVal, PatternVal, "cmp_" + std::to_string(i) + "_" + std::to_string(p));
+                    } else {
+                        IsMatch = context.Builder.CreateICmpEQ(
+                            context.Builder.CreatePtrToInt(MatchVal, llvm::Type::getInt64Ty(Ctx)),
+                            context.Builder.CreatePtrToInt(PatternVal, llvm::Type::getInt64Ty(Ctx)),
+                            "cmp_" + std::to_string(i) + "_" + std::to_string(p));
+                    }
                 }
+            }
+
+            // If we have bindings, create an extraction block, otherwise branch directly to matchBBs[i]
+            if (!armBindings.empty() && isPayloadEnum) {
+                llvm::BasicBlock* ExtractBB = llvm::BasicBlock::Create(Ctx, "match_extract_" + std::to_string(i) + "_" + std::to_string(p), TheFunction);
+                context.Builder.CreateCondBr(IsMatch, ExtractBB, NextBB);
+
+                context.Builder.SetInsertPoint(ExtractBB);
+
+                // Perform the extraction for Patterns[p] and store into sharedAllocas
+                llvm::Value* matchValAlloca = context.Builder.CreateAlloca(MatchValTV.Val->getType(), nullptr, "match_val_alloc");
+                context.Builder.CreateStore(MatchValTV.Val, matchValAlloca);
+                llvm::Value* payloadPtr = context.Builder.CreateStructGEP(MatchValTV.Val->getType(), matchValAlloca, 1, "payload_ptr");
+
+                int matchedVarIdx = -1;
+                std::string enumName, variantName;
+                extractEnumVariant(Pattern.get(), context, enumName, variantName);
+
+                int enumTypeId = MatchValTV.Type.EnumTypeId;
+                if (enumTypeId >= 0 && enumTypeId < static_cast<int>(context.EnumTypes.size())) {
+                    auto& enumInfo = context.EnumTypes[enumTypeId];
+                    for (size_t vi = 0; vi < enumInfo.Variants.size(); ++vi) {
+                        if (enumInfo.Variants[vi] == variantName) {
+                            matchedVarIdx = static_cast<int>(vi);
+                            break;
+                        }
+                    }
+                }
+
+                if (matchedVarIdx >= 0) {
+                    auto& enumInfo = context.EnumTypes[enumTypeId];
+                    FluxType concretePayloadType = enumInfo.VariantPayloads[matchedVarIdx];
+                    if (concretePayloadType.Kind == TypeKind::UserStruct && concretePayloadType.StructTypeId < 0 && !concretePayloadType.GenericName.empty()) {
+                        auto it = context.StructTypeIndex.find(concretePayloadType.GenericName);
+                        if (it != context.StructTypeIndex.end()) {
+                            concretePayloadType.StructTypeId = it->second;
+                            if (it->second >= 0 && it->second < static_cast<int>(context.StructTypes.size())) {
+                                concretePayloadType.StructLLVMType = context.StructTypes[it->second].LLVMType;
+                            }
+                        }
+                    }
+                    if (concretePayloadType.Kind == TypeKind::UserEnum && concretePayloadType.EnumTypeId < 0 && !concretePayloadType.GenericName.empty()) {
+                        auto it = context.EnumTypeIndex.find(concretePayloadType.GenericName);
+                        if (it != context.EnumTypeIndex.end()) {
+                            concretePayloadType.EnumTypeId = it->second;
+                            if (it->second >= 0 && it->second < static_cast<int>(context.EnumTypes.size())) {
+                                concretePayloadType.EnumLLVMType = context.EnumTypes[it->second].LLVMType;
+                            }
+                        }
+                    }
+
+                    llvm::Type* concretePayloadLLVMTy = concretePayloadType.getLLVMType(context.TheContext);
+
+                    bool isBoxed = matchedVarIdx < static_cast<int>(enumInfo.VariantIsBoxed.size()) ? enumInfo.VariantIsBoxed[matchedVarIdx] : false;
+                    llvm::Value* concretePayloadPtr = nullptr;
+                    if (isBoxed) {
+                        llvm::Value* unionPayloadPtr = context.Builder.CreatePointerCast(
+                            payloadPtr, llvm::PointerType::get(llvm::PointerType::get(context.TheContext, 0), 0), "union_payload_ptr");
+                        llvm::Value* heapPtrVal = context.Builder.CreateLoad(
+                            llvm::PointerType::get(context.TheContext, 0), unionPayloadPtr, "heap_ptr_val");
+                        concretePayloadPtr = context.Builder.CreatePointerCast(
+                            heapPtrVal, llvm::PointerType::get(concretePayloadLLVMTy, 0), "concrete_payload_ptr");
+                    } else {
+                        concretePayloadPtr = context.Builder.CreatePointerCast(
+                            payloadPtr, llvm::PointerType::get(concretePayloadLLVMTy, 0), "concrete_payload_ptr");
+                    }
+
+                    if (!armNamedBindings.empty() && concretePayloadLLVMTy->isStructTy() &&
+                        concretePayloadType.StructTypeId >= 0 &&
+                        concretePayloadType.StructTypeId < static_cast<int>(context.StructTypes.size())) {
+                        auto& structInfo = context.StructTypes[concretePayloadType.StructTypeId];
+                        for (const auto& [fieldName, varName] : armNamedBindings) {
+                            int fieldIdx = -1;
+                            for (size_t fi = 0; fi < structInfo.Fields.size(); ++fi) {
+                                if (structInfo.Fields[fi].first == fieldName) {
+                                    fieldIdx = static_cast<int>(fi);
+                                    break;
+                                }
+                            }
+                            if (fieldIdx >= 0) {
+                                llvm::Value* fieldPtr = context.Builder.CreateStructGEP(concretePayloadLLVMTy, concretePayloadPtr, static_cast<unsigned>(fieldIdx), varName);
+                                llvm::Type* fieldTy = concretePayloadLLVMTy->getStructElementType(static_cast<unsigned>(fieldIdx));
+                                llvm::Value* FieldVal = context.Builder.CreateLoad(fieldTy, fieldPtr, varName + "_val");
+                                context.Builder.CreateStore(FieldVal, sharedAllocas[varName]);
+                            }
+                        }
+                    } else if (armBindings.size() == 1 && concretePayloadLLVMTy->isStructTy() &&
+                               concretePayloadType.StructTypeId >= 0 &&
+                               concretePayloadType.StructTypeId < static_cast<int>(context.StructTypes.size())) {
+                        auto& structInfo = context.StructTypes[concretePayloadType.StructTypeId];
+                        if (structInfo.Fields.size() == 1) {
+                            llvm::Value* fieldPtr = context.Builder.CreateStructGEP(concretePayloadLLVMTy, concretePayloadPtr, 0, armBindings[0]);
+                            llvm::Type* fieldTy = concretePayloadLLVMTy->getStructElementType(0);
+                            llvm::Value* FieldVal = context.Builder.CreateLoad(fieldTy, fieldPtr, armBindings[0] + "_val");
+                            context.Builder.CreateStore(FieldVal, sharedAllocas[armBindings[0]]);
+                        } else {
+                            llvm::Value* val = context.Builder.CreateLoad(concretePayloadLLVMTy, concretePayloadPtr, "struct_payload");
+                            context.Builder.CreateStore(val, sharedAllocas[armBindings[0]]);
+                        }
+                    } else if (armBindings.size() == 1) {
+                        llvm::Value* val = context.Builder.CreateLoad(concretePayloadLLVMTy, concretePayloadPtr, "scalar_payload");
+                        context.Builder.CreateStore(val, sharedAllocas[armBindings[0]]);
+                    } else {
+                        for (size_t bi = 0; bi < armBindings.size(); ++bi) {
+                            llvm::Value* fieldPtr = context.Builder.CreateStructGEP(concretePayloadLLVMTy, concretePayloadPtr, bi, armBindings[bi]);
+                            llvm::Type* fieldTy = concretePayloadLLVMTy->getStructElementType(bi);
+                            llvm::Value* FieldVal = context.Builder.CreateLoad(fieldTy, fieldPtr, armBindings[bi] + "_val");
+                            context.Builder.CreateStore(FieldVal, sharedAllocas[armBindings[bi]]);
+                        }
+                    }
+                }
+                context.Builder.CreateBr(matchBBs[i]);
+            } else if (!armBindings.empty() && !isPayloadEnum) {
+                // Non-enum binding (always matches, e.g., `x -> ...`)
+                llvm::BasicBlock* ExtractBB = llvm::BasicBlock::Create(Ctx, "match_extract_" + std::to_string(i) + "_" + std::to_string(p), TheFunction);
+                context.Builder.CreateCondBr(IsMatch, ExtractBB, NextBB);
+
+                context.Builder.SetInsertPoint(ExtractBB);
+                std::string binderName = armBindings[0];
+                context.Builder.CreateStore(MatchValTV.Val, sharedAllocas[binderName]);
+                context.Builder.CreateBr(matchBBs[i]);
+            } else {
+                context.Builder.CreateCondBr(IsMatch, matchBBs[i], NextBB);
             }
         }
 
-        context.Builder.CreateCondBr(IsMatch, matchBBs[i], NextBB);
-
-        // Emit match body
+        // 3. Emit match body block
         context.Builder.SetInsertPoint(matchBBs[i]);
 
-        // Detect binder pattern for non-enum match (standalone VariableExprAST)
-        std::string binderName;
-        if (!armBindings.empty()) {
-            binderName = armBindings[0];
-        } else if (!isPayloadEnum && !isEnumMatch) {
-            if (auto* varPat = dynamic_cast<VariableExprAST*>(Pattern.get())) {
-                if (varPat->getName() != "_") {
-                    binderName = varPat->getName();
-                }
+        // Save old binding values to handle nested scopes / shadowing correctly
+        std::map<std::string, llvm::Value*> oldNamedValues;
+        std::map<std::string, FluxType> oldNamedTypes;
+
+        for (const auto& [varName, allocaInst] : sharedAllocas) {
+            auto itVal = context.NamedValues.find(varName);
+            if (itVal != context.NamedValues.end()) {
+                oldNamedValues[varName] = itVal->second;
             }
-        }
+            context.NamedValues[varName] = allocaInst;
 
-        // If this pattern has binding variables, extract payload fields and store them
-        if (!armBindings.empty() && isPayloadEnum) {
-            // Allocate the matched union value on the stack to get a pointer to it
-            llvm::Value* matchValAlloca = context.Builder.CreateAlloca(MatchValTV.Val->getType(), nullptr, "match_val_alloc");
-            context.Builder.CreateStore(MatchValTV.Val, matchValAlloca);
-
-            // Get GEP pointer to the generic payload
-            llvm::Value* payloadPtr = context.Builder.CreateStructGEP(MatchValTV.Val->getType(), matchValAlloca, 1, "payload_ptr");
-
-            // Identify the actual matched variant payload type
-            int matchedVarIdx = -1;
-            std::string variantName;
-            if (auto* callPat = dynamic_cast<CallExprAST*>(Pattern.get())) {
-                if (auto* memberPat = dynamic_cast<MemberExprAST*>(callPat->getCalleeExpr())) {
-                    variantName = memberPat->getMemberName();
-                }
-            } else if (auto* memberPat = dynamic_cast<MemberExprAST*>(Pattern.get())) {
-                variantName = memberPat->getMemberName();
+            auto itType = context.NamedTypes.find(varName);
+            if (itType != context.NamedTypes.end()) {
+                oldNamedTypes[varName] = itType->second;
             }
-
-            int enumTypeId = MatchValTV.Type.EnumTypeId;
-            if (enumTypeId >= 0 && enumTypeId < static_cast<int>(context.EnumTypes.size())) {
-                auto& enumInfo = context.EnumTypes[enumTypeId];
-                for (size_t vi = 0; vi < enumInfo.Variants.size(); ++vi) {
-                    if (enumInfo.Variants[vi] == variantName) {
-                        matchedVarIdx = static_cast<int>(vi);
-                        break;
-                    }
-                }
-            }
-
-            if (matchedVarIdx >= 0) {
-                auto& enumInfo = context.EnumTypes[enumTypeId];
-                FluxType concretePayloadType = enumInfo.VariantPayloads[matchedVarIdx];
-                // Inline resolveUserStructType
-                if (concretePayloadType.Kind == TypeKind::UserStruct && concretePayloadType.StructTypeId < 0 && !concretePayloadType.GenericName.empty()) {
-                    auto it = context.StructTypeIndex.find(concretePayloadType.GenericName);
-                    if (it != context.StructTypeIndex.end()) {
-                        concretePayloadType.StructTypeId = it->second;
-                        if (it->second >= 0 && it->second < static_cast<int>(context.StructTypes.size())) {
-                            concretePayloadType.StructLLVMType = context.StructTypes[it->second].LLVMType;
-                        }
-                    }
-                }
-                // Inline resolveUserEnumType
-                if (concretePayloadType.Kind == TypeKind::UserEnum && concretePayloadType.EnumTypeId < 0 && !concretePayloadType.GenericName.empty()) {
-                    auto it = context.EnumTypeIndex.find(concretePayloadType.GenericName);
-                    if (it != context.EnumTypeIndex.end()) {
-                        concretePayloadType.EnumTypeId = it->second;
-                        if (it->second >= 0 && it->second < static_cast<int>(context.EnumTypes.size())) {
-                            concretePayloadType.EnumLLVMType = context.EnumTypes[it->second].LLVMType;
-                        }
-                    }
-                }
-
-                llvm::Type* concretePayloadLLVMTy = concretePayloadType.getLLVMType(context.TheContext);
-
-                bool isBoxed = matchedVarIdx < static_cast<int>(enumInfo.VariantIsBoxed.size()) ? enumInfo.VariantIsBoxed[matchedVarIdx] : false;
-                llvm::Value* concretePayloadPtr = nullptr;
-                if (isBoxed) {
-                    llvm::Value* unionPayloadPtr = context.Builder.CreatePointerCast(
-                        payloadPtr, llvm::PointerType::get(llvm::PointerType::get(context.TheContext, 0), 0), "union_payload_ptr");
-                    llvm::Value* heapPtrVal = context.Builder.CreateLoad(
-                        llvm::PointerType::get(context.TheContext, 0), unionPayloadPtr, "heap_ptr_val");
-                    concretePayloadPtr = context.Builder.CreatePointerCast(
-                        heapPtrVal, llvm::PointerType::get(concretePayloadLLVMTy, 0), "concrete_payload_ptr");
-                } else {
-                    concretePayloadPtr = context.Builder.CreatePointerCast(
-                        payloadPtr, llvm::PointerType::get(concretePayloadLLVMTy, 0), "concrete_payload_ptr");
-                }
-
-                if (!armNamedBindings.empty() && concretePayloadLLVMTy->isStructTy() &&
-                    concretePayloadType.StructTypeId >= 0 &&
-                    concretePayloadType.StructTypeId < static_cast<int>(context.StructTypes.size())) {
-                    // Named-field bindings: `Enum.Variant { field1: v1, field2: v2 } =>`
-                    // Look up each field by name so ordering doesn't matter.
-                    auto& structInfo = context.StructTypes[concretePayloadType.StructTypeId];
-                    for (const auto& [fieldName, varName] : armNamedBindings) {
-                        // Find field index by name
-                        size_t fieldIdx = static_cast<size_t>(-1);
-                        for (size_t fi = 0; fi < structInfo.Fields.size(); ++fi) {
-                            if (structInfo.Fields[fi].first == fieldName) {
-                                fieldIdx = fi;
-                                break;
-                            }
-                        }
-                        if (fieldIdx == static_cast<size_t>(-1)) {
-                            std::cerr << "[FLUX ERROR] match named-field pattern: field '" << fieldName
-                                      << "' not found in struct '" << structInfo.Name << "'" << std::endl;
-                            continue;
-                        }
-                        llvm::Value* fieldPtr = context.Builder.CreateStructGEP(
-                            concretePayloadLLVMTy, concretePayloadPtr,
-                            static_cast<unsigned>(fieldIdx), varName);
-                        llvm::Type* fieldTy = concretePayloadLLVMTy->getStructElementType(
-                            static_cast<unsigned>(fieldIdx));
-                        llvm::Value* FieldVal = context.Builder.CreateLoad(
-                            fieldTy, fieldPtr, varName + "_val");
-                        llvm::AllocaInst* FieldAlloca = context.Builder.CreateAlloca(
-                            fieldTy, nullptr, varName);
-                        context.Builder.CreateStore(FieldVal, FieldAlloca);
-                        context.NamedValues[varName] = FieldAlloca;
-                        context.NamedTypes[varName] = structInfo.Fields[fieldIdx].second;
-                    }
-                } else if (armBindings.size() == 1 && concretePayloadLLVMTy->isStructTy() &&
-                    concretePayloadType.StructTypeId >= 0 &&
-                    concretePayloadType.StructTypeId < static_cast<int>(context.StructTypes.size())) {
-                    // Single binding: extract the first field from the payload struct
-                    auto& structInfo = context.StructTypes[concretePayloadType.StructTypeId];
-                    if (structInfo.Fields.size() == 1) {
-                        llvm::Value* fieldPtr = context.Builder.CreateStructGEP(concretePayloadLLVMTy, concretePayloadPtr, 0, armBindings[0]);
-                        llvm::Type* fieldTy = concretePayloadLLVMTy->getStructElementType(0);
-                        llvm::Value* FieldVal = context.Builder.CreateLoad(fieldTy, fieldPtr, armBindings[0] + "_val");
-                        llvm::AllocaInst* FieldAlloca = context.Builder.CreateAlloca(fieldTy, nullptr, armBindings[0]);
-                        context.Builder.CreateStore(FieldVal, FieldAlloca);
-                        context.NamedValues[armBindings[0]] = FieldAlloca;
-                        context.NamedTypes[armBindings[0]] = structInfo.Fields[0].second;
-                    } else {
-                        // Multi-field payload with single binding: capture entire struct
-                        llvm::Value* val = context.Builder.CreateLoad(concretePayloadLLVMTy, concretePayloadPtr, "struct_payload");
-                        llvm::AllocaInst* BindingAlloca = context.Builder.CreateAlloca(concretePayloadLLVMTy, nullptr, armBindings[0]);
-                        context.Builder.CreateStore(val, BindingAlloca);
-                        context.NamedValues[armBindings[0]] = BindingAlloca;
-                        context.NamedTypes[armBindings[0]] = concretePayloadType;
-                    }
-                } else if (armBindings.size() == 1) {
-                    // Single scalar binding: load scalar value directly
-                    llvm::Value* val = context.Builder.CreateLoad(concretePayloadLLVMTy, concretePayloadPtr, "scalar_payload");
-                    llvm::AllocaInst* BindingAlloca = context.Builder.CreateAlloca(concretePayloadLLVMTy, nullptr, armBindings[0]);
-                    context.Builder.CreateStore(val, BindingAlloca);
-                    context.NamedValues[armBindings[0]] = BindingAlloca;
-                    context.NamedTypes[armBindings[0]] = concretePayloadType;
-                } else {
-                    // Multiple positional bindings: extract each field from the concrete payload struct
-                    for (size_t bi = 0; bi < armBindings.size(); ++bi) {
-                        llvm::Value* fieldPtr = context.Builder.CreateStructGEP(concretePayloadLLVMTy, concretePayloadPtr, bi, armBindings[bi]);
-                        llvm::Type* fieldTy = concretePayloadLLVMTy->getStructElementType(bi);
-                        llvm::Value* FieldVal = context.Builder.CreateLoad(fieldTy, fieldPtr, armBindings[bi] + "_val");
-                        llvm::AllocaInst* FieldAlloca = context.Builder.CreateAlloca(fieldTy, nullptr, armBindings[bi]);
-                        context.Builder.CreateStore(FieldVal, FieldAlloca);
-                        context.NamedValues[armBindings[bi]] = FieldAlloca;
-                        // Set NamedTypes from payload struct field info
-                        if (concretePayloadType.StructTypeId >= 0 &&
-                            concretePayloadType.StructTypeId < static_cast<int>(context.StructTypes.size())) {
-                            auto& structInfo = context.StructTypes[concretePayloadType.StructTypeId];
-                            if (bi < structInfo.Fields.size()) {
-                                context.NamedTypes[armBindings[bi]] = structInfo.Fields[bi].second;
-                            }
-                        }
-                    }
-                }
-            }
-        } else if (!binderName.empty() && !isPayloadEnum) {
-            // Non-enum binding: bind the match value directly to the variable(s)
-            llvm::AllocaInst* BindingAlloca = context.Builder.CreateAlloca(MatchValTV.Val->getType(), nullptr, binderName);
-            context.Builder.CreateStore(MatchValTV.Val, BindingAlloca);
-            context.NamedValues[binderName] = BindingAlloca;
-            context.NamedTypes[binderName] = MatchValTV.Type;
+            context.NamedTypes[varName] = sharedTypes[varName];
         }
 
         TypedValue ResultTV = Result->codegen(context);
@@ -916,30 +1040,33 @@ TypedValue MatchExprAST::codegen(CodegenContext& context)
             return TypedValue();
         }
 
-        // Clean up binding variables if we added any
-        if (!armBindings.empty() && isPayloadEnum) {
-            for (const auto& bv : armBindings) {
-                context.NamedValues.erase(bv);
-                context.NamedTypes.erase(bv);
+        // Restore old bindings
+        for (const auto& [varName, allocaInst] : sharedAllocas) {
+            auto itVal = oldNamedValues.find(varName);
+            if (itVal != oldNamedValues.end()) {
+                context.NamedValues[varName] = itVal->second;
+            } else {
+                context.NamedValues.erase(varName);
             }
-        }
-        if (!armNamedBindings.empty() && isPayloadEnum) {
-            for (const auto& [fn, vn] : armNamedBindings) {
-                context.NamedValues.erase(vn);
-                context.NamedTypes.erase(vn);
+
+            auto itType = oldNamedTypes.find(varName);
+            if (itType != oldNamedTypes.end()) {
+                context.NamedTypes[varName] = itType->second;
+            } else {
+                context.NamedTypes.erase(varName);
             }
-        }
-        if (!binderName.empty() && !isPayloadEnum) {
-            context.NamedValues.erase(binderName);
-            context.NamedTypes.erase(binderName);
         }
 
-        llvm::Value* ResultV = ResultTV.Val;
-        if (ResultV->getType() != ResultTy) {
-            if (ResultV->getType()->isIntegerTy())
-                ResultV = context.Builder.CreateSIToFP(ResultV, ResultTy, "match_cast");
+        llvm::Value* ArmVal = ResultTV.Val;
+        if (ArmVal->getType() != ResultTy) {
+            if (ArmVal->getType()->isIntegerTy() && ResultTy->isFloatingPointTy())
+                ArmVal = context.Builder.CreateSIToFP(ArmVal, ResultTy, "arm_cast");
+            else if (ArmVal->getType()->isFloatingPointTy() && ResultTy->isIntegerTy())
+                ArmVal = context.Builder.CreateFPToSI(ArmVal, ResultTy, "arm_cast");
+            else if (ArmVal->getType()->isPointerTy() && ResultTy->isPointerTy())
+                ArmVal = context.Builder.CreatePointerCast(ArmVal, ResultTy, "arm_cast");
         }
-        context.Builder.CreateStore(ResultV, ResultAlloc);
+        context.Builder.CreateStore(ArmVal, ResultAlloc);
         context.Builder.CreateBr(MergeBB);
     }
 
@@ -948,7 +1075,7 @@ TypedValue MatchExprAST::codegen(CodegenContext& context)
         llvm::BasicBlock* DefaultBB = DefaultFallbackBB;
         if (!DefaultBB) {
             DefaultBB = llvm::BasicBlock::Create(Ctx, "match_default", TheFunction);
-            context.Builder.SetInsertPoint(checkBBs.empty() ? context.Builder.GetInsertBlock() : checkBBs.back());
+            context.Builder.SetInsertPoint(checkBBs.empty() ? context.Builder.GetInsertBlock() : checkBBs.back().back());
         } else {
             context.Builder.SetInsertPoint(DefaultBB);
         }
