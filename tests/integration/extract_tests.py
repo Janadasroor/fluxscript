@@ -27,8 +27,8 @@ idx = 0
 i = 0
 while i < len(lines):
     line = lines[i]
-    # Match: run_test "Name"  or run_check_test "Name"  followed by quote on same line
-    m = re.match(r'^((?:run|run_check)_test)\s+"([^"]+)"\s*([\'"])\s*$', line)
+    # Match: run_test, run_check_test, run_aot_test, or run_selfhost_test
+    m = re.match(r'^((?:run|run_check|run_aot|run_selfhost)_test)\s+"([^"]+)"\s*([\'"])\s*$', line)
     if m:
         test_type = m.group(1)
         test_name = m.group(2)
@@ -67,8 +67,16 @@ while i < len(lines):
             if not test_code.endswith('\n'):
                 f.write('\n')
 
+        test_type_str = "run"
+        if "check" in test_type:
+            test_type_str = "check"
+        elif "aot" in test_type:
+            test_type_str = "aot"
+        elif "selfhost" in test_type:
+            test_type_str = "selfhost"
+
         with open(meta_path, 'w') as f:
-            f.write("check\n" if "check" in test_type else "run\n")
+            f.write(f"{test_type_str}\n")
             f.write(f"{test_name}\n")
 
         print(f"  [{idx:3d}] {test_type:20s} \"{test_name}\"")
