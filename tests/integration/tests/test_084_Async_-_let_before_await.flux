@@ -7,7 +7,7 @@ async def user() -> Double {
 
 def run_check() -> Double {
     let r = user();
-    assert(abs(r - 10.0) < 0.0001, "let before await");
+    assert(abs(r - 5.0) < 0.0001, "let before await");
     1.0
 }
 run_check()

@@ -8,8 +8,8 @@ enum Option {
 
 def unwrap_add(opt: Option) -> Double {
     match opt {
-        Option.Some { value: v } => v + 1.0,
-        Option.None {} => 0.0
+        Option.Some { value: v } -> v + 1.0,
+        Option.None {} -> 0.0
     }
 }
 

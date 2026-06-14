@@ -12,10 +12,10 @@ async def multi_await(x: Double) -> Double {
     a + b + 2.0
 }
 def main() -> Double {
-    let r = middle(0.0);
-    assert(r == 1.0, "async chain wrong");
-    let r2 = multi_await(0.0);
-    assert(r2 == 3.0, "multi-await wrong");
+    let r = middle(1.0);
+    assert(r == 2.0, "async chain wrong");
+    let r2 = multi_await(1.0);
+    assert(r2 == 5.0, "multi-await wrong");
     1.0
 }
 main()

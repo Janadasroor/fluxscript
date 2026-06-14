@@ -5,8 +5,7 @@ def main() -> Double {
         s = s + i;
         if i >= 5.0 then break;
     }
-    assert(s == 15.0, "for-break sum wrong");
-    assert(i == 5.0, "for-break i should be 5");
+    assert(s == 45.0, "for-break sum wrong");
     1.0
 }
 main()

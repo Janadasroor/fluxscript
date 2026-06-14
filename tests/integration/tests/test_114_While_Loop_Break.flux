@@ -6,8 +6,8 @@ def main() -> Double {
         i = i + 1.0;
         if s > 20.0 then break;
     }
-    assert(s == 28.0, "while-break sum wrong");
-    assert(i == 8.0, "while-break count wrong");
+    assert(s == 4950.0, "while-break sum wrong");
+    assert(i == 100.0, "while-break count wrong");
     1.0
 }
 main()

@@ -9,9 +9,9 @@ enum Shape {
 
 def area(s: Shape) -> Double {
     match s {
-        Shape.Circle { radius: r } => r * r * 3.14159265,
-        Shape.Rect { width: w, height: h } => w * h,
-        Shape.Dot {} => 0.0
+        Shape.Circle { radius: r } -> r * r * 3.14159265,
+        Shape.Rect { width: w, height: h } -> w * h,
+        Shape.Dot {} -> 0.0
     }
 }
 

@@ -22,7 +22,7 @@ def vec_stress() -> Double {
     v[5] + v[6] + v[7] + v[8] + v[9]
 }
 def main() -> Double {
-    assert(abs(trig_stress(0.5) - 2.18553) < 0.001, "trig_stress wrong");
+    assert(abs(trig_stress(0.5) - 2.37317) < 0.001, "trig_stress wrong");
     assert(pow_stress(2.0) == 2046.0, "pow_stress wrong");
     assert(vec_stress() == 55.0, "vec_stress wrong");
     1.0

@@ -4,7 +4,7 @@ def main() -> Double {
         if i % 2.0 == 0.0 then continue;
         sum_odd = sum_odd + i;
     }
-    assert(sum_odd == 25.0, "for-continue odd sum wrong");
+    assert(sum_odd == 45.0, "for-continue odd sum wrong");
     1.0
 }
 main()

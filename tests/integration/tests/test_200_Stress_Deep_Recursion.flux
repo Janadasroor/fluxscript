@@ -11,7 +11,7 @@ def ack(m: Double, n: Double) -> Double {
 }
 def main() -> Double {
     assert(fact(10.0) == 3628800.0, "fact(10) wrong");
-    assert(fact(20.0) == 2.432902e18, "fact(20) wrong");
+    assert(abs(fact(20.0) - 2.43290200817664e18) < 1.0e8, "fact(20) wrong");
     assert(fib(10.0) == 55.0, "fib(10) wrong");
     assert(fib(20.0) == 6765.0, "fib(20) wrong");
     assert(ack(3.0, 4.0) == 125.0, "ack(3,4) wrong");

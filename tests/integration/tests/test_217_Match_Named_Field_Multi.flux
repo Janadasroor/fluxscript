@@ -7,8 +7,8 @@ enum Point2D {
 
 def distance(pt: Point2D) -> Double {
     match pt {
-        Point2D.Cartesian { x: px, y: py } => px * px + py * py,
-        Point2D.Polar { r: radius, theta: angle } => radius
+        Point2D.Cartesian { x: px, y: py } -> px * px + py * py,
+        Point2D.Polar { r: radius, theta: angle } -> radius
     }
 }
 

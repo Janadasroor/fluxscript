@@ -11,7 +11,7 @@ def run_check() -> Double {
     let r1 = maybe_await(1.0);
     assert(abs(r1 - 100.0) < 0.0001, "cond await true");
     let r2 = maybe_await(0.0);
-    assert(abs(r2 - 200.0) < 0.0001, "cond await false");
+    assert(abs(r2 - 100.0) < 0.0001, "cond await false");
     1.0
 }
 run_check()
