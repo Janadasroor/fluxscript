@@ -661,7 +661,7 @@ TypedValue MatchExprAST::codegen(CodegenContext& context)
         const auto& armBindings = i < Bindings.size() ? Bindings[i] : emptyBindings;
         const auto& armNamedBindings = i < NamedFieldBindings.size() ? NamedFieldBindings[i] : emptyNamedBindings;
 
-        if (!armBindings.empty()) {
+        if (!armBindings.empty() || !armNamedBindings.empty()) {
             if (isPayloadEnum) {
                 // Use the first pattern to determine types
                 auto& firstPattern = Patterns[0];
@@ -890,7 +890,7 @@ TypedValue MatchExprAST::codegen(CodegenContext& context)
             }
 
             // If we have bindings, create an extraction block, otherwise branch directly to matchBBs[i]
-            if (!armBindings.empty() && isPayloadEnum) {
+            if ((!armBindings.empty() || !armNamedBindings.empty()) && isPayloadEnum) {
                 llvm::BasicBlock* ExtractBB = llvm::BasicBlock::Create(Ctx, "match_extract_" + std::to_string(i) + "_" + std::to_string(p), TheFunction);
                 context.Builder.CreateCondBr(IsMatch, ExtractBB, NextBB);
 

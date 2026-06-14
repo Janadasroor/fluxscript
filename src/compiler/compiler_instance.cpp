@@ -1987,14 +1987,19 @@ bool CompilerInstance::loadAndLinkBitcodeModule(const std::string& bcPath, Codeg
         return false;
     }
 
-    // Register return types from the loaded module's function signatures
+    // Register return types and parameter types from the loaded module's function signatures
     for (auto& F : *mod) {
         if (F.isDeclaration()) continue;
         std::string name = F.getName().str();
         bool hasSret = F.arg_size() > 0 && F.hasParamAttribute(0, llvm::Attribute::StructRet);
         FluxType retTy;
         if (hasSret) {
-            retTy = FluxType(TypeKind::Matrix);
+            llvm::Type* sretTy = F.getParamStructRetType(0);
+            if (sretTy && sretTy->isStructTy() && llvm::cast<llvm::StructType>(sretTy)->getName().contains("ComplexMatrix")) {
+                retTy = FluxType(TypeKind::ComplexMatrix);
+            } else {
+                retTy = FluxType(TypeKind::Matrix);
+            }
         } else if (F.getReturnType()->isDoubleTy()) {
             retTy = FluxType(TypeKind::Double);
         } else if (F.getReturnType()->isIntegerTy()) {
@@ -2007,6 +2012,29 @@ bool CompilerInstance::loadAndLinkBitcodeModule(const std::string& bcPath, Codeg
         }
         context.FuncReturnTypes[name] = retTy;
         returnTypes[name] = retTy;
+
+        // Populate parameter types for cross-module type inference
+        std::vector<FluxType> paramTys;
+        size_t startIdx = hasSret ? 1 : 0;
+        for (size_t i = startIdx; i < F.arg_size(); ++i) {
+            llvm::Type* argLTy = F.getFunctionType()->getParamType(i);
+            if (argLTy->isStructTy()) {
+                if (llvm::cast<llvm::StructType>(argLTy)->getName().contains("ComplexMatrix")) {
+                    paramTys.push_back(FluxType(TypeKind::ComplexMatrix));
+                } else {
+                    paramTys.push_back(FluxType(TypeKind::Matrix));
+                }
+            } else if (argLTy->isPointerTy()) {
+                paramTys.push_back(FluxType(TypeKind::Matrix));
+            } else if (argLTy->isDoubleTy()) {
+                paramTys.push_back(FluxType(TypeKind::Double));
+            } else if (argLTy->isIntegerTy()) {
+                paramTys.push_back(FluxType(TypeKind::Int));
+            } else {
+                paramTys.push_back(FluxType(TypeKind::Double));
+            }
+        }
+        context.CrossModuleParamTypes[name] = std::move(paramTys);
     }
 
     // Link the loaded module into the main module
@@ -2030,6 +2058,12 @@ std::unique_ptr<CompileArtifacts> CompilerInstance::compileToIR(const std::strin
         if (!inputDir.empty()) {
             m_moduleLoader.addSearchPath(inputDir);
         }
+    }
+
+    // Add explicit include path for import resolution (used by the bridge
+    // when compiling from a source string without a file path).
+    if (!m_options.includePath.empty()) {
+        m_moduleLoader.addSearchPath(m_options.includePath);
     }
 
     // Add the stdlib bitcode cache directory to search paths if it exists
@@ -2094,12 +2128,16 @@ std::unique_ptr<CompileArtifacts> CompilerInstance::compileToIR(const std::strin
     if (artifacts->codegenContext->DebugBuilder)
         artifacts->codegenContext->DebugBuilder->finalize();
 
-    if (llvm::verifyModule(*artifacts->codegenContext->TheModule, &llvm::errs())) {
-        llvm::errs() << "=== INVALID MODULE DUMP ===\n";
-        artifacts->codegenContext->TheModule->print(llvm::errs(), nullptr);
-        if (error)
-            *error = "Generated LLVM IR is invalid.";
-        return nullptr;
+    {
+        std::string verifyError;
+        llvm::raw_string_ostream verifyOS(verifyError);
+        if (llvm::verifyModule(*artifacts->codegenContext->TheModule, &verifyOS)) {
+            llvm::errs() << "=== INVALID MODULE DUMP ===\n";
+            artifacts->codegenContext->TheModule->print(llvm::errs(), nullptr);
+            if (error)
+                *error = "Generated LLVM IR is invalid: " + verifyOS.str();
+            return nullptr;
+        }
     }
 
     if (error)

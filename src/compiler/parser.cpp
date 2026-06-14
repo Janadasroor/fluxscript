@@ -18,7 +18,7 @@
 
 namespace Flux {
 
-Parser::Parser(const std::string& input) : m_lexer(input), m_hasError(false)
+Parser::Parser(const std::string& input) : m_lexer(input), m_hasError(false), m_parsingMatchPattern(false)
 {
     m_binopPrecedence['='] = 2;
     m_binopPrecedence[static_cast<int>(TokenType::tok_plus_equal)] = 2;
@@ -1647,10 +1647,12 @@ std::unique_ptr<ExprAST> Parser::ParsePrimary()
                 // Check if this is an enum variant construction with named fields: EnumName.VariantName { fields }
                 bool isEnumVariant = false;
                 std::string enumName;
-                if (auto* varExpr = dynamic_cast<VariableExprAST*>(Res.get())) {
-                    enumName = varExpr->getName();
-                    if (m_knownEnumTypeNames.count(enumName)) {
-                        isEnumVariant = true;
+                if (!m_parsingMatchPattern) {
+                    if (auto* varExpr = dynamic_cast<VariableExprAST*>(Res.get())) {
+                        enumName = varExpr->getName();
+                        if (m_knownEnumTypeNames.count(enumName)) {
+                            isEnumVariant = true;
+                        }
                     }
                 }
                 if (isEnumVariant) {

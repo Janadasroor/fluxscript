@@ -268,6 +268,7 @@ private:
     Lexer m_lexer;
     std::map<int, int> m_binopPrecedence;
     bool m_hasError;
+    bool m_parsingMatchPattern = false;
     // Active generic type parameter names during prototype parsing.
     // Populated by ParsePrototype() so ParseIdentifierExpr() and type
     // parsing can detect generic type references.

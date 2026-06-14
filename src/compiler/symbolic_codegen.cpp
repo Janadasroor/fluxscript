@@ -95,6 +95,20 @@ TypedValue DifferentiateExprAST::codegen(CodegenContext& context)
     if (!ExprTV.Val)
         return TypedValue();
 
+    // differentiate() only works with symbolic expressions (sym x) because it
+    // operates on the symbolic AST at runtime via the SymbolicEngine. When the
+    // inner expression is JIT-compiled to a concrete value (e.g. a plain Double),
+    // the symbolic information is lost and flux_sym_differentiate would try to
+    // interpret the concrete value's bit pattern as a SymbolicExpr* pointer,
+    // causing SIGSEGV. Emit a clear compile-time error instead.
+    if (ExprTV.Type.Kind != TypeKind::Symbolic) {
+        std::cerr << "[Error] differentiate() requires a symbolic expression. "
+                  << "Declare variables with 'sym' instead of 'let' or use "
+                  << "pre-computed analytical derivatives for compiled functions."
+                  << std::endl;
+        return TypedValue();
+    }
+
     llvm::Function* DiffF = TheModule->getFunction("flux_sym_differentiate");
     if (!DiffF) {
         DiffF = llvm::Function::Create(

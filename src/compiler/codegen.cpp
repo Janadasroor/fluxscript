@@ -4245,13 +4245,15 @@ TypedValue ForExprAST::codegen(CodegenContext& context)
     context.CurrentLoopEnd = AfterBB;
     context.CurrentLoopCont = LoopBB; // Continue jumps to loop condition
 
+    // Create alloca for the loop variable in the preheader (before loop body
+    // starts, so the initial store runs only once, not every iteration).
+    llvm::AllocaInst* LoopAlloca = context.Builder.CreateAlloca(
+        llvm::Type::getDoubleTy(context.TheContext), nullptr, VarName.c_str());
+    context.Builder.CreateStore(StartTV.Val, LoopAlloca);
+    context.NamedValues[VarName] = LoopAlloca;
+
     context.Builder.CreateBr(LoopBB);
     context.Builder.SetInsertPoint(LoopBB);
-    llvm::PHINode* Variable =
-        context.Builder.CreatePHI(llvm::Type::getDoubleTy(context.TheContext), 2, VarName.c_str());
-    Variable->addIncoming(StartTV.Val, PreheaderBB);
-    llvm::Value* OldVal = context.NamedValues[VarName];
-    context.NamedValues[VarName] = Variable;
     if (context.DebugEnabled) {
         llvm::DIScope* parentScope = context.LexicalBlocks.empty() ? context.DebugCompileUnit : context.LexicalBlocks.back();
         auto* block = context.DebugBuilder->createLexicalBlockFile(parentScope, context.DebugFile);
@@ -4262,10 +4264,12 @@ TypedValue ForExprAST::codegen(CodegenContext& context)
         std::cerr << "[FLUX ERROR] For-loop body failed to codegen" << std::endl;
         return TypedValue();
     }
-    llvm::Value* NextVar = context.Builder.CreateFAdd(Variable, StepTV.Val, "nextvar");
-    Variable->addIncoming(NextVar, context.Builder.GetInsertBlock());
+    // Load current value, add step, store back
+    llvm::Value* CurrentVar = context.Builder.CreateLoad(
+        llvm::Type::getDoubleTy(context.TheContext), LoopAlloca, VarName.c_str());
+    llvm::Value* NextVar = context.Builder.CreateFAdd(CurrentVar, StepTV.Val, "nextvar");
+    context.Builder.CreateStore(NextVar, LoopAlloca);
     if (context.DebugEnabled) context.LexicalBlocks.pop_back();
-    context.NamedValues[VarName] = OldVal;
     llvm::Value* EndCond = context.Builder.CreateFCmpOLT(NextVar, EndTV.Val, "loopcond");
     context.Builder.CreateCondBr(EndCond, LoopBB, AfterBB);
     TheFunction->insert(TheFunction->end(), AfterBB);

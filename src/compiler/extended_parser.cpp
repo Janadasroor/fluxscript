@@ -171,7 +171,7 @@ std::unique_ptr<ExprAST> Parser::ParseCornerExpr()
                 std::string caseName = m_lexer.IdentifierStr;
                 getNextToken();
 
-                if (CurTok != ':') {
+                if (CurTok != static_cast<int>(TokenType::tok_colon)) {
                     ReportError("expected ':' after corner case name");
                     return nullptr;
                 }
@@ -263,7 +263,9 @@ std::unique_ptr<ExprAST> Parser::ParseMatchExpr()
 
                 std::vector<std::unique_ptr<ExprAST>> rawPatternsList;
                 while (true) {
+                    m_parsingMatchPattern = true;
                     auto rawPattern = ParseExpression();
+                    m_parsingMatchPattern = false;
                     if (!rawPattern)
                         return nullptr;
                     flattenOrPatterns(std::move(rawPattern), rawPatternsList);
@@ -297,7 +299,7 @@ std::unique_ptr<ExprAST> Parser::ParseMatchExpr()
                                     }
                                     std::string fieldName = m_lexer.IdentifierStr;
                                     getNextToken(); // eat field name
-                                    if (CurTok != ':') {
+                                    if (CurTok != static_cast<int>(TokenType::tok_colon)) {
                                         ReportError("expected ':' after field name in match named-field pattern");
                                         return nullptr;
                                     }

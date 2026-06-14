@@ -64,6 +64,12 @@ struct CompilerOptions
 
     /// Number of parallel jobs for function codegen (default 1 = sequential).
     int numJobs = 1;
+
+    /// Base directory for resolving `import` statements in the source code.
+    /// When non-empty, the ModuleLoader adds this path to its search list
+    /// so that imported modules can be resolved relative to the source file's
+    /// location rather than the current working directory.
+    std::string includePath;
 };
 
 struct CompileArtifacts
