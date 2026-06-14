@@ -411,7 +411,7 @@ foreach(FLUX_FILE ${STDLIB_FLUX_FILES})
     list(APPEND STDLIB_BC_FILES "${BC_FILE}")
 endforeach()
 if(STDLIB_BC_FILES)
-    add_custom_target(stdlib_bc DEPENDS ${STDLIB_BC_FILES})
+    add_custom_target(stdlib_bc ALL DEPENDS ${STDLIB_BC_FILES})
 endif()
 
 add_executable(flux-pkg cli/flux-pkg.cpp)

@@ -157,9 +157,11 @@ void CompilerInstance::injectStandardLibrary(CodegenContext& context,
     // File I/O and string utilities (flux_ prefix avoids libc symbol conflicts)
     regExtern("flux_fopen", DblTy(), {DblTy(), DblTy()});
     regExtern("flux_fclose", DblTy(), {DblTy()});
+    regExtern("flux_fflush", DblTy(), {DblTy()});
     regExtern("flux_feof", DblTy(), {DblTy()});
     regExtern("flux_fgets", DblTy(), {DblTy()});
     regExtern("flux_fprintf", DblTy(), {DblTy(), DblTy(), DblTy()});
+    regExtern("flux_fetch_url", DblTy(), {DblTy()});
     regExtern("flux_strcmp", DblTy(), {DblTy(), DblTy()});
     regExtern("flux_strlen", DblTy(), {DblTy()});
     regExtern("flux_string_at", DblTy(), {DblTy(), DblTy()});
@@ -1140,8 +1142,9 @@ static void visitExprForParamInference(
                 if (argTypes[i].Kind == TypeKind::Matrix) {
                     if (auto* var = dynamic_cast<const VariableExprAST*>(args[i].get())) {
                         auto pt = paramTypes.find(var->getName());
-                        if (pt != paramTypes.end() && pt->second.Kind == TypeKind::Double)
+                        if (pt != paramTypes.end() && pt->second.Kind == TypeKind::Double) {
                             pt->second = FluxType(TypeKind::Matrix);
+                        }
                     }
                 }
             }
@@ -1339,8 +1342,7 @@ static void inferParamTypes(const std::vector<std::unique_ptr<FunctionAST>>& fun
         auto* proto = func->getProto();
         if (!proto)
             continue;
-
-        // Build map of parameter name → current type
+        // Build map of parameter name -> current type
         std::map<std::string, FluxType> paramTypes;
         for (const auto& arg : proto->getArgs())
             paramTypes[arg.first] = arg.second;
@@ -1631,19 +1633,23 @@ bool CompilerInstance::compileParser(Parser& parser, CodegenContext& context,
     // --- Deduplicate functions ---
     // Pre-parsed (stdlib) functions are before user functions in the vector.
     // When a user function has the same name as a pre-parsed function,
-    // remove the pre-parsed version so the user's definition wins.
+    // overwrite the pre-parsed function in-place so that the original topological
+    // order of functions (crucial for parameter type inference) is preserved.
     {
-        std::unordered_set<std::string> seen;
         std::vector<std::unique_ptr<FunctionAST>> deduped;
-        // Process in reverse so the LAST definition (user's) wins.
-        for (auto it = functions.rbegin(); it != functions.rend(); ++it) {
-            const std::string& name = (*it)->getProto()->getName();
-            if (seen.insert(name).second)
-                deduped.push_back(std::move(*it));
-            else
+        std::map<std::string, size_t> nameToSlot;
+        for (auto& func : functions) {
+            if (!func) continue;
+            std::string name = func->getProto()->getName();
+            auto it = nameToSlot.find(name);
+            if (it == nameToSlot.end()) {
+                nameToSlot[name] = deduped.size();
+                deduped.push_back(std::move(func));
+            } else {
                 std::cerr << "[Flux] Warning: duplicate function '" << name << "' — keeping the last definition\n";
+                deduped[it->second] = std::move(func);
+            }
         }
-        std::reverse(deduped.begin(), deduped.end());
         functions = std::move(deduped);
     }
 

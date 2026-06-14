@@ -55,6 +55,14 @@ double flux_log(double x);
 double flux_log10(double x);
 double flux_abs(double x);
 double flux_floor(double x);
+
+/* Runtime error reporting for JIT-compiled model functions.
+   A model calls flux_set_error("msg") on runtime fault; the host
+   calls flux_get_error() after the wrapper returns to check for
+   failure, and flux_clear_error() before each evaluation. */
+void flux_set_error(const char* msg);
+const char* flux_get_error();
+void flux_clear_error();
 double flux_ceil(double x);
 double flux_round(double x);
 double flux_pow(double base, double exp);

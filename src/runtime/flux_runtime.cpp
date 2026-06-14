@@ -28,6 +28,9 @@
 #include <condition_variable>
 #include <queue>
 #include <shared_mutex>
+#ifdef FLUX_HAS_CURL
+#include <curl/curl.h>
+#endif
 #include <cstdio>
 #include <csetjmp>
 #include <cstring>
@@ -276,6 +279,14 @@ extern "C" double flux_fclose(double handle)
     return std::fclose(fp) == 0 ? 1.0 : 0.0;
 }
 
+extern "C" double flux_fflush(double handle)
+{
+    auto* fp = reinterpret_cast<std::FILE*>(jit_bitcast<uintptr_t>(handle));
+    if (!fp)
+        return 0.0;
+    return std::fflush(fp) == 0 ? 1.0 : 0.0;
+}
+
 extern "C" double flux_feof(double handle)
 {
     auto* fp = reinterpret_cast<std::FILE*>(jit_bitcast<uintptr_t>(handle));
@@ -306,7 +317,48 @@ extern "C" double flux_fprintf(double handle, double format_ptr, double arg)
     auto* fmt = reinterpret_cast<const char*>(jit_bitcast<uintptr_t>(format_ptr));
     if (!fp || !fmt)
         return 0.0;
-    return std::fprintf(fp, fmt, arg);
+    int ret = std::fprintf(fp, fmt, arg);
+    std::fflush(fp);
+    return static_cast<double>(ret);
+}
+
+extern "C" double flux_fetch_url(double url_ptr)
+{
+#ifdef FLUX_HAS_CURL
+    auto* url = reinterpret_cast<const char*>(jit_bitcast<uintptr_t>(url_ptr));
+    if (!url || !*url)
+        return 0.0;
+
+    CURL* curl = curl_easy_init();
+    if (!curl)
+        return 0.0;
+
+    std::string response;
+    curl_easy_setopt(curl, CURLOPT_URL, url);
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION,
+                     +[](void* data, size_t size, size_t nmemb, std::string* buf) -> size_t {
+                         size_t total = size * nmemb;
+                         buf->append(static_cast<char*>(data), total);
+                         return total;
+                     });
+    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response);
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT, 30L);
+    curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
+    curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 1L);
+    curl_easy_setopt(curl, CURLOPT_USERAGENT, "FluxScript/1.0");
+
+    CURLcode res = curl_easy_perform(curl);
+    curl_easy_cleanup(curl);
+
+    if (res != CURLE_OK)
+        return 0.0;
+
+    g_fileio_pool.push_back(std::move(response));
+    return jit_bitcast<double>(reinterpret_cast<uintptr_t>(g_fileio_pool.back().c_str()));
+#else
+    (void)url_ptr;
+    return 0.0;
+#endif
 }
 
 extern "C" double flux_strcmp(double a_ptr, double b_ptr)
@@ -1933,9 +1985,11 @@ void registerRuntimeFunctions(FluxJIT& jit)
     // File I/O and string utilities (flux_ prefix avoids libc symbol conflicts)
     jit.registerFunction("flux_fopen", (void*)&flux_fopen);
     jit.registerFunction("flux_fclose", (void*)&flux_fclose);
+    jit.registerFunction("flux_fflush", (void*)&flux_fflush);
     jit.registerFunction("flux_feof", (void*)&flux_feof);
     jit.registerFunction("flux_fgets", (void*)&flux_fgets);
     jit.registerFunction("flux_fprintf", (void*)&flux_fprintf);
+    jit.registerFunction("flux_fetch_url", (void*)&flux_fetch_url);
     jit.registerFunction("flux_strcmp", (void*)&flux_strcmp);
     jit.registerFunction("flux_strlen", (void*)&flux_strlen);
     jit.registerFunction("flux_string_at", (void*)&flux_string_at);
@@ -2117,6 +2171,11 @@ void registerRuntimeFunctions(FluxJIT& jit)
     jit.registerFunction("flux_rwlock_write_lock", (void*)&flux_rwlock_write_lock);
     jit.registerFunction("flux_rwlock_unlock", (void*)&flux_rwlock_unlock);
     jit.registerFunction("flux_rwlock_destroy", (void*)&flux_rwlock_destroy);
+
+    // Runtime error reporting (callable from JIT-compiled FluxScript)
+    jit.registerFunction("flux_set_error", (void*)&flux_set_error);
+    jit.registerFunction("flux_get_error", (void*)&flux_get_error);
+    jit.registerFunction("flux_clear_error", (void*)&flux_clear_error);
 }
 #endif
 
@@ -2719,4 +2778,40 @@ extern "C" const char* flux_last_thrown_msg() { return g_last_thrown_msg; }
 extern "C" void println_string(const char* str)
 {
     printf("%s\n", str);
+}
+
+// ============================================================================
+// Runtime error reporting for JIT-compiled model functions.
+// Thread-local buffer so concurrent model evaluations don't interfere.
+// A model calls flux_set_error("msg") to signal a runtime fault (e.g.
+// division by zero, singular matrix, domain error), and the host checks
+// flux_get_error() after the wrapper returns to detect failure.
+// ============================================================================
+
+#ifdef _MSC_VER
+static __declspec(thread) char tls_runtime_error[1024] = {0};
+static __declspec(thread) int  tls_runtime_error_set = 0;
+#else
+static thread_local char tls_runtime_error[1024] = {0};
+static thread_local int  tls_runtime_error_set = 0;
+#endif
+
+extern "C" void flux_set_error(const char* msg)
+{
+    if (msg) {
+        strncpy(tls_runtime_error, msg, sizeof(tls_runtime_error) - 1);
+        tls_runtime_error[sizeof(tls_runtime_error) - 1] = '\0';
+        tls_runtime_error_set = 1;
+    }
+}
+
+extern "C" const char* flux_get_error()
+{
+    return tls_runtime_error_set ? tls_runtime_error : nullptr;
+}
+
+extern "C" void flux_clear_error()
+{
+    tls_runtime_error[0] = '\0';
+    tls_runtime_error_set = 0;
 }

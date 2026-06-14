@@ -2,7 +2,7 @@
 
 BUILD_DIR := build
 CMAKE_FLAGS := -G Ninja -DCMAKE_BUILD_TYPE=Release
-JOBS := $(shell nproc 2>/dev/null || echo 4)
+JOBS := 2
 
 build:
 	cmake -S . -B $(BUILD_DIR) $(CMAKE_FLAGS) && \
@@ -13,7 +13,7 @@ build-debug:
 	ninja -C $(BUILD_DIR) -j$(JOBS)
 
 test:
-	rm -rf ~/.cache/fluxscript && bash tests/integration/run_tests.sh -P $(shell nproc 2>/dev/null || echo 4)
+	rm -rf ~/.cache/fluxscript && bash tests/integration/run_tests.sh -P $(JOBS)
 
 test-seq:
 	rm -rf ~/.cache/fluxscript && bash tests/integration/run_tests.sh

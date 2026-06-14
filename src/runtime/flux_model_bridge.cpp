@@ -84,6 +84,15 @@ static bool buildWrapperV1(llvm::Module* mod, llvm::IRBuilder<>& builder,
 {
     auto& C = mod->getContext();
     auto* dbl_ty = builder.getDoubleTy();
+    auto* i32_ty = builder.getInt32Ty();
+
+    // Declare runtime error helpers
+    auto* clear_err_fn = llvm::Function::Create(
+        llvm::FunctionType::get(builder.getVoidTy(), false),
+        llvm::Function::ExternalLinkage, "flux_clear_error", mod);
+    auto* get_err_fn = llvm::Function::Create(
+        llvm::FunctionType::get(llvm::PointerType::get(C, 0), false),
+        llvm::Function::ExternalLinkage, "flux_get_error", mod);
 
     int num_fields = num_pins + num_pins * num_pins;
     std::vector<llvm::Type*> field_tys(num_fields, dbl_ty);
@@ -105,10 +114,9 @@ static bool buildWrapperV1(llvm::Module* mod, llvm::IRBuilder<>& builder,
     if (!user_fn) { error = "failed to create user function declaration"; return false; }
 
     auto* dbl_ptr_ty = llvm::PointerType::get(C, 0);
-    auto* i32_ty = builder.getInt32Ty();
 
     std::vector<llvm::Type*> wrapper_param_tys = {dbl_ptr_ty, dbl_ptr_ty, dbl_ptr_ty, i32_ty};
-    auto* wrapper_fn_ty = llvm::FunctionType::get(builder.getVoidTy(), wrapper_param_tys, false);
+    auto* wrapper_fn_ty = llvm::FunctionType::get(i32_ty, wrapper_param_tys, false);
 
     std::string wrapper_name = std::string(func_name) + "_wrapper";
     auto* wrapper_fn = llvm::Function::Create(
@@ -118,8 +126,12 @@ static bool buildWrapperV1(llvm::Module* mod, llvm::IRBuilder<>& builder,
     auto* v_ptr = ai++; auto* i_ptr = ai++; auto* j_ptr = ai++; ai++;
     v_ptr->setName("v"); i_ptr->setName("i"); j_ptr->setName("j");
 
-    auto* entry = llvm::BasicBlock::Create(C, "entry", wrapper_fn);
+    auto* entry  = llvm::BasicBlock::Create(C, "entry", wrapper_fn);
+    auto* ok_bb  = llvm::BasicBlock::Create(C, "store_outputs", wrapper_fn);
+    auto* err_bb = llvm::BasicBlock::Create(C, "error_return", wrapper_fn);
     builder.SetInsertPoint(entry);
+
+    builder.CreateCall(clear_err_fn);
 
     std::vector<llvm::Value*> voltages;
     voltages.reserve(num_pins);
@@ -141,6 +153,14 @@ static bool buildWrapperV1(llvm::Module* mod, llvm::IRBuilder<>& builder,
         builder.CreateStore(result, sret_alloca);
     }
 
+    auto* err_ptr = builder.CreateCall(get_err_fn, {}, "err_ptr");
+    auto* has_err = builder.CreateIsNotNull(err_ptr, "has_error");
+    builder.CreateCondBr(has_err, err_bb, ok_bb);
+
+    builder.SetInsertPoint(err_bb);
+    builder.CreateRet(builder.getInt32(1));
+
+    builder.SetInsertPoint(ok_bb);
     for (int p = 0; p < num_pins; p++) {
         auto* fp = builder.CreateStructGEP(model_out_ty, sret_alloca, p, "igep");
         auto* fv = builder.CreateLoad(dbl_ty, fp, "i" + std::to_string(p));
@@ -158,7 +178,7 @@ static bool buildWrapperV1(llvm::Module* mod, llvm::IRBuilder<>& builder,
         }
     }
 
-    builder.CreateRetVoid();
+    builder.CreateRet(builder.getInt32(0));
     return true;
 }
 
@@ -175,6 +195,16 @@ static bool buildWrapperV2(llvm::Module* mod, llvm::IRBuilder<>& builder,
 {
     auto& C = mod->getContext();
     auto* dbl_ty = builder.getDoubleTy();
+    auto* i32_ty = builder.getInt32Ty();
+    auto* i8_ptr_ty = llvm::PointerType::get(C, 0);
+
+    // Declare runtime error helpers (linked through libFluxScript.so)
+    auto* clear_err_fn = llvm::Function::Create(
+        llvm::FunctionType::get(builder.getVoidTy(), false),
+        llvm::Function::ExternalLinkage, "flux_clear_error", mod);
+    auto* get_err_fn = llvm::Function::Create(
+        llvm::FunctionType::get(i8_ptr_ty, false),
+        llvm::Function::ExternalLinkage, "flux_get_error", mod);
 
     int num_fields = num_pins + num_pins * num_pins;
     std::vector<llvm::Type*> field_tys(num_fields, dbl_ty);
@@ -197,11 +227,11 @@ static bool buildWrapperV2(llvm::Module* mod, llvm::IRBuilder<>& builder,
     if (!user_fn) { error = "failed to create user function declaration"; return false; }
 
     auto* dbl_ptr_ty = llvm::PointerType::get(C, 0);
-    auto* i32_ty = builder.getInt32Ty();
 
     std::vector<llvm::Type*> wrapper_param_tys = {
         dbl_ptr_ty, i32_ty, dbl_ptr_ty, dbl_ptr_ty, dbl_ptr_ty, i32_ty};
-    auto* wrapper_fn_ty = llvm::FunctionType::get(builder.getVoidTy(), wrapper_param_tys, false);
+    // Return i32: 0 = success, 1 = runtime error
+    auto* wrapper_fn_ty = llvm::FunctionType::get(i32_ty, wrapper_param_tys, false);
 
     std::string wrapper_name = std::string(func_name) + "_wrapper";
     auto* wrapper_fn = llvm::Function::Create(
@@ -214,7 +244,12 @@ static bool buildWrapperV2(llvm::Module* mod, llvm::IRBuilder<>& builder,
     v_ptr->setName("v");  i_ptr->setName("i");  j_ptr->setName("j");  n_val->setName("n");
 
     auto* entry = llvm::BasicBlock::Create(C, "entry", wrapper_fn);
+    auto* ok_bb  = llvm::BasicBlock::Create(C, "store_outputs", wrapper_fn);
+    auto* err_bb = llvm::BasicBlock::Create(C, "error_return", wrapper_fn);
     builder.SetInsertPoint(entry);
+
+    // Clear any previous runtime error before calling the user function
+    builder.CreateCall(clear_err_fn);
 
     std::vector<llvm::Value*> user_args;
     user_args.reserve(num_params + num_pins);
@@ -240,6 +275,17 @@ static bool buildWrapperV2(llvm::Module* mod, llvm::IRBuilder<>& builder,
         builder.CreateStore(result, sret_alloca);
     }
 
+    // Check if a runtime error was set during the call
+    auto* err_ptr = builder.CreateCall(get_err_fn, {}, "err_ptr");
+    auto* has_err = builder.CreateIsNotNull(err_ptr, "has_error");
+    builder.CreateCondBr(has_err, err_bb, ok_bb);
+
+    // Error path: return 1 without storing outputs (results are garbage)
+    builder.SetInsertPoint(err_bb);
+    builder.CreateRet(builder.getInt32(1));
+
+    // Success path: store outputs and return 0
+    builder.SetInsertPoint(ok_bb);
     for (int p = 0; p < num_pins; p++) {
         auto* fp = builder.CreateStructGEP(model_out_ty, sret_alloca, p, "igep");
         auto* fv = builder.CreateLoad(dbl_ty, fp, "i" + std::to_string(p));
@@ -257,7 +303,7 @@ static bool buildWrapperV2(llvm::Module* mod, llvm::IRBuilder<>& builder,
         }
     }
 
-    builder.CreateRetVoid();
+    builder.CreateRet(builder.getInt32(0));
     return true;
 }
 
@@ -269,7 +315,8 @@ static void* compileModelInternal(const char* source, const char* func_name,
                                    int num_pins, int num_params,
                                    bool v2_abi,
                                    char** error_out,
-                                   int* out_line, int* out_col)
+                                   int* out_line, int* out_col,
+                                   const char* include_path)
 {
     if (out_line) *out_line = 0;
     if (out_col)  *out_col  = 0;
@@ -295,6 +342,9 @@ static void* compileModelInternal(const char* source, const char* func_name,
     Flux::CompilerOptions opts;
     opts.optimizationLevel = Flux::OptimizationLevel::O2;
     opts.injectStdlib = true;
+    opts.debugInfo = false;
+    if (include_path)
+        opts.includePath = include_path;
 
     Flux::CompilerInstance compiler(opts);
     std::string err;
@@ -376,9 +426,10 @@ void* flux_compile_model(const char* source, const char* func_name,
 {
     char* err_msg = nullptr;
     void* fn = compileModelInternal(source, func_name, num_pins,
-                                    0 /* num_params */,
-                                    false /* v1 ABI */,
-                                    &err_msg, nullptr, nullptr);
+                                     0 /* num_params */,
+                                     false /* v1 ABI */,
+                                     &err_msg, nullptr, nullptr,
+                                     nullptr /* include_path */);
     if (error) {
         if (err_msg)
             *error = err_msg;
@@ -414,7 +465,8 @@ void* flux_compile_model(const char* source, const char* func_name,
 
 FluxCompileResult flux_compile_model_v2(
     const char* source, const char* func_name,
-    int num_pins, int num_params)
+    int num_pins, int num_params,
+    const char* include_path)
 {
     if (num_params < 0) num_params = 0;
 
@@ -430,7 +482,8 @@ FluxCompileResult flux_compile_model_v2(
     result.fn_ptr = compileModelInternal(
         source, func_name, num_pins, num_params,
         true /* v2 ABI */,
-        &err_msg, &line, &col);
+        &err_msg, &line, &col,
+        include_path);
 
     result.error_line = line;
     result.error_col  = col;
