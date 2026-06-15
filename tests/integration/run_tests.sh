@@ -32,7 +32,7 @@ if [ "$(uname)" = "Darwin" ]; then
     AOT_LDLIBS="-lFluxRuntime -lm"
 else
     LDFLAGS_NOPIE="-no-pie"
-    AOT_LDLIBS="-lFluxRuntime -lpthread -ldl -lm"
+    AOT_LDLIBS="-lFluxRuntime -lpthread -ldl -lm -lcurl"
 fi
 
 # ==============================================================================
