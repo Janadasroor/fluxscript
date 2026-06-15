@@ -1,0 +1,2 @@
+run
+Stress: Lifetime Patterns (Foo<'a>, Bar<'a,'b>, ref in loop, multiple borrows)

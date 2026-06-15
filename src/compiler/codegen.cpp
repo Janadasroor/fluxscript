@@ -1049,9 +1049,50 @@ TypedValue MemberExprAST::codegen(CodegenContext& context)
             if (structInfo.Fields[i].first == MemberName) {
                 fieldIdx = static_cast<int>(i);
                 fieldFluxType = structInfo.Fields[i].second;
+                // Substitute generic type parameters using the object's concrete GenericArgs
+                if (fieldFluxType.Kind == TypeKind::Generic && !objVal.Type.GenericArgs.empty()) {
+                    std::vector<std::string> genericParamNames;
+                    for (auto& [fn, ft] : structInfo.Fields) {
+                        if (ft.Kind == TypeKind::Generic) {
+                            bool found = false;
+                            for (auto& n : genericParamNames) {
+                                if (n == ft.GenericName) { found = true; break; }
+                            }
+                            if (!found) genericParamNames.push_back(ft.GenericName);
+                        }
+                    }
+                    for (size_t gi = 0; gi < genericParamNames.size() && gi < objVal.Type.GenericArgs.size(); ++gi) {
+                        if (genericParamNames[gi] == fieldFluxType.GenericName) {
+                            fieldFluxType = objVal.Type.GenericArgs[gi];
+                            break;
+                        }
+                    }
+                }
+                // Fallback: if still generic, look up the specialized struct by mangled name
+                // from StructTypeIndex (e.g., "Pair_Double_Double" for Pair[Double, Double])
+                if (fieldFluxType.Kind == TypeKind::Generic && objVal.Type.Kind == TypeKind::UserStruct) {
+                    for (auto& [specName, specId] : context.StructTypeIndex) {
+                        if (specId >= 0 && specId < static_cast<int>(context.StructTypes.size()) &&
+                            specName != structInfo.Name &&
+                            specName.find(structInfo.Name + "_") == 0) {
+                            auto& specInfo = context.StructTypes[specId];
+                            for (size_t si = 0; si < specInfo.Fields.size(); ++si) {
+                                if (specInfo.Fields[si].first == MemberName &&
+                                    specInfo.Fields[si].second.Kind != TypeKind::Generic) {
+                                    fieldFluxType = specInfo.Fields[si].second;
+                                    resolveUserStructType(fieldFluxType, context);
+                                    resolveUserEnumType(fieldFluxType, context);
+                                    fieldLLVMType = fieldFluxType.getLLVMType(context.TheContext);
+                                    goto field_found;
+                                }
+                            }
+                        }
+                    }
+                }
                 resolveUserStructType(fieldFluxType, context);
                 resolveUserEnumType(fieldFluxType, context);
                 fieldLLVMType = fieldFluxType.getLLVMType(context.TheContext);
+                field_found:;
                 break;
             }
         }
@@ -3712,10 +3753,21 @@ TypedValue CallExprAST::codegen(CodegenContext& context)
                     llvm::FunctionType* ExtFT = llvm::FunctionType::get(RetLTy, ExtArgLTys, false);
                     CalleeF = llvm::Function::Create(ExtFT, llvm::Function::ExternalLinkage, Callee, context.TheModule);
                 } else {
-                    // Auto-declare as extern double(double, ...)
-                    std::vector<llvm::Type*> Doubles(Args.size(), llvm::Type::getDoubleTy(context.TheContext));
+                    // Auto-declare using actual argument types (resolve structs/enums to ptr for >16 byte types)
+                    llvm::Type* VoidPtrTy = llvm::PointerType::get(context.TheContext, 0);
+                    std::vector<llvm::Type*> AutoArgTypes;
+                    for (auto& argTv : ArgTVs) {
+                        FluxType resolved = argTv.Type;
+                        resolveUserStructType(resolved, context);
+                        resolveUserEnumType(resolved, context);
+                        if (shouldPassByPointer(resolved, context)) {
+                            AutoArgTypes.push_back(VoidPtrTy);
+                        } else {
+                            AutoArgTypes.push_back(resolved.getLLVMType(context.TheContext));
+                        }
+                    }
                     llvm::FunctionType* AutoFT =
-                        llvm::FunctionType::get(llvm::Type::getDoubleTy(context.TheContext), Doubles, false);
+                        llvm::FunctionType::get(llvm::Type::getDoubleTy(context.TheContext), AutoArgTypes, false);
                     CalleeF = llvm::Function::Create(AutoFT, llvm::Function::ExternalLinkage, Callee, context.TheModule);
                 }
             }
@@ -5671,7 +5723,10 @@ void ImplDeclAST::codegen(CodegenContext& context)
                         resolveUserEnumType(argType, context);
                         thunkArgTypes.push_back(argType.getLLVMType(context.TheContext));
                     }
-                    llvm::Type* traitRetTy = sig.ReturnType.getLLVMType(context.TheContext);
+                    FluxType traitRetType = sig.ReturnType;
+                    resolveUserStructType(traitRetType, context);
+                    resolveUserEnumType(traitRetType, context);
+                    llvm::Type* traitRetTy = traitRetType.getLLVMType(context.TheContext);
                     llvm::FunctionType* thunkFT = llvm::FunctionType::get(traitRetTy, thunkArgTypes, false);
 
                     llvm::Function* thunk = llvm::Function::Create(thunkFT,
@@ -5711,7 +5766,11 @@ void ImplDeclAST::codegen(CodegenContext& context)
                             if (thArg->getType() != expectedTy) {
                                 if (thArg->getType()->isPointerTy() && expectedTy->isPointerTy())
                                     thArg = thunkBuilder.CreatePointerCast(thArg, expectedTy);
-                                else if (thArg->getType()->isVectorTy() && expectedTy->isStructTy()) {
+                                else if (thArg->getType()->isStructTy() && expectedTy->isPointerTy()) {
+                                    llvm::Value* allocaSlot = thunkBuilder.CreateAlloca(thArg->getType(), nullptr, "byref_arg");
+                                    thunkBuilder.CreateStore(thArg, allocaSlot);
+                                    thArg = allocaSlot;
+                                } else if (thArg->getType()->isVectorTy() && expectedTy->isStructTy()) {
                                     // Convert <2 x double> to { double, double }
                                     llvm::Value* v0 = thunkBuilder.CreateExtractElement(thArg, (uint64_t)0, "ext0");
                                     llvm::Value* v1 = thunkBuilder.CreateExtractElement(thArg, (uint64_t)1, "ext1");
