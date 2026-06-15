@@ -379,7 +379,7 @@ TypedValue AwaitExprAST::codegen(CodegenContext& context)
 
     // 4. Compare the result against 0.0 to check if it's ready
     auto ZeroVal = llvm::ConstantFP::get(llvm::Type::getDoubleTy(context.TheContext), 0.0);
-    llvm::Value* IsReady = context.Builder.CreateFCmpONE(ValueTV.Val, ZeroVal, "await_ready");
+    llvm::Value* IsReady = context.Builder.CreateFCmpUGE(ValueTV.Val, ZeroVal, "await_ready");
 
     // 5. If ready, branch to continuation; otherwise suspend
     llvm::BasicBlock* SuspendBB = llvm::BasicBlock::Create(context.TheContext, "await_suspend", TheFunction);
@@ -416,7 +416,7 @@ TypedValue AwaitExprAST::codegen(CodegenContext& context)
         return TypedValue();
     }
     context.Builder.CreateStore(ResumeTV.Val, context.AsyncResultAlloca);
-    llvm::Value* ResumeReady = context.Builder.CreateFCmpONE(ResumeTV.Val, ZeroVal, "await_resume_ready");
+    llvm::Value* ResumeReady = context.Builder.CreateFCmpUGE(ResumeTV.Val, ZeroVal, "await_resume_ready");
 
     llvm::BasicBlock* ReSuspendBB = llvm::BasicBlock::Create(context.TheContext, "await_resuspend", TheFunction);
     context.Builder.CreateCondBr(ResumeReady, ContBB, ReSuspendBB);

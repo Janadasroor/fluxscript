@@ -1,22 +1,25 @@
+def apply_twice(f, x) -> Double {
+    f(f(x))
+}
+def compose(f, g, x) -> Double {
+    f(g(x))
+}
 def double_it(x) -> Double { x * 2.0 }
 def add_one(x) -> Double { x + 1.0 }
 def square(x) -> Double { x * x }
-def negate(x) -> Double { -x }
 def main() -> Double {
-    assert(double_it(3.0) == 6.0, "double_it")
-    assert(add_one(5.0) == 6.0, "add_one")
-    assert(square(4.0) == 16.0, "square")
-    assert(negate(7.0) == -7.0, "negate")
-    assert(double_it(add_one(3.0)) == 8.0, "compose double(add_one)")
-    assert(add_one(square(4.0)) == 17.0, "compose add_one(square)")
-    assert(square(double_it(3.0)) == 36.0, "compose square(double)")
-    var total = 0.0
-    var i = 0.0
-    while i < 50.0 do {
-        total = total + double_it(i) + add_one(i)
-        i = i + 1.0
-    }
-    assert(total == 3725.0, "call loop wrong")
+    let r1 = apply_twice(double_it, 3.0)
+    assert(r1 == 12.0, "apply_twice double wrong")
+    let r2 = apply_twice(add_one, 5.0)
+    assert(r2 == 7.0, "apply_twice add_one wrong")
+    let r3 = compose(double_it, add_one, 5.0)
+    assert(r3 == 12.0, "compose wrong")
+    let r4 = compose(add_one, double_it, 3.0)
+    assert(r4 == 7.0, "compose rev wrong")
+    let r5 = compose(square, add_one, 2.0)
+    assert(r5 == 9.0, "compose square+add wrong")
+    let r6 = apply_twice(square, 3.0)
+    assert(r6 == 81.0, "apply_twice square wrong")
     1.0
 }
 main()

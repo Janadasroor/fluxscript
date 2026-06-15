@@ -950,6 +950,17 @@ TypedValue VariableExprAST::codegen(CodegenContext& context)
         return TypedValue();
     }
     if (!V) {
+        // Check if it's a function in the module (function pointer)
+        if (auto* Fn = context.TheModule->getFunction(trimmedName)) {
+            // Store function pointer as double: ptr → ptrtoint to i64 → bitcast to double
+            llvm::Type* Int64Ty = llvm::Type::getInt64Ty(context.TheContext);
+            llvm::Type* DoubleTy = llvm::Type::getDoubleTy(context.TheContext);
+            llvm::Value* fnInt = context.Builder.CreatePtrToInt(Fn, Int64Ty, "fnptr_int");
+            llvm::Value* fnDouble = context.Builder.CreateBitCast(fnInt, DoubleTy, "fnptr_double");
+            FluxType FnTy(TypeKind::Double);
+            FnTy.GenericName = trimmedName;
+            return TypedValue(fnDouble, FnTy);
+        }
         std::cerr << "Unknown variable name: " << Name << " (trimmed: '" << trimmedName << "')" << std::endl;
         std::cerr << "  Available variables: ";
         for (const auto& [k, v] : context.NamedValues) {
@@ -3720,6 +3731,38 @@ TypedValue CallExprAST::codegen(CodegenContext& context)
         }
 
         if (!CalleeF) {
+            // Check if callee is a local variable containing a function pointer
+            llvm::Value* localVar = nullptr;
+            {
+                auto nvIt = context.NamedValues.find(Callee);
+                if (nvIt != context.NamedValues.end() && nvIt->second) {
+                    localVar = nvIt->second;
+                }
+            }
+            if (localVar && localVar->getType()->isPointerTy()) {
+                // Indirect call through function pointer variable
+                llvm::Type* DoubleTy = llvm::Type::getDoubleTy(context.TheContext);
+                llvm::Type* Int64Ty = llvm::Type::getInt64Ty(context.TheContext);
+                llvm::Type* VoidPtrTy = llvm::PointerType::get(context.TheContext, 0);
+                std::vector<llvm::Type*> IndirectArgTys;
+                for (size_t i = 0; i < Args.size(); ++i)
+                    IndirectArgTys.push_back(DoubleTy);
+                llvm::FunctionType* IndirectFT = llvm::FunctionType::get(DoubleTy, IndirectArgTys, false);
+
+                std::vector<llvm::Value*> ArgsV;
+                llvm::Value* fnDouble = context.Builder.CreateLoad(DoubleTy, localVar, "fnptr_val");
+                // Convert double back to function pointer: double → i64 → ptr
+                llvm::Value* fnInt = context.Builder.CreateBitCast(fnDouble, Int64Ty, "fnptr_int");
+                llvm::Value* fnPtr = context.Builder.CreateIntToPtr(fnInt, llvm::PointerType::get(IndirectFT, 0), "fnptr_cast");
+
+                for (auto& arg : Args) {
+                    TypedValue argTV = arg->codegen(context);
+                    if (!argTV.Val) return TypedValue();
+                    ArgsV.push_back(argTV.Val);
+                }
+                llvm::Value* ret = context.Builder.CreateCall(IndirectFT, fnPtr, ArgsV, "indirect_call");
+                return TypedValue(ret, TypeKind::Double);
+            }
             // Fallback: standard function lookup + auto-declaration
             CalleeF = context.TheModule->getFunction(Callee);
             if (!CalleeF && sepPos != std::string::npos) {
