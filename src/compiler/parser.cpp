@@ -45,6 +45,7 @@ Parser::Parser(const std::string& input) : m_lexer(input), m_hasError(false), m_
     m_binopPrecedence['-'] = 30;
     m_binopPrecedence['*'] = 40;
     m_binopPrecedence['/'] = 40;
+    m_binopPrecedence['%'] = 40;
     m_binopPrecedence[static_cast<int>(TokenType::tok_ew_mul)] = 40;
     m_binopPrecedence[static_cast<int>(TokenType::tok_ew_div)] = 40;
     m_binopPrecedence[static_cast<int>(TokenType::tok_ew_power)] = 50;
