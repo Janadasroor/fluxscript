@@ -96,6 +96,8 @@ extern "C" double flux_str_at(double str_ptr, double idx)
     const char* s = dbl_to_cstr(str_ptr);
     if (!s) return 0.0;
     int i = static_cast<int>(idx);
+    int len = static_cast<int>(std::strlen(s));
+    if (i < 0 || i >= len) return 0.0;
     return static_cast<double>(static_cast<unsigned char>(s[i]));
 }
 
@@ -105,9 +107,12 @@ extern "C" double flux_str_slice(double str_ptr, double start, double end)
     if (!s) return 0.0;
     int st = static_cast<int>(start);
     int en = static_cast<int>(end);
-    int len = en - st;
-    if (len < 0) len = 0;
-    std::string result(s + st, static_cast<size_t>(len));
+    int len = static_cast<int>(std::strlen(s));
+    if (st < 0) st = 0;
+    if (en > len) en = len;
+    if (en < st) en = st;
+    int slice_len = en - st;
+    std::string result(s + st, static_cast<size_t>(slice_len));
     g_llvm_pool.push_back(result);
     return u64_as_dbl(reinterpret_cast<uintptr_t>(g_llvm_pool.back().c_str()));
 }

@@ -553,15 +553,13 @@ static double make_sym_ptr(std::shared_ptr<SymbolicExpr> expr)
 #include <vector>
 #include <atomic>
 
-static std::vector<void*> g_tracked_allocations;
-static std::mutex g_alloc_mutex;
-static std::atomic<int> g_jit_call_depth{0};
+static thread_local std::vector<void*> g_tracked_allocations;
+static thread_local int g_jit_call_depth = 0;
 
 extern "C" void* flux_malloc(size_t size)
 {
     void* ptr = std::malloc(size);
     if (ptr) {
-        std::lock_guard<std::mutex> lock(g_alloc_mutex);
         g_tracked_allocations.push_back(ptr);
     }
     return ptr;
@@ -569,7 +567,6 @@ extern "C" void* flux_malloc(size_t size)
 
 extern "C" void flux_free_all_allocations()
 {
-    std::lock_guard<std::mutex> lock(g_alloc_mutex);
     for (void* ptr : g_tracked_allocations) {
         std::free(ptr);
     }
@@ -588,12 +585,16 @@ extern "C" double flux_dyn_ptr_push(double data, double vtable)
 
 extern "C" double flux_dyn_ptr_get_data(double idx)
 {
-    return jit_bitcast<double>(g_dyn_ptrs[static_cast<size_t>(idx)].first);
+    size_t i = static_cast<size_t>(idx);
+    if (i >= g_dyn_ptrs.size()) return 0.0;
+    return jit_bitcast<double>(g_dyn_ptrs[i].first);
 }
 
 extern "C" double flux_dyn_ptr_get_vtable(double idx)
 {
-    return jit_bitcast<double>(g_dyn_ptrs[static_cast<size_t>(idx)].second);
+    size_t i = static_cast<size_t>(idx);
+    if (i >= g_dyn_ptrs.size()) return 0.0;
+    return jit_bitcast<double>(g_dyn_ptrs[i].second);
 }
 
 extern "C" void flux_dyn_ptr_clear()
@@ -2739,8 +2740,8 @@ static JmpBufStack* get_jmp_stack() {
 }
 #endif
 
-static double g_last_thrown_value = 0.0;
-static const char* g_last_thrown_msg = nullptr;
+static thread_local double g_last_thrown_value = 0.0;
+static thread_local const char* g_last_thrown_msg = nullptr;
 
 extern "C" void flux_push_jmp_buf(void* buf)
 {
