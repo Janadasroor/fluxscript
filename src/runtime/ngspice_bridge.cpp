@@ -122,18 +122,12 @@ int flux_ngspice_init(const char* netlist)
     size_t start = 0;
     size_t end = netlistStr.find('\n');
     while (end != std::string::npos) {
-        std::string line = netlistStr.substr(start, end - start);
-        char* lineCopy = new char[line.size() + 1];
-        strcpy(lineCopy, line.c_str());
-        lines.push_back(lineCopy);
+        lines.push_back(strdup(netlistStr.substr(start, end - start).c_str()));
         start = end + 1;
         end = netlistStr.find('\n', start);
     }
     // Add last line
-    std::string lastLine = netlistStr.substr(start);
-    char* lastLineCopy = new char[lastLine.size() + 1];
-    strcpy(lastLineCopy, lastLine.c_str());
-    lines.push_back(lastLineCopy);
+    lines.push_back(strdup(netlistStr.substr(start).c_str()));
 
     // Add NULL terminator (required by ngspice)
     lines.push_back(nullptr);
@@ -144,7 +138,7 @@ int flux_ngspice_init(const char* netlist)
     // Cleanup line copies
     for (auto line : lines) {
         if (line)
-            delete[] line;
+            free(line);
     }
 
     if (rc != 0) {
@@ -177,11 +171,11 @@ int flux_ngspice_run_transient(double tstart, double tstop, double tstep)
     // Run transient analysis
     std::string cmd = "tran " + std::to_string(tstep) + " " + std::to_string(tstop);
 
-    char* cmdCopy = new char[cmd.size() + 1];
+    char* cmdCopy = strdup(cmd.c_str());
     strcpy(cmdCopy, cmd.c_str());
 
     int rc = ngSpice_Command(cmdCopy);
-    delete[] cmdCopy;
+    free(cmdCopy);
 
     if (rc != 0) {
         g_lastError = "Transient analysis failed with error " + std::to_string(rc);
@@ -211,11 +205,11 @@ int flux_ngspice_run_ac(int npoints, double fstart, double fstop)
     // Run AC analysis
     std::string cmd = "ac dec " + std::to_string(npoints) + " " + std::to_string(fstart) + " " + std::to_string(fstop);
 
-    char* cmdCopy = new char[cmd.size() + 1];
+    char* cmdCopy = strdup(cmd.c_str());
     strcpy(cmdCopy, cmd.c_str());
 
     int rc = ngSpice_Command(cmdCopy);
-    delete[] cmdCopy;
+    free(cmdCopy);
 
     if (rc != 0) {
         g_lastError = "AC analysis failed with error " + std::to_string(rc);
@@ -246,11 +240,11 @@ int flux_ngspice_run_dc(const char* source, double vstart, double vstop, double 
     std::string cmd = std::string("dc ") + source + " " + std::to_string(vstart) + " " + std::to_string(vstop) + " " +
                       std::to_string(vincr);
 
-    char* cmdCopy = new char[cmd.size() + 1];
+    char* cmdCopy = strdup(cmd.c_str());
     strcpy(cmdCopy, cmd.c_str());
 
     int rc = ngSpice_Command(cmdCopy);
-    delete[] cmdCopy;
+    free(cmdCopy);
 
     if (rc != 0) {
         g_lastError = "DC sweep failed with error " + std::to_string(rc);
@@ -406,11 +400,11 @@ int flux_ngspice_cmd(const char* command)
         return -1;
     }
 
-    char* cmdCopy = new char[strlen(command) + 1];
+    char* cmdCopy = strdup(command);
     strcpy(cmdCopy, command);
 
     int rc = ngSpice_Command(cmdCopy);
-    delete[] cmdCopy;
+    free(cmdCopy);
 
     return rc;
 #else

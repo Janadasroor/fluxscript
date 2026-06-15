@@ -261,6 +261,14 @@ double jit_register_ic(double name_ptr, double value)
 #include <regex>
 static thread_local std::string g_fileio_buffer;
 static thread_local std::deque<std::string> g_fileio_pool;
+static constexpr size_t FLUX_POOL_MAX_SIZE = 10000;
+
+template <typename Pool>
+static inline void pool_evict_if_full(Pool& pool) {
+    while (pool.size() > FLUX_POOL_MAX_SIZE) {
+        pool.pop_front();
+    }
+}
 
 // File I/O wrappers (flux_ prefix avoids symbol conflicts with libc)
 extern "C" double flux_fopen(double filename_ptr, double mode_ptr)
@@ -308,6 +316,7 @@ extern "C" double flux_fgets(double handle)
     while (!g_fileio_buffer.empty() && (g_fileio_buffer.back() == '\n' || g_fileio_buffer.back() == '\r'))
         g_fileio_buffer.pop_back();
     g_fileio_pool.push_back(g_fileio_buffer);
+    pool_evict_if_full(g_fileio_pool);
     return jit_bitcast<double>(reinterpret_cast<uintptr_t>(g_fileio_pool.back().c_str()));
 }
 
@@ -355,7 +364,7 @@ extern "C" double flux_fetch_url(double url_ptr)
     curl_easy_setopt(curl, CURLOPT_TIMEOUT, 30L);
     curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
     curl_easy_setopt(curl, CURLOPT_MAXREDIRS, 5L);
-    curl_easy_setopt(curl, CURLOPT_PROTOCOLS, CURLPROTO_HTTP | CURLPROTO_HTTPS);
+    curl_easy_setopt(curl, CURLOPT_PROTOCOLS_STR, "http,https");
     curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 1L);
     curl_easy_setopt(curl, CURLOPT_USERAGENT, "FluxScript/1.0");
     curl_easy_setopt(curl, CURLOPT_MAXFILESIZE, 10L * 1024L * 1024L);
@@ -367,6 +376,7 @@ extern "C" double flux_fetch_url(double url_ptr)
         return 0.0;
 
     g_fileio_pool.push_back(std::move(response));
+    pool_evict_if_full(g_fileio_pool);
     return jit_bitcast<double>(reinterpret_cast<uintptr_t>(g_fileio_pool.back().c_str()));
 #else
     (void)url_ptr;
@@ -419,6 +429,7 @@ extern "C" double flux_string_slice(double s_ptr, double start, double end)
     if (lo >= hi)
         return 0.0;
     g_fileio_pool.push_back(std::string(s + lo, s + hi));
+    pool_evict_if_full(g_fileio_pool);
     return jit_bitcast<double>(reinterpret_cast<uintptr_t>(g_fileio_pool.back().c_str()));
 }
 
@@ -578,8 +589,11 @@ extern "C" void* flux_malloc(size_t size)
     return ptr;
 }
 
+static void flux_join_all_pending();
+
 extern "C" void flux_free_all_allocations()
 {
+    flux_join_all_pending();
     for (void* ptr : g_tracked_allocations) {
         std::free(ptr);
     }
@@ -2383,6 +2397,18 @@ extern "C" double flux_join(double handle)
     return result;
 }
 
+// Clean up all pending spawned threads (called on error paths / shutdown)
+static void flux_join_all_pending()
+{
+    std::lock_guard<std::mutex> lock(g_thread_map_mutex);
+    for (auto& [id, ctx] : g_thread_map) {
+        if (ctx->thread.joinable())
+            ctx->thread.join();
+        delete ctx;
+    }
+    g_thread_map.clear();
+}
+
 extern "C" double flux_thread_self()
 {
     // Return a unique double per thread — use std::hash on thread::id
@@ -2616,7 +2642,7 @@ extern "C" double flux_regex_replace(double str_dbl, double pat_dbl, double repl
     }
 }
 
-static std::vector<std::pair<double, double>> g_goals;
+static thread_local std::vector<std::pair<double, double>> g_goals;
 extern "C" void flux_register_goal(double current, double target)
 {
     g_goals.push_back({current, target});

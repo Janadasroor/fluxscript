@@ -29,6 +29,14 @@
 /* ------------------------------------------------------------------ */
 
 static thread_local std::deque<std::string> g_llvm_pool;
+static constexpr size_t FLUX_POOL_MAX_SIZE = 10000;
+
+template <typename Pool>
+static inline void pool_evict_if_full(Pool& pool) {
+    while (pool.size() > FLUX_POOL_MAX_SIZE) {
+        pool.pop_front();
+    }
+}
 
 static inline uint64_t dbl_as_u64(double d) noexcept
 {
@@ -113,7 +121,7 @@ extern "C" double flux_str_slice(double str_ptr, double start, double end)
     if (en < st) en = st;
     int slice_len = en - st;
     std::string result(s + st, static_cast<size_t>(slice_len));
-    g_llvm_pool.push_back(result);
+    g_llvm_pool.push_back(result); pool_evict_if_full(g_llvm_pool);
     return u64_as_dbl(reinterpret_cast<uintptr_t>(g_llvm_pool.back().c_str()));
 }
 
@@ -121,7 +129,7 @@ extern "C" double flux_str_from_char(double ch)
 {
     char c = static_cast<char>(static_cast<int>(ch));
     std::string s(1, c);
-    g_llvm_pool.push_back(s);
+    g_llvm_pool.push_back(s); pool_evict_if_full(g_llvm_pool);
     return u64_as_dbl(reinterpret_cast<uintptr_t>(g_llvm_pool.back().c_str()));
 }
 
@@ -132,7 +140,7 @@ extern "C" double flux_str_concat(double a_ptr, double b_ptr)
     if (!a && !b) return 0.0;
     std::string result(a ? a : "");
     result += (b ? b : "");
-    g_llvm_pool.push_back(result);
+    g_llvm_pool.push_back(result); pool_evict_if_full(g_llvm_pool);
     return u64_as_dbl(reinterpret_cast<uintptr_t>(g_llvm_pool.back().c_str()));
 }
 
@@ -148,7 +156,7 @@ extern "C" double flux_read_file(double path_dbl)
     std::string result(static_cast<size_t>(sz), '\0');
     fread(result.data(), 1, static_cast<size_t>(sz), f);
     std::fclose(f);
-    g_llvm_pool.push_back(std::move(result));
+    g_llvm_pool.push_back(std::move(result)); pool_evict_if_full(g_llvm_pool);
     return u64_as_dbl(reinterpret_cast<uintptr_t>(g_llvm_pool.back().c_str()));
 }
 
@@ -172,7 +180,7 @@ extern "C" double flux_get_env(double name_dbl)
 extern "C" double flux_dtoa(double val)
 {
     std::string s = std::to_string(static_cast<int64_t>(val));
-    g_llvm_pool.push_back(std::move(s));
+    g_llvm_pool.push_back(std::move(s)); pool_evict_if_full(g_llvm_pool);
     return u64_as_dbl(reinterpret_cast<uintptr_t>(g_llvm_pool.back().c_str()));
 }
 
@@ -1035,7 +1043,7 @@ double flux_hm_keys(double hm_id)
         if (!result.empty()) result += "\n";
         result += k;
     }
-    g_llvm_pool.push_back(result);
+    g_llvm_pool.push_back(result); pool_evict_if_full(g_llvm_pool);
     return u64_as_dbl(reinterpret_cast<uintptr_t>(g_llvm_pool.back().c_str()));
 }
 

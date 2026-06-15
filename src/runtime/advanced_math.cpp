@@ -10,6 +10,7 @@
 #include <cstring>
 #include <functional>
 #include <limits>
+#include <memory>
 #include <numeric>
 #include <random>
 #include <vector>
@@ -766,14 +767,13 @@ void* flux_matrix_eigenvalues(void* m)
     Eigen::EigenSolver<Eigen::MatrixXd> es(*M);
     // Return as a 2-column matrix: col0 = real, col1 = imag
     int n = M->rows();
-    auto* vals = new Eigen::MatrixXd(n, 2);
+    auto vals = std::make_unique<Eigen::MatrixXd>(n, 2);
     for (int i = 0; i < n; i++) {
         (*vals)(i, 0) = es.eigenvalues()(i).real();
         (*vals)(i, 1) = es.eigenvalues()(i).imag();
     }
     void* ret = new_mat(n, 2);
     flux_matrix_set_data(ret, vals->data(), n, 2);
-    delete vals;
     return ret;
 }
 
@@ -783,10 +783,9 @@ void* flux_matrix_eigenvectors(void* m)
     if (!M)
         return nullptr;
     Eigen::EigenSolver<Eigen::MatrixXd> es(*M);
-    auto* ev = new Eigen::MatrixXd(es.eigenvectors().real());
+    auto ev = std::make_unique<Eigen::MatrixXd>(es.eigenvectors().real());
     void* ret = new_mat(ev->rows(), ev->cols());
     flux_matrix_set_data(ret, ev->data(), ev->rows(), ev->cols());
-    delete ev;
     return ret;
 }
 
@@ -838,11 +837,10 @@ void* flux_matrix_svd(void* m)
     // Return as a flat matrix: [U | S_diag | Vt]
     // U: m×m, S_diag: m×1, Vt: n×n
     int m_rows = M->rows(), m_cols = M->cols();
-    auto* result = new Eigen::MatrixXd(m_rows + m_cols, m_cols);
+    auto result = std::make_unique<Eigen::MatrixXd>(m_rows + m_cols, m_cols);
     result->block(0, 0, m_rows, m_cols) = svd.matrixU() * svd.singularValues().asDiagonal();
     result->block(m_rows, 0, m_cols, m_cols) = svd.matrixV().transpose();
     void* ret = new_mat(m_rows + m_cols, m_cols);
     flux_matrix_set_data(ret, result->data(), m_rows + m_cols, m_cols);
-    delete result;
     return ret;
 }
