@@ -317,8 +317,18 @@ extern "C" double flux_fprintf(double handle, double format_ptr, double arg)
     auto* fmt = reinterpret_cast<const char*>(jit_bitcast<uintptr_t>(format_ptr));
     if (!fp || !fmt)
         return 0.0;
-    int ret = std::fprintf(fp, fmt, arg);
-    std::fflush(fp);
+    // Reject dangerous format specifiers (%n writes memory, %s/%p read arbitrary memory)
+    if (std::strstr(fmt, "%n") || std::strstr(fmt, "%s") || std::strstr(fmt, "%p") ||
+        std::strstr(fmt, "%hn") || std::strstr(fmt, "%ln")) {
+        return 0.0;
+    }
+    // Use snprintf to limit output size and prevent format string exploits
+    char buf[4096];
+    int ret = std::snprintf(buf, sizeof(buf), fmt, arg);
+    if (ret > 0) {
+        std::fwrite(buf, 1, static_cast<size_t>(ret < (int)sizeof(buf) ? ret : (int)sizeof(buf) - 1), fp);
+        std::fflush(fp);
+    }
     return static_cast<double>(ret);
 }
 
@@ -344,8 +354,11 @@ extern "C" double flux_fetch_url(double url_ptr)
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response);
     curl_easy_setopt(curl, CURLOPT_TIMEOUT, 30L);
     curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
+    curl_easy_setopt(curl, CURLOPT_MAXREDIRS, 5L);
+    curl_easy_setopt(curl, CURLOPT_PROTOCOLS, CURLPROTO_HTTP | CURLPROTO_HTTPS);
     curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 1L);
     curl_easy_setopt(curl, CURLOPT_USERAGENT, "FluxScript/1.0");
+    curl_easy_setopt(curl, CURLOPT_MAXFILESIZE, 10L * 1024L * 1024L);
 
     CURLcode res = curl_easy_perform(curl);
     curl_easy_cleanup(curl);
@@ -602,9 +615,14 @@ extern "C" void flux_dyn_ptr_clear()
     g_dyn_ptrs.clear();
 }
 
+static constexpr int FLUX_MAX_CALL_DEPTH = 10000;
+
 extern "C" void flux_inc_call_depth()
 {
-    g_jit_call_depth++;
+    if (++g_jit_call_depth > FLUX_MAX_CALL_DEPTH) {
+        flux_set_error("Maximum recursion depth exceeded");
+        std::abort();
+    }
 }
 
 extern "C" void flux_dec_call_depth()

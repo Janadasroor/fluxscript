@@ -14,6 +14,8 @@
 // FluxScript CLI - compiler driver and JIT runtime
 #include <cmath>
 #include <complex>
+#include <csignal>
+#include <cstdlib>
 #include <filesystem>
 #include <string>
 
@@ -231,7 +233,21 @@ int runJIT(const std::string& code)
         actualEntryPoint = "__anon_expr";
     }
 
+    // Set a 30-second timeout for JIT execution to prevent infinite loops
+    static constexpr unsigned int JIT_TIMEOUT_SECONDS = 30;
+    static volatile sig_atomic_t timed_out = 0;
+    auto prev_handler = std::signal(SIGALRM, [](int) { timed_out = 1; });
+    alarm(JIT_TIMEOUT_SECONDS);
+
     const auto result = engine.callFunction(actualEntryPoint, {}, &error);
+
+    alarm(0); // Cancel alarm
+    std::signal(SIGALRM, prev_handler);
+
+    if (timed_out) {
+        llvm::errs() << "Runtime Error: Execution timed out after " << JIT_TIMEOUT_SECONDS << " seconds (possible infinite loop)\n";
+        return 1;
+    }
     if (!error.empty()) {
         llvm::errs() << "Runtime Error: " << error << "\n";
         return 1;
