@@ -292,6 +292,7 @@ set(FLUX_RUNTIME_SOURCES
 
 add_library(FluxRuntime STATIC ${FLUX_RUNTIME_SOURCES})
 target_compile_definitions(FluxRuntime PRIVATE FLUX_RUNTIME_STANDALONE)
+set_target_properties(FluxRuntime PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
 target_include_directories(FluxRuntime PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>

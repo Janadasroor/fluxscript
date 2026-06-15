@@ -348,9 +348,14 @@ bool emitArtifact(const std::string& code, const AOTOptions& options, std::strin
     if (!writeBufferToFile(*objectBuffer, objectPath.string(), error))
         return false;
 
+    const std::string buildDir = []() {
+        const char* env = std::getenv("FLUX_BUILD_DIR");
+        if (env && env[0]) return std::string(env);
+        return std::string("build");
+    }();
     const std::string command =
         "c++ -shared -o " + shellQuote(options.outputPath) + " " + shellQuote(objectPath.string())
-        + " -lFluxScript";
+        + " -L" + shellQuote(buildDir) + " -lFluxRuntime -lcurl -lpthread -ldl -lm -lstdc++";
     if (std::system(command.c_str()) != 0) {
         if (error)
             *error = "Failed to link shared library with system C++ driver.";
