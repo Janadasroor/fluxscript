@@ -3713,6 +3713,12 @@ TypedValue CallExprAST::codegen(CodegenContext& context)
                 CalleeF = context.TheModule->getFunction(specializedName);
 
                 if (!CalleeF && !context.CompiledSpecializations.count(specializedName)) {
+                    static constexpr size_t MAX_MONOMORPHIZATIONS = 1024;
+                    if (context.CompiledSpecializations.size() >= MAX_MONOMORPHIZATIONS) {
+                        std::cerr << "[FLUX ERROR] Maximum number of generic specializations (" << MAX_MONOMORPHIZATIONS << ") exceeded. "
+                                  << "This may indicate a code bloat attack or excessive generic usage." << std::endl;
+                        return TypedValue();
+                    }
                     context.CompiledSpecializations.insert(specializedName);
                     auto specializedProto = genericFunc->getProto()->specialize(typeMap, suffix);
                     context.FuncReturnTypes[specializedName] = specializedProto->getReturnType();

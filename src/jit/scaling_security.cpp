@@ -25,6 +25,7 @@
 #include <fstream>
 #include <iostream>
 #include <numeric>
+#include <set>
 #include <sstream>
 
 #ifdef __linux__
@@ -863,27 +864,69 @@ bool JITSandbox::validateSource(const std::string& source_code, std::string* err
 {
     std::lock_guard<std::mutex> lock(m_mutex);
 
+    // Tokenize: extract identifiers (words) from source
+    std::vector<std::string> tokens;
+    std::string token;
+    for (char c : source_code) {
+        if (std::isalnum(c) || c == '_') {
+            token += c;
+        } else {
+            if (!token.empty()) {
+                tokens.push_back(token);
+                token.clear();
+            }
+        }
+    }
+    if (!token.empty()) tokens.push_back(token);
+
+    // Build a set for O(1) lookup
+    std::set<std::string> tokenSet(tokens.begin(), tokens.end());
+
     // Check for forbidden operations
     if (!m_config.allow_file_io) {
-        if (source_code.find("fopen") != std::string::npos || source_code.find("open(") != std::string::npos) {
-            if (error)
-                *error = "File I/O not allowed in sandbox";
-            return false;
+        static const std::set<std::string> fileOps = {
+            "fopen", "open", "fclose", "close", "fread", "fwrite",
+            "fgets", "fputs", "read_file", "fetch_url"
+        };
+        for (const auto& op : fileOps) {
+            if (tokenSet.count(op)) {
+                if (error) *error = "File I/O not allowed in sandbox: " + op;
+                return false;
+            }
         }
     }
 
     if (!m_config.allow_system_calls) {
-        if (source_code.find("system(") != std::string::npos || source_code.find("exec(") != std::string::npos) {
-            if (error)
-                *error = "System calls not allowed in sandbox";
-            return false;
+        static const std::set<std::string> sysOps = {
+            "system", "exec", "popen", "spawn", "shell"
+        };
+        for (const auto& op : sysOps) {
+            if (tokenSet.count(op)) {
+                if (error) *error = "System calls not allowed in sandbox: " + op;
+                return false;
+            }
         }
     }
 
     if (!m_config.allow_network) {
-        if (source_code.find("socket(") != std::string::npos || source_code.find("connect(") != std::string::npos) {
-            if (error)
-                *error = "Network access not allowed in sandbox";
+        static const std::set<std::string> netOps = {
+            "socket", "connect", "fetch_url", "http", "curl"
+        };
+        for (const auto& op : netOps) {
+            if (tokenSet.count(op)) {
+                if (error) *error = "Network access not allowed in sandbox: " + op;
+                return false;
+            }
+        }
+    }
+
+    // Check for ngspice command injection
+    static const std::set<std::string> spiceOps = {
+        "ngspice_cmd", "ngspice_run"
+    };
+    for (const auto& op : spiceOps) {
+        if (tokenSet.count(op)) {
+            if (error) *error = "SPICE command access not allowed in sandbox: " + op;
             return false;
         }
     }

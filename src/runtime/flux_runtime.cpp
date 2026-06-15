@@ -275,7 +275,13 @@ extern "C" double flux_fopen(double filename_ptr, double mode_ptr)
 {
     auto* fn = reinterpret_cast<const char*>(jit_bitcast<uintptr_t>(filename_ptr));
     auto* md = reinterpret_cast<const char*>(jit_bitcast<uintptr_t>(mode_ptr));
-    auto* fp = std::fopen(fn ? fn : "", md ? md : "r");
+    if (!fn || !*fn)
+        return 0.0;
+    // Reject path traversal (..) to prevent escaping working directory
+    std::string path(fn);
+    if (path.find("..") != std::string::npos)
+        return 0.0;
+    auto* fp = std::fopen(fn, md ? md : "r");
     return jit_bitcast<double>(reinterpret_cast<uintptr_t>(fp));
 }
 
@@ -770,8 +776,12 @@ extern "C" void flux_matrix_set(void* m_ptr, int row, int col, double val)
     (*M)(row, col) = val;
 }
 
+static constexpr int FLUX_MATRIX_MAX_ELEMENTS = 1000000; // 1M elements max
+
 extern "C" void* flux_matrix_zeros(int rows, int cols)
 {
+    if (rows <= 0 || cols <= 0 || (long long)rows * cols > FLUX_MATRIX_MAX_ELEMENTS)
+        return nullptr;
     auto mat = std::make_unique<Eigen::MatrixXd>(rows, cols);
     mat->setZero();
     void* ptr = g_matrix_tracker.register_matrix(std::move(mat));
@@ -795,6 +805,8 @@ extern "C" void* flux_create_range_sum(double start, double step, double end)
 
 extern "C" void* flux_matrix_ones(int rows, int cols)
 {
+    if (rows <= 0 || cols <= 0 || (long long)rows * cols > FLUX_MATRIX_MAX_ELEMENTS)
+        return nullptr;
     auto* M = new Eigen::MatrixXd(rows, cols);
     M->setOnes();
     return g_matrix_tracker.register_matrix(std::unique_ptr<Eigen::MatrixXd>(M));
@@ -802,6 +814,8 @@ extern "C" void* flux_matrix_ones(int rows, int cols)
 
 extern "C" void* flux_matrix_eye(int n)
 {
+    if (n <= 0 || (long long)n * n > FLUX_MATRIX_MAX_ELEMENTS)
+        return nullptr;
     auto* M = new Eigen::MatrixXd(n, n);
     M->setIdentity();
     return g_matrix_tracker.register_matrix(std::unique_ptr<Eigen::MatrixXd>(M));
