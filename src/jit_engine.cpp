@@ -222,38 +222,37 @@ FluxValue JITEngine::callFunction(const std::string& name, const std::vector<dou
             int rows;
             int cols;
         };
-        auto* r = new MatrixRet{nullptr, 0, 0};
+        auto r = std::make_unique<MatrixRet>();
+        MatrixRet* rp = r.get();
 
         switch (args.size()) {
         case 0:
-            reinterpret_cast<void (*)(MatrixRet*)>(fnPtr)(r);
+            reinterpret_cast<void (*)(MatrixRet*)>(fnPtr)(rp);
             break;
         case 1:
-            reinterpret_cast<void (*)(MatrixRet*, double)>(fnPtr)(r, args[0]);
+            reinterpret_cast<void (*)(MatrixRet*, double)>(fnPtr)(rp, args[0]);
             break;
         case 2:
-            reinterpret_cast<void (*)(MatrixRet*, double, double)>(fnPtr)(r, args[0], args[1]);
+            reinterpret_cast<void (*)(MatrixRet*, double, double)>(fnPtr)(rp, args[0], args[1]);
             break;
         case 3:
-            reinterpret_cast<void (*)(MatrixRet*, double, double, double)>(fnPtr)(r, args[0], args[1], args[2]);
+            reinterpret_cast<void (*)(MatrixRet*, double, double, double)>(fnPtr)(rp, args[0], args[1], args[2]);
             break;
         case 4:
-            reinterpret_cast<void (*)(MatrixRet*, double, double, double, double)>(fnPtr)(r, args[0], args[1], args[2],
+            reinterpret_cast<void (*)(MatrixRet*, double, double, double, double)>(fnPtr)(rp, args[0], args[1], args[2],
                                                                                           args[3]);
             break;
         case 5:
             reinterpret_cast<void (*)(MatrixRet*, double, double, double, double, double)>(fnPtr)(
-                r, args[0], args[1], args[2], args[3], args[4]);
+                rp, args[0], args[1], args[2], args[3], args[4]);
             break;
         default:
-            delete r;
             if (error)
                 *error = "Unsupported argument count for matrix function";
             return 0.0;
         }
 
-        MatrixResult result{r->ptr, r->rows, r->cols};
-        delete r;
+        MatrixResult result{rp->ptr, rp->rows, rp->cols};
         return result;
     } else if (retType.Kind == TypeKind::Vector) {
         struct VectorRet
