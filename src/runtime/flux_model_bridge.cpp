@@ -29,6 +29,7 @@
 #include "flux/runtime/flux_runtime.h"
 
 /* ---- Global storage: every model's JIT lives forever ------------ */
+static std::mutex s_jits_mutex;
 static std::vector<std::unique_ptr<Flux::FluxJIT>> s_jits;
 
 /* ---- Debug callback (thread-local, set before evaluate) --------- */
@@ -409,7 +410,10 @@ static void* compileModelInternal(const char* source, const char* func_name,
     }
 
     /* ---- 7. Keep the JIT alive forever (global) ---- */
-    s_jits.push_back(std::move(jit));
+    {
+        std::lock_guard<std::mutex> lock(s_jits_mutex);
+        s_jits.push_back(std::move(jit));
+    }
     return fn_ptr;
 }
 

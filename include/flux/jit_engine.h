@@ -17,6 +17,7 @@
 #include <complex>
 #include <map>
 #include <memory>
+#include <mutex>
 #include <set>
 #include <string>
 #include <variant>
@@ -123,6 +124,7 @@ private:
     std::unique_ptr<FluxJIT> m_jit;
     std::unique_ptr<CodegenContext> m_codegenCtx;
     CompilerOptions m_compilerOptions;
+    std::mutex m_compileMutex;
     std::map<std::string, FluxType> m_functionReturnTypes;
     std::map<std::string, llvm::Function*> m_overloadedFunctions; // signature -> function
     std::set<std::string> m_importedModules;

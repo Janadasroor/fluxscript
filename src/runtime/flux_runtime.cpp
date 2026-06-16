@@ -2295,6 +2295,14 @@ public:
     {
         if (start >= end || !body)
             return;
+
+        // Detect nested dispatch — run sequentially to avoid corrupting pool state
+        if (m_hasWork) {
+            for (int64_t i = start; i < end; i++)
+                body(i, userData);
+            return;
+        }
+
         {
             std::lock_guard<std::mutex> lock(m_mutex);
             m_current.store(start);

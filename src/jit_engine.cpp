@@ -106,6 +106,7 @@ bool JITEngine::isInitialized() const
 
 bool JITEngine::compileScript(const std::string& code, std::string* error)
 {
+    std::lock_guard<std::mutex> lock(m_compileMutex);
     if (!m_initialized)
         initialize();
     m_overloadedFunctions.clear();
