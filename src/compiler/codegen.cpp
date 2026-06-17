@@ -1412,7 +1412,12 @@ TypedValue AssignExprAST::codegen(CodegenContext& context)
         llvm::Value* IntPtr = context.Builder.CreatePtrToInt(StrPtr, llvm::Type::getInt64Ty(context.TheContext));
         llvm::Value* PtrDouble = context.Builder.CreateBitCast(IntPtr, DoubleTy, "ptr_double");
 
-        return TypedValue(context.Builder.CreateCall(SetPF, {PtrDouble, NewValTV.Val}, "setp"), TypeKind::Double);
+        llvm::Value* ValToSet = NewValTV.Val;
+        if (ValToSet->getType()->isIntegerTy()) {
+            ValToSet = context.Builder.CreateSIToFP(ValToSet, DoubleTy, "val_double");
+        }
+
+        return TypedValue(context.Builder.CreateCall(SetPF, {PtrDouble, ValToSet}, "setp"), TypeKind::Double);
     }
 
     if (!Variable) {
@@ -3835,8 +3840,8 @@ TypedValue CallExprAST::codegen(CodegenContext& context)
     bool needsAsyncState = false;
     bool needsSret = false;
 
-    std::cerr << "[CALL ARGS] Name=" << Name << " Callee=" << Callee << " numArgs=" << Args.size()
-              << " calleeArgSz=" << CalleeF->arg_size() << " isAsyncFn=" << (CalleeF->arg_size() > (isSretCall ? 1 : 0) ? (CalleeF->arg_begin() + (isSretCall ? 1 : 0))->getName().str() : "?") << std::endl;
+    // Debug: std::cerr << "[CALL ARGS] Name=" << Name << " Callee=" << Callee << " numArgs=" << Args.size()
+    //           << " calleeArgSz=" << CalleeF->arg_size() << " isAsyncFn=" << (CalleeF->arg_size() > (isSretCall ? 1 : 0) ? (CalleeF->arg_begin() + (isSretCall ? 1 : 0))->getName().str() : "?") << std::endl;
     if (CalleeF->arg_size() != Args.size()) {
         // Check for async state param
         {
@@ -3844,7 +3849,7 @@ TypedValue CallExprAST::codegen(CodegenContext& context)
             if (CalleeF->arg_size() > offset) {
                 auto ArgIt = CalleeF->arg_begin();
                 if (isSretCall) ++ArgIt;
-                std::cerr << "[CALL ASYNC] check arg name='" << ArgIt->getName().str() << "'" << std::endl;
+                // Debug: std::cerr << "[CALL ASYNC] check arg name='" << ArgIt->getName().str() << "'" << std::endl;
                 if (ArgIt->getName() == "__async_state")
                     needsAsyncState = true;
                 else if (ArgIt->getName() == "__gen_state")
@@ -5961,7 +5966,7 @@ void TraitDeclAST::codegen(CodegenContext& context)
 
 llvm::Function* FunctionAST::codegen(CodegenContext& context)
 {
-    std::cerr << "[CODEGEN] " << Proto->getName() << " isAsync=" << Proto->isAsync() << " isGenerator=" << Body->containsYield() << std::endl;
+    // Debug: std::cerr << "[CODEGEN] " << Proto->getName() << " isAsync=" << Proto->isAsync() << " isGenerator=" << Body->containsYield() << std::endl;
     bool isGenerator = Body->containsYield();
     if (isGenerator)
         Proto->setGenerator(true);
@@ -6229,7 +6234,7 @@ llvm::Function* FunctionAST::codegen(CodegenContext& context)
                 std::vector<llvm::Type*> StateTypes = {llvm::Type::getInt32Ty(context.TheContext)};
                 StateTy = llvm::StructType::get(context.TheContext, StateTypes);
             }
-            std::cerr << "[CODEGEN GEP] gen_end for " << Proto->getName() << std::endl;
+            // Debug: std::cerr << "[CODEGEN GEP] gen_end for " << Proto->getName() << std::endl;
             llvm::Value* IndexPtr = context.Builder.CreateStructGEP(StateTy, context.GeneratorStateAlloca, 0);
             context.Builder.CreateStore(llvm::ConstantInt::get(llvm::Type::getInt32Ty(context.TheContext), -1),
                                         IndexPtr);
@@ -6302,7 +6307,7 @@ llvm::Function* FunctionAST::codegen(CodegenContext& context)
                 std::vector<llvm::Type*> StateTypes = {llvm::Type::getInt32Ty(context.TheContext)};
                 StateTy = llvm::StructType::get(context.TheContext, StateTypes);
             }
-            std::cerr << "[CODEGEN GEP] gen_dispatch for " << Proto->getName() << std::endl;
+            // Debug: std::cerr << "[CODEGEN GEP] gen_dispatch for " << Proto->getName() << std::endl;
             llvm::Value* IndexPtr = context.Builder.CreateStructGEP(StateTy, context.GeneratorStateAlloca, 0);
             llvm::Value* StateIndex = context.Builder.CreateLoad(llvm::Type::getInt32Ty(context.TheContext), IndexPtr);
 

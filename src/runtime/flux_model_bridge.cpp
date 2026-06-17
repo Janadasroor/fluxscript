@@ -513,10 +513,13 @@ void flux_free_error(char* error_msg)
 /*  route debug output through this callback back to the simulator.    */
 /* ------------------------------------------------------------------ */
 
-void flux_model_bridge_debug_print(const char* msg)
+void flux_model_bridge_debug_print(double msg_dbl)
 {
-    if (tls_debug_callback)
-        tls_debug_callback(msg);
+    if (!tls_debug_callback) return;
+    uint64_t ptr_bits;
+    std::memcpy(&ptr_bits, &msg_dbl, sizeof(ptr_bits));
+    const char* msg = reinterpret_cast<const char*>(static_cast<uintptr_t>(ptr_bits));
+    tls_debug_callback(msg);
 }
 
 void flux_model_set_debug_callback(void (*cb)(const char*))

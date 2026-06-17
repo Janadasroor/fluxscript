@@ -118,8 +118,10 @@ void flux_free_error(char* error_msg);
 /*  their own callback.                                                */
 /* ------------------------------------------------------------------ */
 
-/* Debug print function registered in each model's JIT */
-void flux_model_bridge_debug_print(const char* msg);
+/* Debug print function registered in each model's JIT.
+ * Accepts double because FluxScript passes strings as double-encoded
+ * pointers (bitcast via double <-> uint64_t <-> const char*). */
+void flux_model_bridge_debug_print(double msg);
 
 /* Set the thread-local debug callback (set before calling wrapper) */
 void flux_model_set_debug_callback(void (*callback)(const char*));

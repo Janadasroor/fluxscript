@@ -366,7 +366,7 @@ void CompilerInstance::injectStandardLibrary(CodegenContext& context,
         std::vector<llvm::Type*> paramTypes(1 + extraArgs, DoubleTy);
         auto* ft = llvm::FunctionType::get(DoubleTy, paramTypes, false);
         std::string fullName = "String." + methodName;
-        auto* func = llvm::Function::Create(ft, llvm::Function::ExternalLinkage, fullName,
+        auto* func = llvm::Function::Create(ft, llvm::Function::InternalLinkage, fullName,
                                              context.TheModule);
         auto* entry = llvm::BasicBlock::Create(context.TheContext, "entry", func);
         context.Builder.SetInsertPoint(entry);
@@ -1624,7 +1624,13 @@ bool CompilerInstance::compileParser(Parser& parser, CodegenContext& context,
 
     // Merge pre-parsed functions (from auto-imported stdlib modules)
     // before local functions so callees precede callers.
+    std::unordered_set<std::string> importedNames;
     if (preParsedFunctions) {
+        for (const auto& f : *preParsedFunctions) {
+            if (f && f->getProto()) {
+                importedNames.insert(f->getProto()->getName());
+            }
+        }
         functions.insert(functions.begin(),
                          std::make_move_iterator(preParsedFunctions->begin()),
                          std::make_move_iterator(preParsedFunctions->end()));
@@ -1782,7 +1788,10 @@ bool CompilerInstance::compileParser(Parser& parser, CodegenContext& context,
     for (size_t fi = 0; fi < numFunctions; ++fi) {
         auto& func = functions[fi];
         const std::string& name = func->getProto()->getName();
-        func->getProto()->codegen(context);
+        llvm::Function* LF = func->getProto()->codegen(context);
+        if (LF && importedNames.count(name)) {
+            LF->setLinkage(llvm::GlobalValue::InternalLinkage);
+        }
         returnTypes[name] = func->getProto()->getReturnType();
         context.FuncReturnTypes[name] = func->getProto()->getReturnType();
         if (progCb && !progCb("Declaring prototypes", fi + 1, numFunctions))
@@ -1880,11 +1889,15 @@ bool CompilerInstance::compileParser(Parser& parser, CodegenContext& context,
                 // the correct declaration instead of creating an implicit one
                 // with mismatched types.
                 for (auto& func : functions) {
-                    func->getProto()->codegen(*tcg);
+                    llvm::Function* LF = func->getProto()->codegen(*tcg);
+                    if (LF && importedNames.count(func->getProto()->getName())) {
+                        LF->setLinkage(llvm::GlobalValue::InternalLinkage);
+                    }
                 }
 
                 for (size_t i = b; i < e && !cncl; ++i) {
-                    if (!functions[i]->codegen(*tcg)) {
+                    llvm::Function* LF = functions[i]->codegen(*tcg);
+                    if (!LF) {
                         auto fnName = functions[i]->getProto()->getName();
                         // Anonymous expression failures are non-critical
                         // (they also happen harmlessly in the sequential path).
@@ -1893,6 +1906,9 @@ bool CompilerInstance::compileParser(Parser& parser, CodegenContext& context,
                         tres[j].error = "Codegen failed: " + fnName;
                         cncl = true;
                         break;
+                    }
+                    if (importedNames.count(functions[i]->getProto()->getName())) {
+                        LF->setLinkage(llvm::GlobalValue::InternalLinkage);
                     }
                 }
                 tres[j].ctx = std::move(tcg);
@@ -1942,10 +1958,14 @@ bool CompilerInstance::compileParser(Parser& parser, CodegenContext& context,
         // --- Sequential codegen (existing behavior) ---
         for (size_t fi = 0; fi < numFunctions; ++fi) {
             auto& func = functions[fi];
-            if (!func->codegen(context)) {
+            llvm::Function* LF = func->codegen(context);
+            if (!LF) {
                 error = "Code generation failed for function: " + func->getProto()->getName();
                 context.importModuleFn = std::move(savedImportFn);
                 return false;
+            }
+            if (importedNames.count(func->getProto()->getName())) {
+                LF->setLinkage(llvm::GlobalValue::InternalLinkage);
             }
             if (progCb && !progCb("Generating code", fi + 1, numFunctions))
                 return false;
@@ -1990,6 +2010,7 @@ bool CompilerInstance::loadAndLinkBitcodeModule(const std::string& bcPath, Codeg
     // Register return types and parameter types from the loaded module's function signatures
     for (auto& F : *mod) {
         if (F.isDeclaration()) continue;
+        F.setLinkage(llvm::GlobalValue::InternalLinkage); // Internalize stdlib functions to avoid JIT conflicts
         std::string name = F.getName().str();
         bool hasSret = F.arg_size() > 0 && F.hasParamAttribute(0, llvm::Attribute::StructRet);
         FluxType retTy;

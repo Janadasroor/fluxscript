@@ -602,6 +602,23 @@ void FluxJIT::addModule(std::unique_ptr<llvm::Module> M, std::unique_ptr<llvm::L
 
     prepareModule(*M);
 
+    // ---- Internalize duplicate symbols already defined in the JIT ----
+    // This prevents "duplicate definition" errors when adding multiple
+    // modules that each contain standard library functions (String.regex,
+    // hann, len, etc.). Only the user's unique entry-point functions
+    // retain ExternalLinkage; stdlib duplicates become private per-module.
+    for (auto& F : *M) {
+        if (F.isDeclaration() || !F.hasExternalLinkage() || F.getName().empty())
+            continue;
+        std::string name = F.getName().str();
+        if (name.find("anon_expr") != std::string::npos)
+            continue;
+        std::lock_guard<std::mutex> lock(m_fnMapMutex);
+        if (m_moduleSymbols.count(name)) {
+            F.setLinkage(llvm::GlobalValue::InternalLinkage);
+        }
+    }
+
     // ---- Tiered JIT: Save per-function IR as bitcode for recompilation ----
     for (auto& F : *M) {
         if (F.isDeclaration() || !F.hasExternalLinkage() || F.getName().empty())
@@ -660,6 +677,14 @@ void FluxJIT::addModule(std::unique_ptr<llvm::Module> M, std::unique_ptr<llvm::L
     if (Err) {
         logError(std::move(Err), "Failed to add module to JIT");
         return;
+    }
+
+    // Record successfully added symbol names so future modules can
+    // internalize duplicate definitions instead of causing ORC errors.
+    {
+        std::lock_guard<std::mutex> lock(m_fnMapMutex);
+        for (const auto& name : userFns)
+            m_moduleSymbols.insert(name);
     }
 
     // Initialize call counters for profiling. Actual compilation is lazy —
@@ -980,6 +1005,13 @@ void FluxJIT::registerFunction(const std::string& Name, void* FuncPtr)
     // This is essential on macOS where two-level namespace linking
     // can hide symbols from libFluxScript.dylib from dlsym(nullptr,...).
     llvm::sys::DynamicLibrary::AddSymbol(Name, FuncPtr);
+
+    // Track in module symbol set to prevent duplicate definition conflicts
+    // when addModule tries to define a function with the same name.
+    {
+        std::lock_guard<std::mutex> lock(m_fnMapMutex);
+        m_moduleSymbols.insert(Name);
+    }
 }
 
 int FluxJIT::autoTuneHotFunctions()

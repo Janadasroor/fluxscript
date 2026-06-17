@@ -43,6 +43,7 @@
 #include <mutex>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 namespace Flux {
@@ -291,6 +292,10 @@ private:
 
     // Promoted function cache (O3 compiled pointers)
     std::unordered_map<std::string, void*> m_promotedPtrs;
+
+    // Symbols already defined in the JIT via addModule (used to detect
+    // duplicate definitions across multiple module loads)
+    std::unordered_set<std::string> m_moduleSymbols;
 
     // PGO profiler
     PGOProfiler m_pgoProfiler;
