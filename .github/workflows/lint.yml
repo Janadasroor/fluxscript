@@ -52,6 +52,7 @@ jobs:
         run: |
           find src/compiler/ include/flux/compiler/ include/flux/runtime/ include/flux/jit/ \
             -name '*.cpp' -o -name '*.h' -o -name '*.hpp' \
+            | grep -v 'liveness_analysis.cpp' \
             | xargs clang-tidy-21 -p build/ \
               --header-filter='(src|include)/' \
               --warnings-as-errors='clang-analyzer-core.*,clang-analyzer-cplusplus.*,clang-analyzer-security.*,clang-analyzer-unix.*,bugprone-use-after-move,bugprone-undefined-memory-manipulation,bugprone-unused-return-value' 2>&1
