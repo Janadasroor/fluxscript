@@ -947,8 +947,7 @@ std::vector<Location> LspServer::getTypeDefinition(const std::string& uri, Posit
                 tn += line[ts++];
             if (!tn.empty()) {
                 size_t wp = line.rfind(word, colonPos);
-                if (wp != std::string::npos && colonPos > wp &&
-                    (wp == 0 || !isalnum(line[wp - 1]))) {
+                if (wp != std::string::npos && colonPos > wp && (wp == 0 || !isalnum(line[wp - 1]))) {
                     // word is a variable, tn is its type — redirect search
                     word = tn;
                     for (auto& kw : keywords) {
@@ -957,13 +956,17 @@ std::vector<Location> LspServer::getTypeDefinition(const std::string& uri, Posit
                         while ((sp = doc->text.find(ss, sp)) != std::string::npos) {
                             int dl = 0;
                             for (size_t k = 0; k < sp; ++k)
-                                if (doc->text[k] == '\n') dl++;
+                                if (doc->text[k] == '\n')
+                                    dl++;
                             size_t lls = sp;
-                            while (lls > 0 && doc->text[lls - 1] != '\n') lls--;
+                            while (lls > 0 && doc->text[lls - 1] != '\n')
+                                lls--;
                             size_t lle = doc->text.find('\n', sp);
-                            if (lle == std::string::npos) lle = doc->text.size();
+                            if (lle == std::string::npos)
+                                lle = doc->text.size();
                             int ce = static_cast<int>(lle - lls);
-                            if (ce > 0 && doc->text[lle - 1] == '\r') ce--;
+                            if (ce > 0 && doc->text[lle - 1] == '\r')
+                                ce--;
                             Location loc;
                             loc.uri = uri;
                             loc.range.start = {dl, 0};
@@ -971,7 +974,8 @@ std::vector<Location> LspServer::getTypeDefinition(const std::string& uri, Posit
                             result.push_back(loc);
                             break;
                         }
-                        if (!result.empty()) break;
+                        if (!result.empty())
+                            break;
                     }
                     break;
                 }
@@ -1154,14 +1158,11 @@ LspServer::LinkedEditingRanges LspServer::getLinkedEditingRanges(const std::stri
     size_t searchPos = 0;
     while ((searchPos = doc->text.find(word, searchPos)) != std::string::npos) {
         // Check word boundaries
-        bool leftOk = searchPos == 0 ||
-                      (!isalnum(doc->text[searchPos - 1]) && doc->text[searchPos - 1] != '_');
+        bool leftOk = searchPos == 0 || (!isalnum(doc->text[searchPos - 1]) && doc->text[searchPos - 1] != '_');
         bool rightOk = (searchPos + word.size() >= doc->text.size()) ||
-                       (!isalnum(doc->text[searchPos + word.size()]) &&
-                        doc->text[searchPos + word.size()] != '_');
+                       (!isalnum(doc->text[searchPos + word.size()]) && doc->text[searchPos + word.size()] != '_');
         if (leftOk && rightOk) {
-            result.ranges.push_back({doc->offsetToPosition(searchPos),
-                                     doc->offsetToPosition(searchPos + word.size())});
+            result.ranges.push_back({doc->offsetToPosition(searchPos), doc->offsetToPosition(searchPos + word.size())});
         }
         searchPos += word.size();
     }
@@ -1222,7 +1223,8 @@ std::vector<LspServer::FoldingRange> LspServer::getFoldingRanges(const std::stri
         if (text[i] == '"') {
             i++;
             while (i < text.size() && text[i] != '"') {
-                if (text[i] == '\\') i++;
+                if (text[i] == '\\')
+                    i++;
                 i++;
             }
             continue;
@@ -1231,7 +1233,8 @@ std::vector<LspServer::FoldingRange> LspServer::getFoldingRanges(const std::stri
         // Skip single-line comments
         if (i + 1 < text.size() && text[i] == '/' && text[i + 1] == '/') {
             size_t commentStart = i;
-            while (i < text.size() && text[i] != '\n') i++;
+            while (i < text.size() && text[i] != '\n')
+                i++;
             // Check for region folding for comment blocks (3+ consecutive comment lines)
             // Handled below
             continue;
@@ -1240,7 +1243,8 @@ std::vector<LspServer::FoldingRange> LspServer::getFoldingRanges(const std::stri
         if (text[i] == '{') {
             int line = 0;
             for (size_t k = 0; k < i; ++k) {
-                if (text[k] == '\n') line++;
+                if (text[k] == '\n')
+                    line++;
             }
             braceStack.push_back(line);
         } else if (text[i] == '}') {
@@ -1249,7 +1253,8 @@ std::vector<LspServer::FoldingRange> LspServer::getFoldingRanges(const std::stri
                 braceStack.pop_back();
                 int endLine = 0;
                 for (size_t k = 0; k < i; ++k) {
-                    if (text[k] == '\n') endLine++;
+                    if (text[k] == '\n')
+                        endLine++;
                 }
                 // Only fold blocks that span at least 2 lines
                 if (endLine - startLine >= 1) {
@@ -1276,13 +1281,13 @@ std::vector<LspServer::FoldingRange> LspServer::getFoldingRanges(const std::stri
         std::string line = text.substr(lineStart, lineEnd - lineStart);
         // Trim leading whitespace
         size_t firstNonSpace = line.find_first_not_of(" \t\r");
-        bool isComment = firstNonSpace != std::string::npos &&
-                         line.size() >= firstNonSpace + 2 &&
+        bool isComment = firstNonSpace != std::string::npos && line.size() >= firstNonSpace + 2 &&
                          line[firstNonSpace] == '/' && line[firstNonSpace + 1] == '/';
 
         int lineNum = 0;
         for (size_t k = 0; k < i; ++k) {
-            if (text[k] == '\n') lineNum++;
+            if (text[k] == '\n')
+                lineNum++;
         }
 
         if (isComment) {
@@ -1308,7 +1313,8 @@ std::vector<LspServer::FoldingRange> LspServer::getFoldingRanges(const std::stri
     if (commentRunStart != std::string::npos) {
         int lastLine = 0;
         for (size_t k = 0; k < text.size(); ++k) {
-            if (text[k] == '\n') lastLine++;
+            if (text[k] == '\n')
+                lastLine++;
         }
         if (lastLine - static_cast<int>(commentRunStart) >= 2) {
             FoldingRange range;
@@ -1387,13 +1393,9 @@ std::vector<LspServer::DocumentLink> LspServer::getDocumentLinks(const std::stri
 
         // Expand forward to find end of URL (stop at whitespace, closing paren/bracket/quote)
         size_t urlEnd = nearestPos + foundProtocol.size();
-        while (urlEnd < text.size() &&
-               text[urlEnd] != ' ' && text[urlEnd] != '\t' &&
-               text[urlEnd] != '\n' && text[urlEnd] != '\r' &&
-               text[urlEnd] != '"' && text[urlEnd] != '\'' &&
-               text[urlEnd] != '>' && text[urlEnd] != ']' &&
-               text[urlEnd] != ')' && text[urlEnd] != '|')
-        {
+        while (urlEnd < text.size() && text[urlEnd] != ' ' && text[urlEnd] != '\t' && text[urlEnd] != '\n' &&
+               text[urlEnd] != '\r' && text[urlEnd] != '"' && text[urlEnd] != '\'' && text[urlEnd] != '>' &&
+               text[urlEnd] != ']' && text[urlEnd] != ')' && text[urlEnd] != '|') {
             urlEnd++;
         }
 
@@ -1435,7 +1437,8 @@ std::string LspServer::handleTextDocumentSelectionRange(const std::string& param
             while ((linePos = arrContent.find("\"line\"", linePos)) != std::string::npos) {
                 size_t colon = arrContent.find(':', linePos);
                 size_t numStart = colon + 1;
-                while (numStart < arrContent.size() && arrContent[numStart] == ' ') numStart++;
+                while (numStart < arrContent.size() && arrContent[numStart] == ' ')
+                    numStart++;
                 int line = std::stoi(arrContent.substr(numStart));
 
                 size_t charPos = arrContent.find("\"character\"", linePos);
@@ -1473,8 +1476,8 @@ std::string LspServer::handleTextDocumentSelectionRange(const std::string& param
     return oss.str();
 }
 
-std::vector<LspServer::SelectionRangeItem> LspServer::getSelectionRanges(
-    const std::string& uri, const std::vector<Position>& positions)
+std::vector<LspServer::SelectionRangeItem> LspServer::getSelectionRanges(const std::string& uri,
+                                                                         const std::vector<Position>& positions)
 {
     std::vector<SelectionRangeItem> result;
     auto* doc = getDocument(uri);
@@ -1493,15 +1496,12 @@ std::vector<LspServer::SelectionRangeItem> LspServer::getSelectionRanges(
             // Level 1: Word range
             size_t offset = doc->positionToOffset(pos);
             size_t wordStart = offset;
-            while (wordStart > 0 &&
-                   (isalnum(doc->text[wordStart - 1]) || doc->text[wordStart - 1] == '_'))
+            while (wordStart > 0 && (isalnum(doc->text[wordStart - 1]) || doc->text[wordStart - 1] == '_'))
                 wordStart--;
             size_t wordEnd = offset;
-            while (wordEnd < doc->text.size() &&
-                   (isalnum(doc->text[wordEnd]) || doc->text[wordEnd] == '_'))
+            while (wordEnd < doc->text.size() && (isalnum(doc->text[wordEnd]) || doc->text[wordEnd] == '_'))
                 wordEnd++;
-            hierarchy.push_back({doc->offsetToPosition(wordStart),
-                                 doc->offsetToPosition(wordEnd)});
+            hierarchy.push_back({doc->offsetToPosition(wordStart), doc->offsetToPosition(wordEnd)});
         }
 
         // Level 2: Current line
@@ -1520,12 +1520,10 @@ std::vector<LspServer::SelectionRangeItem> LspServer::getSelectionRanges(
             lineEnd = doc->text.size();
         // Trim trailing whitespace
         size_t trimmedEnd = lineEnd;
-        while (trimmedEnd > lineStart &&
-               (doc->text[trimmedEnd - 1] == ' ' || doc->text[trimmedEnd - 1] == '\t' ||
-                doc->text[trimmedEnd - 1] == '\r'))
+        while (trimmedEnd > lineStart && (doc->text[trimmedEnd - 1] == ' ' || doc->text[trimmedEnd - 1] == '\t' ||
+                                          doc->text[trimmedEnd - 1] == '\r'))
             trimmedEnd--;
-        hierarchy.push_back({doc->offsetToPosition(lineStart),
-                             doc->offsetToPosition(trimmedEnd)});
+        hierarchy.push_back({doc->offsetToPosition(lineStart), doc->offsetToPosition(trimmedEnd)});
 
         // Level 3: Nearest enclosing brace block
         // Scan backward for { and forward for matching }
@@ -1539,7 +1537,8 @@ std::vector<LspServer::SelectionRangeItem> LspServer::getSelectionRanges(
                 // Found opening brace — count lines
                 int bl = 0;
                 for (size_t k = 0; k < searchBack; ++k)
-                    if (doc->text[k] == '\n') bl++;
+                    if (doc->text[k] == '\n')
+                        bl++;
                 braceStartLine = bl;
                 break;
             }
@@ -1552,14 +1551,17 @@ std::vector<LspServer::SelectionRangeItem> LspServer::getSelectionRanges(
             size_t searchForward = searchBack + 1;
             int depth = 1;
             while (searchForward < doc->text.size() && depth > 0) {
-                if (doc->text[searchForward] == '{') depth++;
-                else if (doc->text[searchForward] == '}') depth--;
+                if (doc->text[searchForward] == '{')
+                    depth++;
+                else if (doc->text[searchForward] == '}')
+                    depth--;
                 searchForward++;
             }
             if (depth == 0) {
                 int el = 0;
                 for (size_t k = 0; k < searchForward; ++k)
-                    if (doc->text[k] == '\n') el++;
+                    if (doc->text[k] == '\n')
+                        el++;
                 braceEndLine = el - 1; // end brace line
                 if (braceEndLine > braceStartLine) {
                     hierarchy.push_back({{braceStartLine, 0}, {braceEndLine, 0}});
@@ -1570,7 +1572,8 @@ std::vector<LspServer::SelectionRangeItem> LspServer::getSelectionRanges(
         // Level 4: Whole document
         int lastLine = 0;
         for (size_t k = 0; k < doc->text.size(); ++k)
-            if (doc->text[k] == '\n') lastLine++;
+            if (doc->text[k] == '\n')
+                lastLine++;
         hierarchy.push_back({{0, 0}, {lastLine, 0}});
 
         // Build SelectionRange items with parent links (parent = larger one, i.e. next in array)
@@ -1789,21 +1792,27 @@ std::string LspServer::handleTextDocumentColorPresentation(const std::string& pa
 
 static bool parseHexColor(const std::string& str, LspServer::Color& color)
 {
-    if (str.empty() || str[0] != '#') return false;
+    if (str.empty() || str[0] != '#')
+        return false;
     std::string hex = str.substr(1);
-    if (hex.size() != 6 && hex.size() != 8) return false;
+    if (hex.size() != 6 && hex.size() != 8)
+        return false;
 
     auto hexVal = [](char c) -> int {
-        if (c >= '0' && c <= '9') return c - '0';
-        if (c >= 'a' && c <= 'f') return c - 'a' + 10;
-        if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+        if (c >= '0' && c <= '9')
+            return c - '0';
+        if (c >= 'a' && c <= 'f')
+            return c - 'a' + 10;
+        if (c >= 'A' && c <= 'F')
+            return c - 'A' + 10;
         return -1;
     };
 
     int r1 = hexVal(hex[0]), r2 = hexVal(hex[1]);
     int g1 = hexVal(hex[2]), g2 = hexVal(hex[3]);
     int b1 = hexVal(hex[4]), b2 = hexVal(hex[5]);
-    if (r1 < 0 || r2 < 0 || g1 < 0 || g2 < 0 || b1 < 0 || b2 < 0) return false;
+    if (r1 < 0 || r2 < 0 || g1 < 0 || g2 < 0 || b1 < 0 || b2 < 0)
+        return false;
 
     color.red = (r1 * 16 + r2) / 255.0;
     color.green = (g1 * 16 + g2) / 255.0;
@@ -1862,8 +1871,8 @@ std::vector<LspServer::ColorInformation> LspServer::getDocumentColors(const std:
     return result;
 }
 
-std::vector<LspServer::ColorPresentation> LspServer::getColorPresentations(
-    const std::string& uri, const Color& color, const Range& range)
+std::vector<LspServer::ColorPresentation> LspServer::getColorPresentations(const std::string& uri, const Color& color,
+                                                                           const Range& range)
 {
     std::vector<ColorPresentation> result;
     (void)uri;

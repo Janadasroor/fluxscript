@@ -741,8 +741,7 @@ void* flux_matrix_qr(void* m)
     auto* M = mat(m);
     if (!M)
         return nullptr;
-    auto result =
-        M->householderQr().householderQ() * Eigen::MatrixXd::Identity(M->rows(), M->cols());
+    auto result = M->householderQr().householderQ() * Eigen::MatrixXd::Identity(M->rows(), M->cols());
     void* ret = new_mat(result.rows(), result.cols());
     flux_matrix_set_data(ret, result.data(), result.rows(), result.cols());
     return ret;

@@ -132,9 +132,10 @@ TypedValue SensitivityStmtAST::codegen(CodegenContext& context)
 
     for (const auto& param : Params) {
         llvm::Value* paramStr = context.Builder.CreateGlobalString(param);
-        context.Builder.CreateCall(setParamFunc, {analyzer, paramStr,
-                                                  llvm::ConstantFP::get(llvm::Type::getDoubleTy(context.TheContext), 10000.0),
-                                                  llvm::ConstantFP::get(llvm::Type::getDoubleTy(context.TheContext), 0.01)});
+        context.Builder.CreateCall(setParamFunc,
+                                   {analyzer, paramStr,
+                                    llvm::ConstantFP::get(llvm::Type::getDoubleTy(context.TheContext), 10000.0),
+                                    llvm::ConstantFP::get(llvm::Type::getDoubleTy(context.TheContext), 0.01)});
     }
 
     // Run analysis

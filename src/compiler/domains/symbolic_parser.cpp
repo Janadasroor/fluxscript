@@ -420,7 +420,8 @@ std::unique_ptr<ExprAST> Parser::ParseExpandExpr()
     getNextToken(); // eat (
 
     auto expr = ParseExpression();
-    if (!expr) return nullptr;
+    if (!expr)
+        return nullptr;
 
     if (CurTok != ')') {
         ReportError("expected ')' after expand expression");
@@ -447,7 +448,8 @@ std::unique_ptr<ExprAST> Parser::ParseFactorExpr()
     getNextToken();
 
     auto expr = ParseExpression();
-    if (!expr) return nullptr;
+    if (!expr)
+        return nullptr;
 
     if (CurTok != ')') {
         ReportError("expected ')' after factor expression");
@@ -474,7 +476,8 @@ std::unique_ptr<ExprAST> Parser::ParseCollectExpr()
     getNextToken();
 
     auto expr = ParseExpression();
-    if (!expr) return nullptr;
+    if (!expr)
+        return nullptr;
 
     if (CurTok != ',') {
         ReportError("expected ',' after expression in collect");
@@ -514,7 +517,8 @@ std::unique_ptr<ExprAST> Parser::ParseNumeratorExpr()
     getNextToken();
 
     auto expr = ParseExpression();
-    if (!expr) return nullptr;
+    if (!expr)
+        return nullptr;
 
     if (CurTok != ')') {
         ReportError("expected ')' after numerator expression");
@@ -541,7 +545,8 @@ std::unique_ptr<ExprAST> Parser::ParseDenominatorExpr()
     getNextToken();
 
     auto expr = ParseExpression();
-    if (!expr) return nullptr;
+    if (!expr)
+        return nullptr;
 
     if (CurTok != ')') {
         ReportError("expected ')' after denominator expression");
@@ -568,7 +573,8 @@ std::unique_ptr<ExprAST> Parser::ParsePolesExpr()
     getNextToken();
 
     auto expr = ParseExpression();
-    if (!expr) return nullptr;
+    if (!expr)
+        return nullptr;
 
     if (CurTok != ')') {
         ReportError("expected ')' after poles expression");
@@ -595,7 +601,8 @@ std::unique_ptr<ExprAST> Parser::ParseZerosExpr()
     getNextToken();
 
     auto expr = ParseExpression();
-    if (!expr) return nullptr;
+    if (!expr)
+        return nullptr;
 
     if (CurTok != ')') {
         ReportError("expected ')' after zeros expression");

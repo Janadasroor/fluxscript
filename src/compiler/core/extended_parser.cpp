@@ -199,8 +199,10 @@ std::unique_ptr<ExprAST> Parser::ParseCornerExpr()
     return expr;
 }
 
-static void flattenOrPatterns(std::unique_ptr<ExprAST> pattern, std::vector<std::unique_ptr<ExprAST>>& flattened) {
-    if (!pattern) return;
+static void flattenOrPatterns(std::unique_ptr<ExprAST> pattern, std::vector<std::unique_ptr<ExprAST>>& flattened)
+{
+    if (!pattern)
+        return;
     if (auto* binExpr = dynamic_cast<BinaryExprAST*>(pattern.get())) {
         if (binExpr->getOp() == static_cast<int>(TokenType::tok_bitwise_or)) {
             flattenOrPatterns(binExpr->takeLHS(), flattened);
@@ -259,7 +261,7 @@ std::unique_ptr<ExprAST> Parser::ParseMatchExpr()
 
                 std::vector<std::unique_ptr<ExprAST>> patterns;
                 std::vector<std::string> bindings;
-                std::vector<std::pair<std::string,std::string>> namedBindings;
+                std::vector<std::pair<std::string, std::string>> namedBindings;
 
                 std::vector<std::unique_ptr<ExprAST>> rawPatternsList;
                 while (true) {
@@ -336,7 +338,8 @@ std::unique_ptr<ExprAST> Parser::ParseMatchExpr()
                                             for (auto& arg : args) {
                                                 if (auto* var = dynamic_cast<VariableExprAST*>(arg.get())) {
                                                     std::string varName = var->getName();
-                                                    if (std::find(bindings.begin(), bindings.end(), varName) == bindings.end()) {
+                                                    if (std::find(bindings.begin(), bindings.end(), varName) ==
+                                                        bindings.end()) {
                                                         bindings.push_back(varName);
                                                     }
                                                 }

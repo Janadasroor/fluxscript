@@ -877,56 +877,53 @@ bool JITSandbox::validateSource(const std::string& source_code, std::string* err
             }
         }
     }
-    if (!token.empty()) tokens.push_back(token);
+    if (!token.empty())
+        tokens.push_back(token);
 
     // Build a set for O(1) lookup
     std::set<std::string> tokenSet(tokens.begin(), tokens.end());
 
     // Check for forbidden operations
     if (!m_config.allow_file_io) {
-        static const std::set<std::string> fileOps = {
-            "fopen", "open", "fclose", "close", "fread", "fwrite",
-            "fgets", "fputs", "read_file", "fetch_url"
-        };
+        static const std::set<std::string> fileOps = {"fopen",  "open",  "fclose", "close",     "fread",
+                                                      "fwrite", "fgets", "fputs",  "read_file", "fetch_url"};
         for (const auto& op : fileOps) {
             if (tokenSet.count(op)) {
-                if (error) *error = "File I/O not allowed in sandbox: " + op;
+                if (error)
+                    *error = "File I/O not allowed in sandbox: " + op;
                 return false;
             }
         }
     }
 
     if (!m_config.allow_system_calls) {
-        static const std::set<std::string> sysOps = {
-            "system", "exec", "popen", "spawn", "shell"
-        };
+        static const std::set<std::string> sysOps = {"system", "exec", "popen", "spawn", "shell"};
         for (const auto& op : sysOps) {
             if (tokenSet.count(op)) {
-                if (error) *error = "System calls not allowed in sandbox: " + op;
+                if (error)
+                    *error = "System calls not allowed in sandbox: " + op;
                 return false;
             }
         }
     }
 
     if (!m_config.allow_network) {
-        static const std::set<std::string> netOps = {
-            "socket", "connect", "fetch_url", "http", "curl"
-        };
+        static const std::set<std::string> netOps = {"socket", "connect", "fetch_url", "http", "curl"};
         for (const auto& op : netOps) {
             if (tokenSet.count(op)) {
-                if (error) *error = "Network access not allowed in sandbox: " + op;
+                if (error)
+                    *error = "Network access not allowed in sandbox: " + op;
                 return false;
             }
         }
     }
 
     // Check for ngspice command injection
-    static const std::set<std::string> spiceOps = {
-        "ngspice_cmd", "ngspice_run"
-    };
+    static const std::set<std::string> spiceOps = {"ngspice_cmd", "ngspice_run"};
     for (const auto& op : spiceOps) {
         if (tokenSet.count(op)) {
-            if (error) *error = "SPICE command access not allowed in sandbox: " + op;
+            if (error)
+                *error = "SPICE command access not allowed in sandbox: " + op;
             return false;
         }
     }

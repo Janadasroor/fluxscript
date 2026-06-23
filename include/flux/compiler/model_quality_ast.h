@@ -221,7 +221,9 @@ class DiagnosticDeclAST : public ExprAST
 
 public:
     DiagnosticDeclAST(const std::string& node, const std::string& type = "", double threshold = 0.0)
-        : Node(node), DiagnosticType(type), Threshold(threshold) {}
+        : Node(node), DiagnosticType(type), Threshold(threshold)
+    {
+    }
 
     TypedValue codegen(CodegenContext& context) override;
 

@@ -111,14 +111,20 @@ TypedValue BinaryExprAST::codegen(CodegenContext& context)
     // 0b. Operator overloading for user-defined types
     {
         static const std::map<int, std::string> opToMethod = {
-            {'+', "add"}, {'-', "sub"}, {'*', "mul"}, {'/', "div"}, {'%', "rem"},
-            {'<', "lt"}, {'>', "gt"},
+            {'+', "add"},
+            {'-', "sub"},
+            {'*', "mul"},
+            {'/', "div"},
+            {'%', "rem"},
+            {'<', "lt"},
+            {'>', "gt"},
             {static_cast<int>(TokenType::tok_less_equal), "le"},
             {static_cast<int>(TokenType::tok_greater_equal), "ge"},
             {static_cast<int>(TokenType::tok_equal), "eq"},
             {static_cast<int>(TokenType::tok_not_equal), "ne"},
         };
-        auto findOverload = [&](const TypedValue& lhs, const std::string& methodName, const TypedValue& rhs) -> TypedValue {
+        auto findOverload = [&](const TypedValue& lhs, const std::string& methodName,
+                                const TypedValue& rhs) -> TypedValue {
             std::string typeName;
             if (lhs.Type.Kind == TypeKind::UserStruct && lhs.Type.StructTypeId >= 0 &&
                 lhs.Type.StructTypeId < static_cast<int>(context.StructTypes.size())) {
@@ -127,13 +133,17 @@ TypedValue BinaryExprAST::codegen(CodegenContext& context)
                        lhs.Type.EnumTypeId < static_cast<int>(context.EnumTypes.size())) {
                 typeName = context.EnumTypes[lhs.Type.EnumTypeId].Name;
             }
-            if (typeName.empty()) return TypedValue();
+            if (typeName.empty())
+                return TypedValue();
             auto typeIt = context.TypeMethods.find(typeName);
-            if (typeIt == context.TypeMethods.end()) return TypedValue();
+            if (typeIt == context.TypeMethods.end())
+                return TypedValue();
             auto methodIt = typeIt->second.find(methodName);
-            if (methodIt == typeIt->second.end()) return TypedValue();
+            if (methodIt == typeIt->second.end())
+                return TypedValue();
             llvm::Function* calleeFn = methodIt->second;
-            if (!calleeFn) return TypedValue();
+            if (!calleeFn)
+                return TypedValue();
             FluxType retType = context.FuncReturnTypes[calleeFn->getName().str()];
             resolveUserStructType(retType, context);
             resolveUserEnumType(retType, context);
@@ -144,7 +154,8 @@ TypedValue BinaryExprAST::codegen(CodegenContext& context)
             if (isSretCall) {
                 llvm::Type* sretLLVMTy = retType.getLLVMType(context.TheContext);
                 if (!sretLLVMTy)
-                    sretLLVMTy = llvm::cast<llvm::StructType>(FluxType(TypeKind::Matrix).getLLVMType(context.TheContext));
+                    sretLLVMTy =
+                        llvm::cast<llvm::StructType>(FluxType(TypeKind::Matrix).getLLVMType(context.TheContext));
                 sretPtr = context.Builder.CreateAlloca(sretLLVMTy, nullptr, "op_sret");
                 callArgs.push_back(sretPtr);
             }
@@ -152,18 +163,21 @@ TypedValue BinaryExprAST::codegen(CodegenContext& context)
                 llvm::Value* selfVal = lhs.Val;
                 if (shouldPassByPointer(lhs.Type, context)) {
                     if (!selfVal->getType()->isPointerTy()) {
-                        llvm::Value* tempAlloca = context.Builder.CreateAlloca(selfVal->getType(), nullptr, "op_self_temp");
+                        llvm::Value* tempAlloca =
+                            context.Builder.CreateAlloca(selfVal->getType(), nullptr, "op_self_temp");
                         context.Builder.CreateStore(selfVal, tempAlloca);
                         selfVal = tempAlloca;
                     }
                 } else {
-                    if ((lhs.Type.Kind == TypeKind::UserStruct || lhs.Type.Kind == TypeKind::UserEnum) && selfVal->getType()->isPointerTy()) {
+                    if ((lhs.Type.Kind == TypeKind::UserStruct || lhs.Type.Kind == TypeKind::UserEnum) &&
+                        selfVal->getType()->isPointerTy()) {
                         llvm::Type* selfLLVMTy = lhs.Type.getLLVMType(context.TheContext);
                         selfVal = context.Builder.CreateLoad(selfLLVMTy, selfVal, "op_self_loaded");
                     }
                 }
                 unsigned firstArgIdx = isSretCall ? 1 : 0;
-                if (calleeFn->arg_size() > firstArgIdx && selfVal->getType() != calleeFn->getArg(firstArgIdx)->getType()) {
+                if (calleeFn->arg_size() > firstArgIdx &&
+                    selfVal->getType() != calleeFn->getArg(firstArgIdx)->getType()) {
                     llvm::Type* firstArgTy = calleeFn->getArg(firstArgIdx)->getType();
                     if (firstArgTy->isPointerTy() && selfVal->getType()->isPointerTy())
                         selfVal = context.Builder.CreatePointerCast(selfVal, firstArgTy);
@@ -178,12 +192,14 @@ TypedValue BinaryExprAST::codegen(CodegenContext& context)
                 llvm::Value* argVal = rhs.Val;
                 if (shouldPassByPointer(rhs.Type, context)) {
                     if (!argVal->getType()->isPointerTy()) {
-                        llvm::Value* tempAlloca = context.Builder.CreateAlloca(argVal->getType(), nullptr, "op_arg_temp");
+                        llvm::Value* tempAlloca =
+                            context.Builder.CreateAlloca(argVal->getType(), nullptr, "op_arg_temp");
                         context.Builder.CreateStore(argVal, tempAlloca);
                         argVal = tempAlloca;
                     }
                 } else {
-                    if ((rhs.Type.Kind == TypeKind::UserStruct || rhs.Type.Kind == TypeKind::UserEnum) && argVal->getType()->isPointerTy()) {
+                    if ((rhs.Type.Kind == TypeKind::UserStruct || rhs.Type.Kind == TypeKind::UserEnum) &&
+                        argVal->getType()->isPointerTy()) {
                         llvm::Type* structTy = rhs.Type.getLLVMType(context.TheContext);
                         argVal = context.Builder.CreateLoad(structTy, argVal);
                     }
@@ -204,7 +220,8 @@ TypedValue BinaryExprAST::codegen(CodegenContext& context)
                 context.Builder.CreateCall(calleeFn, callArgs);
                 llvm::Type* sretLLVMTy = retType.getLLVMType(context.TheContext);
                 if (!sretLLVMTy)
-                    sretLLVMTy = llvm::cast<llvm::StructType>(FluxType(TypeKind::Matrix).getLLVMType(context.TheContext));
+                    sretLLVMTy =
+                        llvm::cast<llvm::StructType>(FluxType(TypeKind::Matrix).getLLVMType(context.TheContext));
                 llvm::Value* result = context.Builder.CreateLoad(sretLLVMTy, sretPtr);
                 return TypedValue(result, retType);
             } else {
@@ -215,7 +232,8 @@ TypedValue BinaryExprAST::codegen(CodegenContext& context)
         auto opIt = opToMethod.find(Op);
         if (opIt != opToMethod.end()) {
             TypedValue overloadResult = findOverload(L, opIt->second, R);
-            if (overloadResult.Val) return overloadResult;
+            if (overloadResult.Val)
+                return overloadResult;
         }
     }
 
@@ -247,8 +265,7 @@ TypedValue BinaryExprAST::codegen(CodegenContext& context)
                    L.Type.Kind == TypeKind::ComplexMatrix || R.Type.Kind == TypeKind::ComplexMatrix) {
             // Matrix ops handled below
         } else if (L.Type.Kind == TypeKind::UserEnum && R.Type.Kind == TypeKind::UserEnum) {
-            if (Op != static_cast<int>(TokenType::tok_equal) &&
-                Op != static_cast<int>(TokenType::tok_not_equal)) {
+            if (Op != static_cast<int>(TokenType::tok_equal) && Op != static_cast<int>(TokenType::tok_not_equal)) {
                 std::cerr << "Type error: cannot use enum in operation '" << (char)Op << "'" << std::endl;
                 return TypedValue();
             }
@@ -257,8 +274,7 @@ TypedValue BinaryExprAST::codegen(CodegenContext& context)
                 return TypedValue();
             }
         } else if (L.Type.Kind == TypeKind::Vector && R.Type.Kind == TypeKind::Vector) {
-            if (Op != static_cast<int>(TokenType::tok_equal) &&
-                Op != static_cast<int>(TokenType::tok_not_equal)) {
+            if (Op != static_cast<int>(TokenType::tok_equal) && Op != static_cast<int>(TokenType::tok_not_equal)) {
                 std::cerr << "Type error: cannot use vector in operation '" << (char)Op << "'" << std::endl;
                 return TypedValue();
             }
@@ -298,8 +314,7 @@ TypedValue BinaryExprAST::codegen(CodegenContext& context)
             return TypedValue();
         }
         ResDims = {};
-    } else if (Op == static_cast<int>(TokenType::tok_equal) ||
-               Op == static_cast<int>(TokenType::tok_not_equal)) {
+    } else if (Op == static_cast<int>(TokenType::tok_equal) || Op == static_cast<int>(TokenType::tok_not_equal)) {
         if (L.Type.Dimensions != R.Type.Dimensions && !L.Type.Dimensions.isDimensionless() &&
             !R.Type.Dimensions.isDimensionless()) {
             std::cerr << "Unit mismatch error: " << L.Type.Dimensions.toString() << " and "
@@ -614,8 +629,7 @@ TypedValue BinaryExprAST::codegen(CodegenContext& context)
 
     // Vector equality / inequality
     if (L.Type.Kind == TypeKind::Vector && R.Type.Kind == TypeKind::Vector &&
-        (Op == static_cast<int>(TokenType::tok_equal) ||
-         Op == static_cast<int>(TokenType::tok_not_equal))) {
+        (Op == static_cast<int>(TokenType::tok_equal) || Op == static_cast<int>(TokenType::tok_not_equal))) {
         llvm::Type* DoubleTy = llvm::Type::getDoubleTy(context.TheContext);
         llvm::Type* Int32Ty = llvm::Type::getInt32Ty(context.TheContext);
         llvm::Type* VoidPtrTy = llvm::PointerType::get(context.TheContext, 0);
@@ -623,8 +637,7 @@ TypedValue BinaryExprAST::codegen(CodegenContext& context)
         if (!VecEqF) {
             llvm::FunctionType* FTy =
                 llvm::FunctionType::get(DoubleTy, {VoidPtrTy, Int32Ty, VoidPtrTy, Int32Ty}, false);
-            VecEqF = llvm::Function::Create(FTy, llvm::Function::ExternalLinkage, "flux_vec_eq",
-                                            context.TheModule);
+            VecEqF = llvm::Function::Create(FTy, llvm::Function::ExternalLinkage, "flux_vec_eq", context.TheModule);
         }
         llvm::Value* LData = context.Builder.CreateExtractValue(L.Val, 0, "l_vec_ptr");
         llvm::Value* LLen = context.Builder.CreateExtractValue(L.Val, 1, "l_vec_len");
@@ -632,14 +645,14 @@ TypedValue BinaryExprAST::codegen(CodegenContext& context)
         llvm::Value* RLen = context.Builder.CreateExtractValue(R.Val, 1, "r_vec_len");
         llvm::Value* IsEq = context.Builder.CreateCall(VecEqF, {LData, LLen, RData, RLen}, "veceq");
         if (Op == static_cast<int>(TokenType::tok_equal))
-            return TypedValue(context.Builder.CreateUIToFP(
-                                  context.Builder.CreateFCmpOEQ(IsEq, llvm::ConstantFP::get(DoubleTy, 1.0), "veceq_cmp"),
-                                  DoubleTy, "booltmp"),
+            return TypedValue(context.Builder.CreateUIToFP(context.Builder.CreateFCmpOEQ(
+                                                               IsEq, llvm::ConstantFP::get(DoubleTy, 1.0), "veceq_cmp"),
+                                                           DoubleTy, "booltmp"),
                               TypeKind::Bool);
         else
-            return TypedValue(context.Builder.CreateUIToFP(
-                                  context.Builder.CreateFCmpONE(IsEq, llvm::ConstantFP::get(DoubleTy, 1.0), "vecne_cmp"),
-                                  DoubleTy, "booltmp"),
+            return TypedValue(context.Builder.CreateUIToFP(context.Builder.CreateFCmpONE(
+                                                               IsEq, llvm::ConstantFP::get(DoubleTy, 1.0), "vecne_cmp"),
+                                                           DoubleTy, "booltmp"),
                               TypeKind::Bool);
     }
 
@@ -743,10 +756,11 @@ TypedValue BinaryExprAST::codegen(CodegenContext& context)
         promoteIntToFP(RV);
         llvm::Function* FmodF = context.TheModule->getFunction("fmod");
         if (!FmodF)
-            FmodF = llvm::Function::Create(
-                llvm::FunctionType::get(llvm::Type::getDoubleTy(context.TheContext),
-                                        {llvm::Type::getDoubleTy(context.TheContext), llvm::Type::getDoubleTy(context.TheContext)}, false),
-                llvm::Function::ExternalLinkage, "fmod", context.TheModule);
+            FmodF = llvm::Function::Create(llvm::FunctionType::get(llvm::Type::getDoubleTy(context.TheContext),
+                                                                   {llvm::Type::getDoubleTy(context.TheContext),
+                                                                    llvm::Type::getDoubleTy(context.TheContext)},
+                                                                   false),
+                                           llvm::Function::ExternalLinkage, "fmod", context.TheModule);
         return TypedValue(context.Builder.CreateCall(FmodF, {LV, RV}, "modtmp"), FluxType(TypeKind::Double, ResDims));
     }
     case static_cast<int>(TokenType::tok_bitwise_and): {
@@ -908,14 +922,12 @@ TypedValue BinaryExprAST::codegen(CodegenContext& context)
                 ewDims.luminous = static_cast<int8_t>(L.Type.Dimensions.luminous * e);
             }
         }
-        return TypedValue(context.Builder.CreateCall(PowF, {LV, RV}, "ewpowtmp"),
-                          FluxType(TypeKind::Double, ewDims));
+        return TypedValue(context.Builder.CreateCall(PowF, {LV, RV}, "ewpowtmp"), FluxType(TypeKind::Double, ewDims));
     }
     default:
         std::cerr << "Invalid binary operator: " << Op << std::endl;
         return TypedValue();
     }
 }
-
 
 } // namespace Flux

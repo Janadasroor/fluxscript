@@ -1,8 +1,8 @@
 /* Copyright 2026 Janada Sroor
  SPDX-License-Identifier: Apache-2.0 */
 
-#include "flux/runtime/runtime_helpers.h"
 #include "flux/analysis/advanced_analysis.h"
+#include "flux/runtime/runtime_helpers.h"
 #include <Eigen/Dense>
 #include <cstdint>
 #include <cstring>
@@ -170,8 +170,8 @@ extern "C" double flux_monte_carlo_analyze(double output_dbl, double names_dbl, 
 }
 
 // Optimization
-extern "C" double flux_optimize_analyze(double output_dbl, double names_dbl, double inits_dbl,
-                                        double mins_dbl, double maxs_dbl)
+extern "C" double flux_optimize_analyze(double output_dbl, double names_dbl, double inits_dbl, double mins_dbl,
+                                        double maxs_dbl)
 {
     using namespace AdvancedAnalysis;
     const char* output = reinterpret_cast<const char*>(static_cast<uintptr_t>(jit_bitcast<uint64_t>(output_dbl)));
@@ -229,9 +229,12 @@ extern "C" double flux_bode_analyze(double output_dbl, double freqStart, double 
 {
     const char* output = reinterpret_cast<const char*>(static_cast<uintptr_t>(jit_bitcast<uint64_t>(output_dbl)));
 
-    if (freqStart <= 0) freqStart = 10;
-    if (freqEnd <= freqStart) freqEnd = freqStart * 1000;
-    if (pointsPerDecade < 5) pointsPerDecade = 20;
+    if (freqStart <= 0)
+        freqStart = 10;
+    if (freqEnd <= freqStart)
+        freqEnd = freqStart * 1000;
+    if (pointsPerDecade < 5)
+        pointsPerDecade = 20;
 
     int numDecades = static_cast<int>(std::ceil(std::log10(freqEnd / freqStart)));
     int numPoints = numDecades * pointsPerDecade;
@@ -265,12 +268,14 @@ extern "C" double flux_bode_analyze(double output_dbl, double freqStart, double 
     double magMin = *std::min_element(magDB.begin(), magDB.end());
     double magMax = *std::max_element(magDB.begin(), magDB.end());
     double magRange = magMax - magMin;
-    if (magRange < 1) magRange = 1;
+    if (magRange < 1)
+        magRange = 1;
     for (int row = 0; row < 10; row++) {
         double level = magMax - (row + 0.5) * magRange / 10.0;
         printf("  %+6.1f |", level);
         for (size_t i = 0; i < freqs.size(); i++) {
-            if (i % static_cast<size_t>(std::max(1, numPoints / 60)) != 0) continue;
+            if (i % static_cast<size_t>(std::max(1, numPoints / 60)) != 0)
+                continue;
             if (magDB[i] >= level)
                 printf("*");
             else
@@ -288,12 +293,14 @@ extern "C" double flux_bode_analyze(double output_dbl, double freqStart, double 
     double phaseMin = *std::min_element(phaseDeg.begin(), phaseDeg.end());
     double phaseMax = *std::max_element(phaseDeg.begin(), phaseDeg.end());
     double phaseRange = phaseMax - phaseMin;
-    if (phaseRange < 1) phaseRange = 1;
+    if (phaseRange < 1)
+        phaseRange = 1;
     for (int row = 0; row < 10; row++) {
         double level = phaseMax - (row + 0.5) * phaseRange / 10.0;
         printf("  %+6.1f |", level);
         for (size_t i = 0; i < freqs.size(); i++) {
-            if (i % static_cast<size_t>(std::max(1, numPoints / 60)) != 0) continue;
+            if (i % static_cast<size_t>(std::max(1, numPoints / 60)) != 0)
+                continue;
             if (phaseDeg[i] >= level)
                 printf("*");
             else
@@ -373,6 +380,5 @@ extern "C" double flux_plot_data(double* yData, int yRows, int yCols, double* xD
 
     return 1.0;
 }
-
 
 } // namespace Flux

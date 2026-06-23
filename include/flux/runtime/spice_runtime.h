@@ -67,8 +67,8 @@ double flux_register_hsource(const char* name, const char* pos_node, const char*
 void flux_register_adevice(const char* name, int device_type, const char* input_nodes, const char* output_nodes);
 
 // WAVEFILE source
-void flux_register_wavefile(const char* name, const char* pos_node, const char* neg_node,
-                            const char* file_path, int channel);
+void flux_register_wavefile(const char* name, const char* pos_node, const char* neg_node, const char* file_path,
+                            int channel);
 
 // ============================================================================
 // Analysis Control

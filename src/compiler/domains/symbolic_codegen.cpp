@@ -104,8 +104,7 @@ TypedValue DifferentiateExprAST::codegen(CodegenContext& context)
     if (ExprTV.Type.Kind != TypeKind::Symbolic) {
         std::cerr << "[Error] differentiate() requires a symbolic expression. "
                   << "Declare variables with 'sym' instead of 'let' or use "
-                  << "pre-computed analytical derivatives for compiled functions."
-                  << std::endl;
+                  << "pre-computed analytical derivatives for compiled functions." << std::endl;
         return TypedValue();
     }
 
@@ -376,10 +375,9 @@ TypedValue LaplaceExprAST::codegen(CodegenContext& context)
     llvm::Function* LapF = TheModule->getFunction("flux_sym_laplace");
     if (!LapF) {
         LapF = llvm::Function::Create(
-            llvm::FunctionType::get(llvm::Type::getDoubleTy(Ctx),
-                                    {llvm::Type::getDoubleTy(Ctx), llvm::PointerType::get(Ctx, 0),
-                                     llvm::PointerType::get(Ctx, 0)},
-                                    false),
+            llvm::FunctionType::get(
+                llvm::Type::getDoubleTy(Ctx),
+                {llvm::Type::getDoubleTy(Ctx), llvm::PointerType::get(Ctx, 0), llvm::PointerType::get(Ctx, 0)}, false),
             llvm::Function::ExternalLinkage, "flux_sym_laplace", TheModule);
     }
 
@@ -405,10 +403,9 @@ TypedValue InverseLaplaceExprAST::codegen(CodegenContext& context)
     llvm::Function* ILapF = TheModule->getFunction("flux_sym_inverse_laplace");
     if (!ILapF) {
         ILapF = llvm::Function::Create(
-            llvm::FunctionType::get(llvm::Type::getDoubleTy(Ctx),
-                                    {llvm::Type::getDoubleTy(Ctx), llvm::PointerType::get(Ctx, 0),
-                                     llvm::PointerType::get(Ctx, 0)},
-                                    false),
+            llvm::FunctionType::get(
+                llvm::Type::getDoubleTy(Ctx),
+                {llvm::Type::getDoubleTy(Ctx), llvm::PointerType::get(Ctx, 0), llvm::PointerType::get(Ctx, 0)}, false),
             llvm::Function::ExternalLinkage, "flux_sym_inverse_laplace", TheModule);
     }
 
@@ -428,7 +425,8 @@ TypedValue ExpandExprAST::codegen(CodegenContext& context)
     llvm::Module* TheModule = context.TheModule;
 
     TypedValue ExprTV = Expression->codegen(context);
-    if (!ExprTV.Val) return TypedValue();
+    if (!ExprTV.Val)
+        return TypedValue();
 
     llvm::Function* Fn = TheModule->getFunction("flux_sym_expand");
     if (!Fn) {
@@ -450,7 +448,8 @@ TypedValue FactorExprAST::codegen(CodegenContext& context)
     llvm::Module* TheModule = context.TheModule;
 
     TypedValue ExprTV = Expression->codegen(context);
-    if (!ExprTV.Val) return TypedValue();
+    if (!ExprTV.Val)
+        return TypedValue();
 
     llvm::Function* Fn = TheModule->getFunction("flux_sym_factor");
     if (!Fn) {
@@ -472,7 +471,8 @@ TypedValue CollectExprAST::codegen(CodegenContext& context)
     llvm::Module* TheModule = context.TheModule;
 
     TypedValue ExprTV = Expression->codegen(context);
-    if (!ExprTV.Val) return TypedValue();
+    if (!ExprTV.Val)
+        return TypedValue();
 
     llvm::Function* Fn = TheModule->getFunction("flux_sym_collect");
     if (!Fn) {
@@ -496,7 +496,8 @@ TypedValue NumeratorExprAST::codegen(CodegenContext& context)
     llvm::Module* TheModule = context.TheModule;
 
     TypedValue ExprTV = Expression->codegen(context);
-    if (!ExprTV.Val) return TypedValue();
+    if (!ExprTV.Val)
+        return TypedValue();
 
     llvm::Function* Fn = TheModule->getFunction("flux_sym_numerator");
     if (!Fn) {
@@ -518,7 +519,8 @@ TypedValue DenominatorExprAST::codegen(CodegenContext& context)
     llvm::Module* TheModule = context.TheModule;
 
     TypedValue ExprTV = Expression->codegen(context);
-    if (!ExprTV.Val) return TypedValue();
+    if (!ExprTV.Val)
+        return TypedValue();
 
     llvm::Function* Fn = TheModule->getFunction("flux_sym_denominator");
     if (!Fn) {
@@ -540,31 +542,29 @@ TypedValue PolesExprAST::codegen(CodegenContext& context)
     llvm::Module* TheModule = context.TheModule;
 
     TypedValue ExprTV = Expression->codegen(context);
-    if (!ExprTV.Val) return TypedValue();
+    if (!ExprTV.Val)
+        return TypedValue();
 
     llvm::Type* VoidPtrTy = llvm::PointerType::get(Ctx, 0);
 
     llvm::Function* Fn = TheModule->getFunction("flux_sym_poles");
     if (!Fn) {
-        Fn = llvm::Function::Create(
-            llvm::FunctionType::get(VoidPtrTy, {llvm::Type::getDoubleTy(Ctx)}, false),
-            llvm::Function::ExternalLinkage, "flux_sym_poles", TheModule);
+        Fn = llvm::Function::Create(llvm::FunctionType::get(VoidPtrTy, {llvm::Type::getDoubleTy(Ctx)}, false),
+                                    llvm::Function::ExternalLinkage, "flux_sym_poles", TheModule);
     }
 
     llvm::Value* MatPtr = context.Builder.CreateCall(Fn, {ExprTV.Val}, "poles_ptr");
 
     llvm::Function* RowsF = TheModule->getFunction("flux_matrix_rows");
     if (!RowsF) {
-        RowsF = llvm::Function::Create(
-            llvm::FunctionType::get(llvm::Type::getInt32Ty(Ctx), {VoidPtrTy}, false),
-            llvm::Function::ExternalLinkage, "flux_matrix_rows", TheModule);
+        RowsF = llvm::Function::Create(llvm::FunctionType::get(llvm::Type::getInt32Ty(Ctx), {VoidPtrTy}, false),
+                                       llvm::Function::ExternalLinkage, "flux_matrix_rows", TheModule);
     }
 
     llvm::Function* ColsF = TheModule->getFunction("flux_matrix_cols");
     if (!ColsF) {
-        ColsF = llvm::Function::Create(
-            llvm::FunctionType::get(llvm::Type::getInt32Ty(Ctx), {VoidPtrTy}, false),
-            llvm::Function::ExternalLinkage, "flux_matrix_cols", TheModule);
+        ColsF = llvm::Function::Create(llvm::FunctionType::get(llvm::Type::getInt32Ty(Ctx), {VoidPtrTy}, false),
+                                       llvm::Function::ExternalLinkage, "flux_matrix_cols", TheModule);
     }
 
     llvm::Value* RetRows = context.Builder.CreateCall(RowsF, {MatPtr}, "poles_rows");
@@ -586,31 +586,29 @@ TypedValue ZerosExprAST::codegen(CodegenContext& context)
     llvm::Module* TheModule = context.TheModule;
 
     TypedValue ExprTV = Expression->codegen(context);
-    if (!ExprTV.Val) return TypedValue();
+    if (!ExprTV.Val)
+        return TypedValue();
 
     llvm::Type* VoidPtrTy = llvm::PointerType::get(Ctx, 0);
 
     llvm::Function* Fn = TheModule->getFunction("flux_sym_zeros");
     if (!Fn) {
-        Fn = llvm::Function::Create(
-            llvm::FunctionType::get(VoidPtrTy, {llvm::Type::getDoubleTy(Ctx)}, false),
-            llvm::Function::ExternalLinkage, "flux_sym_zeros", TheModule);
+        Fn = llvm::Function::Create(llvm::FunctionType::get(VoidPtrTy, {llvm::Type::getDoubleTy(Ctx)}, false),
+                                    llvm::Function::ExternalLinkage, "flux_sym_zeros", TheModule);
     }
 
     llvm::Value* MatPtr = context.Builder.CreateCall(Fn, {ExprTV.Val}, "zeros_ptr");
 
     llvm::Function* RowsF = TheModule->getFunction("flux_matrix_rows");
     if (!RowsF) {
-        RowsF = llvm::Function::Create(
-            llvm::FunctionType::get(llvm::Type::getInt32Ty(Ctx), {VoidPtrTy}, false),
-            llvm::Function::ExternalLinkage, "flux_matrix_rows", TheModule);
+        RowsF = llvm::Function::Create(llvm::FunctionType::get(llvm::Type::getInt32Ty(Ctx), {VoidPtrTy}, false),
+                                       llvm::Function::ExternalLinkage, "flux_matrix_rows", TheModule);
     }
 
     llvm::Function* ColsF = TheModule->getFunction("flux_matrix_cols");
     if (!ColsF) {
-        ColsF = llvm::Function::Create(
-            llvm::FunctionType::get(llvm::Type::getInt32Ty(Ctx), {VoidPtrTy}, false),
-            llvm::Function::ExternalLinkage, "flux_matrix_cols", TheModule);
+        ColsF = llvm::Function::Create(llvm::FunctionType::get(llvm::Type::getInt32Ty(Ctx), {VoidPtrTy}, false),
+                                       llvm::Function::ExternalLinkage, "flux_matrix_cols", TheModule);
     }
 
     llvm::Value* RetRows = context.Builder.CreateCall(RowsF, {MatPtr}, "zeros_rows");

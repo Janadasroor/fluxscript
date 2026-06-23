@@ -390,7 +390,8 @@ public:
         std::string textEdit; // JSON TextEdit if replacing
     };
     std::vector<ColorInformation> getDocumentColors(const std::string& uri);
-    std::vector<ColorPresentation> getColorPresentations(const std::string& uri, const Color& color, const Range& range);
+    std::vector<ColorPresentation> getColorPresentations(const std::string& uri, const Color& color,
+                                                         const Range& range);
 
     // Semantic Tokens
     struct SemanticTokensResult

@@ -122,8 +122,7 @@ private:
     bool importModule(const std::string& moduleName, CodegenContext& context,
                       std::map<std::string, FluxType>& returnTypes, std::string* error,
                       std::map<std::string, bool>& importedModules, const std::vector<std::string>& symbols = {}) const;
-    bool collectImportFunctions(const std::string& moduleName,
-                                std::vector<std::unique_ptr<FunctionAST>>& outFunctions,
+    bool collectImportFunctions(const std::string& moduleName, std::vector<std::unique_ptr<FunctionAST>>& outFunctions,
                                 CodegenContext& context, std::map<std::string, FluxType>& returnTypes,
                                 std::string* error, std::map<std::string, bool>& importedModules,
                                 const std::vector<std::string>& symbols = {},
@@ -131,8 +130,7 @@ private:
                                 std::unordered_set<std::string>* knownEnumTypeNames = nullptr) const;
     std::string resolveImportPath(const std::string& moduleName) const;
     bool loadAndLinkBitcodeModule(const std::string& bcPath, CodegenContext& context,
-                                  std::map<std::string, FluxType>& returnTypes,
-                                  std::string* error = nullptr) const;
+                                  std::map<std::string, FluxType>& returnTypes, std::string* error = nullptr) const;
 
     CompilerOptions m_options;
     mutable ModuleLoader m_moduleLoader;

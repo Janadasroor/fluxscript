@@ -454,9 +454,8 @@ std::unique_ptr<AnalysisExprAST> Parser::ParseAnalysis()
 {
     getNextToken(); // eat analysis
 
-    std::string typeStr = (CurTok == static_cast<int>(TokenType::tok_identifier))
-                              ? m_lexer.IdentifierStr
-                              : Lexer::tokenSpelling(CurTok);
+    std::string typeStr =
+        (CurTok == static_cast<int>(TokenType::tok_identifier)) ? m_lexer.IdentifierStr : Lexer::tokenSpelling(CurTok);
     AnalysisType AType;
 
     if (typeStr == "tran")

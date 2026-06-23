@@ -356,7 +356,8 @@ TypedValue ThermalNoiseExprAST::codegen(CodegenContext& context)
         ResLLVM = context.Builder.CreateSIToFP(ResLLVM, DoubleTy, "inttodouble");
     }
 
-    llvm::Value* TempLLVM = llvm::ConstantFP::get(llvm::Type::getDoubleTy(context.TheContext), 300.15); // Default 300.15K
+    llvm::Value* TempLLVM =
+        llvm::ConstantFP::get(llvm::Type::getDoubleTy(context.TheContext), 300.15); // Default 300.15K
     if (Temperature) {
         auto TVal = Temperature->codegen(context);
         TempLLVM = TVal.Val;
@@ -599,7 +600,8 @@ TypedValue UnitExprAST::codegen(CodegenContext& context)
             dims.luminous = scaledUnit.dimensions.luminous;
 
             if (scaledUnit.scale != 1.0) {
-                llvm::Value* Scale = llvm::ConstantFP::get(llvm::Type::getDoubleTy(context.TheContext), scaledUnit.scale);
+                llvm::Value* Scale =
+                    llvm::ConstantFP::get(llvm::Type::getDoubleTy(context.TheContext), scaledUnit.scale);
                 V = context.Builder.CreateFMul(V, Scale, "unit_scaled");
             }
         } catch (const std::exception& e) {
@@ -697,7 +699,8 @@ TypedValue HasUnitExprAST::codegen(CodegenContext& context)
         }
     }
 
-    return TypedValue(llvm::ConstantFP::get(llvm::Type::getDoubleTy(context.TheContext), match ? 1.0 : 0.0), TypeKind::Double);
+    return TypedValue(llvm::ConstantFP::get(llvm::Type::getDoubleTy(context.TheContext), match ? 1.0 : 0.0),
+                      TypeKind::Double);
 }
 
 } // namespace Flux

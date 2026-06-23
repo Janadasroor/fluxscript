@@ -2,8 +2,8 @@
  SPDX-License-Identifier: Apache-2.0 */
 
 #include "flux/jit/flux_jit.h"
-#include "flux/runtime/flux_runtime.h"
 #include "flux/runtime/advanced_math.h"
+#include "flux/runtime/flux_runtime.h"
 #include <complex>
 
 // JIT-callable wrappers (flux_runtime.cpp, C++ linkage)
@@ -124,8 +124,8 @@ extern "C" double flux_register_worst_case(double output_dbl, double names_dbl, 
                                            double tolerances_dbl, int iterations);
 extern "C" double flux_monte_carlo_analyze(double output_dbl, double names_dbl, double nominals_dbl,
                                            double tolerances_dbl, int iterations);
-extern "C" double flux_optimize_analyze(double output_dbl, double names_dbl, double inits_dbl,
-                                        double mins_dbl, double maxs_dbl, int num_vars, int max_iter);
+extern "C" double flux_optimize_analyze(double output_dbl, double names_dbl, double inits_dbl, double mins_dbl,
+                                        double maxs_dbl, int num_vars, int max_iter);
 extern "C" double flux_bode_analyze(double output_dbl, double freqStart, double freqEnd, int pointsPerDecade);
 extern "C" double flux_plot_data(double* yData, int yRows, int yCols, double* xData, int hasX, double title_dbl);
 
@@ -185,26 +185,26 @@ extern "C" double flux_register_probe(const char* var_name, const char* output_n
 extern "C" double flux_register_save(const char* var_name);
 extern "C" double flux_register_param(const char* name, double value);
 extern "C" double flux_register_ic(const char* node_name, double value);
-extern "C" double flux_register_bsource(const char* name, const char* pos, const char* neg,
-                                        double expr, int is_current);
-extern "C" double flux_register_esource(const char* name, const char* pos, const char* neg,
-                                        const char* cpos, const char* cneg, double gain);
-extern "C" double flux_register_fsource(const char* name, const char* pos, const char* neg,
-                                        const char* vsource, double gain);
-extern "C" double flux_register_gsource(const char* name, const char* pos, const char* neg,
-                                        const char* cpos, const char* cneg, double transcond);
-extern "C" double flux_register_hsource(const char* name, const char* pos, const char* neg,
-                                        const char* vsource, double transres);
-extern "C" double flux_register_subckt_instance(const char* name, const char* subckt,
-                                                double pins_ptr, double params_ptr);
+extern "C" double flux_register_bsource(const char* name, const char* pos, const char* neg, double expr,
+                                        int is_current);
+extern "C" double flux_register_esource(const char* name, const char* pos, const char* neg, const char* cpos,
+                                        const char* cneg, double gain);
+extern "C" double flux_register_fsource(const char* name, const char* pos, const char* neg, const char* vsource,
+                                        double gain);
+extern "C" double flux_register_gsource(const char* name, const char* pos, const char* neg, const char* cpos,
+                                        const char* cneg, double transcond);
+extern "C" double flux_register_hsource(const char* name, const char* pos, const char* neg, const char* vsource,
+                                        double transres);
+extern "C" double flux_register_subckt_instance(const char* name, const char* subckt, double pins_ptr,
+                                                double params_ptr);
 extern "C" double flux_register_model(const char* name, const char* type, double params_ptr);
-extern "C" double flux_register_update_func(const char* time_var, const char* inputs_var,
-                                            void* body_func);
+extern "C" double flux_register_update_func(const char* time_var, const char* inputs_var, void* body_func);
 extern "C" double flux_edge_detect(double value, double edge_type);
 extern "C" double flux_cross_detect(double value, double rise_fall);
-extern "C" void flux_register_adevice(const char* name, int device_type, const char* input_nodes, const char* output_nodes);
-extern "C" double flux_register_wavefile(const char* name, const char* pos_node,
-                                         const char* neg_node, const char* file_path, int channel);
+extern "C" void flux_register_adevice(const char* name, int device_type, const char* input_nodes,
+                                      const char* output_nodes);
+extern "C" double flux_register_wavefile(const char* name, const char* pos_node, const char* neg_node,
+                                         const char* file_path, int channel);
 
 // LLVM bridge
 extern "C" double flux_llvm_context_create();
@@ -319,7 +319,8 @@ extern "C" double flux_llvm_build_ptrtoint(double builder, double val, double de
 extern "C" double flux_llvm_build_inttoptr(double builder, double val, double dest_ty, double name);
 extern "C" double flux_llvm_build_bitcast(double builder, double val, double dest_ty, double name);
 extern "C" double flux_llvm_get_target_from_triple(double triple, double out_target);
-extern "C" double flux_llvm_create_target_machine(double target, double triple, double cpu, double features, double level);
+extern "C" double flux_llvm_create_target_machine(double target, double triple, double cpu, double features,
+                                                  double level);
 extern "C" double flux_llvm_target_machine_emit_to_file(double tm, double module, double filename, double file_type);
 extern "C" double flux_llvm_target_machine_emit_to_mem_buf(double tm, double module, double file_type);
 extern "C" double flux_llvm_initialize_native_target();
@@ -343,12 +344,14 @@ extern "C" double flux_type_has(double name_dbl);
 extern "C" {
 void* flux_nn_create(const int* layers, int numLayers);
 void flux_nn_destroy(void* nn);
-void flux_nn_train(void* nn, const double* inputs, const double* outputs, int numSamples, int inputDim, int outputDim, int epochs);
+void flux_nn_train(void* nn, const double* inputs, const double* outputs, int numSamples, int inputDim, int outputDim,
+                   int epochs);
 void flux_nn_predict(void* nn, const double* input, double* output, int inputDim, int outputDim);
 void flux_nn_save(void* nn, const char* filename);
 void* flux_nn_load(const char* filename);
 void* flux_surrogate_create();
-void flux_surrogate_train(void* surrogate, const char* circuit_type, const double* params, const double* results, int numSamples, int numParams);
+void flux_surrogate_train(void* surrogate, const char* circuit_type, const double* params, const double* results,
+                          int numSamples, int numParams);
 void flux_surrogate_predict(void* surrogate, const double* params, double* result, int numParams);
 } // extern "C"
 

@@ -71,8 +71,7 @@ std::unique_ptr<ExprAST> Parser::ParseSwitchExpr()
             getNextToken(); // eat =>
 
             // Parse default body
-            if (CurTok != static_cast<int>(TokenType::tok_rbrace) &&
-                CurTok != static_cast<int>(TokenType::tok_eof)) {
+            if (CurTok != static_cast<int>(TokenType::tok_rbrace) && CurTok != static_cast<int>(TokenType::tok_eof)) {
                 defaultBody.push_back(ParseExpression());
             }
             continue;
@@ -99,12 +98,10 @@ std::unique_ptr<ExprAST> Parser::ParseSwitchExpr()
 
             // Parse case body
             std::vector<std::unique_ptr<ExprAST>> body;
-            while (CurTok != static_cast<int>(TokenType::tok_eof) &&
-                   CurTok != static_cast<int>(TokenType::tok_case) &&
+            while (CurTok != static_cast<int>(TokenType::tok_eof) && CurTok != static_cast<int>(TokenType::tok_case) &&
                    CurTok != static_cast<int>(TokenType::tok_default) &&
                    CurTok != static_cast<int>(TokenType::tok_switch) &&
-                   CurTok != static_cast<int>(TokenType::tok_rbrace) &&
-                   CurTok != ',' &&
+                   CurTok != static_cast<int>(TokenType::tok_rbrace) && CurTok != ',' &&
                    CurTok != static_cast<int>(TokenType::tok_end)) {
 
                 if (CurTok == static_cast<int>(TokenType::tok_return)) {
@@ -139,8 +136,7 @@ std::unique_ptr<ExprAST> Parser::ParseSwitchExpr()
             // Parse default body
             while (CurTok != static_cast<int>(TokenType::tok_eof) &&
                    CurTok != static_cast<int>(TokenType::tok_switch) &&
-                   CurTok != static_cast<int>(TokenType::tok_rbrace) &&
-                   CurTok != ',' &&
+                   CurTok != static_cast<int>(TokenType::tok_rbrace) && CurTok != ',' &&
                    CurTok != static_cast<int>(TokenType::tok_end)) {
 
                 if (CurTok == static_cast<int>(TokenType::tok_return)) {
@@ -164,8 +160,7 @@ std::unique_ptr<ExprAST> Parser::ParseSwitchExpr()
         } else if (CurTok == static_cast<int>(TokenType::tok_rbrace)) {
             getNextToken(); // eat the closing }
             break;
-        } else if (CurTok == static_cast<int>(TokenType::tok_eof) ||
-                   CurTok == static_cast<int>(TokenType::tok_end)) {
+        } else if (CurTok == static_cast<int>(TokenType::tok_eof) || CurTok == static_cast<int>(TokenType::tok_end)) {
             break;
         } else if (CurTok == static_cast<int>(TokenType::tok_fat_arrow)) {
             ReportError("expected case value or '~' before '=>'");
@@ -188,8 +183,7 @@ std::unique_ptr<ExprAST> Parser::ParseSwitchExpr()
 
             // Parse case body (single expression)
             std::vector<std::unique_ptr<ExprAST>> body;
-            if (CurTok != static_cast<int>(TokenType::tok_rbrace) &&
-                CurTok != static_cast<int>(TokenType::tok_eof)) {
+            if (CurTok != static_cast<int>(TokenType::tok_rbrace) && CurTok != static_cast<int>(TokenType::tok_eof)) {
                 body.push_back(ParseExpression());
             }
 

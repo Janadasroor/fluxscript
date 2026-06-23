@@ -141,7 +141,8 @@ extern "C" int64_t flux_get_num_threads()
 
 // --- Threading Primitives: spawn/join + channels ---
 
-struct ThreadContext {
+struct ThreadContext
+{
     std::thread thread;
     double result;
     std::atomic<bool> done{false};
@@ -168,12 +169,25 @@ extern "C" double flux_spawn(void* func_ptr, void* args, int64_t nargs)
         typedef double (*Fn5)(double, double, double, double, double);
         double result = 0.0;
         switch (nargs) {
-            case 0: result = reinterpret_cast<Fn0>(func_ptr)(); break;
-            case 1: result = reinterpret_cast<Fn1>(func_ptr)(args_owned[0]); break;
-            case 2: result = reinterpret_cast<Fn2>(func_ptr)(args_owned[0], args_owned[1]); break;
-            case 3: result = reinterpret_cast<Fn3>(func_ptr)(args_owned[0], args_owned[1], args_owned[2]); break;
-            case 4: result = reinterpret_cast<Fn4>(func_ptr)(args_owned[0], args_owned[1], args_owned[2], args_owned[3]); break;
-            case 5: result = reinterpret_cast<Fn5>(func_ptr)(args_owned[0], args_owned[1], args_owned[2], args_owned[3], args_owned[4]); break;
+        case 0:
+            result = reinterpret_cast<Fn0>(func_ptr)();
+            break;
+        case 1:
+            result = reinterpret_cast<Fn1>(func_ptr)(args_owned[0]);
+            break;
+        case 2:
+            result = reinterpret_cast<Fn2>(func_ptr)(args_owned[0], args_owned[1]);
+            break;
+        case 3:
+            result = reinterpret_cast<Fn3>(func_ptr)(args_owned[0], args_owned[1], args_owned[2]);
+            break;
+        case 4:
+            result = reinterpret_cast<Fn4>(func_ptr)(args_owned[0], args_owned[1], args_owned[2], args_owned[3]);
+            break;
+        case 5:
+            result = reinterpret_cast<Fn5>(func_ptr)(args_owned[0], args_owned[1], args_owned[2], args_owned[3],
+                                                     args_owned[4]);
+            break;
         }
         delete[] args_owned;
         ctx->result = result;
@@ -230,7 +244,8 @@ extern "C" double flux_thread_self()
 
 // --- Channels (MPSC: multi-producer, single-consumer) ---
 
-struct Channel {
+struct Channel
+{
     std::queue<double> queue;
     std::mutex mtx;
     std::condition_variable cv;
@@ -248,7 +263,8 @@ extern "C" void flux_chan_send(double chan, double val)
     auto* ch = reinterpret_cast<Channel*>(jit_bitcast<uintptr_t>(chan));
     {
         std::lock_guard<std::mutex> lock(ch->mtx);
-        if (ch->closed) return;
+        if (ch->closed)
+            return;
         ch->queue.push(val);
     }
     ch->cv.notify_one();

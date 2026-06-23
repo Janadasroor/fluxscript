@@ -55,54 +55,53 @@ struct UnitDimensions
     static int8_t sat_add(int8_t a, int8_t b)
     {
         int sum = static_cast<int>(a) + static_cast<int>(b);
-        if (sum > 127) return 127;
-        if (sum < -128) return -128;
+        if (sum > 127)
+            return 127;
+        if (sum < -128)
+            return -128;
         return static_cast<int8_t>(sum);
     }
 
     static int8_t sat_sub(int8_t a, int8_t b)
     {
         int diff = static_cast<int>(a) - static_cast<int>(b);
-        if (diff > 127) return 127;
-        if (diff < -128) return -128;
+        if (diff > 127)
+            return 127;
+        if (diff < -128)
+            return -128;
         return static_cast<int8_t>(diff);
     }
 
     static int8_t sat_mul(int8_t a, int b)
     {
         long long prod = static_cast<long long>(a) * static_cast<long long>(b);
-        if (prod > 127) return 127;
-        if (prod < -128) return -128;
+        if (prod > 127)
+            return 127;
+        if (prod < -128)
+            return -128;
         return static_cast<int8_t>(prod);
     }
 
     UnitDimensions operator*(const UnitDimensions& other) const
     {
-        return {sat_add(mass, other.mass),
-                sat_add(length, other.length),
-                sat_add(time, other.time),
-                sat_add(current, other.current),
-                sat_add(temperature, other.temperature),
-                sat_add(amount, other.amount),
-                sat_add(luminous, other.luminous)};
+        return {
+            sat_add(mass, other.mass),        sat_add(length, other.length),           sat_add(time, other.time),
+            sat_add(current, other.current),  sat_add(temperature, other.temperature), sat_add(amount, other.amount),
+            sat_add(luminous, other.luminous)};
     }
 
     UnitDimensions operator/(const UnitDimensions& other) const
     {
-        return {sat_sub(mass, other.mass),
-                sat_sub(length, other.length),
-                sat_sub(time, other.time),
-                sat_sub(current, other.current),
-                sat_sub(temperature, other.temperature),
-                sat_sub(amount, other.amount),
-                sat_sub(luminous, other.luminous)};
+        return {
+            sat_sub(mass, other.mass),        sat_sub(length, other.length),           sat_sub(time, other.time),
+            sat_sub(current, other.current),  sat_sub(temperature, other.temperature), sat_sub(amount, other.amount),
+            sat_sub(luminous, other.luminous)};
     }
 
     UnitDimensions pow(int exponent) const
     {
-        return {sat_mul(mass, exponent),       sat_mul(length, exponent),
-                sat_mul(time, exponent),       sat_mul(current, exponent),
-                sat_mul(temperature, exponent), sat_mul(amount, exponent),
+        return {sat_mul(mass, exponent),    sat_mul(length, exponent),      sat_mul(time, exponent),
+                sat_mul(current, exponent), sat_mul(temperature, exponent), sat_mul(amount, exponent),
                 sat_mul(luminous, exponent)};
     }
 

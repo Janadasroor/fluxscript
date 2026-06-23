@@ -194,7 +194,8 @@ TypedValue SchematicExprAST::codegen(CodegenContext& context)
     std::string spiceFile = getName() + ".cir";
     KiCadSchematicGenerator::generateSPICE(*this, spiceFile);
 
-    return TypedValue(llvm::ConstantFP::get(llvm::Type::getDoubleTy(context.TheContext), success ? 1.0 : 0.0), TypeKind::Double);
+    return TypedValue(llvm::ConstantFP::get(llvm::Type::getDoubleTy(context.TheContext), success ? 1.0 : 0.0),
+                      TypeKind::Double);
 }
 
 TypedValue ExportSchematicExprAST::codegen(CodegenContext& context)

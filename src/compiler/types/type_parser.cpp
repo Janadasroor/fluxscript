@@ -21,7 +21,8 @@ std::unique_ptr<StructDeclAST> Parser::ParseStructDecl()
     std::vector<std::string> GenericParams;
     if (CurTok == '[') {
         GenericParams = ParseGenericParams();
-        if (hasError()) return nullptr;
+        if (hasError())
+            return nullptr;
     }
 
     // Optional lifetime params: struct Foo<'a, 'b: 'a>
@@ -94,8 +95,7 @@ std::unique_ptr<StructDeclAST> Parser::ParseStructDecl()
             }
         }
 
-        if (CurTok != static_cast<int>(TokenType::tok_identifier) &&
-            CurTok != static_cast<int>(TokenType::tok_end)) {
+        if (CurTok != static_cast<int>(TokenType::tok_identifier) && CurTok != static_cast<int>(TokenType::tok_end)) {
             ReportError("expected field name in struct");
             return nullptr;
         }
@@ -164,7 +164,10 @@ FluxType Parser::parseTypeName(const std::vector<std::string>& genericParams,
             if (!lifetimeParams.empty()) {
                 bool found = false;
                 for (const auto& lp : lifetimeParams) {
-                    if (lp.Name == lifetime) { found = true; break; }
+                    if (lp.Name == lifetime) {
+                        found = true;
+                        break;
+                    }
                 }
                 if (!found) {
                     ReportError("lifetime '" + lifetime + "' is not declared in this scope");
@@ -201,24 +204,42 @@ FluxType Parser::parseTypeName(const std::vector<std::string>& genericParams,
     }
 
     // Keyword tokens — built-in type keywords (matrix, vector, etc.)
-    if (CurTok == static_cast<int>(TokenType::tok_type_matrix))
-        { getNextToken(); return FluxType(TypeKind::Matrix); }
-    if (CurTok == static_cast<int>(TokenType::tok_type_vector))
-        { getNextToken(); return FluxType(TypeKind::Vector); }
-    if (CurTok == static_cast<int>(TokenType::tok_type_float))
-        { getNextToken(); return FluxType(TypeKind::Float); }
-    if (CurTok == static_cast<int>(TokenType::tok_type_int))
-        { getNextToken(); return FluxType(TypeKind::Int); }
-    if (CurTok == static_cast<int>(TokenType::tok_type_bool))
-        { getNextToken(); return FluxType(TypeKind::Bool); }
-    if (CurTok == static_cast<int>(TokenType::tok_type_void))
-        { getNextToken(); return FluxType(TypeKind::Void); }
-    if (CurTok == static_cast<int>(TokenType::tok_type_complex))
-        { getNextToken(); return FluxType(TypeKind::Complex); }
-    if (CurTok == static_cast<int>(TokenType::tok_type_string))
-        { getNextToken(); return FluxType(TypeKind::String); }
-    if (CurTok == static_cast<int>(TokenType::tok_type_double))
-        { getNextToken(); return FluxType(TypeKind::Double); }
+    if (CurTok == static_cast<int>(TokenType::tok_type_matrix)) {
+        getNextToken();
+        return FluxType(TypeKind::Matrix);
+    }
+    if (CurTok == static_cast<int>(TokenType::tok_type_vector)) {
+        getNextToken();
+        return FluxType(TypeKind::Vector);
+    }
+    if (CurTok == static_cast<int>(TokenType::tok_type_float)) {
+        getNextToken();
+        return FluxType(TypeKind::Float);
+    }
+    if (CurTok == static_cast<int>(TokenType::tok_type_int)) {
+        getNextToken();
+        return FluxType(TypeKind::Int);
+    }
+    if (CurTok == static_cast<int>(TokenType::tok_type_bool)) {
+        getNextToken();
+        return FluxType(TypeKind::Bool);
+    }
+    if (CurTok == static_cast<int>(TokenType::tok_type_void)) {
+        getNextToken();
+        return FluxType(TypeKind::Void);
+    }
+    if (CurTok == static_cast<int>(TokenType::tok_type_complex)) {
+        getNextToken();
+        return FluxType(TypeKind::Complex);
+    }
+    if (CurTok == static_cast<int>(TokenType::tok_type_string)) {
+        getNextToken();
+        return FluxType(TypeKind::String);
+    }
+    if (CurTok == static_cast<int>(TokenType::tok_type_double)) {
+        getNextToken();
+        return FluxType(TypeKind::Double);
+    }
 
     // Identifier — could be built-in type name (capitalized), unit type, or generic param
     if (CurTok == static_cast<int>(TokenType::tok_identifier)) {
@@ -253,17 +274,16 @@ FluxType Parser::parseTypeName(const std::vector<std::string>& genericParams,
 
         // Check unit type names (Voltage, Current, etc.)
         FluxType unitType = FluxType::fromUnitName(typeName);
-        if (unitType.Dimensions.mass != 0 || unitType.Dimensions.length != 0 ||
-            unitType.Dimensions.time != 0 || unitType.Dimensions.current != 0 ||
-            unitType.Dimensions.temperature != 0 || unitType.Dimensions.amount != 0 ||
-            unitType.Dimensions.luminous != 0) {
+        if (unitType.Dimensions.mass != 0 || unitType.Dimensions.length != 0 || unitType.Dimensions.time != 0 ||
+            unitType.Dimensions.current != 0 || unitType.Dimensions.temperature != 0 ||
+            unitType.Dimensions.amount != 0 || unitType.Dimensions.luminous != 0) {
             return unitType;
         }
 
         // Check user-defined struct types
         if (m_knownStructTypeNames.count(typeName)) {
             FluxType t(TypeKind::UserStruct);
-            t.StructTypeId = -1;     // resolve at codegen time
+            t.StructTypeId = -1; // resolve at codegen time
             t.StructLLVMType = nullptr;
             t.GenericName = typeName; // carry name for resolution
             if (CurTok == '[')
@@ -274,7 +294,7 @@ FluxType Parser::parseTypeName(const std::vector<std::string>& genericParams,
         // Check user-defined enum types
         if (m_knownEnumTypeNames.count(typeName)) {
             FluxType t(TypeKind::UserEnum);
-            t.EnumTypeId = -1;       // resolve at codegen time
+            t.EnumTypeId = -1; // resolve at codegen time
             t.EnumLLVMType = nullptr;
             t.GenericName = typeName; // carry name for resolution
             if (CurTok == '[')
@@ -293,9 +313,8 @@ FluxType Parser::parseTypeName(const std::vector<std::string>& genericParams,
 /// ParseStructConstructExpr — parse:
 ///   TypeName { name: expr, name: expr }
 /// Called after the identifier and optional generic type args have been consumed.
-std::unique_ptr<ExprAST> Parser::ParseStructConstructExpr(
-    const std::string& TypeName,
-    const std::vector<FluxType>& GenericTypeArgs)
+std::unique_ptr<ExprAST> Parser::ParseStructConstructExpr(const std::string& TypeName,
+                                                          const std::vector<FluxType>& GenericTypeArgs)
 {
     // CurTok should be tok_lbrace already
     int line = m_lexer.getCurrentLine();
@@ -304,10 +323,8 @@ std::unique_ptr<ExprAST> Parser::ParseStructConstructExpr(
 
     std::map<std::string, std::unique_ptr<ExprAST>> FieldValues;
 
-    while (CurTok != static_cast<int>(TokenType::tok_rbrace) &&
-           CurTok != static_cast<int>(TokenType::tok_eof)) {
-        if (CurTok != static_cast<int>(TokenType::tok_identifier) &&
-            CurTok != static_cast<int>(TokenType::tok_end)) {
+    while (CurTok != static_cast<int>(TokenType::tok_rbrace) && CurTok != static_cast<int>(TokenType::tok_eof)) {
+        if (CurTok != static_cast<int>(TokenType::tok_identifier) && CurTok != static_cast<int>(TokenType::tok_end)) {
             ReportError("expected field name in struct constructor");
             return nullptr;
         }
@@ -340,8 +357,7 @@ std::unique_ptr<ExprAST> Parser::ParseStructConstructExpr(
     }
     getNextToken(); // eat }
 
-    auto result = std::make_unique<StructConstructExprAST>(
-        TypeName, -1, std::move(FieldValues), GenericTypeArgs);
+    auto result = std::make_unique<StructConstructExprAST>(TypeName, -1, std::move(FieldValues), GenericTypeArgs);
     result->setLocation(line, col);
     return result;
 }
@@ -354,8 +370,7 @@ std::unique_ptr<ExprAST> Parser::ParseStructConstructExpr(
 ///   end
 /// or:
 ///   enum Name { Variant, Variant(Type), Variant { field: Type } }
-std::unique_ptr<EnumDeclAST> Parser::ParseEnumDecl(
-    std::vector<std::unique_ptr<StructDeclAST>>* anonStructs)
+std::unique_ptr<EnumDeclAST> Parser::ParseEnumDecl(std::vector<std::unique_ptr<StructDeclAST>>* anonStructs)
 {
     getNextToken(); // eat enum
 
@@ -370,7 +385,8 @@ std::unique_ptr<EnumDeclAST> Parser::ParseEnumDecl(
     std::vector<std::string> GenericParams;
     if (CurTok == '[') {
         GenericParams = ParseGenericParams();
-        if (hasError()) return nullptr;
+        if (hasError())
+            return nullptr;
     }
 
     // Optional ~Copy annotation
@@ -400,8 +416,7 @@ std::unique_ptr<EnumDeclAST> Parser::ParseEnumDecl(
             if (CurTok == static_cast<int>(TokenType::tok_rbrace))
                 break;
         } else {
-            if (CurTok == static_cast<int>(TokenType::tok_end) ||
-                CurTok == static_cast<int>(TokenType::tok_eof))
+            if (CurTok == static_cast<int>(TokenType::tok_end) || CurTok == static_cast<int>(TokenType::tok_eof))
                 break;
         }
 
@@ -446,8 +461,7 @@ std::unique_ptr<EnumDeclAST> Parser::ParseEnumDecl(
                     Payload.GenericName = anonName;
 
                     if (anonStructs) {
-                        anonStructs->push_back(
-                            std::make_unique<StructDeclAST>(anonName, std::move(fields)));
+                        anonStructs->push_back(std::make_unique<StructDeclAST>(anonName, std::move(fields)));
                     }
 
                     Variants.push_back(VariantName);
@@ -512,8 +526,7 @@ std::unique_ptr<EnumDeclAST> Parser::ParseEnumDecl(
             Payload.GenericName = anonName;
 
             if (anonStructs) {
-                anonStructs->push_back(
-                    std::make_unique<StructDeclAST>(anonName, std::move(fields)));
+                anonStructs->push_back(std::make_unique<StructDeclAST>(anonName, std::move(fields)));
             }
         }
 
@@ -595,23 +608,23 @@ std::unique_ptr<TraitDeclAST> Parser::ParseTraitDecl()
         getNextToken(); // eat {
 
     auto isBlockEnd = [&]() {
-        if (useBraceBlock) return CurTok == static_cast<int>(TokenType::tok_rbrace);
-        return CurTok == static_cast<int>(TokenType::tok_end) ||
-               CurTok == static_cast<int>(TokenType::tok_eof);
+        if (useBraceBlock)
+            return CurTok == static_cast<int>(TokenType::tok_rbrace);
+        return CurTok == static_cast<int>(TokenType::tok_end) || CurTok == static_cast<int>(TokenType::tok_eof);
     };
 
     std::vector<std::string> AssociatedTypeNames;
 
     while (!isBlockEnd()) {
         if (CurTok == static_cast<int>(TokenType::tok_identifier) && m_lexer.IdentifierStr == "type") {
-                getNextToken(); // eat type
-                if (CurTok != static_cast<int>(TokenType::tok_identifier)) {
-                    ReportError("expected associated type name after 'type' in trait");
-                    return nullptr;
-                }
-                AssociatedTypeNames.push_back(m_lexer.IdentifierStr);
-                getNextToken();
-            } else if (CurTok == static_cast<int>(TokenType::tok_def)) {
+            getNextToken(); // eat type
+            if (CurTok != static_cast<int>(TokenType::tok_identifier)) {
+                ReportError("expected associated type name after 'type' in trait");
+                return nullptr;
+            }
+            AssociatedTypeNames.push_back(m_lexer.IdentifierStr);
+            getNextToken();
+        } else if (CurTok == static_cast<int>(TokenType::tok_def)) {
             getNextToken(); // eat def
             if (CurTok != static_cast<int>(TokenType::tok_identifier)) {
                 ReportError("expected method name in trait");
@@ -623,8 +636,8 @@ std::unique_ptr<TraitDeclAST> Parser::ParseTraitDecl()
             // Temporarily add trait name + associated types as valid generic params for method signatures
             std::vector<std::string> savedGenericParams = m_activeGenericParams;
             m_activeGenericParams.push_back(Name);
-            m_activeGenericParams.insert(m_activeGenericParams.end(),
-                AssociatedTypeNames.begin(), AssociatedTypeNames.end());
+            m_activeGenericParams.insert(m_activeGenericParams.end(), AssociatedTypeNames.begin(),
+                                         AssociatedTypeNames.end());
 
             // Parse parameter list (name: Type, ...)
             std::vector<std::pair<std::string, FluxType>> Args;
@@ -758,9 +771,9 @@ std::unique_ptr<ImplDeclAST> Parser::ParseImplDecl()
 
     // Helper lambda: check if at block terminator
     auto isImplEnd = [&]() {
-        if (useBraceBlock) return CurTok == static_cast<int>(TokenType::tok_rbrace);
-        return CurTok == static_cast<int>(TokenType::tok_end) ||
-               CurTok == static_cast<int>(TokenType::tok_eof);
+        if (useBraceBlock)
+            return CurTok == static_cast<int>(TokenType::tok_rbrace);
+        return CurTok == static_cast<int>(TokenType::tok_end) || CurTok == static_cast<int>(TokenType::tok_eof);
     };
 
     auto expectImplEnd = [&]() -> bool {
@@ -808,8 +821,7 @@ std::unique_ptr<ImplDeclAST> Parser::ParseImplDecl()
                     return nullptr;
                 }
                 Methods.push_back(std::move(Method));
-            } else if (CurTok == static_cast<int>(TokenType::tok_identifier) &&
-                       m_lexer.IdentifierStr == "type") {
+            } else if (CurTok == static_cast<int>(TokenType::tok_identifier) && m_lexer.IdentifierStr == "type") {
                 getNextToken(); // eat type
                 if (CurTok != static_cast<int>(TokenType::tok_identifier)) {
                     ReportError("expected associated type name after 'type' in impl");
@@ -899,7 +911,8 @@ bool Parser::ParseClassDecl(std::unique_ptr<StructDeclAST>* classStruct, std::un
     std::vector<std::string> GenericParams;
     if (CurTok == '[') {
         GenericParams = ParseGenericParams();
-        if (hasError()) return false;
+        if (hasError())
+            return false;
     }
 
     // Optional inheritance : Parent
@@ -923,8 +936,7 @@ bool Parser::ParseClassDecl(std::unique_ptr<StructDeclAST>* classStruct, std::un
     std::vector<std::pair<std::string, FluxType>> Fields;
     std::vector<std::unique_ptr<FunctionAST>> Methods;
 
-    while (CurTok != static_cast<int>(TokenType::tok_rbrace) &&
-           CurTok != static_cast<int>(TokenType::tok_eof)) {
+    while (CurTok != static_cast<int>(TokenType::tok_rbrace) && CurTok != static_cast<int>(TokenType::tok_eof)) {
         if (CurTok == static_cast<int>(TokenType::tok_def)) {
             auto Method = ParseDefinition();
             if (!Method)
@@ -941,7 +953,7 @@ bool Parser::ParseClassDecl(std::unique_ptr<StructDeclAST>* classStruct, std::un
             }
             getNextToken();
 
-        Fields.emplace_back(FieldName, parseTypeName(GenericParams));
+            Fields.emplace_back(FieldName, parseTypeName(GenericParams));
 
             if (CurTok == ';') {
                 getNextToken(); // optional semicolon
@@ -979,4 +991,3 @@ bool Parser::ParseClassDecl(std::unique_ptr<StructDeclAST>* classStruct, std::un
     return true;
 }
 } // namespace Flux
-

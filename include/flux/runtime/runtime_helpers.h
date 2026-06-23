@@ -19,8 +19,7 @@
 #include <cstring>
 #include <type_traits>
 
-template <typename To, typename From>
-inline To jit_bitcast(const From& src) noexcept
+template <typename To, typename From> inline To jit_bitcast(const From& src) noexcept
 {
     static_assert(sizeof(To) == sizeof(From), "bitcast sizes must match");
     To dst;

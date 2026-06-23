@@ -1336,9 +1336,17 @@ int Lexer::peekToken()
 
 Lexer::SavedState Lexer::saveState() const
 {
-    return {m_pos, m_tokenStart, m_lastChar, m_line, m_column,
-            m_currentTokenLine, m_currentTokenColumn, m_lineStart,
-            m_currentTokenOffset, m_currentTokenLength, m_errors};
+    return {m_pos,
+            m_tokenStart,
+            m_lastChar,
+            m_line,
+            m_column,
+            m_currentTokenLine,
+            m_currentTokenColumn,
+            m_lineStart,
+            m_currentTokenOffset,
+            m_currentTokenLength,
+            m_errors};
 }
 
 void Lexer::restoreState(const SavedState& state)

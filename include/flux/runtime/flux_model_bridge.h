@@ -26,8 +26,7 @@ extern "C" {
 /*      void model_fn(double* voltages, double* currents,              */
 /*                    double* jacobian, int num_pins);                 */
 /* ------------------------------------------------------------------ */
-void* flux_compile_model(const char* source, const char* func_name,
-                         int num_pins, const char** error);
+void* flux_compile_model(const char* source, const char* func_name, int num_pins, const char** error);
 
 /* ------------------------------------------------------------------ */
 /*  flux_compile_model_v2 — extended API                               */
@@ -85,17 +84,16 @@ void* flux_compile_model(const char* source, const char* func_name,
 /*    indices N..N+N*N-1:      Jacobian in row-major order            */
 /*                              J(0,0), J(0,1), ..., J(N-1,N-1)       */
 /* ------------------------------------------------------------------ */
-typedef struct {
-    void*  fn_ptr;       // NULL on error
-    int    error_line;   // 0 if unknown
-    int    error_col;    // 0 if unknown
-    char*  error_msg;    // strdup'd — caller must free with flux_free_error
+typedef struct
+{
+    void* fn_ptr;    // NULL on error
+    int error_line;  // 0 if unknown
+    int error_col;   // 0 if unknown
+    char* error_msg; // strdup'd — caller must free with flux_free_error
 } FluxCompileResult;
 
-FluxCompileResult flux_compile_model_v2(
-    const char* source, const char* func_name,
-    int num_pins, int num_params,
-    const char* include_path);
+FluxCompileResult flux_compile_model_v2(const char* source, const char* func_name, int num_pins, int num_params,
+                                        const char* include_path);
 
 /* Free the error_msg string returned by flux_compile_model_v2 */
 void flux_free_error(char* error_msg);

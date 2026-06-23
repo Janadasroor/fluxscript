@@ -76,24 +76,24 @@ struct UnitDimensions
 // Type system for explicit typing
 enum class TypeKind
 {
-    Auto,         // Inferred type
-    Double,       // Default type (double precision float)
-    Float,        // Single precision float
-    Int,          // Integer
-    Bool,         // Boolean
-    Void,         // Void (for return types)
-    Complex,      // Complex number (double complex)
-    String,       // String (i8*)
-    Matrix,       // Matrix { double*, i32, i32 }
-    Vector,       // Vector { double*, i32 }
-    Symbolic,     // Symbolic expression handle (double/uintptr_t)
-    Fixed,        // Fixed-point integer (Q format)
+    Auto,          // Inferred type
+    Double,        // Default type (double precision float)
+    Float,         // Single precision float
+    Int,           // Integer
+    Bool,          // Boolean
+    Void,          // Void (for return types)
+    Complex,       // Complex number (double complex)
+    String,        // String (i8*)
+    Matrix,        // Matrix { double*, i32, i32 }
+    Vector,        // Vector { double*, i32 }
+    Symbolic,      // Symbolic expression handle (double/uintptr_t)
+    Fixed,         // Fixed-point integer (Q format)
     ComplexMatrix, // Complex Matrix { std::complex<double>*, i32, i32 }
-    Generic,      // Generic type parameter placeholder (e.g., T in def foo[T](x: T))
-    UserStruct,   // User-defined struct type (e.g., struct Vec2 { x: Double, y: Double })
-    UserEnum,     // User-defined enum type (e.g., enum Color { Red, Green, Blue })
-    Ref,          // Reference type: &T, &'a T, &mut T
-    TraitObject   // Trait object type: dyn TraitName (fat pointer: data_ptr + vtable_ptr)
+    Generic,       // Generic type parameter placeholder (e.g., T in def foo[T](x: T))
+    UserStruct,    // User-defined struct type (e.g., struct Vec2 { x: Double, y: Double })
+    UserEnum,      // User-defined enum type (e.g., enum Color { Red, Green, Blue })
+    Ref,           // Reference type: &T, &'a T, &mut T
+    TraitObject    // Trait object type: dyn TraitName (fat pointer: data_ptr + vtable_ptr)
 };
 
 class FluxType
@@ -101,14 +101,14 @@ class FluxType
 public:
     TypeKind Kind;
     UnitDimensions Dimensions;
-    int Bits = 32;  // Total bits for Fixed
-    int Fract = 16; // Fractional bits for Fixed
+    int Bits = 32;           // Total bits for Fixed
+    int Fract = 16;          // Fractional bits for Fixed
     std::string GenericName; // Type parameter name for TypeKind::Generic
     int StructTypeId = 0;    // Struct type ID for TypeKind::UserStruct (index into CodegenContext.StructTypes)
     llvm::Type* StructLLVMType = nullptr; // LLVM struct type pointer for UserStruct (cached)
-    int EnumTypeId = 0;      // Enum type ID for TypeKind::UserEnum (index into CodegenContext.EnumTypes)
-    llvm::Type* EnumLLVMType = nullptr; // LLVM tagged union type for UserEnum with payload
-    int TraitObjectTypeId = 0;     // Trait ID for TypeKind::TraitObject (index into CodegenContext.Traits)
+    int EnumTypeId = 0;                   // Enum type ID for TypeKind::UserEnum (index into CodegenContext.EnumTypes)
+    llvm::Type* EnumLLVMType = nullptr;   // LLVM tagged union type for UserEnum with payload
+    int TraitObjectTypeId = 0;            // Trait ID for TypeKind::TraitObject (index into CodegenContext.Traits)
     llvm::Type* TraitObjectVTableTy = nullptr; // LLVM vtable struct type for this trait object
     // Generic type args for UserStruct/UserEnum (e.g., [Double, Double] for Result[Double, Double])
     std::vector<FluxType> GenericArgs;
@@ -120,24 +120,33 @@ public:
     // Reference type fields (TypeKind::Ref)
     FluxType* RefInnerType = nullptr;
     bool RefIsMut = false;
-    std::string Lifetime;   // e.g., "a" for &'a T (empty = elided)
+    std::string Lifetime; // e.g., "a" for &'a T (empty = elided)
 
     // Copy semantics flag: true = Copy by value (default), false = ~Copy (move-only)
     bool isCopy = true;
 
-    FluxType(TypeKind K = TypeKind::Double, UnitDimensions D = {}) : Kind(K), Dimensions(D), VecElementType(nullptr), RefInnerType(nullptr) {}
+    FluxType(TypeKind K = TypeKind::Double, UnitDimensions D = {})
+        : Kind(K), Dimensions(D), VecElementType(nullptr), RefInnerType(nullptr)
+    {
+    }
 
-    FluxType(TypeKind K, int bits, int fract) : Kind(K), Bits(bits), Fract(fract), VecElementType(nullptr), RefInnerType(nullptr) {}
+    FluxType(TypeKind K, int bits, int fract)
+        : Kind(K), Bits(bits), Fract(fract), VecElementType(nullptr), RefInnerType(nullptr)
+    {
+    }
 
     // Destructor, copy/move for RefInnerType and VecElementType management
-    ~FluxType() { delete RefInnerType; delete VecElementType; }
+    ~FluxType()
+    {
+        delete RefInnerType;
+        delete VecElementType;
+    }
     FluxType(const FluxType& other)
         : Kind(other.Kind), Dimensions(other.Dimensions), Bits(other.Bits), Fract(other.Fract),
           GenericName(other.GenericName), StructTypeId(other.StructTypeId), StructLLVMType(other.StructLLVMType),
-          EnumTypeId(other.EnumTypeId), EnumLLVMType(other.EnumLLVMType),
-          TraitObjectTypeId(other.TraitObjectTypeId), TraitObjectVTableTy(other.TraitObjectVTableTy),
-          GenericArgs(other.GenericArgs),
-          RefIsMut(other.RefIsMut), Lifetime(other.Lifetime), isCopy(other.isCopy)
+          EnumTypeId(other.EnumTypeId), EnumLLVMType(other.EnumLLVMType), TraitObjectTypeId(other.TraitObjectTypeId),
+          TraitObjectVTableTy(other.TraitObjectVTableTy), GenericArgs(other.GenericArgs), RefIsMut(other.RefIsMut),
+          Lifetime(other.Lifetime), isCopy(other.isCopy)
     {
         if (other.RefInnerType)
             RefInnerType = new FluxType(*other.RefInnerType);
@@ -147,11 +156,9 @@ public:
     FluxType(FluxType&& other) noexcept
         : Kind(other.Kind), Dimensions(other.Dimensions), Bits(other.Bits), Fract(other.Fract),
           GenericName(std::move(other.GenericName)), StructTypeId(other.StructTypeId),
-          StructLLVMType(other.StructLLVMType),
-          EnumTypeId(other.EnumTypeId), EnumLLVMType(other.EnumLLVMType),
+          StructLLVMType(other.StructLLVMType), EnumTypeId(other.EnumTypeId), EnumLLVMType(other.EnumLLVMType),
           TraitObjectTypeId(other.TraitObjectTypeId), TraitObjectVTableTy(other.TraitObjectVTableTy),
-          GenericArgs(std::move(other.GenericArgs)),
-          VecElementType(other.VecElementType),
+          GenericArgs(std::move(other.GenericArgs)), VecElementType(other.VecElementType),
           RefInnerType(other.RefInnerType), RefIsMut(other.RefIsMut), Lifetime(std::move(other.Lifetime)),
           isCopy(other.isCopy)
     {
@@ -161,12 +168,21 @@ public:
     FluxType& operator=(const FluxType& other)
     {
         if (this != &other) {
-            Kind = other.Kind; Dimensions = other.Dimensions; Bits = other.Bits; Fract = other.Fract;
-            GenericName = other.GenericName; StructTypeId = other.StructTypeId; StructLLVMType = other.StructLLVMType;
-            EnumTypeId = other.EnumTypeId; EnumLLVMType = other.EnumLLVMType;
-            TraitObjectTypeId = other.TraitObjectTypeId; TraitObjectVTableTy = other.TraitObjectVTableTy;
+            Kind = other.Kind;
+            Dimensions = other.Dimensions;
+            Bits = other.Bits;
+            Fract = other.Fract;
+            GenericName = other.GenericName;
+            StructTypeId = other.StructTypeId;
+            StructLLVMType = other.StructLLVMType;
+            EnumTypeId = other.EnumTypeId;
+            EnumLLVMType = other.EnumLLVMType;
+            TraitObjectTypeId = other.TraitObjectTypeId;
+            TraitObjectVTableTy = other.TraitObjectVTableTy;
             GenericArgs = other.GenericArgs;
-            RefIsMut = other.RefIsMut; Lifetime = other.Lifetime; isCopy = other.isCopy;
+            RefIsMut = other.RefIsMut;
+            Lifetime = other.Lifetime;
+            isCopy = other.isCopy;
             delete RefInnerType;
             RefInnerType = other.RefInnerType ? new FluxType(*other.RefInnerType) : nullptr;
             delete VecElementType;
@@ -177,16 +193,25 @@ public:
     FluxType& operator=(FluxType&& other) noexcept
     {
         if (this != &other) {
-            delete RefInnerType; delete VecElementType;
-            Kind = other.Kind; Dimensions = other.Dimensions; Bits = other.Bits; Fract = other.Fract;
-            GenericName = std::move(other.GenericName); StructTypeId = other.StructTypeId;
+            delete RefInnerType;
+            delete VecElementType;
+            Kind = other.Kind;
+            Dimensions = other.Dimensions;
+            Bits = other.Bits;
+            Fract = other.Fract;
+            GenericName = std::move(other.GenericName);
+            StructTypeId = other.StructTypeId;
             StructLLVMType = other.StructLLVMType;
-            EnumTypeId = other.EnumTypeId; EnumLLVMType = other.EnumLLVMType;
-            TraitObjectTypeId = other.TraitObjectTypeId; TraitObjectVTableTy = other.TraitObjectVTableTy;
+            EnumTypeId = other.EnumTypeId;
+            EnumLLVMType = other.EnumLLVMType;
+            TraitObjectTypeId = other.TraitObjectTypeId;
+            TraitObjectVTableTy = other.TraitObjectVTableTy;
             GenericArgs = std::move(other.GenericArgs);
             VecElementType = other.VecElementType;
             RefInnerType = other.RefInnerType;
-            RefIsMut = other.RefIsMut; Lifetime = std::move(other.Lifetime); isCopy = other.isCopy;
+            RefIsMut = other.RefIsMut;
+            Lifetime = std::move(other.Lifetime);
+            isCopy = other.isCopy;
             other.RefInnerType = nullptr;
             other.VecElementType = nullptr;
         }
@@ -290,7 +315,7 @@ public:
         case TypeKind::TraitObject:
             // Fat pointer: { i8* (data), i8* (vtable) } — two pointers
             return llvm::StructType::get(Context,
-                {llvm::PointerType::get(Context, 0), llvm::PointerType::get(Context, 0)});
+                                         {llvm::PointerType::get(Context, 0), llvm::PointerType::get(Context, 0)});
         case TypeKind::Double:
         default:
             return llvm::Type::getDoubleTy(Context);

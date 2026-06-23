@@ -1,10 +1,10 @@
 /* Copyright 2026 Janada Sroor
  SPDX-License-Identifier: Apache-2.0 */
 
-#include "flux/tooling/lsp_server.h"
 #include "flux/compiler/ast.h"
 #include "flux/compiler/lexer.h"
 #include "flux/compiler/parser.h"
+#include "flux/tooling/lsp_server.h"
 #include <algorithm>
 #include <sstream>
 #include <string>
@@ -60,24 +60,24 @@ std::string LspServer::getSemanticTokensLegend()
 
 // Token type indices matching the legend
 namespace {
-    const int TOK_TYPE = 1;
-    const int TOK_CLASS = 2;
-    const int TOK_ENUM = 3;
-    const int TOK_INTERFACE = 4;
-    const int TOK_STRUCT = 5;
-    const int TOK_PARAMETER = 7;
-    const int TOK_VARIABLE = 8;
-    const int TOK_FUNCTION = 11;
-    const int TOK_METHOD = 12;
-    const int TOK_KEYWORD = 13;
-    const int TOK_COMMENT = 16;
-    const int TOK_STRING = 17;
-    const int TOK_NUMBER = 18;
-    const int TOK_OPERATOR = 19;
+const int TOK_TYPE = 1;
+const int TOK_CLASS = 2;
+const int TOK_ENUM = 3;
+const int TOK_INTERFACE = 4;
+const int TOK_STRUCT = 5;
+const int TOK_PARAMETER = 7;
+const int TOK_VARIABLE = 8;
+const int TOK_FUNCTION = 11;
+const int TOK_METHOD = 12;
+const int TOK_KEYWORD = 13;
+const int TOK_COMMENT = 16;
+const int TOK_STRING = 17;
+const int TOK_NUMBER = 18;
+const int TOK_OPERATOR = 19;
 
-    const int MOD_DECLARATION = 1;
-    const int MOD_DEFINITION = 2;
-}
+const int MOD_DECLARATION = 1;
+const int MOD_DEFINITION = 2;
+} // namespace
 
 LspServer::SemanticTokensResult LspServer::getSemanticTokens(const std::string& uri)
 {
@@ -110,12 +110,13 @@ LspServer::SemanticTokensResult LspServer::getSemanticTokens(const std::string& 
             len = 1;
             if (startCol >= 0 && static_cast<size_t>(startCol) < lineText.size()) {
                 size_t end = static_cast<size_t>(startCol);
-                while (end < lineText.size() && !isspace(lineText[end]) &&
-                       lineText[end] != ')' && lineText[end] != '}' && lineText[end] != ']' &&
-                       lineText[end] != ';' && lineText[end] != ',' && lineText[end] != ':')
+                while (end < lineText.size() && !isspace(lineText[end]) && lineText[end] != ')' &&
+                       lineText[end] != '}' && lineText[end] != ']' && lineText[end] != ';' && lineText[end] != ',' &&
+                       lineText[end] != ':')
                     end++;
                 len = static_cast<int>(end - startCol);
-                if (len < 1) len = 1;
+                if (len < 1)
+                    len = 1;
             }
         }
 
@@ -132,8 +133,7 @@ LspServer::SemanticTokensResult LspServer::getSemanticTokens(const std::string& 
             token == static_cast<int>(Flux::TokenType::tok_else) ||
             token == static_cast<int>(Flux::TokenType::tok_for) ||
             token == static_cast<int>(Flux::TokenType::tok_while) ||
-            token == static_cast<int>(Flux::TokenType::tok_do) ||
-            token == static_cast<int>(Flux::TokenType::tok_in) ||
+            token == static_cast<int>(Flux::TokenType::tok_do) || token == static_cast<int>(Flux::TokenType::tok_in) ||
             token == static_cast<int>(Flux::TokenType::tok_return) ||
             token == static_cast<int>(Flux::TokenType::tok_match) ||
             token == static_cast<int>(Flux::TokenType::tok_case) ||
@@ -148,13 +148,20 @@ LspServer::SemanticTokensResult LspServer::getSemanticTokens(const std::string& 
         } else if (token == static_cast<int>(Flux::TokenType::tok_identifier)) {
             std::string id = lexer.IdentifierStr;
             // Check if it's a type keyword
-            if (id == "struct") typeIdx = TOK_STRUCT;
-            else if (id == "class") typeIdx = TOK_CLASS;
-            else if (id == "enum") typeIdx = TOK_ENUM;
-            else if (id == "trait") typeIdx = TOK_INTERFACE;
-            else if (id == "impl") typeIdx = TOK_KEYWORD;
-            else if (id == "fn") typeIdx = TOK_KEYWORD;
-            else if (id == "true" || id == "false") typeIdx = TOK_KEYWORD;
+            if (id == "struct")
+                typeIdx = TOK_STRUCT;
+            else if (id == "class")
+                typeIdx = TOK_CLASS;
+            else if (id == "enum")
+                typeIdx = TOK_ENUM;
+            else if (id == "trait")
+                typeIdx = TOK_INTERFACE;
+            else if (id == "impl")
+                typeIdx = TOK_KEYWORD;
+            else if (id == "fn")
+                typeIdx = TOK_KEYWORD;
+            else if (id == "true" || id == "false")
+                typeIdx = TOK_KEYWORD;
             else if (id == "public" || id == "private" || id == "protected") {
                 typeIdx = TOK_KEYWORD;
                 modBits |= MOD_DECLARATION;
@@ -165,9 +172,8 @@ LspServer::SemanticTokensResult LspServer::getSemanticTokens(const std::string& 
             typeIdx = TOK_NUMBER;
         } else if (token == static_cast<int>(Flux::TokenType::tok_string)) {
             typeIdx = TOK_STRING;
-        } else if (token == '+' || token == '-' || token == '*' || token == '/' ||
-                   token == '%' || token == '=' || token == '<' || token == '>' ||
-                   token == '!' || token == '&' || token == '|' || token == '^' ||
+        } else if (token == '+' || token == '-' || token == '*' || token == '/' || token == '%' || token == '=' ||
+                   token == '<' || token == '>' || token == '!' || token == '&' || token == '|' || token == '^' ||
                    token == '~') {
             typeIdx = TOK_OPERATOR;
         }
@@ -218,7 +224,8 @@ std::string LspServer::handleTextDocumentInlayHint(const std::string& params)
     std::ostringstream oss;
     oss << "[";
     for (size_t i = 0; i < hints.size(); ++i) {
-        if (i > 0) oss << ",";
+        if (i > 0)
+            oss << ",";
         oss << R"({"position":{"line":)" << hints[i].position.line;
         oss << R"(,"character":)" << hints[i].position.character << "},";
         oss << R"("label":")" << jsonEscape(hints[i].label) << "\"";
@@ -238,7 +245,8 @@ std::vector<LspServer::InlayHint> LspServer::getInlayHints(const std::string& ur
 {
     std::vector<InlayHint> result;
     auto* doc = getDocument(uri);
-    if (!doc) return result;
+    if (!doc)
+        return result;
 
     const std::string& text = doc->text;
     int startLine = range.start.line;
@@ -261,7 +269,8 @@ std::vector<LspServer::InlayHint> LspServer::getInlayHints(const std::string& ur
                         size_t eqPos = line.find(" = ", varPos);
                         if (eqPos != std::string::npos) {
                             std::string rhs = line.substr(eqPos + 3);
-                            while (!rhs.empty() && rhs[0] == ' ') rhs.erase(0, 1);
+                            while (!rhs.empty() && rhs[0] == ' ')
+                                rhs.erase(0, 1);
                             std::string inferredType;
                             if (!rhs.empty() && (isdigit((unsigned char)rhs[0]) || rhs[0] == '.')) {
                                 inferredType = "double";
@@ -314,7 +323,8 @@ std::string LspServer::handleTextDocumentMoniker(const std::string& params)
     std::ostringstream oss;
     oss << "[";
     for (size_t i = 0; i < monikers.size(); ++i) {
-        if (i > 0) oss << ",";
+        if (i > 0)
+            oss << ",";
         oss << R"({"scheme":")" << jsonEscape(monikers[i].scheme) << "\"";
         oss << R"(,"identifier":")" << jsonEscape(monikers[i].identifier) << "\"";
         if (monikers[i].kind > 0) {
@@ -330,17 +340,22 @@ std::vector<LspServer::Moniker> LspServer::getMonikers(const std::string& uri, P
 {
     std::vector<Moniker> result;
     auto* doc = getDocument(uri);
-    if (!doc) return result;
+    if (!doc)
+        return result;
 
     std::string word = doc->getWordAtPosition(pos);
-    if (word.empty()) return result;
+    if (word.empty())
+        return result;
 
     auto& symbols = m_symbolTables[uri];
-    if (symbols.empty()) symbols = buildSymbolTable(uri);
+    if (symbols.empty())
+        symbols = buildSymbolTable(uri);
 
     for (const auto& sym : symbols) {
-        if (sym.name != word) continue;
-        if (pos.line < sym.range.start.line || pos.line > sym.range.end.line) continue;
+        if (sym.name != word)
+            continue;
+        if (pos.line < sym.range.start.line || pos.line > sym.range.end.line)
+            continue;
         Moniker m;
         m.scheme = "flux";
         m.identifier = sym.name;
@@ -354,7 +369,6 @@ std::vector<LspServer::Moniker> LspServer::getMonikers(const std::string& uri, P
 // ============================================================================
 // JSON Helpers
 // ============================================================================
-
 
 } // namespace Tooling
 } // namespace Flux

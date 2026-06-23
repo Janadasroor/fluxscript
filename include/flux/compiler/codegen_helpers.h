@@ -79,9 +79,7 @@ inline void emitLocation(ExprAST* ast, CodegenContext& context)
 
     llvm::DIScope* Scope;
     if (context.LexicalBlocks.empty()) {
-        llvm::Function* F = context.Builder.GetInsertBlock()
-                                ? context.Builder.GetInsertBlock()->getParent()
-                                : nullptr;
+        llvm::Function* F = context.Builder.GetInsertBlock() ? context.Builder.GetInsertBlock()->getParent() : nullptr;
         if (F && F->getSubprogram())
             Scope = F->getSubprogram();
         else
@@ -193,10 +191,8 @@ inline bool shouldReturnBySRet(const FluxType& type, CodegenContext& context)
     return false;
 }
 
-inline bool checkTraitBounds(
-    const std::map<std::string, std::vector<std::string>>& genericParamBounds,
-    const std::map<std::string, FluxType>& typeMap,
-    CodegenContext& context)
+inline bool checkTraitBounds(const std::map<std::string, std::vector<std::string>>& genericParamBounds,
+                             const std::map<std::string, FluxType>& typeMap, CodegenContext& context)
 {
     for (const auto& [paramName, boundTraits] : genericParamBounds) {
         auto typeIt = typeMap.find(paramName);
@@ -213,22 +209,29 @@ inline bool checkTraitBounds(
             int id = concreteType.EnumTypeId;
             if (id >= 0 && id < static_cast<int>(context.EnumTypes.size()))
                 typeName = context.EnumTypes[id].Name;
-        } else if (concreteType.Kind == TypeKind::Double) typeName = "Double";
-        else if (concreteType.Kind == TypeKind::Int) typeName = "Int";
-        else if (concreteType.Kind == TypeKind::Float) typeName = "Float";
-        else if (concreteType.Kind == TypeKind::Bool) typeName = "Bool";
-        else if (concreteType.Kind == TypeKind::String) typeName = "String";
-        else if (concreteType.Kind == TypeKind::Matrix) typeName = "Matrix";
-        else if (concreteType.Kind == TypeKind::Complex) typeName = "Complex";
-        else if (concreteType.Kind == TypeKind::Vector) typeName = "Vector";
+        } else if (concreteType.Kind == TypeKind::Double)
+            typeName = "Double";
+        else if (concreteType.Kind == TypeKind::Int)
+            typeName = "Int";
+        else if (concreteType.Kind == TypeKind::Float)
+            typeName = "Float";
+        else if (concreteType.Kind == TypeKind::Bool)
+            typeName = "Bool";
+        else if (concreteType.Kind == TypeKind::String)
+            typeName = "String";
+        else if (concreteType.Kind == TypeKind::Matrix)
+            typeName = "Matrix";
+        else if (concreteType.Kind == TypeKind::Complex)
+            typeName = "Complex";
+        else if (concreteType.Kind == TypeKind::Vector)
+            typeName = "Vector";
 
         if (typeName.empty())
             continue;
 
         for (const auto& traitName : boundTraits) {
             if (context.TraitImplementations.count({traitName, typeName}) == 0) {
-                llvm::errs() << "error: type '" << typeName << "' does not implement trait '"
-                             << traitName << "'\n";
+                llvm::errs() << "error: type '" << typeName << "' does not implement trait '" << traitName << "'\n";
                 return false;
             }
         }
@@ -238,7 +241,8 @@ inline bool checkTraitBounds(
 
 // Forward declarations
 std::string buildGenericTypeSuffix(const std::vector<FluxType>& genericArgs, CodegenContext& context);
-std::string specializeGenericEnum(const std::string& enumName, const std::vector<FluxType>& genericArgs, CodegenContext& context);
+std::string specializeGenericEnum(const std::string& enumName, const std::vector<FluxType>& genericArgs,
+                                  CodegenContext& context);
 
 inline void ensureGenericTypeArgSpecialized(FluxType& typeArg, CodegenContext& context)
 {
@@ -247,9 +251,11 @@ inline void ensureGenericTypeArgSpecialized(FluxType& typeArg, CodegenContext& c
             ensureGenericTypeArgSpecialized(nestedArg, context);
 
         auto genIt = context.GenericStructs.find(typeArg.GenericName);
-        if (genIt == context.GenericStructs.end()) return;
+        if (genIt == context.GenericStructs.end())
+            return;
         const auto& genericParams = genIt->second->getGenericParams();
-        if (typeArg.GenericArgs.size() != genericParams.size()) return;
+        if (typeArg.GenericArgs.size() != genericParams.size())
+            return;
 
         std::string suffix = "_" + buildGenericTypeSuffix(typeArg.GenericArgs, context);
         std::string resolvedName = typeArg.GenericName + suffix;

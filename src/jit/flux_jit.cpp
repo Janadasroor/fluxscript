@@ -48,19 +48,37 @@ extern "C" void println_string(const char*);
 #include <sys/mman.h>
 #include <unistd.h>
 #endif
-#include <cstdint>
 #include <cmath>
+#include <cstdint>
 
 // Math wrapper functions for JIT symbol resolution on platforms where
 // the CRT may not export them as dlsym-able symbols (e.g. MSVC Windows).
 namespace {
-double flux_exp2_wrapper(double x) { return std::exp2(x); }
-double flux_tgamma_wrapper(double x) { return std::tgamma(x); }
-double flux_lgamma_wrapper(double x) { return std::lgamma(x); }
-double flux_cbrt_wrapper(double x) { return std::cbrt(x); }
-double flux_erf_wrapper(double x) { return std::erf(x); }
-double flux_erfc_wrapper(double x) { return std::erfc(x); }
+double flux_exp2_wrapper(double x)
+{
+    return std::exp2(x);
 }
+double flux_tgamma_wrapper(double x)
+{
+    return std::tgamma(x);
+}
+double flux_lgamma_wrapper(double x)
+{
+    return std::lgamma(x);
+}
+double flux_cbrt_wrapper(double x)
+{
+    return std::cbrt(x);
+}
+double flux_erf_wrapper(double x)
+{
+    return std::erf(x);
+}
+double flux_erfc_wrapper(double x)
+{
+    return std::erfc(x);
+}
+} // namespace
 
 // Complex number helper functions (C linkage for easy JIT binding)
 extern "C" {
@@ -382,9 +400,7 @@ FluxJIT::FluxJIT(OptimizationLevel optLevel) : m_dataLayout(""), m_optLevel(optL
     if (TM)
         m_targetMachine = std::move(*TM);
 
-    auto JIT = llvm::orc::LLJITBuilder()
-                   .setJITTargetMachineBuilder(std::move(*JTMB))
-                   .create();
+    auto JIT = llvm::orc::LLJITBuilder().setJITTargetMachineBuilder(std::move(*JTMB)).create();
     if (!JIT) {
         logError(JIT.takeError(), "Failed to create LLJIT");
         return;

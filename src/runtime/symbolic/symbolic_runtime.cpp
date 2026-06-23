@@ -1,9 +1,9 @@
 /* Copyright 2026 Janada Sroor
  SPDX-License-Identifier: Apache-2.0 */
 
+#include "flux/runtime/matrix_tracker.h"
 #include "flux/runtime/runtime_helpers.h"
 #include "flux/runtime/symbolic_helpers.h"
-#include "flux/runtime/matrix_tracker.h"
 #include <Eigen/Dense>
 #include <cstdint>
 #include <cstring>

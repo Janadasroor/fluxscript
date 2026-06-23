@@ -204,13 +204,10 @@ FluxValue JITEngine::callFunction(const std::string& name, const std::vector<dou
         return 0.0;
     }
 
-    struct CallDepthGuard {
-        CallDepthGuard() {
-            flux_inc_call_depth();
-        }
-        ~CallDepthGuard() {
-            flux_dec_call_depth();
-        }
+    struct CallDepthGuard
+    {
+        CallDepthGuard() { flux_inc_call_depth(); }
+        ~CallDepthGuard() { flux_dec_call_depth(); }
     } guard;
 
     FluxType retType = m_functionReturnTypes[resolvedName];
@@ -276,7 +273,8 @@ FluxValue JITEngine::callFunction(const std::string& name, const std::vector<dou
             reinterpret_cast<void (*)(VectorRet*, double, double, double)>(fnPtr)(&r, args[0], args[1], args[2]);
             break;
         case 4:
-            reinterpret_cast<void (*)(VectorRet*, double, double, double, double)>(fnPtr)(&r, args[0], args[1], args[2], args[3]);
+            reinterpret_cast<void (*)(VectorRet*, double, double, double, double)>(fnPtr)(&r, args[0], args[1], args[2],
+                                                                                          args[3]);
             break;
         case 5:
             reinterpret_cast<void (*)(VectorRet*, double, double, double, double, double)>(fnPtr)(
@@ -302,7 +300,8 @@ FluxValue JITEngine::callFunction(const std::string& name, const std::vector<dou
             r = reinterpret_cast<VectorRet (*)(double, double, double)>(fnPtr)(args[0], args[1], args[2]);
             break;
         case 4:
-            r = reinterpret_cast<VectorRet (*)(double, double, double, double)>(fnPtr)(args[0], args[1], args[2], args[3]);
+            r = reinterpret_cast<VectorRet (*)(double, double, double, double)>(fnPtr)(args[0], args[1], args[2],
+                                                                                       args[3]);
             break;
         case 5:
             r = reinterpret_cast<VectorRet (*)(double, double, double, double, double)>(fnPtr)(

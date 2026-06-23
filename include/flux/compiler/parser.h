@@ -50,9 +50,8 @@ public:
     // User-defined types
     std::unique_ptr<StructDeclAST> ParseStructDecl();
     std::unique_ptr<ExprAST> ParseStructConstructExpr(const std::string& TypeName,
-                                                       const std::vector<FluxType>& GenericTypeArgs = {});
-    std::unique_ptr<EnumDeclAST> ParseEnumDecl(
-        std::vector<std::unique_ptr<StructDeclAST>>* anonStructs = nullptr);
+                                                      const std::vector<FluxType>& GenericTypeArgs = {});
+    std::unique_ptr<EnumDeclAST> ParseEnumDecl(std::vector<std::unique_ptr<StructDeclAST>>* anonStructs = nullptr);
     std::unique_ptr<ImplDeclAST> ParseImplDecl();
     std::unique_ptr<TraitDeclAST> ParseTraitDecl();
     bool ParseClassDecl(std::unique_ptr<StructDeclAST>* classStruct, std::unique_ptr<ImplDeclAST>* classImpl);
@@ -257,8 +256,7 @@ private:
     int GetTokPrecedence();
 
     // Generics support
-    std::vector<std::string> ParseGenericParams(
-        std::map<std::string, std::vector<std::string>>* outBounds = nullptr);
+    std::vector<std::string> ParseGenericParams(std::map<std::string, std::vector<std::string>>* outBounds = nullptr);
     std::vector<FluxType> ParseGenericTypeArgs();
 
     // Helper: parse a type name from the current token

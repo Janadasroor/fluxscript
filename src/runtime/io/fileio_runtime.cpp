@@ -75,8 +75,8 @@ extern "C" double flux_fprintf(double handle, double format_ptr, double arg)
     if (!fp || !fmt)
         return 0.0;
     // Reject dangerous format specifiers (%n writes memory, %s/%p read arbitrary memory)
-    if (std::strstr(fmt, "%n") || std::strstr(fmt, "%s") || std::strstr(fmt, "%p") ||
-        std::strstr(fmt, "%hn") || std::strstr(fmt, "%ln")) {
+    if (std::strstr(fmt, "%n") || std::strstr(fmt, "%s") || std::strstr(fmt, "%p") || std::strstr(fmt, "%hn") ||
+        std::strstr(fmt, "%ln")) {
         return 0.0;
     }
     // Use snprintf to limit output size and prevent format string exploits
@@ -102,12 +102,12 @@ extern "C" double flux_fetch_url(double url_ptr)
 
     std::string response;
     curl_easy_setopt(curl, CURLOPT_URL, url);
-    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION,
-                     +[](void* data, size_t size, size_t nmemb, std::string* buf) -> size_t {
-                         size_t total = size * nmemb;
-                         buf->append(static_cast<char*>(data), total);
-                         return total;
-                     });
+    curl_easy_setopt(
+        curl, CURLOPT_WRITEFUNCTION, +[](void* data, size_t size, size_t nmemb, std::string* buf) -> size_t {
+            size_t total = size * nmemb;
+            buf->append(static_cast<char*>(data), total);
+            return total;
+        });
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response);
     curl_easy_setopt(curl, CURLOPT_TIMEOUT, 30L);
     curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);

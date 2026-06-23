@@ -11,8 +11,8 @@
  See the License for the specific language governing permissions and
  limitations under the License. */
 
-#include "flux/runtime/runtime_helpers.h"
 #include "flux/runtime/matrix_tracker.h"
+#include "flux/runtime/runtime_helpers.h"
 #include <Eigen/Dense>
 #include <algorithm>
 #include <cmath>
@@ -166,7 +166,8 @@ extern "C" void* flux_create_range_sum(double start, double step, double end)
         return g_matrix_tracker.register_matrix(std::move(mat));
     }
     int n = (int)std::floor((end - start) / step) + 1;
-    if (n < 1) n = 1;
+    if (n < 1)
+        n = 1;
     auto mat = std::make_unique<Eigen::MatrixXd>(n, 1);
     for (int i = 0; i < n; ++i)
         (*mat)(i, 0) = start + i * step;
@@ -322,7 +323,8 @@ extern "C" void* flux_create_complex_matrix(std::complex<double>* data, int rows
     return g_matrix_tracker.register_complex_matrix(std::move(mat));
 }
 
-extern "C" void* flux_complex_matrix_mul_decomposed(void* a_ptr, int a_rows, int a_cols, void* b_ptr, int b_rows, int b_cols)
+extern "C" void* flux_complex_matrix_mul_decomposed(void* a_ptr, int a_rows, int a_cols, void* b_ptr, int b_rows,
+                                                    int b_cols)
 {
     Eigen::Map<Eigen::MatrixXcd> A(static_cast<std::complex<double>*>(a_ptr), a_rows, a_cols);
     Eigen::Map<Eigen::MatrixXcd> B(static_cast<std::complex<double>*>(b_ptr), b_rows, b_cols);
@@ -355,7 +357,8 @@ extern "C" void* flux_complex_matrix_mul(void* a_ptr, void* b_ptr)
 {
     auto* A = g_matrix_tracker.get_complex_matrix(a_ptr);
     auto* B = g_matrix_tracker.get_complex_matrix(b_ptr);
-    if (!A || !B) return nullptr;
+    if (!A || !B)
+        return nullptr;
     return g_matrix_tracker.register_complex_matrix(std::make_unique<Eigen::MatrixXcd>((*A) * (*B)));
 }
 
@@ -363,7 +366,8 @@ extern "C" void* flux_complex_matrix_add(void* a_ptr, void* b_ptr)
 {
     auto* A = g_matrix_tracker.get_complex_matrix(a_ptr);
     auto* B = g_matrix_tracker.get_complex_matrix(b_ptr);
-    if (!A || !B) return nullptr;
+    if (!A || !B)
+        return nullptr;
     return g_matrix_tracker.register_complex_matrix(std::make_unique<Eigen::MatrixXcd>((*A) + (*B)));
 }
 
@@ -371,7 +375,8 @@ extern "C" void* flux_complex_matrix_sub(void* a_ptr, void* b_ptr)
 {
     auto* A = g_matrix_tracker.get_complex_matrix(a_ptr);
     auto* B = g_matrix_tracker.get_complex_matrix(b_ptr);
-    if (!A || !B) return nullptr;
+    if (!A || !B)
+        return nullptr;
     return g_matrix_tracker.register_complex_matrix(std::make_unique<Eigen::MatrixXcd>((*A) - (*B)));
 }
 
@@ -379,117 +384,119 @@ extern "C" void* flux_complex_matrix_ew_div(void* a_ptr, void* b_ptr)
 {
     auto* A = g_matrix_tracker.get_complex_matrix(a_ptr);
     auto* B = g_matrix_tracker.get_complex_matrix(b_ptr);
-    if (!A || !B) return nullptr;
-    return g_matrix_tracker.register_complex_matrix(
-        std::make_unique<Eigen::MatrixXcd>(A->array() / B->array()));
+    if (!A || !B)
+        return nullptr;
+    return g_matrix_tracker.register_complex_matrix(std::make_unique<Eigen::MatrixXcd>(A->array() / B->array()));
 }
 
 extern "C" void* flux_complex_matrix_ew_mul(void* a_ptr, void* b_ptr)
 {
     auto* A = g_matrix_tracker.get_complex_matrix(a_ptr);
     auto* B = g_matrix_tracker.get_complex_matrix(b_ptr);
-    if (!A || !B) return nullptr;
-    return g_matrix_tracker.register_complex_matrix(
-        std::make_unique<Eigen::MatrixXcd>(A->array() * B->array()));
+    if (!A || !B)
+        return nullptr;
+    return g_matrix_tracker.register_complex_matrix(std::make_unique<Eigen::MatrixXcd>(A->array() * B->array()));
 }
 
 extern "C" void* flux_complex_matrix_add_ms(void* m_ptr, double re, double im)
 {
     auto* M = g_matrix_tracker.get_complex_matrix(m_ptr);
-    if (!M) return nullptr;
+    if (!M)
+        return nullptr;
     std::complex<double> s(re, im);
-    return g_matrix_tracker.register_complex_matrix(
-        std::make_unique<Eigen::MatrixXcd>(M->array() + s));
+    return g_matrix_tracker.register_complex_matrix(std::make_unique<Eigen::MatrixXcd>(M->array() + s));
 }
 
 extern "C" void* flux_complex_matrix_sub_ms(void* m_ptr, double re, double im)
 {
     auto* M = g_matrix_tracker.get_complex_matrix(m_ptr);
-    if (!M) return nullptr;
+    if (!M)
+        return nullptr;
     std::complex<double> s(re, im);
-    return g_matrix_tracker.register_complex_matrix(
-        std::make_unique<Eigen::MatrixXcd>(M->array() - s));
+    return g_matrix_tracker.register_complex_matrix(std::make_unique<Eigen::MatrixXcd>(M->array() - s));
 }
 
 extern "C" void* flux_complex_matrix_sub_sm(double re, double im, void* m_ptr)
 {
     auto* M = g_matrix_tracker.get_complex_matrix(m_ptr);
-    if (!M) return nullptr;
+    if (!M)
+        return nullptr;
     std::complex<double> s(re, im);
-    return g_matrix_tracker.register_complex_matrix(
-        std::make_unique<Eigen::MatrixXcd>(s - M->array()));
+    return g_matrix_tracker.register_complex_matrix(std::make_unique<Eigen::MatrixXcd>(s - M->array()));
 }
 
 extern "C" void* flux_complex_matrix_mul_ms(void* m_ptr, double re, double im)
 {
     auto* M = g_matrix_tracker.get_complex_matrix(m_ptr);
-    if (!M) return nullptr;
+    if (!M)
+        return nullptr;
     std::complex<double> s(re, im);
-    return g_matrix_tracker.register_complex_matrix(
-        std::make_unique<Eigen::MatrixXcd>((*M) * s));
+    return g_matrix_tracker.register_complex_matrix(std::make_unique<Eigen::MatrixXcd>((*M) * s));
 }
 
 extern "C" void* flux_complex_matrix_div_ms(void* m_ptr, double re, double im)
 {
     auto* M = g_matrix_tracker.get_complex_matrix(m_ptr);
-    if (!M) return nullptr;
+    if (!M)
+        return nullptr;
     std::complex<double> s(re, im);
-    return g_matrix_tracker.register_complex_matrix(
-        std::make_unique<Eigen::MatrixXcd>((*M) / s));
+    return g_matrix_tracker.register_complex_matrix(std::make_unique<Eigen::MatrixXcd>((*M) / s));
 }
 
 extern "C" void* flux_complex_matrix_div_sm(double re, double im, void* m_ptr)
 {
     auto* M = g_matrix_tracker.get_complex_matrix(m_ptr);
-    if (!M) return nullptr;
+    if (!M)
+        return nullptr;
     std::complex<double> s(re, im);
-    return g_matrix_tracker.register_complex_matrix(
-        std::make_unique<Eigen::MatrixXcd>(s / M->array()));
+    return g_matrix_tracker.register_complex_matrix(std::make_unique<Eigen::MatrixXcd>(s / M->array()));
 }
 
 extern "C" void* flux_complex_matrix_transpose(void* m_ptr)
 {
     auto* M = g_matrix_tracker.get_complex_matrix(m_ptr);
-    if (!M) return nullptr;
-    return g_matrix_tracker.register_complex_matrix(
-        std::make_unique<Eigen::MatrixXcd>(M->transpose()));
+    if (!M)
+        return nullptr;
+    return g_matrix_tracker.register_complex_matrix(std::make_unique<Eigen::MatrixXcd>(M->transpose()));
 }
 
 extern "C" void* flux_complex_matrix_conj(void* m_ptr)
 {
     auto* M = g_matrix_tracker.get_complex_matrix(m_ptr);
-    if (!M) return nullptr;
-    return g_matrix_tracker.register_complex_matrix(
-        std::make_unique<Eigen::MatrixXcd>(M->conjugate()));
+    if (!M)
+        return nullptr;
+    return g_matrix_tracker.register_complex_matrix(std::make_unique<Eigen::MatrixXcd>(M->conjugate()));
 }
 
 extern "C" void* flux_complex_matrix_ctranspose(void* m_ptr)
 {
     auto* M = g_matrix_tracker.get_complex_matrix(m_ptr);
-    if (!M) return nullptr;
-    return g_matrix_tracker.register_complex_matrix(
-        std::make_unique<Eigen::MatrixXcd>(M->adjoint()));
+    if (!M)
+        return nullptr;
+    return g_matrix_tracker.register_complex_matrix(std::make_unique<Eigen::MatrixXcd>(M->adjoint()));
 }
 
 extern "C" void* flux_complex_matrix_inv(void* m_ptr)
 {
     auto* M = g_matrix_tracker.get_complex_matrix(m_ptr);
-    if (!M) return nullptr;
-    return g_matrix_tracker.register_complex_matrix(
-        std::make_unique<Eigen::MatrixXcd>(M->inverse()));
+    if (!M)
+        return nullptr;
+    return g_matrix_tracker.register_complex_matrix(std::make_unique<Eigen::MatrixXcd>(M->inverse()));
 }
 
 extern "C" double flux_complex_matrix_det(void* m_ptr)
 {
     auto* M = g_matrix_tracker.get_complex_matrix(m_ptr);
-    if (!M) return 0.0;
+    if (!M)
+        return 0.0;
     return std::abs(M->determinant());
 }
 
 extern "C" double flux_complex_matrix_trace(void* m_ptr)
 {
     auto* M = g_matrix_tracker.get_complex_matrix(m_ptr);
-    if (!M) return 0.0;
+    if (!M)
+        return 0.0;
     return M->trace().real();
 }
 

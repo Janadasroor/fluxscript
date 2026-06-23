@@ -445,9 +445,9 @@ std::unique_ptr<ExprAST> Parser::ParseDiagnosticDecl()
                 diagType = m_lexer.StringVal;
                 getNextToken();
             } else if (key == "threshold" && (CurTok == static_cast<int>(TokenType::tok_number) ||
-                                               CurTok == static_cast<int>(TokenType::tok_integer))) {
-                threshold = (CurTok == static_cast<int>(TokenType::tok_number))
-                            ? m_lexer.NumVal : static_cast<double>(m_lexer.IntVal);
+                                              CurTok == static_cast<int>(TokenType::tok_integer))) {
+                threshold = (CurTok == static_cast<int>(TokenType::tok_number)) ? m_lexer.NumVal
+                                                                                : static_cast<double>(m_lexer.IntVal);
                 getNextToken();
             } else {
                 break;

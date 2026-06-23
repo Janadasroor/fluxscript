@@ -185,6 +185,7 @@ public:
 class ExpandExprAST : public ExprAST
 {
     std::unique_ptr<ExprAST> Expression;
+
 public:
     ExpandExprAST(std::unique_ptr<ExprAST> expr) : Expression(std::move(expr)) {}
     TypedValue codegen(CodegenContext& context) override;
@@ -194,6 +195,7 @@ public:
 class FactorExprAST : public ExprAST
 {
     std::unique_ptr<ExprAST> Expression;
+
 public:
     FactorExprAST(std::unique_ptr<ExprAST> expr) : Expression(std::move(expr)) {}
     TypedValue codegen(CodegenContext& context) override;
@@ -204,9 +206,12 @@ class CollectExprAST : public ExprAST
 {
     std::unique_ptr<ExprAST> Expression;
     std::string Variable;
+
 public:
     CollectExprAST(std::unique_ptr<ExprAST> expr, std::string var)
-        : Expression(std::move(expr)), Variable(std::move(var)) {}
+        : Expression(std::move(expr)), Variable(std::move(var))
+    {
+    }
     TypedValue codegen(CodegenContext& context) override;
 };
 
@@ -214,6 +219,7 @@ public:
 class NumeratorExprAST : public ExprAST
 {
     std::unique_ptr<ExprAST> Expression;
+
 public:
     NumeratorExprAST(std::unique_ptr<ExprAST> expr) : Expression(std::move(expr)) {}
     TypedValue codegen(CodegenContext& context) override;
@@ -223,6 +229,7 @@ public:
 class DenominatorExprAST : public ExprAST
 {
     std::unique_ptr<ExprAST> Expression;
+
 public:
     DenominatorExprAST(std::unique_ptr<ExprAST> expr) : Expression(std::move(expr)) {}
     TypedValue codegen(CodegenContext& context) override;
@@ -232,6 +239,7 @@ public:
 class PolesExprAST : public ExprAST
 {
     std::unique_ptr<ExprAST> Expression;
+
 public:
     PolesExprAST(std::unique_ptr<ExprAST> expr) : Expression(std::move(expr)) {}
     TypedValue codegen(CodegenContext& context) override;
@@ -241,6 +249,7 @@ public:
 class ZerosExprAST : public ExprAST
 {
     std::unique_ptr<ExprAST> Expression;
+
 public:
     ZerosExprAST(std::unique_ptr<ExprAST> expr) : Expression(std::move(expr)) {}
     TypedValue codegen(CodegenContext& context) override;

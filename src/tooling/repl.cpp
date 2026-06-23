@@ -164,7 +164,8 @@ CommandResult REPL::processCommand(const std::string& cmd)
     if (command == "help" || command == "h" || command == "?") {
         return handleHelp(args);
     } else if (command == "clear" || command == "cls") {
-        if (system("clear")) {}
+        if (system("clear")) {
+        }
         return CommandResult();
     } else if (command == "history" || command == "hist") {
         return handleHistory(args);

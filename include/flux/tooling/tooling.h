@@ -74,8 +74,7 @@ std::string computeCacheKey(const std::string& code, const CompilerOptions& opti
 std::string computeImportGraphHash(const std::string& mainCode);
 
 bool emitObjectBuffer(CompileArtifacts& artifacts, OptimizationLevel optimizationLevel,
-                      std::unique_ptr<llvm::MemoryBuffer>& output, std::string* error = nullptr,
-                      bool pic = false);
+                      std::unique_ptr<llvm::MemoryBuffer>& output, std::string* error = nullptr, bool pic = false);
 bool emitObjectFile(CompileArtifacts& artifacts, const std::string& outputPath, std::string* error = nullptr);
 bool emitArtifact(const std::string& code, const AOTOptions& options, std::string* error = nullptr);
 

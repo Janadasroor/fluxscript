@@ -36,9 +36,12 @@ void printProgressBar(const std::string& stage, int current, int total)
     int remain = barWidth - done;
     int pct = current * 100 / std::max(total, 1);
     llvm::outs() << "\r[" << stage << "] [";
-    for (int i = 0; i < done; ++i) llvm::outs() << '=';
-    if (done < barWidth) llvm::outs() << '>';
-    for (int i = 0; i < remain - (done < barWidth ? 1 : 0); ++i) llvm::outs() << ' ';
+    for (int i = 0; i < done; ++i)
+        llvm::outs() << '=';
+    if (done < barWidth)
+        llvm::outs() << '>';
+    for (int i = 0; i < remain - (done < barWidth ? 1 : 0); ++i)
+        llvm::outs() << ' ';
     llvm::outs() << "] " << pct << "% (" << current << "/" << total << ")";
     llvm::outs().flush();
     if (current >= total)
@@ -66,8 +69,8 @@ llvm::cl::opt<bool> EmitShared("shared", llvm::cl::desc("Emit a shared library i
 llvm::cl::opt<bool> EmitDebug("debug", llvm::cl::desc("Emit DWARF debug information"), llvm::cl::init(false),
                               llvm::cl::cat(FluxcCategory));
 
-llvm::cl::opt<int> Jobs("j", llvm::cl::desc("Number of parallel jobs for codegen (default 1)"),
-                         llvm::cl::init(1), llvm::cl::cat(FluxcCategory));
+llvm::cl::opt<int> Jobs("j", llvm::cl::desc("Number of parallel jobs for codegen (default 1)"), llvm::cl::init(1),
+                        llvm::cl::cat(FluxcCategory));
 
 Flux::OptimizationLevel toOptimizationLevel(unsigned level)
 {

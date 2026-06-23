@@ -1,10 +1,10 @@
 /* Copyright 2026 Janada Sroor
  SPDX-License-Identifier: Apache-2.0 */
 
-#include "flux/tooling/lsp_server.h"
 #include "flux/compiler/ast.h"
 #include "flux/compiler/lexer.h"
 #include "flux/compiler/parser.h"
+#include "flux/tooling/lsp_server.h"
 #include <algorithm>
 #include <sstream>
 #include <string>
@@ -259,7 +259,6 @@ Location LspServer::getDefinition(const std::string& uri, Position pos)
 
     return loc;
 }
-
 
 } // namespace Tooling
 } // namespace Flux

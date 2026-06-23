@@ -45,13 +45,28 @@ std::string LspServer::jsonGet(const std::string& json, const std::string& key)
             if (json[i] == '\\' && i + 1 < json.size()) {
                 i++;
                 switch (json[i]) {
-                    case '"': result += '"'; break;
-                    case '\\': result += '\\'; break;
-                    case '/': result += '/'; break;
-                    case 'n': result += '\n'; break;
-                    case 'r': result += '\r'; break;
-                    case 't': result += '\t'; break;
-                    default: result += '\\'; result += json[i]; break;
+                case '"':
+                    result += '"';
+                    break;
+                case '\\':
+                    result += '\\';
+                    break;
+                case '/':
+                    result += '/';
+                    break;
+                case 'n':
+                    result += '\n';
+                    break;
+                case 'r':
+                    result += '\r';
+                    break;
+                case 't':
+                    result += '\t';
+                    break;
+                default:
+                    result += '\\';
+                    result += json[i];
+                    break;
                 }
             } else {
                 result += json[i];
@@ -66,7 +81,8 @@ std::string LspServer::jsonGet(const std::string& json, const std::string& key)
         return "false";
     } else if (json[valueStart] == '-' || std::isdigit(json[valueStart])) {
         size_t numEnd = valueStart + 1;
-        while (numEnd < json.size() && (std::isdigit(json[numEnd]) || json[numEnd] == '.' || json[numEnd] == 'e' || json[numEnd] == 'E' || json[numEnd] == '-' || json[numEnd] == '+'))
+        while (numEnd < json.size() && (std::isdigit(json[numEnd]) || json[numEnd] == '.' || json[numEnd] == 'e' ||
+                                        json[numEnd] == 'E' || json[numEnd] == '-' || json[numEnd] == '+'))
             numEnd++;
         return json.substr(valueStart, numEnd - valueStart);
     }
@@ -209,7 +225,6 @@ void LspServer::publishDiagnostics(const std::string& uri, const std::vector<Dia
 // ============================================================================
 // References Provider
 // ============================================================================
-
 
 } // namespace Tooling
 } // namespace Flux

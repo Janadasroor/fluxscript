@@ -38,37 +38,36 @@
 namespace {
 
 static const char* VersionStr = "FluxScript v0.1.0 (LLVM JIT)";
-static const char* HelpExamples =
-    "EXAMPLES:\n"
-    "\n"
-    "  Run a script and print the result (default JIT mode):\n"
-    "    flux myscript.flux\n"
-    "\n"
-    "  Run a specific function from a script:\n"
-    "    flux --entry=my_function myscript.flux\n"
-    "\n"
-    "  Parse and type-check without executing:\n"
-    "    flux --emit=check myscript.flux\n"
-    "\n"
-    "  Emit LLVM IR and inspect the generated code:\n"
-    "    flux --emit=llvm myscript.flux\n"
-    "\n"
-    "  Emit LLVM bitcode to a file:\n"
-    "    flux --emit=bc -o output.bc myscript.flux\n"
-    "\n"
-    "  Disable JIT cache:\n"
-    "    flux --cache=0 myscript.flux\n"
-    "\n"
-    "  Compile without running (JIT mode, no execution):\n"
-    "    flux --no-run myscript.flux\n"
-    "\n"
-    "  Profile compile and run time (10 iterations):\n"
-    "    flux --profile --iterations=10 myscript.flux\n"
-    "\n"
-    "  Read script from stdin:\n"
-    "    echo '42.0' | flux\n"
-    "\n"
-    "For more information, see https://github.com/Janadasroor/fluxscript\n";
+static const char* HelpExamples = "EXAMPLES:\n"
+                                  "\n"
+                                  "  Run a script and print the result (default JIT mode):\n"
+                                  "    flux myscript.flux\n"
+                                  "\n"
+                                  "  Run a specific function from a script:\n"
+                                  "    flux --entry=my_function myscript.flux\n"
+                                  "\n"
+                                  "  Parse and type-check without executing:\n"
+                                  "    flux --emit=check myscript.flux\n"
+                                  "\n"
+                                  "  Emit LLVM IR and inspect the generated code:\n"
+                                  "    flux --emit=llvm myscript.flux\n"
+                                  "\n"
+                                  "  Emit LLVM bitcode to a file:\n"
+                                  "    flux --emit=bc -o output.bc myscript.flux\n"
+                                  "\n"
+                                  "  Disable JIT cache:\n"
+                                  "    flux --cache=0 myscript.flux\n"
+                                  "\n"
+                                  "  Compile without running (JIT mode, no execution):\n"
+                                  "    flux --no-run myscript.flux\n"
+                                  "\n"
+                                  "  Profile compile and run time (10 iterations):\n"
+                                  "    flux --profile --iterations=10 myscript.flux\n"
+                                  "\n"
+                                  "  Read script from stdin:\n"
+                                  "    echo '42.0' | flux\n"
+                                  "\n"
+                                  "For more information, see https://github.com/Janadasroor/fluxscript\n";
 
 enum class EmitMode
 {
@@ -98,8 +97,9 @@ llvm::cl::opt<EmitMode> EmitAction(
 llvm::cl::opt<unsigned> OptLevel("opt", llvm::cl::Prefix, llvm::cl::desc("LLVM optimization level 0-3 (default: 2)"),
                                  llvm::cl::init(2), llvm::cl::cat(FluxCategory));
 
-llvm::cl::opt<std::string> EntryPoint("entry", llvm::cl::desc("Function name to invoke in JIT mode (default: top-level expression)"),
-                                      llvm::cl::init("__anon_expr"), llvm::cl::cat(FluxCategory));
+llvm::cl::opt<std::string>
+    EntryPoint("entry", llvm::cl::desc("Function name to invoke in JIT mode (default: top-level expression)"),
+               llvm::cl::init("__anon_expr"), llvm::cl::cat(FluxCategory));
 
 llvm::cl::opt<bool> NoRun("no-run", llvm::cl::desc("JIT compile without executing the entry point"),
                           llvm::cl::init(false), llvm::cl::cat(FluxCategory));
@@ -110,14 +110,15 @@ llvm::cl::opt<bool> ProfileMode("profile", llvm::cl::desc("Benchmark mode: print
 llvm::cl::opt<int> Iterations("iterations", llvm::cl::desc("Number of iterations for --profile benchmarking"),
                               llvm::cl::init(1), llvm::cl::cat(FluxCategory));
 
-llvm::cl::opt<bool> EnableCache("cache", llvm::cl::desc("Enable on-disk JIT compilation cache (default: on, use --cache=0 to disable)"),
-                                llvm::cl::init(true), llvm::cl::cat(FluxCategory));
+llvm::cl::opt<bool>
+    EnableCache("cache", llvm::cl::desc("Enable on-disk JIT compilation cache (default: on, use --cache=0 to disable)"),
+                llvm::cl::init(true), llvm::cl::cat(FluxCategory));
 
 llvm::cl::opt<std::string> OutputFilename("o", llvm::cl::desc("Output file path (used with --emit=bc)"),
                                           llvm::cl::init(""), llvm::cl::cat(FluxCategory));
 
-llvm::cl::opt<bool> ShowExamples("examples", llvm::cl::desc("Print usage examples and exit"),
-                                 llvm::cl::init(false), llvm::cl::cat(FluxCategory));
+llvm::cl::opt<bool> ShowExamples("examples", llvm::cl::desc("Print usage examples and exit"), llvm::cl::init(false),
+                                 llvm::cl::cat(FluxCategory));
 
 Flux::OptimizationLevel toOptimizationLevel(unsigned level)
 {
@@ -187,7 +188,8 @@ void printResult(const Flux::FluxValue& result)
         if (value.data && value.len > 0) {
             llvm::outs() << "Vector Result (len=" << value.len << "): [";
             for (int i = 0; i < value.len; ++i) {
-                if (i > 0) llvm::outs() << ", ";
+                if (i > 0)
+                    llvm::outs() << ", ";
                 llvm::outs() << value.data[i];
             }
             llvm::outs() << "]\n";
@@ -255,7 +257,8 @@ int runJIT(const std::string& code)
     bool timed_out = false;
 #endif
     if (timed_out) {
-        llvm::errs() << "Runtime Error: Execution timed out after " << JIT_TIMEOUT_SECONDS << " seconds (possible infinite loop)\n";
+        llvm::errs() << "Runtime Error: Execution timed out after " << JIT_TIMEOUT_SECONDS
+                     << " seconds (possible infinite loop)\n";
         return 1;
     }
     if (!error.empty()) {

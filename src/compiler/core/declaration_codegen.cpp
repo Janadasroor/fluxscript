@@ -29,8 +29,8 @@ llvm::Function* PrototypeAST::codegen(CodegenContext& context)
     resolveUserEnumType(ReturnType, context);
 
     // Specialize generic enum return type
-    if (ReturnType.Kind == TypeKind::UserEnum && !ReturnType.GenericName.empty()
-        && !ReturnType.GenericArgs.empty() && context.GenericEnums.count(ReturnType.GenericName)) {
+    if (ReturnType.Kind == TypeKind::UserEnum && !ReturnType.GenericName.empty() && !ReturnType.GenericArgs.empty() &&
+        context.GenericEnums.count(ReturnType.GenericName)) {
         std::string mangledName = specializeGenericEnum(ReturnType.GenericName, ReturnType.GenericArgs, context);
         if (!mangledName.empty()) {
             auto enumIdxIt = context.EnumTypeIndex.find(mangledName);
@@ -205,7 +205,6 @@ void StructDeclAST::codegen(CodegenContext& context)
 TypedValue StructConstructExprAST::codegen(CodegenContext& context)
 {
 
-
     // Handle generic struct instantiation or generic enum braced payload struct
     std::string resolvedName = StructName;
     int typeId = StructTypeId;
@@ -222,8 +221,8 @@ TypedValue StructConstructExprAST::codegen(CodegenContext& context)
         const auto& genericFields = genericStruct->getFields();
 
         if (GenericTypeArgs.size() != genericParams.size()) {
-            std::cerr << "Generic struct " << StructName << " expects " << genericParams.size()
-                      << " type args, got " << GenericTypeArgs.size() << std::endl;
+            std::cerr << "Generic struct " << StructName << " expects " << genericParams.size() << " type args, got "
+                      << GenericTypeArgs.size() << std::endl;
             return TypedValue();
         }
 
@@ -289,7 +288,8 @@ TypedValue StructConstructExprAST::codegen(CodegenContext& context)
             context.StructTypes.push_back(std::move(info));
             context.StructTypeIndex[resolvedName] = typeId;
 
-            std::cerr << "DEBUG SPECIALIZATION: resolvedName=" << resolvedName << " StructName=" << StructName << " inGenericImpls=" << context.GenericImpls.count(StructName) << std::endl;
+            std::cerr << "DEBUG SPECIALIZATION: resolvedName=" << resolvedName << " StructName=" << StructName
+                      << " inGenericImpls=" << context.GenericImpls.count(StructName) << std::endl;
             // Monomorphize generic methods if a generic impl exists
             auto implIt = context.GenericImpls.find(StructName);
             if (implIt != context.GenericImpls.end()) {
@@ -333,7 +333,8 @@ TypedValue StructConstructExprAST::codegen(CodegenContext& context)
                 auto parentIt = context.TypeMethods.find(parentName);
                 if (parentIt != context.TypeMethods.end()) {
                     for (auto& [methodName, func] : parentIt->second) {
-                        if (context.TypeMethods[resolvedName].find(methodName) == context.TypeMethods[resolvedName].end()) {
+                        if (context.TypeMethods[resolvedName].find(methodName) ==
+                            context.TypeMethods[resolvedName].end()) {
                             context.TypeMethods[resolvedName][methodName] = func;
                         }
                     }
@@ -428,7 +429,8 @@ TypedValue StructConstructExprAST::codegen(CodegenContext& context)
                             llvm::Value* selfArg = alloca;
                             if (auto* allocaInst = llvm::dyn_cast<llvm::AllocaInst>(alloca)) {
                                 if (allocaInst->getAllocatedType()->isPointerTy()) {
-                                    selfArg = context.Builder.CreateLoad(allocaInst->getAllocatedType(), allocaInst, "self_ptr");
+                                    selfArg = context.Builder.CreateLoad(allocaInst->getAllocatedType(), allocaInst,
+                                                                         "self_ptr");
                                 }
                             }
                             llvm::Type* expectedType = initFn->getFunctionType()->getParamType(0);
@@ -610,18 +612,16 @@ void ImplDeclAST::codegen(CodegenContext& context)
             const auto& traitInfo = context.Traits[traitId];
             for (const auto& sig : traitInfo.Methods) {
                 if (context.TypeMethods[TypeName].find(sig.Name) == context.TypeMethods[TypeName].end()) {
-                    llvm::errs() << "error: missing method '" << sig.Name
-                                 << "' in implementation of trait '" << TraitName
-                                 << "' for type '" << TypeName << "'\n";
+                    llvm::errs() << "error: missing method '" << sig.Name << "' in implementation of trait '"
+                                 << TraitName << "' for type '" << TypeName << "'\n";
                     return;
                 }
             }
             // Validate that all associated types are bound
             for (const auto& assocType : traitInfo.AssociatedTypes) {
                 if (AssociatedTypeMappings.find(assocType) == AssociatedTypeMappings.end()) {
-                    llvm::errs() << "error: missing associated type '" << assocType
-                                 << "' in implementation of trait '" << TraitName
-                                 << "' for type '" << TypeName << "'\n";
+                    llvm::errs() << "error: missing associated type '" << assocType << "' in implementation of trait '"
+                                 << TraitName << "' for type '" << TypeName << "'\n";
                     return;
                 }
             }
@@ -644,204 +644,204 @@ void ImplDeclAST::codegen(CodegenContext& context)
                 }
 
                 {
-                std::vector<llvm::Type*> vtableFieldTypes;
-                llvm::PointerType* i8PtrTy = llvm::PointerType::get(context.TheContext, 0);
-                vtableFieldTypes.push_back(i8PtrTy);
-                std::vector<llvm::Constant*> vtableInitValues;
-                vtableInitValues.push_back(llvm::ConstantPointerNull::get(i8PtrTy));
+                    std::vector<llvm::Type*> vtableFieldTypes;
+                    llvm::PointerType* i8PtrTy = llvm::PointerType::get(context.TheContext, 0);
+                    vtableFieldTypes.push_back(i8PtrTy);
+                    std::vector<llvm::Constant*> vtableInitValues;
+                    vtableInitValues.push_back(llvm::ConstantPointerNull::get(i8PtrTy));
 
-                for (const auto& sig : traitInfo.Methods) {
-                    auto mIt = typeMethIt->second.find(sig.Name);
-                    llvm::Function* realFn = (mIt != typeMethIt->second.end()) ? mIt->second : nullptr;
-                    if (!realFn) {
-                        vtableFieldTypes.push_back(i8PtrTy);
-                        vtableInitValues.push_back(llvm::ConstantPointerNull::get(i8PtrTy));
-                        continue;
-                    }
+                    for (const auto& sig : traitInfo.Methods) {
+                        auto mIt = typeMethIt->second.find(sig.Name);
+                        llvm::Function* realFn = (mIt != typeMethIt->second.end()) ? mIt->second : nullptr;
+                        if (!realFn) {
+                            vtableFieldTypes.push_back(i8PtrTy);
+                            vtableInitValues.push_back(llvm::ConstantPointerNull::get(i8PtrTy));
+                            continue;
+                        }
 
-                    // Build a thunk function: takes i8* (data ptr) + extra args (from trait sig), calls realFn
-                    std::string thunkName = "__thunk_" + TypeName + "_" + TraitName + "_" + sig.Name;
-                    llvm::Function* existingThunk = context.TheModule->getFunction(thunkName);
-                    if (existingThunk) {
-                        llvm::Constant* thunkPtr = llvm::ConstantExpr::getPointerBitCastOrAddrSpaceCast(
-                            existingThunk, i8PtrTy);
-                        vtableFieldTypes.push_back(i8PtrTy);
-                        vtableInitValues.push_back(thunkPtr);
-                        continue;
-                    }
+                        // Build a thunk function: takes i8* (data ptr) + extra args (from trait sig), calls realFn
+                        std::string thunkName = "__thunk_" + TypeName + "_" + TraitName + "_" + sig.Name;
+                        llvm::Function* existingThunk = context.TheModule->getFunction(thunkName);
+                        if (existingThunk) {
+                            llvm::Constant* thunkPtr =
+                                llvm::ConstantExpr::getPointerBitCastOrAddrSpaceCast(existingThunk, i8PtrTy);
+                            vtableFieldTypes.push_back(i8PtrTy);
+                            vtableInitValues.push_back(thunkPtr);
+                            continue;
+                        }
 
-                    llvm::Type* selfLLVMTy = selfType.getLLVMType(context.TheContext);
-                    bool passSelfByPointer = shouldPassByPointer(selfType, context);
-                    bool realIsSret = realFn->getReturnType()->isVoidTy() && realFn->arg_size() > 0 &&
-                                      realFn->hasParamAttribute(0, llvm::Attribute::StructRet);
+                        llvm::Type* selfLLVMTy = selfType.getLLVMType(context.TheContext);
+                        bool passSelfByPointer = shouldPassByPointer(selfType, context);
+                        bool realIsSret = realFn->getReturnType()->isVoidTy() && realFn->arg_size() > 0 &&
+                                          realFn->hasParamAttribute(0, llvm::Attribute::StructRet);
 
-                    // Thunk: takes i8* self + trait-sig args, calls realFn with correct struct types
-                    std::vector<llvm::Type*> thunkArgTypes;
-                    thunkArgTypes.push_back(i8PtrTy);
-                    for (size_t ai = 1; ai < sig.Args.size(); ++ai) {
-                        FluxType argType = sig.Args[ai].second;
-                        resolveUserStructType(argType, context);
-                        resolveUserEnumType(argType, context);
-                        thunkArgTypes.push_back(argType.getLLVMType(context.TheContext));
-                    }
-                    FluxType traitRetType = sig.ReturnType;
-                    resolveUserStructType(traitRetType, context);
-                    resolveUserEnumType(traitRetType, context);
-                    llvm::Type* traitRetTy = traitRetType.getLLVMType(context.TheContext);
-                    llvm::FunctionType* thunkFT = llvm::FunctionType::get(traitRetTy, thunkArgTypes, false);
+                        // Thunk: takes i8* self + trait-sig args, calls realFn with correct struct types
+                        std::vector<llvm::Type*> thunkArgTypes;
+                        thunkArgTypes.push_back(i8PtrTy);
+                        for (size_t ai = 1; ai < sig.Args.size(); ++ai) {
+                            FluxType argType = sig.Args[ai].second;
+                            resolveUserStructType(argType, context);
+                            resolveUserEnumType(argType, context);
+                            thunkArgTypes.push_back(argType.getLLVMType(context.TheContext));
+                        }
+                        FluxType traitRetType = sig.ReturnType;
+                        resolveUserStructType(traitRetType, context);
+                        resolveUserEnumType(traitRetType, context);
+                        llvm::Type* traitRetTy = traitRetType.getLLVMType(context.TheContext);
+                        llvm::FunctionType* thunkFT = llvm::FunctionType::get(traitRetTy, thunkArgTypes, false);
 
-                    llvm::Function* thunk = llvm::Function::Create(thunkFT,
-                        llvm::Function::InternalLinkage, thunkName, context.TheModule);
-                    thunk->setGC("shadow-stack");
+                        llvm::Function* thunk = llvm::Function::Create(thunkFT, llvm::Function::InternalLinkage,
+                                                                       thunkName, context.TheModule);
+                        thunk->setGC("shadow-stack");
 
-                    auto thunkBB = llvm::BasicBlock::Create(context.TheContext, "entry", thunk);
-                    llvm::IRBuilder<> thunkBuilder(thunkBB);
+                        auto thunkBB = llvm::BasicBlock::Create(context.TheContext, "entry", thunk);
+                        llvm::IRBuilder<> thunkBuilder(thunkBB);
 
-                    // Load self from i8* data ptr, cast to struct type
-                    auto thArgIt = thunk->arg_begin();
-                    llvm::Value* dataPtr = thArgIt;
-                    llvm::Value* selfPtr = thunkBuilder.CreatePointerCast(dataPtr,
-                        llvm::PointerType::get(context.TheContext, 0), "self_ptr");
-                    llvm::Value* selfVal;
-                    if (passSelfByPointer) {
-                        selfVal = selfPtr;
-                    } else {
-                        selfVal = thunkBuilder.CreateLoad(selfLLVMTy, selfPtr, "self_loaded");
-                    }
+                        // Load self from i8* data ptr, cast to struct type
+                        auto thArgIt = thunk->arg_begin();
+                        llvm::Value* dataPtr = thArgIt;
+                        llvm::Value* selfPtr = thunkBuilder.CreatePointerCast(
+                            dataPtr, llvm::PointerType::get(context.TheContext, 0), "self_ptr");
+                        llvm::Value* selfVal;
+                        if (passSelfByPointer) {
+                            selfVal = selfPtr;
+                        } else {
+                            selfVal = thunkBuilder.CreateLoad(selfLLVMTy, selfPtr, "self_loaded");
+                        }
 
-                    // Build call to realFn, casting args to realFn's expected types
-                    std::vector<llvm::Value*> callArgs;
-                    llvm::Value* sretAlloca = nullptr;
-                    if (realIsSret) {
-                        sretAlloca = thunkBuilder.CreateAlloca(selfLLVMTy, nullptr, "sret_tmp");
-                        callArgs.push_back(sretAlloca);
-                    }
-                    callArgs.push_back(selfVal);
+                        // Build call to realFn, casting args to realFn's expected types
+                        std::vector<llvm::Value*> callArgs;
+                        llvm::Value* sretAlloca = nullptr;
+                        if (realIsSret) {
+                            sretAlloca = thunkBuilder.CreateAlloca(selfLLVMTy, nullptr, "sret_tmp");
+                            callArgs.push_back(sretAlloca);
+                        }
+                        callArgs.push_back(selfVal);
 
-                    unsigned thunkArgIdx = 1;
-                    unsigned realArgIdx = (realIsSret ? 1 : 0) + 1; // skip sret + self
-                    for (++thArgIt; thArgIt != thunk->arg_end(); ++thArgIt, ++thunkArgIdx, ++realArgIdx) {
-                        llvm::Value* thArg = thArgIt;
-                        if (realArgIdx < realFn->arg_size()) {
-                            llvm::Type* expectedTy = realFn->getArg(realArgIdx)->getType();
-                            if (thArg->getType() != expectedTy) {
-                                if (thArg->getType()->isPointerTy() && expectedTy->isPointerTy())
-                                    thArg = thunkBuilder.CreatePointerCast(thArg, expectedTy);
-                                else if (thArg->getType()->isStructTy() && expectedTy->isPointerTy()) {
-                                    llvm::Value* allocaSlot = thunkBuilder.CreateAlloca(thArg->getType(), nullptr, "byref_arg");
-                                    thunkBuilder.CreateStore(thArg, allocaSlot);
-                                    thArg = allocaSlot;
-                                } else if (thArg->getType()->isVectorTy() && expectedTy->isStructTy()) {
-                                    // Convert <2 x double> to { double, double }
-                                    llvm::Value* v0 = thunkBuilder.CreateExtractElement(thArg, (uint64_t)0, "ext0");
-                                    llvm::Value* v1 = thunkBuilder.CreateExtractElement(thArg, (uint64_t)1, "ext1");
-                                    llvm::Value* st = llvm::UndefValue::get(expectedTy);
-                                    st = thunkBuilder.CreateInsertValue(st, v0, 0, "ins0");
-                                    st = thunkBuilder.CreateInsertValue(st, v1, 1, "ins1");
-                                    thArg = st;
-                                } else if (thArg->getType()->isStructTy() && expectedTy->isVectorTy()) {
-                                    // Convert { double, double } to <2 x double>
-                                    llvm::Value* v0 = thunkBuilder.CreateExtractValue(thArg, 0, "ext0");
-                                    llvm::Value* v1 = thunkBuilder.CreateExtractValue(thArg, 1, "ext1");
-                                    llvm::Value* vec = llvm::UndefValue::get(expectedTy);
-                                    vec = thunkBuilder.CreateInsertElement(vec, v0, (uint64_t)0, "ins0");
-                                    vec = thunkBuilder.CreateInsertElement(vec, v1, (uint64_t)1, "ins1");
-                                    thArg = vec;
+                        unsigned thunkArgIdx = 1;
+                        unsigned realArgIdx = (realIsSret ? 1 : 0) + 1; // skip sret + self
+                        for (++thArgIt; thArgIt != thunk->arg_end(); ++thArgIt, ++thunkArgIdx, ++realArgIdx) {
+                            llvm::Value* thArg = thArgIt;
+                            if (realArgIdx < realFn->arg_size()) {
+                                llvm::Type* expectedTy = realFn->getArg(realArgIdx)->getType();
+                                if (thArg->getType() != expectedTy) {
+                                    if (thArg->getType()->isPointerTy() && expectedTy->isPointerTy())
+                                        thArg = thunkBuilder.CreatePointerCast(thArg, expectedTy);
+                                    else if (thArg->getType()->isStructTy() && expectedTy->isPointerTy()) {
+                                        llvm::Value* allocaSlot =
+                                            thunkBuilder.CreateAlloca(thArg->getType(), nullptr, "byref_arg");
+                                        thunkBuilder.CreateStore(thArg, allocaSlot);
+                                        thArg = allocaSlot;
+                                    } else if (thArg->getType()->isVectorTy() && expectedTy->isStructTy()) {
+                                        // Convert <2 x double> to { double, double }
+                                        llvm::Value* v0 = thunkBuilder.CreateExtractElement(thArg, (uint64_t)0, "ext0");
+                                        llvm::Value* v1 = thunkBuilder.CreateExtractElement(thArg, (uint64_t)1, "ext1");
+                                        llvm::Value* st = llvm::UndefValue::get(expectedTy);
+                                        st = thunkBuilder.CreateInsertValue(st, v0, 0, "ins0");
+                                        st = thunkBuilder.CreateInsertValue(st, v1, 1, "ins1");
+                                        thArg = st;
+                                    } else if (thArg->getType()->isStructTy() && expectedTy->isVectorTy()) {
+                                        // Convert { double, double } to <2 x double>
+                                        llvm::Value* v0 = thunkBuilder.CreateExtractValue(thArg, 0, "ext0");
+                                        llvm::Value* v1 = thunkBuilder.CreateExtractValue(thArg, 1, "ext1");
+                                        llvm::Value* vec = llvm::UndefValue::get(expectedTy);
+                                        vec = thunkBuilder.CreateInsertElement(vec, v0, (uint64_t)0, "ins0");
+                                        vec = thunkBuilder.CreateInsertElement(vec, v1, (uint64_t)1, "ins1");
+                                        thArg = vec;
+                                    }
                                 }
                             }
+                            callArgs.push_back(thArg);
                         }
-                        callArgs.push_back(thArg);
+
+                        if (realIsSret) {
+                            thunkBuilder.CreateCall(realFn, callArgs);
+                            llvm::Value* result = thunkBuilder.CreateLoad(selfLLVMTy, sretAlloca, "sret_val");
+                            if (result->getType() != thunk->getReturnType()) {
+                                if (result->getType()->isStructTy() && thunk->getReturnType()->isVectorTy()) {
+                                    llvm::Value* v0 = thunkBuilder.CreateExtractValue(result, 0, "ext0");
+                                    llvm::Value* v1 = thunkBuilder.CreateExtractValue(result, 1, "ext1");
+                                    llvm::Value* vec = llvm::UndefValue::get(thunk->getReturnType());
+                                    vec = thunkBuilder.CreateInsertElement(vec, v0, (uint64_t)0, "ins0");
+                                    vec = thunkBuilder.CreateInsertElement(vec, v1, (uint64_t)1, "ins1");
+                                    result = vec;
+                                } else if (result->getType()->isVectorTy() && thunk->getReturnType()->isStructTy()) {
+                                    llvm::Value* v0 = thunkBuilder.CreateExtractElement(result, (uint64_t)0, "ext0");
+                                    llvm::Value* v1 = thunkBuilder.CreateExtractElement(result, (uint64_t)1, "ext1");
+                                    llvm::Value* st = llvm::UndefValue::get(thunk->getReturnType());
+                                    st = thunkBuilder.CreateInsertValue(st, v0, 0, "ins0");
+                                    st = thunkBuilder.CreateInsertValue(st, v1, 1, "ins1");
+                                    result = st;
+                                } else if (result->getType()->isIntegerTy(1) && thunk->getReturnType()->isDoubleTy()) {
+                                    result = thunkBuilder.CreateUIToFP(result, thunk->getReturnType(), "ret_cast");
+                                } else if (result->getType()->isDoubleTy() && thunk->getReturnType()->isIntegerTy(1)) {
+                                    llvm::Value* zero = llvm::ConstantFP::get(result->getType(), 0.0);
+                                    llvm::Value* cmp = thunkBuilder.CreateFCmpONE(result, zero, "ret_cast");
+                                    result = cmp;
+                                } else {
+                                    result = thunkBuilder.CreateBitCast(result, thunk->getReturnType(), "ret_cast");
+                                }
+                            }
+                            thunkBuilder.CreateRet(result);
+                        } else {
+                            llvm::Value* result = thunkBuilder.CreateCall(realFn, callArgs, "thunk_result");
+                            if (result->getType() != thunk->getReturnType()) {
+                                if (result->getType()->isStructTy() && thunk->getReturnType()->isVectorTy()) {
+                                    // Convert { double, double } to <2 x double>
+                                    llvm::Value* v0 = thunkBuilder.CreateExtractValue(result, 0, "ext0");
+                                    llvm::Value* v1 = thunkBuilder.CreateExtractValue(result, 1, "ext1");
+                                    llvm::Value* vec = llvm::UndefValue::get(thunk->getReturnType());
+                                    vec = thunkBuilder.CreateInsertElement(vec, v0, (uint64_t)0, "ins0");
+                                    vec = thunkBuilder.CreateInsertElement(vec, v1, (uint64_t)1, "ins1");
+                                    result = vec;
+                                } else if (result->getType()->isVectorTy() && thunk->getReturnType()->isStructTy()) {
+                                    // Convert <2 x double> to { double, double }
+                                    llvm::Value* v0 = thunkBuilder.CreateExtractElement(result, (uint64_t)0, "ext0");
+                                    llvm::Value* v1 = thunkBuilder.CreateExtractElement(result, (uint64_t)1, "ext1");
+                                    llvm::Value* st = llvm::UndefValue::get(thunk->getReturnType());
+                                    st = thunkBuilder.CreateInsertValue(st, v0, 0, "ins0");
+                                    st = thunkBuilder.CreateInsertValue(st, v1, 1, "ins1");
+                                    result = st;
+                                } else if (result->getType()->isIntegerTy(1) && thunk->getReturnType()->isDoubleTy()) {
+                                    result = thunkBuilder.CreateUIToFP(result, thunk->getReturnType(), "ret_cast");
+                                } else if (result->getType()->isDoubleTy() && thunk->getReturnType()->isIntegerTy(1)) {
+                                    llvm::Value* zero = llvm::ConstantFP::get(result->getType(), 0.0);
+                                    llvm::Value* cmp = thunkBuilder.CreateFCmpONE(result, zero, "ret_cast");
+                                    result = cmp;
+                                } else {
+                                    result = thunkBuilder.CreateBitCast(result, thunk->getReturnType(), "ret_cast");
+                                }
+                            }
+                            thunkBuilder.CreateRet(result);
+                        }
+
+                        llvm::Constant* thunkPtr = llvm::ConstantExpr::getPointerBitCastOrAddrSpaceCast(thunk, i8PtrTy);
+                        vtableFieldTypes.push_back(i8PtrTy);
+                        vtableInitValues.push_back(thunkPtr);
                     }
 
-                    if (realIsSret) {
-                        thunkBuilder.CreateCall(realFn, callArgs);
-                        llvm::Value* result = thunkBuilder.CreateLoad(selfLLVMTy, sretAlloca, "sret_val");
-                        if (result->getType() != thunk->getReturnType()) {
-                            if (result->getType()->isStructTy() && thunk->getReturnType()->isVectorTy()) {
-                                llvm::Value* v0 = thunkBuilder.CreateExtractValue(result, 0, "ext0");
-                                llvm::Value* v1 = thunkBuilder.CreateExtractValue(result, 1, "ext1");
-                                llvm::Value* vec = llvm::UndefValue::get(thunk->getReturnType());
-                                vec = thunkBuilder.CreateInsertElement(vec, v0, (uint64_t)0, "ins0");
-                                vec = thunkBuilder.CreateInsertElement(vec, v1, (uint64_t)1, "ins1");
-                                result = vec;
-                            } else if (result->getType()->isVectorTy() && thunk->getReturnType()->isStructTy()) {
-                                llvm::Value* v0 = thunkBuilder.CreateExtractElement(result, (uint64_t)0, "ext0");
-                                llvm::Value* v1 = thunkBuilder.CreateExtractElement(result, (uint64_t)1, "ext1");
-                                llvm::Value* st = llvm::UndefValue::get(thunk->getReturnType());
-                                st = thunkBuilder.CreateInsertValue(st, v0, 0, "ins0");
-                                st = thunkBuilder.CreateInsertValue(st, v1, 1, "ins1");
-                                result = st;
-                            } else if (result->getType()->isIntegerTy(1) && thunk->getReturnType()->isDoubleTy()) {
-                                result = thunkBuilder.CreateUIToFP(result, thunk->getReturnType(), "ret_cast");
-                            } else if (result->getType()->isDoubleTy() && thunk->getReturnType()->isIntegerTy(1)) {
-                                llvm::Value* zero = llvm::ConstantFP::get(result->getType(), 0.0);
-                                llvm::Value* cmp = thunkBuilder.CreateFCmpONE(result, zero, "ret_cast");
-                                result = cmp;
-                            } else {
-                                result = thunkBuilder.CreateBitCast(result, thunk->getReturnType(), "ret_cast");
-                            }
-                        }
-                        thunkBuilder.CreateRet(result);
-                    } else {
-                        llvm::Value* result = thunkBuilder.CreateCall(realFn, callArgs, "thunk_result");
-                        if (result->getType() != thunk->getReturnType()) {
-                            if (result->getType()->isStructTy() && thunk->getReturnType()->isVectorTy()) {
-                                // Convert { double, double } to <2 x double>
-                                llvm::Value* v0 = thunkBuilder.CreateExtractValue(result, 0, "ext0");
-                                llvm::Value* v1 = thunkBuilder.CreateExtractValue(result, 1, "ext1");
-                                llvm::Value* vec = llvm::UndefValue::get(thunk->getReturnType());
-                                vec = thunkBuilder.CreateInsertElement(vec, v0, (uint64_t)0, "ins0");
-                                vec = thunkBuilder.CreateInsertElement(vec, v1, (uint64_t)1, "ins1");
-                                result = vec;
-                            } else if (result->getType()->isVectorTy() && thunk->getReturnType()->isStructTy()) {
-                                // Convert <2 x double> to { double, double }
-                                llvm::Value* v0 = thunkBuilder.CreateExtractElement(result, (uint64_t)0, "ext0");
-                                llvm::Value* v1 = thunkBuilder.CreateExtractElement(result, (uint64_t)1, "ext1");
-                                llvm::Value* st = llvm::UndefValue::get(thunk->getReturnType());
-                                st = thunkBuilder.CreateInsertValue(st, v0, 0, "ins0");
-                                st = thunkBuilder.CreateInsertValue(st, v1, 1, "ins1");
-                                result = st;
-                            } else if (result->getType()->isIntegerTy(1) && thunk->getReturnType()->isDoubleTy()) {
-                                result = thunkBuilder.CreateUIToFP(result, thunk->getReturnType(), "ret_cast");
-                            } else if (result->getType()->isDoubleTy() && thunk->getReturnType()->isIntegerTy(1)) {
-                                llvm::Value* zero = llvm::ConstantFP::get(result->getType(), 0.0);
-                                llvm::Value* cmp = thunkBuilder.CreateFCmpONE(result, zero, "ret_cast");
-                                result = cmp;
-                            } else {
-                                result = thunkBuilder.CreateBitCast(result, thunk->getReturnType(), "ret_cast");
-                            }
-                        }
-                        thunkBuilder.CreateRet(result);
+                    if (vtableFieldTypes.size() > 1) {
+                        llvm::StructType* vtableSTy = llvm::StructType::create(
+                            context.TheContext, vtableFieldTypes, "__vtable_" + TraitName + "_for_" + TypeName);
+                        llvm::Constant* vtableInit = llvm::ConstantStruct::get(vtableSTy, vtableInitValues);
+
+                        auto* vtableGV = new llvm::GlobalVariable(*context.TheModule, vtableSTy, true,
+                                                                  llvm::GlobalValue::InternalLinkage, vtableInit,
+                                                                  "__vtable_" + TraitName + "_for_" + TypeName);
+
+                        CodegenContext::VTableEntry ve;
+                        ve.TraitName = TraitName;
+                        ve.TypeName = TypeName;
+                        ve.VTableGlobal = vtableGV;
+                        ve.VTableType = vtableSTy;
+                        context.VTableIndex[{TraitName, TypeName}] = static_cast<int>(context.VTables.size());
+                        context.VTables.push_back(std::move(ve));
                     }
-
-                    llvm::Constant* thunkPtr = llvm::ConstantExpr::getPointerBitCastOrAddrSpaceCast(
-                        thunk, i8PtrTy);
-                    vtableFieldTypes.push_back(i8PtrTy);
-                    vtableInitValues.push_back(thunkPtr);
-                }
-
-                if (vtableFieldTypes.size() > 1) {
-                    llvm::StructType* vtableSTy = llvm::StructType::create(context.TheContext, vtableFieldTypes,
-                        "__vtable_" + TraitName + "_for_" + TypeName);
-                    llvm::Constant* vtableInit = llvm::ConstantStruct::get(vtableSTy, vtableInitValues);
-
-                    auto* vtableGV = new llvm::GlobalVariable(*context.TheModule, vtableSTy, true,
-                        llvm::GlobalValue::InternalLinkage, vtableInit,
-                        "__vtable_" + TraitName + "_for_" + TypeName);
-
-                    CodegenContext::VTableEntry ve;
-                    ve.TraitName = TraitName;
-                    ve.TypeName = TypeName;
-                    ve.VTableGlobal = vtableGV;
-                    ve.VTableType = vtableSTy;
-                    context.VTableIndex[{TraitName, TypeName}] = static_cast<int>(context.VTables.size());
-                    context.VTables.push_back(std::move(ve));
-                }
                 }
             }
         }
     }
-    end_vtable:;
+end_vtable:;
 }
 
 void TraitDeclAST::codegen(CodegenContext& context)
@@ -873,7 +873,8 @@ void TraitDeclAST::codegen(CodegenContext& context)
 
 llvm::Function* FunctionAST::codegen(CodegenContext& context)
 {
-    // Debug: std::cerr << "[CODEGEN] " << Proto->getName() << " isAsync=" << Proto->isAsync() << " isGenerator=" << Body->containsYield() << std::endl;
+    // Debug: std::cerr << "[CODEGEN] " << Proto->getName() << " isAsync=" << Proto->isAsync() << " isGenerator=" <<
+    // Body->containsYield() << std::endl;
     bool isGenerator = Body->containsYield();
     if (isGenerator)
         Proto->setGenerator(true);
@@ -938,9 +939,9 @@ llvm::Function* FunctionAST::codegen(CodegenContext& context)
         if (!subprogram) {
             auto typeArray = context.DebugBuilder->getOrCreateTypeArray({});
             auto* subroutineType = context.DebugBuilder->createSubroutineType(typeArray);
-            subprogram = context.DebugBuilder->createFunction(context.DebugFile, Proto->getName(), Proto->getName(),
-                                                              context.DebugFile, 1, subroutineType, 1,
-                                                              llvm::DINode::FlagZero, llvm::DISubprogram::SPFlagDefinition);
+            subprogram = context.DebugBuilder->createFunction(
+                context.DebugFile, Proto->getName(), Proto->getName(), context.DebugFile, 1, subroutineType, 1,
+                llvm::DINode::FlagZero, llvm::DISubprogram::SPFlagDefinition);
             TheFunction->setSubprogram(subprogram);
         }
     }
@@ -1025,7 +1026,8 @@ llvm::Function* FunctionAST::codegen(CodegenContext& context)
         llvm::Value* StatePtr = &(*ArgIt);
 
         context.AsyncStateAlloca = StatePtr;
-        context.AsyncResultAlloca = context.Builder.CreateAlloca(llvm::Type::getDoubleTy(context.TheContext), nullptr, "async_result");
+        context.AsyncResultAlloca =
+            context.Builder.CreateAlloca(llvm::Type::getDoubleTy(context.TheContext), nullptr, "async_result");
         context.AsyncDispatcherBB = llvm::BasicBlock::Create(context.TheContext, "async_dispatch", TheFunction);
 
         context.Builder.CreateBr(context.AsyncDispatcherBB);
@@ -1064,8 +1066,7 @@ llvm::Function* FunctionAST::codegen(CodegenContext& context)
         // because when a function is reused from a prior declaration
         // (e.g. auto-import vs. main-file definition) the LLVM arg name
         // may differ from the current prototype's parameter name.
-        const std::string argName = (Idx < ArgTypes.size()) ? ArgTypes[Idx].first
-                                                            : std::string(ArgIt->getName());
+        const std::string argName = (Idx < ArgTypes.size()) ? ArgTypes[Idx].first : std::string(ArgIt->getName());
         if (isUpdateLike && (argName == "inputs" || argName == "outputs" || argName == "state")) {
             // Guardrail:
             // Update-like functions lower special runtime arguments to pointer
@@ -1117,7 +1118,6 @@ llvm::Function* FunctionAST::codegen(CodegenContext& context)
     if (TypedValue RetTV = Body->codegen(context)) {
         llvm::Value* RetVal = RetTV.Val;
         llvm::Type* RetTy = Proto->getReturnType().getLLVMType(context.TheContext);
-
 
         {
             const auto& retDims = Proto->getReturnType().Dimensions;
@@ -1265,7 +1265,8 @@ llvm::Function* FunctionAST::codegen(CodegenContext& context)
             std::cerr << "LLVM IR Verification FAILED for standard function. Dumping IR:" << std::endl;
             TheFunction->print(llvm::errs());
         }
-        if (subprogram) context.LexicalBlocks.pop_back();
+        if (subprogram)
+            context.LexicalBlocks.pop_back();
         return TheFunction;
     }
 
@@ -1283,7 +1284,8 @@ llvm::Function* FunctionAST::codegen(CodegenContext& context)
     context.AsyncResultAlloca = SavedAsyncResult;
     context.AwaitResumeTargets = std::move(SavedAwaitTgts);
     context.AsyncDispatcherBB = SavedAsyncDisp;
-    if (subprogram) context.LexicalBlocks.pop_back();
+    if (subprogram)
+        context.LexicalBlocks.pop_back();
     TheFunction->eraseFromParent();
     return nullptr;
 }
@@ -1314,6 +1316,5 @@ llvm::Function* FunctionAST::codegenWithProto(CodegenContext& context, Prototype
     Proto = std::move(savedProto);
     return result;
 }
-
 
 } // namespace Flux

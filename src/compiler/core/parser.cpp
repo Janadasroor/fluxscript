@@ -274,8 +274,7 @@ std::unique_ptr<ExprAST> Parser::ParseImport()
     std::string alias;
     std::vector<std::string> symbols;
 
-    if (CurTok != static_cast<int>(TokenType::tok_identifier) &&
-        CurTok != static_cast<int>(TokenType::tok_analysis) &&
+    if (CurTok != static_cast<int>(TokenType::tok_identifier) && CurTok != static_cast<int>(TokenType::tok_analysis) &&
         CurTok != static_cast<int>(TokenType::tok_measure)) {
         ReportError("expected module name after import");
         return nullptr;
@@ -414,14 +413,10 @@ std::unique_ptr<ExprAST> Parser::ParseIdentifierExpr()
     // Explicit check for statement keywords that might be misparsed as identifiers
     if (IdName == "analysis") {
         int peek = m_lexer.peekToken();
-        if (peek == static_cast<int>(TokenType::tok_tran) ||
-            peek == static_cast<int>(TokenType::tok_dc) ||
-            peek == static_cast<int>(TokenType::tok_ac) ||
-            peek == static_cast<int>(TokenType::tok_noise) ||
-            peek == static_cast<int>(TokenType::tok_op) ||
-            peek == static_cast<int>(TokenType::tok_sens) ||
-            peek == static_cast<int>(TokenType::tok_fourier) ||
-            peek == static_cast<int>(TokenType::tok_lbrace) ||
+        if (peek == static_cast<int>(TokenType::tok_tran) || peek == static_cast<int>(TokenType::tok_dc) ||
+            peek == static_cast<int>(TokenType::tok_ac) || peek == static_cast<int>(TokenType::tok_noise) ||
+            peek == static_cast<int>(TokenType::tok_op) || peek == static_cast<int>(TokenType::tok_sens) ||
+            peek == static_cast<int>(TokenType::tok_fourier) || peek == static_cast<int>(TokenType::tok_lbrace) ||
             (peek == static_cast<int>(TokenType::tok_identifier) && m_lexer.IdentifierStr == "tf"))
             return ParseAnalysis();
     }
@@ -444,8 +439,7 @@ std::unique_ptr<ExprAST> Parser::ParseIdentifierExpr()
     // Handle namespace qualifier: math::fft
     if (CurTok == static_cast<int>(TokenType::tok_namespace_sep)) {
         getNextToken(); // eat ::
-        if (CurTok != static_cast<int>(TokenType::tok_identifier) &&
-            CurTok != static_cast<int>(TokenType::tok_end)) {
+        if (CurTok != static_cast<int>(TokenType::tok_identifier) && CurTok != static_cast<int>(TokenType::tok_end)) {
             ReportError("expected identifier after ::");
             return nullptr;
         }
@@ -531,26 +525,27 @@ std::unique_ptr<ExprAST> Parser::ParseIdentifierExpr()
         bool isKnownTypeName = m_knownStructTypeNames.count(IdName) || m_knownEnumTypeNames.count(IdName);
         if (isKnownTypeName) {
             GenericTypeArgs = ParseGenericTypeArgs();
-            if (hasError()) return nullptr;
+            if (hasError())
+                return nullptr;
         } else {
             // Not a known type name — could be array indexing (var[idx]) or generic function call (fn[T](x)).
             // Peek at the first token inside []. If it looks like a type (uppercase id, keyword, &, dyn),
             // try generic type args and check if '(' follows. Otherwise, treat as array indexing.
             int peek = m_lexer.peekToken();
-            bool looksLikeType = (peek == static_cast<int>(TokenType::tok_identifier) &&
-                                  !m_lexer.IdentifierStr.empty() &&
-                                  std::isupper(static_cast<unsigned char>(m_lexer.IdentifierStr[0]))) ||
-                                 peek == static_cast<int>(TokenType::tok_type_double) ||
-                                 peek == static_cast<int>(TokenType::tok_type_int) ||
-                                 peek == static_cast<int>(TokenType::tok_type_bool) ||
-                                 peek == static_cast<int>(TokenType::tok_type_string) ||
-                                 peek == static_cast<int>(TokenType::tok_type_matrix) ||
-                                 peek == static_cast<int>(TokenType::tok_type_vector) ||
-                                 peek == static_cast<int>(TokenType::tok_type_float) ||
-                                 peek == static_cast<int>(TokenType::tok_type_complex) ||
-                                 peek == static_cast<int>(TokenType::tok_type_void) ||
-                                 peek == static_cast<int>(TokenType::tok_bitwise_and) ||
-                                 peek == static_cast<int>(TokenType::tok_lifetime);
+            bool looksLikeType =
+                (peek == static_cast<int>(TokenType::tok_identifier) && !m_lexer.IdentifierStr.empty() &&
+                 std::isupper(static_cast<unsigned char>(m_lexer.IdentifierStr[0]))) ||
+                peek == static_cast<int>(TokenType::tok_type_double) ||
+                peek == static_cast<int>(TokenType::tok_type_int) ||
+                peek == static_cast<int>(TokenType::tok_type_bool) ||
+                peek == static_cast<int>(TokenType::tok_type_string) ||
+                peek == static_cast<int>(TokenType::tok_type_matrix) ||
+                peek == static_cast<int>(TokenType::tok_type_vector) ||
+                peek == static_cast<int>(TokenType::tok_type_float) ||
+                peek == static_cast<int>(TokenType::tok_type_complex) ||
+                peek == static_cast<int>(TokenType::tok_type_void) ||
+                peek == static_cast<int>(TokenType::tok_bitwise_and) ||
+                peek == static_cast<int>(TokenType::tok_lifetime);
             if (looksLikeType) {
                 auto savedState = m_lexer.saveState();
                 int savedCurTok = CurTok;
@@ -903,12 +898,9 @@ std::unique_ptr<ExprAST> Parser::ParseLetExpr()
 {
     bool isLet = (CurTok == static_cast<int>(TokenType::tok_let));
     getNextToken();
-    if (CurTok != static_cast<int>(TokenType::tok_identifier) &&
-        CurTok != static_cast<int>(TokenType::tok_end) &&
-        CurTok != static_cast<int>(TokenType::tok_state) &&
-        CurTok != static_cast<int>(TokenType::tok_ic) &&
-        CurTok != static_cast<int>(TokenType::tok_dt_var) &&
-        CurTok != static_cast<int>(TokenType::tok_analysis) &&
+    if (CurTok != static_cast<int>(TokenType::tok_identifier) && CurTok != static_cast<int>(TokenType::tok_end) &&
+        CurTok != static_cast<int>(TokenType::tok_state) && CurTok != static_cast<int>(TokenType::tok_ic) &&
+        CurTok != static_cast<int>(TokenType::tok_dt_var) && CurTok != static_cast<int>(TokenType::tok_analysis) &&
         CurTok != static_cast<int>(TokenType::tok_dc)) {
         ReportError("expected identifier after let/var");
         return nullptr;
@@ -948,12 +940,12 @@ std::unique_ptr<ExprAST> Parser::ParseLetExpr()
 
     // In block contexts, 'in' is optional. If not present, we assume it's part of a sequence.
     if (CurTok == static_cast<int>(TokenType::tok_in)) {
-    getNextToken();
-    // Support optional arrow syntax: fn(x) -> expr
-    if (CurTok == static_cast<int>(TokenType::tok_arrow)) {
-        getNextToken(); // eat ->
-    }
-    auto Body = ParseExpression();
+        getNextToken();
+        // Support optional arrow syntax: fn(x) -> expr
+        if (CurTok == static_cast<int>(TokenType::tok_arrow)) {
+            getNextToken(); // eat ->
+        }
+        auto Body = ParseExpression();
         if (!Body)
             return nullptr;
         return std::make_unique<LetExprAST>(IdName, Type, std::move(Init), std::move(Body));
@@ -974,8 +966,7 @@ std::unique_ptr<ExprAST> Parser::ParseLambdaExpr()
     if (CurTok != ')') {
         while (true) {
             if (CurTok != static_cast<int>(TokenType::tok_identifier) &&
-                CurTok != static_cast<int>(TokenType::tok_state) &&
-                CurTok != static_cast<int>(TokenType::tok_ic) &&
+                CurTok != static_cast<int>(TokenType::tok_state) && CurTok != static_cast<int>(TokenType::tok_ic) &&
                 CurTok != static_cast<int>(TokenType::tok_dt_var) &&
                 CurTok != static_cast<int>(TokenType::tok_analysis)) {
                 ReportError("expected identifier in lambda args");
@@ -1013,18 +1004,17 @@ std::unique_ptr<ExprAST> Parser::ParseUnaryExpr()
             getNextToken();
         }
         auto Operand = ParseUnaryExpr();
-        if (!Operand) return nullptr;
+        if (!Operand)
+            return nullptr;
         // Use distinct op codes: & = tok_bitwise_and, &mut = tok_bitwise_and + offset
-        return std::make_unique<UnaryExprAST>(
-            isMut ? static_cast<int>(TokenType::tok_bitwise_and) + 2600
-                  : static_cast<int>(TokenType::tok_bitwise_and),
-            std::move(Operand));
+        return std::make_unique<UnaryExprAST>(isMut ? static_cast<int>(TokenType::tok_bitwise_and) + 2600
+                                                    : static_cast<int>(TokenType::tok_bitwise_and),
+                                              std::move(Operand));
     }
 
     // Handle dereference operator *
     bool isUnary = false;
-    if (CurTok == '-' || CurTok == '+' || CurTok == '*' ||
-        CurTok == static_cast<int>(TokenType::tok_logical_not) ||
+    if (CurTok == '-' || CurTok == '+' || CurTok == '*' || CurTok == static_cast<int>(TokenType::tok_logical_not) ||
         CurTok == static_cast<int>(TokenType::tok_bitwise_not)) {
         isUnary = true;
     }
@@ -1283,10 +1273,8 @@ std::unique_ptr<ExprAST> Parser::ParsePrimary()
         break;
     case static_cast<int>(TokenType::tok_return):
         getNextToken(); // eat return
-        if (CurTok == static_cast<int>(TokenType::tok_rbrace) ||
-            CurTok == static_cast<int>(TokenType::tok_eof) ||
-            CurTok == static_cast<int>(TokenType::tok_else) ||
-            CurTok == static_cast<int>(TokenType::tok_elif)) {
+        if (CurTok == static_cast<int>(TokenType::tok_rbrace) || CurTok == static_cast<int>(TokenType::tok_eof) ||
+            CurTok == static_cast<int>(TokenType::tok_else) || CurTok == static_cast<int>(TokenType::tok_elif)) {
             Res = std::make_unique<ReturnExprAST>(nullptr);
         } else {
             Res = std::make_unique<ReturnExprAST>(ParseExpression());
@@ -1294,8 +1282,7 @@ std::unique_ptr<ExprAST> Parser::ParsePrimary()
         break;
 
     // Enum declarations inside function bodies
-    case static_cast<int>(TokenType::tok_enum):
-    {
+    case static_cast<int>(TokenType::tok_enum): {
         std::vector<std::unique_ptr<StructDeclAST>> anonStructs;
         if (auto Enum = ParseEnumDecl(&anonStructs)) {
             m_localEnumDecls.push_back(std::move(Enum));
@@ -1582,15 +1569,12 @@ std::unique_ptr<ExprAST> Parser::ParsePrimary()
         {
             int peek = m_lexer.peekToken();
             if (peek == '(' || peek == '[' || peek == static_cast<int>(TokenType::tok_dot) ||
-                peek == static_cast<int>(TokenType::tok_namespace_sep) ||
-                peek == '=' || peek == static_cast<int>(TokenType::tok_equal) ||
-                peek == static_cast<int>(TokenType::tok_not_equal) ||
-                peek == '+' || peek == '-' || peek == '*' || peek == '/' ||
-                peek == '>' || peek == '<' ||
+                peek == static_cast<int>(TokenType::tok_namespace_sep) || peek == '=' ||
+                peek == static_cast<int>(TokenType::tok_equal) || peek == static_cast<int>(TokenType::tok_not_equal) ||
+                peek == '+' || peek == '-' || peek == '*' || peek == '/' || peek == '>' || peek == '<' ||
                 peek == static_cast<int>(TokenType::tok_less_equal) ||
                 peek == static_cast<int>(TokenType::tok_greater_equal) ||
-                peek == static_cast<int>(TokenType::tok_pipe) ||
-                peek == static_cast<int>(TokenType::tok_question)) {
+                peek == static_cast<int>(TokenType::tok_pipe) || peek == static_cast<int>(TokenType::tok_question)) {
                 Res = ParseIdentifierExpr();
             } else {
                 getNextToken();
@@ -1666,7 +1650,8 @@ std::unique_ptr<ExprAST> Parser::ParsePrimary()
                 if (isEnumVariant) {
                     std::string anonName = "__enum_" + enumName + "_" + MemberName + "_Fields";
                     auto structCtor = ParseStructConstructExpr(anonName);
-                    if (!structCtor) return nullptr;
+                    if (!structCtor)
+                        return nullptr;
 
                     auto member = std::make_unique<MemberExprAST>(std::move(Res), MemberName);
                     std::vector<std::unique_ptr<ExprAST>> CallArgs;
@@ -1771,27 +1756,27 @@ std::unique_ptr<ExprAST> Parser::ParseBinOpRHS(int ExprPrec, std::unique_ptr<Exp
             else
                 LHS = std::make_unique<IndexExprAST>(std::move(LHS), std::move(rowIdx));
         } else if (BinOp == static_cast<int>(TokenType::tok_pipe)) {
-                // x |> f          → f(x)
-                // x |> f(y)       → f(x, y)
-                // x |> obj.meth   → obj.meth(x)
-                // x |> obj.m(y)   → obj.m(x, y)
-                auto* call = dynamic_cast<CallExprAST*>(RHS.get());
-                if (call) {
-                    call->prependArg(std::move(LHS));
-                    LHS = std::move(RHS);
-                } else if (dynamic_cast<VariableExprAST*>(RHS.get())) {
-                    auto calleeName = static_cast<VariableExprAST*>(RHS.get())->getName();
-                    std::vector<std::unique_ptr<ExprAST>> args;
-                    args.push_back(std::move(LHS));
-                    LHS = std::make_unique<CallExprAST>(calleeName, std::move(args));
-                } else if (dynamic_cast<MemberExprAST*>(RHS.get())) {
-                    std::vector<std::unique_ptr<ExprAST>> args;
-                    args.push_back(std::move(LHS));
-                    LHS = std::make_unique<CallExprAST>(std::move(RHS), std::move(args));
-                } else {
-                    ReportError("expected function call after |>");
-                    return nullptr;
-                }
+            // x |> f          → f(x)
+            // x |> f(y)       → f(x, y)
+            // x |> obj.meth   → obj.meth(x)
+            // x |> obj.m(y)   → obj.m(x, y)
+            auto* call = dynamic_cast<CallExprAST*>(RHS.get());
+            if (call) {
+                call->prependArg(std::move(LHS));
+                LHS = std::move(RHS);
+            } else if (dynamic_cast<VariableExprAST*>(RHS.get())) {
+                auto calleeName = static_cast<VariableExprAST*>(RHS.get())->getName();
+                std::vector<std::unique_ptr<ExprAST>> args;
+                args.push_back(std::move(LHS));
+                LHS = std::make_unique<CallExprAST>(calleeName, std::move(args));
+            } else if (dynamic_cast<MemberExprAST*>(RHS.get())) {
+                std::vector<std::unique_ptr<ExprAST>> args;
+                args.push_back(std::move(LHS));
+                LHS = std::make_unique<CallExprAST>(std::move(RHS), std::move(args));
+            } else {
+                ReportError("expected function call after |>");
+                return nullptr;
+            }
         } else {
             LHS = std::make_unique<BinaryExprAST>(BinOp, std::move(LHS), std::move(RHS));
         }
@@ -1808,10 +1793,8 @@ std::unique_ptr<ExprAST> Parser::ParseExpression()
 
 std::unique_ptr<PrototypeAST> Parser::ParsePrototype()
 {
-    if (CurTok != static_cast<int>(TokenType::tok_identifier) &&
-        CurTok != static_cast<int>(TokenType::tok_update) &&
-        CurTok != static_cast<int>(TokenType::tok_state) &&
-        CurTok != static_cast<int>(TokenType::tok_ic) &&
+    if (CurTok != static_cast<int>(TokenType::tok_identifier) && CurTok != static_cast<int>(TokenType::tok_update) &&
+        CurTok != static_cast<int>(TokenType::tok_state) && CurTok != static_cast<int>(TokenType::tok_ic) &&
         CurTok != static_cast<int>(TokenType::tok_dt_var))
         return nullptr;
 
@@ -1822,7 +1805,8 @@ std::unique_ptr<PrototypeAST> Parser::ParsePrototype()
     std::map<std::string, std::vector<std::string>> GenericParamBounds;
     if (CurTok == '[') {
         GenericParams = ParseGenericParams(&GenericParamBounds);
-        if (hasError()) return nullptr;
+        if (hasError())
+            return nullptr;
         m_activeGenericParams = GenericParams;
     }
 
@@ -1867,8 +1851,8 @@ std::unique_ptr<PrototypeAST> Parser::ParsePrototype()
     while (CurTok == static_cast<int>(TokenType::tok_identifier) || CurTok == static_cast<int>(TokenType::tok_inputs) ||
            CurTok == static_cast<int>(TokenType::tok_outputs) || CurTok == static_cast<int>(TokenType::tok_dt_var) ||
            CurTok == static_cast<int>(TokenType::tok_state) || CurTok == static_cast<int>(TokenType::tok_ic) ||
-           CurTok == static_cast<int>(TokenType::tok_analysis) ||
-           CurTok == static_cast<int>(TokenType::tok_ddt) || CurTok == static_cast<int>(TokenType::tok_idt)) {
+           CurTok == static_cast<int>(TokenType::tok_analysis) || CurTok == static_cast<int>(TokenType::tok_ddt) ||
+           CurTok == static_cast<int>(TokenType::tok_idt)) {
         std::string Name;
         if (CurTok == static_cast<int>(TokenType::tok_identifier))
             Name = m_lexer.IdentifierStr;
@@ -1930,16 +1914,16 @@ std::unique_ptr<PrototypeAST> Parser::ParsePrototype()
                             Type = FluxType(TypeKind::String);
                         } else {
                             FluxType unitType = FluxType::fromUnitName(typeName);
-                            if (unitType.Dimensions.mass != 0 || unitType.Dimensions.length != 0 || unitType.Dimensions.time != 0 ||
-                                unitType.Dimensions.current != 0 || unitType.Dimensions.temperature != 0 ||
-                                unitType.Dimensions.amount != 0 || unitType.Dimensions.luminous != 0) {
+                            if (unitType.Dimensions.mass != 0 || unitType.Dimensions.length != 0 ||
+                                unitType.Dimensions.time != 0 || unitType.Dimensions.current != 0 ||
+                                unitType.Dimensions.temperature != 0 || unitType.Dimensions.amount != 0 ||
+                                unitType.Dimensions.luminous != 0) {
                                 Type = unitType;
                             }
                         }
                     }
                     getNextToken(); // eat type keyword (identifier)
-                    if (CurTok == '[' &&
-                        (Type.Kind == TypeKind::UserStruct || Type.Kind == TypeKind::UserEnum))
+                    if (CurTok == '[' && (Type.Kind == TypeKind::UserStruct || Type.Kind == TypeKind::UserEnum))
                         Type.GenericArgs = ParseGenericTypeArgs();
                 } else if (Type.Kind == TypeKind::Double && CurTok == static_cast<int>(TokenType::tok_type_double)) {
                     // Explicit "Double" keyword — keep as Double
@@ -2008,17 +1992,17 @@ std::unique_ptr<PrototypeAST> Parser::ParsePrototype()
                         RetType = FluxType(TypeKind::String);
                     } else {
                         FluxType unitType = FluxType::fromUnitName(typeName);
-                        if (unitType.Dimensions.mass != 0 || unitType.Dimensions.length != 0 || unitType.Dimensions.time != 0 ||
-                            unitType.Dimensions.current != 0 || unitType.Dimensions.temperature != 0 ||
-                            unitType.Dimensions.amount != 0 || unitType.Dimensions.luminous != 0) {
+                        if (unitType.Dimensions.mass != 0 || unitType.Dimensions.length != 0 ||
+                            unitType.Dimensions.time != 0 || unitType.Dimensions.current != 0 ||
+                            unitType.Dimensions.temperature != 0 || unitType.Dimensions.amount != 0 ||
+                            unitType.Dimensions.luminous != 0) {
                             RetType = unitType;
                         }
                     }
                 }
             }
             getNextToken();
-            if (CurTok == '[' &&
-                (RetType.Kind == TypeKind::UserStruct || RetType.Kind == TypeKind::UserEnum))
+            if (CurTok == '[' && (RetType.Kind == TypeKind::UserStruct || RetType.Kind == TypeKind::UserEnum))
                 RetType.GenericArgs = ParseGenericTypeArgs();
         }
     }
@@ -2282,8 +2266,7 @@ std::unique_ptr<FunctionAST> Parser::ParseTopLevelExpr()
 // Parse built-in variable: time, dt, temp
 /// ParseGenericParams — parse [T, U, V] after a generic declaration name.
 /// Expects CurTok == '['. Returns type parameter names.
-std::vector<std::string> Parser::ParseGenericParams(
-    std::map<std::string, std::vector<std::string>>* outBounds)
+std::vector<std::string> Parser::ParseGenericParams(std::map<std::string, std::vector<std::string>>* outBounds)
 {
     getNextToken(); // eat [
     std::vector<std::string> params;

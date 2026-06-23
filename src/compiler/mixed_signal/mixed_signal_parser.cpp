@@ -1011,8 +1011,8 @@ std::unique_ptr<ExprAST> Parser::ParseMonteCarlo()
     }
     getNextToken(); // eat )
 
-    auto Res = std::make_unique<MonteCarloExprAST>(outputName, std::move(params),
-                                                    std::vector<double>{}, std::vector<double>{}, iters);
+    auto Res = std::make_unique<MonteCarloExprAST>(outputName, std::move(params), std::vector<double>{},
+                                                   std::vector<double>{}, iters);
     Res->setLocation(line, col);
     return Res;
 }
@@ -1095,6 +1095,5 @@ std::unique_ptr<ExprAST> Parser::ParseHotSwap()
 // ============================================================================
 // User-defined type parsers
 // ============================================================================
-
 
 } // namespace Flux

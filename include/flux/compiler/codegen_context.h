@@ -106,7 +106,8 @@ public:
 
     // Struct type definitions: maps struct name -> field list
     // Index in the vector serves as StructTypeId.
-    struct StructTypeInfo {
+    struct StructTypeInfo
+    {
         std::string Name;
         std::string ParentName;
         std::vector<std::pair<std::string, FluxType>> Fields;
@@ -117,12 +118,13 @@ public:
     std::map<std::string, int> StructTypeIndex; // name -> index
 
     // Enum type definitions
-    struct EnumTypeInfo {
+    struct EnumTypeInfo
+    {
         std::string Name;
-        std::vector<std::string> Variants; // variant name -> discriminant = index
+        std::vector<std::string> Variants;     // variant name -> discriminant = index
         std::vector<FluxType> VariantPayloads; // payload type per variant (Void if none)
-        llvm::StructType* LLVMType = nullptr; // { i32, union_of_payloads }
-        std::vector<bool> VariantIsBoxed; // whether variant payload is heap-allocated (boxed)
+        llvm::StructType* LLVMType = nullptr;  // { i32, union_of_payloads }
+        std::vector<bool> VariantIsBoxed;      // whether variant payload is heap-allocated (boxed)
         bool isCopy = true;
     };
     std::vector<EnumTypeInfo> EnumTypes;
@@ -152,11 +154,13 @@ public:
     std::vector<std::unique_ptr<ImplDeclAST>> GenericImplDefs;
 
     // Trait definitions
-    struct TraitInfo {
+    struct TraitInfo
+    {
         std::string Name;
         std::vector<std::string> SuperTraits;
         std::vector<std::string> AssociatedTypes;
-        struct MethodSig {
+        struct MethodSig
+        {
             std::string Name;
             std::vector<std::pair<std::string, FluxType>> Args;
             FluxType ReturnType;
@@ -170,7 +174,8 @@ public:
     std::set<std::pair<std::string, std::string>> TraitImplementations;
 
     // VTable infrastructure for trait objects
-    struct VTableEntry {
+    struct VTableEntry
+    {
         std::string TraitName;
         std::string TypeName;
         llvm::GlobalVariable* VTableGlobal = nullptr; // the vtable instance

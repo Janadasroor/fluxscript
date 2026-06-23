@@ -255,14 +255,14 @@ TypedValue ESourceExprAST::codegen(CodegenContext& context)
         }
     }
 
-    return TypedValue(context.Builder.CreateCall(RegisterESource,
-                                                 {context.Builder.CreateGlobalString(Name),
-                                                  context.Builder.CreateGlobalString(PositiveNode),
-                                                  context.Builder.CreateGlobalString(NegativeNode),
-                                                  context.Builder.CreateGlobalString(ControlPosNode),
-                                                  context.Builder.CreateGlobalString(ControlNegNode),
-                                                  llvm::ConstantFP::get(llvm::Type::getDoubleTy(context.TheContext), GainVal)}),
-                      TypeKind::Double);
+    return TypedValue(
+        context.Builder.CreateCall(
+            RegisterESource,
+            {context.Builder.CreateGlobalString(Name), context.Builder.CreateGlobalString(PositiveNode),
+             context.Builder.CreateGlobalString(NegativeNode), context.Builder.CreateGlobalString(ControlPosNode),
+             context.Builder.CreateGlobalString(ControlNegNode),
+             llvm::ConstantFP::get(llvm::Type::getDoubleTy(context.TheContext), GainVal)}),
+        TypeKind::Double);
 }
 
 TypedValue FSourceExprAST::codegen(CodegenContext& context)
@@ -285,13 +285,13 @@ TypedValue FSourceExprAST::codegen(CodegenContext& context)
         }
     }
 
-    return TypedValue(context.Builder.CreateCall(RegisterFSource,
-                                                 {context.Builder.CreateGlobalString(Name),
-                                                  context.Builder.CreateGlobalString(PositiveNode),
-                                                  context.Builder.CreateGlobalString(NegativeNode),
-                                                  context.Builder.CreateGlobalString(VoltageSourceName),
-                                                  llvm::ConstantFP::get(llvm::Type::getDoubleTy(context.TheContext), GainVal)}),
-                      TypeKind::Double);
+    return TypedValue(
+        context.Builder.CreateCall(
+            RegisterFSource,
+            {context.Builder.CreateGlobalString(Name), context.Builder.CreateGlobalString(PositiveNode),
+             context.Builder.CreateGlobalString(NegativeNode), context.Builder.CreateGlobalString(VoltageSourceName),
+             llvm::ConstantFP::get(llvm::Type::getDoubleTy(context.TheContext), GainVal)}),
+        TypeKind::Double);
 }
 
 TypedValue GSourceExprAST::codegen(CodegenContext& context)
@@ -606,10 +606,10 @@ TypedValue ParamExprAST::codegen(CodegenContext& context)
         Val = NumVal->getValue();
     }
 
-    return TypedValue(
-        context.Builder.CreateCall(RegisterParam, {context.Builder.CreateGlobalString(Name),
-                                                   llvm::ConstantFP::get(llvm::Type::getDoubleTy(context.TheContext), Val)}),
-        TypeKind::Double);
+    return TypedValue(context.Builder.CreateCall(
+                          RegisterParam, {context.Builder.CreateGlobalString(Name),
+                                          llvm::ConstantFP::get(llvm::Type::getDoubleTy(context.TheContext), Val)}),
+                      TypeKind::Double);
 }
 
 TypedValue ICExprAST::codegen(CodegenContext& context)
@@ -627,10 +627,10 @@ TypedValue ICExprAST::codegen(CodegenContext& context)
         Val = NumVal->getValue();
     }
 
-    return TypedValue(
-        context.Builder.CreateCall(RegisterIC, {context.Builder.CreateGlobalString(NodeName),
-                                                llvm::ConstantFP::get(llvm::Type::getDoubleTy(context.TheContext), Val)}),
-        TypeKind::Double);
+    return TypedValue(context.Builder.CreateCall(
+                          RegisterIC, {context.Builder.CreateGlobalString(NodeName),
+                                       llvm::ConstantFP::get(llvm::Type::getDoubleTy(context.TheContext), Val)}),
+                      TypeKind::Double);
 }
 
 TypedValue WorstCaseExprAST::codegen(CodegenContext& context)
@@ -656,9 +656,9 @@ TypedValue WorstCaseExprAST::codegen(CodegenContext& context)
     llvm::Function* RegisterWC = TheModule->getFunction("flux_register_worst_case");
     if (!RegisterWC) {
         llvm::Type* DoubleTy = llvm::Type::getDoubleTy(Ctx);
-        RegisterWC = llvm::Function::Create(
-            llvm::FunctionType::get(DoubleTy, {DoubleTy, DoubleTy, DoubleTy, DoubleTy}, false),
-            llvm::Function::ExternalLinkage, "flux_register_worst_case", TheModule);
+        RegisterWC =
+            llvm::Function::Create(llvm::FunctionType::get(DoubleTy, {DoubleTy, DoubleTy, DoubleTy, DoubleTy}, false),
+                                   llvm::Function::ExternalLinkage, "flux_register_worst_case", TheModule);
     }
 
     // Convert string pointers to doubles (JIT ABI convention)
@@ -669,10 +669,10 @@ TypedValue WorstCaseExprAST::codegen(CodegenContext& context)
         return context.Builder.CreateBitCast(IntVal, llvm::Type::getDoubleTy(Ctx), "str_dbl");
     };
 
-    llvm::Value* Res = context.Builder.CreateCall(
-        RegisterWC, {stringToDouble(OutputName), stringToDouble(namesStr), stringToDouble(nominalsStr),
-                     stringToDouble(tolerancesStr)},
-        "wc_res");
+    llvm::Value* Res = context.Builder.CreateCall(RegisterWC,
+                                                  {stringToDouble(OutputName), stringToDouble(namesStr),
+                                                   stringToDouble(nominalsStr), stringToDouble(tolerancesStr)},
+                                                  "wc_res");
     return TypedValue(Res, TypeKind::Double);
 }
 
@@ -686,8 +686,7 @@ TypedValue StabilityExprAST::codegen(CodegenContext& context)
     if (!Fn) {
         llvm::Type* DoubleTy = llvm::Type::getDoubleTy(Ctx);
         Fn = llvm::Function::Create(llvm::FunctionType::get(DoubleTy, {DoubleTy}, false),
-                                    llvm::Function::ExternalLinkage,
-                                    "flux_stability_run", TheModule);
+                                    llvm::Function::ExternalLinkage, "flux_stability_run", TheModule);
     }
 
     // Convert string pointer to double for JIT ABI
@@ -709,8 +708,7 @@ TypedValue SensitivityExprAST::codegen(CodegenContext& context)
     if (!Fn) {
         llvm::Type* DoubleTy = llvm::Type::getDoubleTy(Ctx);
         Fn = llvm::Function::Create(llvm::FunctionType::get(DoubleTy, {DoubleTy}, false),
-                                    llvm::Function::ExternalLinkage,
-                                    "flux_sensitivity_run", TheModule);
+                                    llvm::Function::ExternalLinkage, "flux_sensitivity_run", TheModule);
     }
 
     llvm::Value* Ptr = context.Builder.CreateGlobalString(OutputName, "sens_output");
@@ -757,10 +755,11 @@ TypedValue OptimizationExprAST::codegen(CodegenContext& context)
         return context.Builder.CreateBitCast(IntVal, llvm::Type::getDoubleTy(Ctx), "str_dbl");
     };
 
-    llvm::Value* Res = context.Builder.CreateCall(
-        Fn, {stringToDouble(OutputName), stringToDouble(namesStr), stringToDouble(initsStr),
-             stringToDouble(minsStr), stringToDouble(maxsStr)},
-        "opt_res");
+    llvm::Value* Res =
+        context.Builder.CreateCall(Fn,
+                                   {stringToDouble(OutputName), stringToDouble(namesStr), stringToDouble(initsStr),
+                                    stringToDouble(minsStr), stringToDouble(maxsStr)},
+                                   "opt_res");
     return TypedValue(Res, TypeKind::Double);
 }
 
@@ -774,9 +773,8 @@ TypedValue BodeExprAST::codegen(CodegenContext& context)
     if (!Fn) {
         llvm::Type* DoubleTy = llvm::Type::getDoubleTy(Ctx);
         llvm::Type* Int32Ty = llvm::Type::getInt32Ty(Ctx);
-        Fn = llvm::Function::Create(
-            llvm::FunctionType::get(DoubleTy, {DoubleTy, DoubleTy, DoubleTy, Int32Ty}, false),
-            llvm::Function::ExternalLinkage, "flux_bode_analyze", TheModule);
+        Fn = llvm::Function::Create(llvm::FunctionType::get(DoubleTy, {DoubleTy, DoubleTy, DoubleTy, Int32Ty}, false),
+                                    llvm::Function::ExternalLinkage, "flux_bode_analyze", TheModule);
     }
 
     auto stringToDouble = [&](const std::string& s) -> llvm::Value* {
@@ -787,10 +785,10 @@ TypedValue BodeExprAST::codegen(CodegenContext& context)
     };
 
     llvm::Value* Res = context.Builder.CreateCall(
-        Fn, {stringToDouble(OutputName),
-             llvm::ConstantFP::get(llvm::Type::getDoubleTy(Ctx), FreqStart),
-             llvm::ConstantFP::get(llvm::Type::getDoubleTy(Ctx), FreqEnd),
-             llvm::ConstantInt::get(llvm::Type::getInt32Ty(Ctx), PointsPerDecade)},
+        Fn,
+        {stringToDouble(OutputName), llvm::ConstantFP::get(llvm::Type::getDoubleTy(Ctx), FreqStart),
+         llvm::ConstantFP::get(llvm::Type::getDoubleTy(Ctx), FreqEnd),
+         llvm::ConstantInt::get(llvm::Type::getInt32Ty(Ctx), PointsPerDecade)},
         "bode_res");
     return TypedValue(Res, TypeKind::Double);
 }
@@ -861,12 +859,12 @@ TypedValue PlotExprAST::codegen(CodegenContext& context)
     llvm::Value* yRowsI32 = context.Builder.CreateTrunc(yRows, llvm::Type::getInt32Ty(Ctx), "y_rows_i32");
     llvm::Value* yColsI32 = context.Builder.CreateTrunc(yCols, llvm::Type::getInt32Ty(Ctx), "y_cols_i32");
 
-    (void)context.Builder.CreateCall(
-        Fn, {yPtr, yRowsI32, yColsI32, xPtr,
-             xTV.Val ? llvm::ConstantInt::get(llvm::Type::getInt32Ty(Ctx), 1)
-                     : llvm::ConstantInt::get(llvm::Type::getInt32Ty(Ctx), 0),
-             stringToDouble("")},
-        "plot_res");
+    (void)context.Builder.CreateCall(Fn,
+                                     {yPtr, yRowsI32, yColsI32, xPtr,
+                                      xTV.Val ? llvm::ConstantInt::get(llvm::Type::getInt32Ty(Ctx), 1)
+                                              : llvm::ConstantInt::get(llvm::Type::getInt32Ty(Ctx), 0),
+                                      stringToDouble("")},
+                                     "plot_res");
     return TypedValue(llvm::ConstantFP::get(llvm::Type::getDoubleTy(Ctx), 1.0), TypeKind::Double);
 }
 
@@ -904,7 +902,8 @@ TypedValue IfStmtAST::codegen(CodegenContext& context)
         IsTrue = CondTV.Val;
     } else {
         // Otherwise compare to non-zero
-        IsTrue = context.Builder.CreateFCmpONE(CondTV.Val, llvm::ConstantFP::get(llvm::Type::getDoubleTy(Ctx), 0.0), "ifcond");
+        IsTrue = context.Builder.CreateFCmpONE(CondTV.Val, llvm::ConstantFP::get(llvm::Type::getDoubleTy(Ctx), 0.0),
+                                               "ifcond");
     }
 
     // Create basic blocks
@@ -945,7 +944,8 @@ TypedValue IfStmtAST::codegen(CodegenContext& context)
     // Determine if we need to continue after the if
     if (thenTerminated && elseTerminated) {
         delete MergeBB;
-        return ThenTV.Val ? ThenTV : TypedValue(llvm::ConstantFP::get(llvm::Type::getDoubleTy(Ctx), 0.0), TypeKind::Double);
+        return ThenTV.Val ? ThenTV
+                          : TypedValue(llvm::ConstantFP::get(llvm::Type::getDoubleTy(Ctx), 0.0), TypeKind::Double);
     }
 
     // Continue at merge
@@ -1042,7 +1042,8 @@ TypedValue ForStmtAST::codegen(CodegenContext& context)
         IsTrue = CondTV.Val;
     } else {
         // Otherwise compare to non-zero
-        IsTrue = context.Builder.CreateFCmpONE(CondTV.Val, llvm::ConstantFP::get(llvm::Type::getDoubleTy(Ctx), 0.0), "forcond");
+        IsTrue = context.Builder.CreateFCmpONE(CondTV.Val, llvm::ConstantFP::get(llvm::Type::getDoubleTy(Ctx), 0.0),
+                                               "forcond");
     }
     context.Builder.CreateCondBr(IsTrue, BodyBB, AfterBB);
 
@@ -1102,7 +1103,8 @@ TypedValue WhileStmtAST::codegen(CodegenContext& context)
         IsTrue = CondTV.Val;
     } else {
         // Otherwise compare to non-zero
-        IsTrue = context.Builder.CreateFCmpONE(CondTV.Val, llvm::ConstantFP::get(llvm::Type::getDoubleTy(Ctx), 0.0), "whilecond");
+        IsTrue = context.Builder.CreateFCmpONE(CondTV.Val, llvm::ConstantFP::get(llvm::Type::getDoubleTy(Ctx), 0.0),
+                                               "whilecond");
     }
     context.Builder.CreateCondBr(IsTrue, BodyBB, AfterBB);
 
@@ -1304,10 +1306,11 @@ TypedValue MonteCarloExprAST::codegen(CodegenContext& context)
         return context.Builder.CreateBitCast(IntVal, llvm::Type::getDoubleTy(Ctx), "str_dbl");
     };
 
-    llvm::Value* Res = context.Builder.CreateCall(
-        Fn, {stringToDouble(OutputName), stringToDouble(namesStr), stringToDouble(nominalsStr),
-             stringToDouble(tolerancesStr), llvm::ConstantInt::get(llvm::Type::getInt32Ty(Ctx), Iterations)},
-        "mc_res");
+    llvm::Value* Res = context.Builder.CreateCall(Fn,
+                                                  {stringToDouble(OutputName), stringToDouble(namesStr),
+                                                   stringToDouble(nominalsStr), stringToDouble(tolerancesStr),
+                                                   llvm::ConstantInt::get(llvm::Type::getInt32Ty(Ctx), Iterations)},
+                                                  "mc_res");
     return TypedValue(Res, TypeKind::Double);
 }
 
@@ -1395,7 +1398,8 @@ TypedValue SpawnExprAST::codegen(CodegenContext& context)
     argVals.reserve(nargs);
     for (auto& arg : Args) {
         TypedValue tv = arg->codegen(context);
-        if (!tv.Val) return TypedValue();
+        if (!tv.Val)
+            return TypedValue();
         argVals.push_back(tv.Val);
     }
 
@@ -1408,13 +1412,13 @@ TypedValue SpawnExprAST::codegen(CodegenContext& context)
     }
 
     // 3. Create a double[] array on the stack to hold argument values
-    llvm::AllocaInst* argsArray = context.Builder.CreateAlloca(
-        llvm::ArrayType::get(DoubleTy, nargs), nullptr, "spawn_args");
+    llvm::AllocaInst* argsArray =
+        context.Builder.CreateAlloca(llvm::ArrayType::get(DoubleTy, nargs), nullptr, "spawn_args");
     for (size_t i = 0; i < nargs; i++) {
         llvm::Value* idx0 = llvm::ConstantInt::get(Int64Ty, 0);
         llvm::Value* idx1 = llvm::ConstantInt::get(Int64Ty, static_cast<uint64_t>(i));
-        llvm::Value* gep = context.Builder.CreateGEP(
-            argsArray->getAllocatedType(), argsArray, {idx0, idx1}, "spawn_arg");
+        llvm::Value* gep =
+            context.Builder.CreateGEP(argsArray->getAllocatedType(), argsArray, {idx0, idx1}, "spawn_arg");
         context.Builder.CreateStore(argVals[i], gep);
     }
 
@@ -1444,7 +1448,8 @@ TypedValue JoinExprAST::codegen(CodegenContext& context)
 
     // 1. Evaluate the handle expression
     TypedValue handleTV = Handle->codegen(context);
-    if (!handleTV.Val) return TypedValue();
+    if (!handleTV.Val)
+        return TypedValue();
 
     // 2. Declare / get flux_join(double) -> double
     llvm::Function* joinFn = context.TheModule->getFunction("flux_join");
@@ -1456,6 +1461,5 @@ TypedValue JoinExprAST::codegen(CodegenContext& context)
     llvm::Value* result = context.Builder.CreateCall(joinFn, {handleTV.Val}, "join_result");
     return TypedValue(result, FluxType(TypeKind::Double));
 }
-
 
 } // namespace Flux

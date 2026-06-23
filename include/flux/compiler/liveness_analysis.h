@@ -12,20 +12,23 @@ namespace Flux {
 // Per-statement liveness information for one BlockExprAST.
 // after[-1] = vars live on entry to the block.
 // after[i]  = vars live after executing statement i.
-struct StmtLiveness {
+struct StmtLiveness
+{
     std::map<int, std::set<std::string>> after;
 
-    bool isLiveAfter(int stmtIdx, const std::string& varName) const {
+    bool isLiveAfter(int stmtIdx, const std::string& varName) const
+    {
         auto it = after.find(stmtIdx);
         if (it != after.end())
             return it->second.count(varName) > 0;
-        return true;  // conservative: assume live
+        return true; // conservative: assume live
     }
 };
 
 // Builds a control-flow graph from the AST and runs
 // iterative data-flow liveness analysis on ref variables.
-class LivenessAnalyzer {
+class LivenessAnalyzer
+{
 public:
     void analyze(const ExprAST* root);
 
@@ -36,8 +39,9 @@ private:
     std::map<const BlockExprAST*, StmtLiveness> results;
 
     // Internal CFG node for a single BlockExprAST
-    struct BB {
-        std::vector<int> stmtIndices;     // indices into parent block's statements
+    struct BB
+    {
+        std::vector<int> stmtIndices; // indices into parent block's statements
         std::vector<int> succs;
         std::vector<int> preds;
         std::set<std::string> use;
@@ -46,7 +50,8 @@ private:
         std::set<std::string> liveOut;
     };
 
-    struct BlockCFG {
+    struct BlockCFG
+    {
         const BlockExprAST* block = nullptr;
         std::vector<BB> bbs;
         int entryBB = 0;

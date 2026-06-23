@@ -19,8 +19,8 @@
 #include <thread>
 
 #include <llvm/ADT/SmallString.h>
-#include <llvm/Bitcode/BitcodeWriter.h>
 #include <llvm/Bitcode/BitcodeReader.h>
+#include <llvm/Bitcode/BitcodeWriter.h>
 #include <llvm/IR/DebugInfoMetadata.h>
 #include <llvm/IR/Verifier.h>
 #include <llvm/IRReader/IRReader.h>
@@ -359,15 +359,12 @@ void CompilerInstance::injectStandardLibrary(CodegenContext& context,
 
     // Register String methods for obj.method() dispatch
     // Each method wraps the equivalent extern function with double(self, args) signature
-    auto registerStringMethod = [&](const std::string& methodName,
-                                    const std::string& externName,
-                                    int extraArgs) {
+    auto registerStringMethod = [&](const std::string& methodName, const std::string& externName, int extraArgs) {
         llvm::Type* DoubleTy = llvm::Type::getDoubleTy(context.TheContext);
         std::vector<llvm::Type*> paramTypes(1 + extraArgs, DoubleTy);
         auto* ft = llvm::FunctionType::get(DoubleTy, paramTypes, false);
         std::string fullName = "String." + methodName;
-        auto* func = llvm::Function::Create(ft, llvm::Function::InternalLinkage, fullName,
-                                             context.TheModule);
+        auto* func = llvm::Function::Create(ft, llvm::Function::InternalLinkage, fullName, context.TheModule);
         auto* entry = llvm::BasicBlock::Create(context.TheContext, "entry", func);
         context.Builder.SetInsertPoint(entry);
         auto* externFunc = context.TheModule->getFunction(externName);
@@ -444,9 +441,8 @@ bool CompilerInstance::importModule(const std::string& moduleName, CodegenContex
 
 bool CompilerInstance::collectImportFunctions(const std::string& moduleName,
                                               std::vector<std::unique_ptr<FunctionAST>>& outFunctions,
-                                              CodegenContext& context,
-                                              std::map<std::string, FluxType>& returnTypes, std::string* error,
-                                              std::map<std::string, bool>& importedModules,
+                                              CodegenContext& context, std::map<std::string, FluxType>& returnTypes,
+                                              std::string* error, std::map<std::string, bool>& importedModules,
                                               const std::vector<std::string>& symbols,
                                               std::unordered_set<std::string>* knownStructTypeNames,
                                               std::unordered_set<std::string>* knownEnumTypeNames) const
@@ -513,21 +509,23 @@ bool CompilerInstance::collectImportFunctions(const std::string& moduleName,
             parser.getNextToken();
         } else if (parser.CurTok == static_cast<int>(TokenType::tok_import) ||
                    parser.CurTok == static_cast<int>(TokenType::tok_from)) {
-            auto importAst = (parser.CurTok == static_cast<int>(TokenType::tok_from))
-                             ? parser.ParseFromImport()
-                             : parser.ParseImport();
+            auto importAst = (parser.CurTok == static_cast<int>(TokenType::tok_from)) ? parser.ParseFromImport()
+                                                                                      : parser.ParseImport();
             if (!importAst) {
-                if (error) *error = "Failed to parse import statement";
+                if (error)
+                    *error = "Failed to parse import statement";
                 return false;
             }
             auto* importExpr = dynamic_cast<ImportExprAST*>(importAst.get());
             if (!importExpr) {
-                if (error) *error = "Failed to extract import information";
+                if (error)
+                    *error = "Failed to extract import information";
                 return false;
             }
             const std::string& subModuleName = importExpr->getModuleName();
             const std::vector<std::string>& subSymbols = importExpr->getSymbols();
-            if (!collectImportFunctions(subModuleName, outFunctions, context, returnTypes, error, importedModules, subSymbols, knownStructTypeNames, knownEnumTypeNames))
+            if (!collectImportFunctions(subModuleName, outFunctions, context, returnTypes, error, importedModules,
+                                        subSymbols, knownStructTypeNames, knownEnumTypeNames))
                 return false;
             const std::string& alias = importExpr->getAlias().empty() ? subModuleName : importExpr->getAlias();
             context.ModuleNamespaces.insert(alias);
@@ -551,7 +549,8 @@ bool CompilerInstance::collectImportFunctions(const std::string& moduleName,
             std::unique_ptr<StructDeclAST> classStruct;
             std::unique_ptr<ImplDeclAST> classImpl;
             if (parser.ParseClassDecl(&classStruct, &classImpl)) {
-                if (classStruct) classStruct->codegen(context);
+                if (classStruct)
+                    classStruct->codegen(context);
                 if (classImpl) {
                     for (auto& func : localFunctions) {
                         auto* proto = func->getProto();
@@ -567,7 +566,8 @@ bool CompilerInstance::collectImportFunctions(const std::string& moduleName,
             std::vector<std::unique_ptr<StructDeclAST>> anonStructs;
             auto enumDecl = parser.ParseEnumDecl(&anonStructs);
             if (enumDecl) {
-                for (auto& s : anonStructs) s->codegen(context);
+                for (auto& s : anonStructs)
+                    s->codegen(context);
                 enumDecl->codegen(context);
             }
         } else if (parser.CurTok == static_cast<int>(TokenType::tok_impl)) {
@@ -600,12 +600,12 @@ bool CompilerInstance::collectImportFunctions(const std::string& moduleName,
                    parser.CurTok != static_cast<int>(TokenType::tok_struct) &&
                    parser.CurTok != static_cast<int>(TokenType::tok_class) &&
                    parser.CurTok != static_cast<int>(TokenType::tok_enum) &&
-                    parser.CurTok != static_cast<int>(TokenType::tok_trait) &&
-                    parser.CurTok != static_cast<int>(TokenType::tok_impl) &&
-                    parser.CurTok != static_cast<int>(TokenType::tok_import) &&
-                    parser.CurTok != static_cast<int>(TokenType::tok_from) &&
-                    parser.CurTok != static_cast<int>(TokenType::tok_update) &&
-                    parser.CurTok != static_cast<int>(TokenType::tok_rbrace)) {
+                   parser.CurTok != static_cast<int>(TokenType::tok_trait) &&
+                   parser.CurTok != static_cast<int>(TokenType::tok_impl) &&
+                   parser.CurTok != static_cast<int>(TokenType::tok_import) &&
+                   parser.CurTok != static_cast<int>(TokenType::tok_from) &&
+                   parser.CurTok != static_cast<int>(TokenType::tok_update) &&
+                   parser.CurTok != static_cast<int>(TokenType::tok_rbrace)) {
 
                 if (parser.CurTok == static_cast<int>(TokenType::tok_semicolon)) {
                     parser.getNextToken();
@@ -700,13 +700,16 @@ std::unique_ptr<ParsedAST> CompilerInstance::parse(const std::string& code, std:
             std::unique_ptr<StructDeclAST> classStruct;
             std::unique_ptr<ImplDeclAST> classImpl;
             if (parser.ParseClassDecl(&classStruct, &classImpl)) {
-                if (classStruct) ast->structs.push_back(std::move(classStruct));
-                if (classImpl) ast->impls.push_back(std::move(classImpl));
+                if (classStruct)
+                    ast->structs.push_back(std::move(classStruct));
+                if (classImpl)
+                    ast->impls.push_back(std::move(classImpl));
             }
         } else if (parser.CurTok == static_cast<int>(TokenType::tok_enum)) {
             std::vector<std::unique_ptr<StructDeclAST>> anonStructs;
             if (auto e = parser.ParseEnumDecl(&anonStructs)) {
-                for (auto& s : anonStructs) ast->structs.push_back(std::move(s));
+                for (auto& s : anonStructs)
+                    ast->structs.push_back(std::move(s));
                 ast->enums.push_back(std::move(e));
             }
         } else if (parser.CurTok == static_cast<int>(TokenType::tok_impl)) {
@@ -723,20 +726,20 @@ std::unique_ptr<ParsedAST> CompilerInstance::parse(const std::string& code, std:
             // Collect expressions into anonymous function
             std::vector<std::unique_ptr<ExprAST>> Exprs;
             while (parser.CurTok != static_cast<int>(TokenType::tok_eof) &&
-                    parser.CurTok != static_cast<int>(TokenType::tok_async) &&
-                    parser.CurTok != static_cast<int>(TokenType::tok_def) &&
-                    parser.CurTok != static_cast<int>(TokenType::tok_subckt) &&
-                    parser.CurTok != static_cast<int>(TokenType::tok_model) &&
-                    parser.CurTok != static_cast<int>(TokenType::tok_analysis) &&
-                    parser.CurTok != static_cast<int>(TokenType::tok_measure) &&
-                    parser.CurTok != static_cast<int>(TokenType::tok_extern) &&
-                    parser.CurTok != static_cast<int>(TokenType::tok_struct) &&
-                    parser.CurTok != static_cast<int>(TokenType::tok_class) &&
-                    parser.CurTok != static_cast<int>(TokenType::tok_enum) &&
-                    parser.CurTok != static_cast<int>(TokenType::tok_impl) &&
-                    parser.CurTok != static_cast<int>(TokenType::tok_trait) &&
-                    parser.CurTok != static_cast<int>(TokenType::tok_import) &&
-                    parser.CurTok != static_cast<int>(TokenType::tok_rbrace)) {
+                   parser.CurTok != static_cast<int>(TokenType::tok_async) &&
+                   parser.CurTok != static_cast<int>(TokenType::tok_def) &&
+                   parser.CurTok != static_cast<int>(TokenType::tok_subckt) &&
+                   parser.CurTok != static_cast<int>(TokenType::tok_model) &&
+                   parser.CurTok != static_cast<int>(TokenType::tok_analysis) &&
+                   parser.CurTok != static_cast<int>(TokenType::tok_measure) &&
+                   parser.CurTok != static_cast<int>(TokenType::tok_extern) &&
+                   parser.CurTok != static_cast<int>(TokenType::tok_struct) &&
+                   parser.CurTok != static_cast<int>(TokenType::tok_class) &&
+                   parser.CurTok != static_cast<int>(TokenType::tok_enum) &&
+                   parser.CurTok != static_cast<int>(TokenType::tok_impl) &&
+                   parser.CurTok != static_cast<int>(TokenType::tok_trait) &&
+                   parser.CurTok != static_cast<int>(TokenType::tok_import) &&
+                   parser.CurTok != static_cast<int>(TokenType::tok_rbrace)) {
 
                 if (parser.CurTok == static_cast<int>(TokenType::tok_semicolon)) {
                     parser.getNextToken();
@@ -763,8 +766,8 @@ std::unique_ptr<ParsedAST> CompilerInstance::parse(const std::string& code, std:
                     else if (dynamic_cast<ComplexExprAST*>(lastExpr))
                         RetType = FluxType(TypeKind::Complex);
                 }
-                auto Proto = std::make_unique<PrototypeAST>(
-                    "__anon_expr", std::vector<std::pair<std::string, FluxType>>(), RetType);
+                auto Proto = std::make_unique<PrototypeAST>("__anon_expr",
+                                                            std::vector<std::pair<std::string, FluxType>>(), RetType);
                 ast->functions.push_back(std::make_unique<FunctionAST>(std::move(Proto), std::move(Block)));
             }
         }
@@ -784,17 +787,14 @@ std::unique_ptr<ParsedAST> CompilerInstance::parse(const std::string& code, std:
 // based on called extern functions, last expression in blocks, etc.
 // ---------------------------------------------------------------------------
 // Forward declarations
-static FluxType inferReturnType(
-    const ExprAST* expr,
-    const std::map<std::string, std::pair<FluxType, std::vector<FluxType>>>& externTypes,
-    const std::map<std::string, FluxType>* userReturnTypes,
-    const std::map<std::string, FluxType>* paramTypes,
-    const std::vector<std::unique_ptr<ExprAST>>* parentStmts);
+static FluxType inferReturnType(const ExprAST* expr,
+                                const std::map<std::string, std::pair<FluxType, std::vector<FluxType>>>& externTypes,
+                                const std::map<std::string, FluxType>* userReturnTypes,
+                                const std::map<std::string, FluxType>* paramTypes,
+                                const std::vector<std::unique_ptr<ExprAST>>* parentStmts);
 
 // Helper: search backward through a statement list for a variable's init
-static const ExprAST* findVarInitInStmts(
-    const std::string& varName,
-    const std::vector<std::unique_ptr<ExprAST>>& stmts)
+static const ExprAST* findVarInitInStmts(const std::string& varName, const std::vector<std::unique_ptr<ExprAST>>& stmts)
 {
     for (auto it = stmts.rbegin(); it != stmts.rend(); ++it) {
         if (auto* let = dynamic_cast<const LetExprAST*>(it->get())) {
@@ -812,24 +812,23 @@ static const ExprAST* findVarInitInStmts(
 }
 
 // Find variable init searching local stmts then parent stmts
-static const ExprAST* findVarInitInScope(
-    const std::string& varName,
-    const std::vector<std::unique_ptr<ExprAST>>& localStmts,
-    const std::vector<std::unique_ptr<ExprAST>>* parentStmts)
+static const ExprAST* findVarInitInScope(const std::string& varName,
+                                         const std::vector<std::unique_ptr<ExprAST>>& localStmts,
+                                         const std::vector<std::unique_ptr<ExprAST>>* parentStmts)
 {
     const ExprAST* init = findVarInitInStmts(varName, localStmts);
-    if (init) return init;
+    if (init)
+        return init;
     if (parentStmts) {
         init = findVarInitInStmts(varName, *parentStmts);
-        if (init) return init;
+        if (init)
+            return init;
     }
     return nullptr;
 }
 
 // Get parameter type, defaulting to Double
-static FluxType paramTypeOf(
-    const std::string& name,
-    const std::map<std::string, FluxType>* paramTypes)
+static FluxType paramTypeOf(const std::string& name, const std::map<std::string, FluxType>* paramTypes)
 {
     if (paramTypes) {
         auto it = paramTypes->find(name);
@@ -840,10 +839,8 @@ static FluxType paramTypeOf(
 }
 
 static FluxType inferIfExprReturnType(
-    const IfExprAST* ife,
-    const std::map<std::string, std::pair<FluxType, std::vector<FluxType>>>& externTypes,
-    const std::map<std::string, FluxType>* userReturnTypes,
-    const std::map<std::string, FluxType>* paramTypes,
+    const IfExprAST* ife, const std::map<std::string, std::pair<FluxType, std::vector<FluxType>>>& externTypes,
+    const std::map<std::string, FluxType>* userReturnTypes, const std::map<std::string, FluxType>* paramTypes,
     const std::vector<std::unique_ptr<ExprAST>>* parentStmts)
 {
     auto infer = [&](const ExprAST* e) {
@@ -862,10 +859,8 @@ static FluxType inferIfExprReturnType(
 }
 
 static FluxType inferIfStmtReturnType(
-    const IfStmtAST* ifStmt,
-    const std::map<std::string, std::pair<FluxType, std::vector<FluxType>>>& externTypes,
-    const std::map<std::string, FluxType>* userReturnTypes,
-    const std::map<std::string, FluxType>* paramTypes,
+    const IfStmtAST* ifStmt, const std::map<std::string, std::pair<FluxType, std::vector<FluxType>>>& externTypes,
+    const std::map<std::string, FluxType>* userReturnTypes, const std::map<std::string, FluxType>* paramTypes,
     const std::vector<std::unique_ptr<ExprAST>>* parentStmts)
 {
     auto infer = [&](const ExprAST* e) {
@@ -877,19 +872,20 @@ static FluxType inferIfStmtReturnType(
     const ExprAST* last = thenBody.back().get();
     if (auto* var = dynamic_cast<const VariableExprAST*>(last)) {
         const ExprAST* init = findVarInitInScope(var->getName(), thenBody, parentStmts);
-        if (init) return infer(init);
+        if (init)
+            return infer(init);
         FluxType pt = paramTypeOf(var->getName(), paramTypes);
-        if (pt.Kind != TypeKind::Double) return pt;
+        if (pt.Kind != TypeKind::Double)
+            return pt;
     }
     return infer(last);
 }
 
-static FluxType inferReturnType(
-    const ExprAST* expr,
-    const std::map<std::string, std::pair<FluxType, std::vector<FluxType>>>& externTypes,
-    const std::map<std::string, FluxType>* userReturnTypes,
-    const std::map<std::string, FluxType>* paramTypes,
-    const std::vector<std::unique_ptr<ExprAST>>* parentStmts)
+static FluxType inferReturnType(const ExprAST* expr,
+                                const std::map<std::string, std::pair<FluxType, std::vector<FluxType>>>& externTypes,
+                                const std::map<std::string, FluxType>* userReturnTypes,
+                                const std::map<std::string, FluxType>* paramTypes,
+                                const std::vector<std::unique_ptr<ExprAST>>* parentStmts)
 {
     if (!expr)
         return TypeKind::Double;
@@ -933,17 +929,21 @@ static FluxType inferReturnType(
                 const ExprAST* retVal = ret->getVal();
                 if (auto* var = dynamic_cast<const VariableExprAST*>(retVal)) {
                     const ExprAST* init = findVarInitInScope(var->getName(), stmts, parentStmts);
-                    if (init) return withBlockStmts(init);
+                    if (init)
+                        return withBlockStmts(init);
                     FluxType pt = paramTypeOf(var->getName(), paramTypes);
-                    if (pt.Kind != TypeKind::Double) return pt;
+                    if (pt.Kind != TypeKind::Double)
+                        return pt;
                 }
                 return withBlockStmts(retVal);
             }
             if (auto* var = dynamic_cast<const VariableExprAST*>(last)) {
                 const ExprAST* init = findVarInitInScope(var->getName(), stmts, parentStmts);
-                if (init) return withBlockStmts(init);
+                if (init)
+                    return withBlockStmts(init);
                 FluxType pt = paramTypeOf(var->getName(), paramTypes);
-                if (pt.Kind != TypeKind::Double) return pt;
+                if (pt.Kind != TypeKind::Double)
+                    return pt;
             }
             // For IfExprAST/IfStmtAST as the last statement, we need to descend with
             // the outer block's stmts for findVarInit to work in then/else branches.
@@ -960,10 +960,12 @@ static FluxType inferReturnType(
     if (auto* var = dynamic_cast<const VariableExprAST*>(expr)) {
         if (parentStmts) {
             const ExprAST* init = findVarInitInStmts(var->getName(), *parentStmts);
-            if (init) return withUser(init);
+            if (init)
+                return withUser(init);
         }
         FluxType pt = paramTypeOf(var->getName(), paramTypes);
-        if (pt.Kind != TypeKind::Double) return pt;
+        if (pt.Kind != TypeKind::Double)
+            return pt;
         return TypeKind::Double;
     }
 
@@ -1005,8 +1007,7 @@ static FluxType inferReturnType(
 
 // Recursive helper: find a call to a struct/enum-returning function and
 // store its return type. Stops early once a user struct/enum type is found.
-static void findStructReturnCalls(const ExprAST* expr,
-                                  const std::map<std::string, FluxType>& funcReturnTypes,
+static void findStructReturnCalls(const ExprAST* expr, const std::map<std::string, FluxType>& funcReturnTypes,
                                   FluxType& outRetType)
 {
     if (!expr || outRetType.Kind == TypeKind::UserStruct || outRetType.Kind == TypeKind::UserEnum)
@@ -1371,8 +1372,8 @@ static void inferParamTypes(const std::vector<std::unique_ptr<FunctionAST>>& fun
 bool CompilerInstance::compileParser(Parser& parser, CodegenContext& context,
                                      std::map<std::string, FluxType>& returnTypes, std::string& error,
                                      std::map<std::string, bool>& importedModules,
-                                      const std::vector<std::string>& symbols,
-                                      std::vector<std::unique_ptr<FunctionAST>>* preParsedFunctions) const
+                                     const std::vector<std::string>& symbols,
+                                     std::vector<std::unique_ptr<FunctionAST>>* preParsedFunctions) const
 {
     // --- Inject built-in generic enum type names for parser recognition ---
     parser.getKnownEnumTypeNames().insert("Result");
@@ -1411,9 +1412,8 @@ bool CompilerInstance::compileParser(Parser& parser, CodegenContext& context,
             }
         } else if (parser.CurTok == static_cast<int>(TokenType::tok_import) ||
                    parser.CurTok == static_cast<int>(TokenType::tok_from)) {
-            auto importAst = (parser.CurTok == static_cast<int>(TokenType::tok_from))
-                             ? parser.ParseFromImport()
-                             : parser.ParseImport();
+            auto importAst = (parser.CurTok == static_cast<int>(TokenType::tok_from)) ? parser.ParseFromImport()
+                                                                                      : parser.ParseImport();
             if (!importAst) {
                 error = "Failed to parse import statement";
                 return false;
@@ -1425,8 +1425,9 @@ bool CompilerInstance::compileParser(Parser& parser, CodegenContext& context,
             }
             const std::string& moduleName = importExpr->getModuleName();
             const std::vector<std::string>& importSymbols = importExpr->getSymbols();
-            if (!collectImportFunctions(moduleName, functions, context, returnTypes, &error, importedModules, importSymbols,
-                                        &parser.getKnownStructTypeNames(), &parser.getKnownEnumTypeNames())) {
+            if (!collectImportFunctions(moduleName, functions, context, returnTypes, &error, importedModules,
+                                        importSymbols, &parser.getKnownStructTypeNames(),
+                                        &parser.getKnownEnumTypeNames())) {
                 return false;
             }
             const std::string& alias = importExpr->getAlias().empty() ? moduleName : importExpr->getAlias();
@@ -1450,13 +1451,16 @@ bool CompilerInstance::compileParser(Parser& parser, CodegenContext& context,
             std::unique_ptr<StructDeclAST> classStruct;
             std::unique_ptr<ImplDeclAST> classImpl;
             if (parser.ParseClassDecl(&classStruct, &classImpl)) {
-                if (classStruct) structs.push_back(std::move(classStruct));
-                if (classImpl) impls.push_back(std::move(classImpl));
+                if (classStruct)
+                    structs.push_back(std::move(classStruct));
+                if (classImpl)
+                    impls.push_back(std::move(classImpl));
             }
         } else if (parser.CurTok == static_cast<int>(TokenType::tok_enum)) {
             std::vector<std::unique_ptr<StructDeclAST>> anonStructs;
             if (auto e = parser.ParseEnumDecl(&anonStructs)) {
-                for (auto& s : anonStructs) structs.push_back(std::move(s));
+                for (auto& s : anonStructs)
+                    structs.push_back(std::move(s));
                 enums.push_back(std::move(e));
             }
         } else if (parser.CurTok == static_cast<int>(TokenType::tok_impl)) {
@@ -1477,12 +1481,12 @@ bool CompilerInstance::compileParser(Parser& parser, CodegenContext& context,
                    parser.CurTok != static_cast<int>(TokenType::tok_struct) &&
                    parser.CurTok != static_cast<int>(TokenType::tok_class) &&
                    parser.CurTok != static_cast<int>(TokenType::tok_enum) &&
-                    parser.CurTok != static_cast<int>(TokenType::tok_trait) &&
-                    parser.CurTok != static_cast<int>(TokenType::tok_impl) &&
-                    parser.CurTok != static_cast<int>(TokenType::tok_import) &&
-                    parser.CurTok != static_cast<int>(TokenType::tok_from) &&
-                    parser.CurTok != static_cast<int>(TokenType::tok_update) &&
-                    parser.CurTok != static_cast<int>(TokenType::tok_rbrace)) {
+                   parser.CurTok != static_cast<int>(TokenType::tok_trait) &&
+                   parser.CurTok != static_cast<int>(TokenType::tok_impl) &&
+                   parser.CurTok != static_cast<int>(TokenType::tok_import) &&
+                   parser.CurTok != static_cast<int>(TokenType::tok_from) &&
+                   parser.CurTok != static_cast<int>(TokenType::tok_update) &&
+                   parser.CurTok != static_cast<int>(TokenType::tok_rbrace)) {
 
                 if (parser.CurTok == static_cast<int>(TokenType::tok_semicolon)) {
                     parser.getNextToken();
@@ -1515,8 +1519,8 @@ bool CompilerInstance::compileParser(Parser& parser, CodegenContext& context,
                     anonName = m_options.moduleName + "_anon_expr";
                 }
                 anonName += "_" + std::to_string(anonCounter++);
-                auto Proto = std::make_unique<PrototypeAST>(anonName, std::vector<std::pair<std::string, FluxType>>(),
-                                                            RetType);
+                auto Proto =
+                    std::make_unique<PrototypeAST>(anonName, std::vector<std::pair<std::string, FluxType>>(), RetType);
                 functions.push_back(std::make_unique<FunctionAST>(std::move(Proto), std::move(Block)));
             }
         }
@@ -1527,8 +1531,10 @@ bool CompilerInstance::compileParser(Parser& parser, CodegenContext& context,
         bool userDeclaredResult = false;
         bool userDeclaredOption = false;
         for (const auto& e : enums) {
-            if (e->getName() == "Result") userDeclaredResult = true;
-            if (e->getName() == "Option") userDeclaredOption = true;
+            if (e->getName() == "Result")
+                userDeclaredResult = true;
+            if (e->getName() == "Option")
+                userDeclaredOption = true;
         }
         if (!userDeclaredResult) {
             FluxType tGen(TypeKind::Generic);
@@ -1537,19 +1543,15 @@ bool CompilerInstance::compileParser(Parser& parser, CodegenContext& context,
             eGen.GenericName = "E";
             // Synthetic structs for braced constructor syntax: Result.Ok { value: v }
             auto resultOkFields = std::make_unique<StructDeclAST>(
-                "__enum_Result_Ok_Fields",
-                std::vector<std::pair<std::string, FluxType>>{{"value", tGen}});
+                "__enum_Result_Ok_Fields", std::vector<std::pair<std::string, FluxType>>{{"value", tGen}});
             auto resultErrFields = std::make_unique<StructDeclAST>(
-                "__enum_Result_Err_Fields",
-                std::vector<std::pair<std::string, FluxType>>{{"value", eGen}});
+                "__enum_Result_Err_Fields", std::vector<std::pair<std::string, FluxType>>{{"value", eGen}});
             parser.getKnownStructTypeNames().insert("__enum_Result_Ok_Fields");
             parser.getKnownStructTypeNames().insert("__enum_Result_Err_Fields");
             structs.push_back(std::move(resultOkFields));
             structs.push_back(std::move(resultErrFields));
-            auto resultEnum = std::make_unique<EnumDeclAST>(
-                "Result",
-                std::vector<std::string>{"Ok", "Err"},
-                std::vector<FluxType>{tGen, eGen});
+            auto resultEnum = std::make_unique<EnumDeclAST>("Result", std::vector<std::string>{"Ok", "Err"},
+                                                            std::vector<FluxType>{tGen, eGen});
             resultEnum->setGenericParams({"T", "E"});
             enums.push_back(std::move(resultEnum));
         }
@@ -1558,14 +1560,11 @@ bool CompilerInstance::compileParser(Parser& parser, CodegenContext& context,
             tGen.GenericName = "T";
             // Synthetic struct for braced constructor syntax: Option.Some { value: v }
             auto optionSomeFields = std::make_unique<StructDeclAST>(
-                "__enum_Option_Some_Fields",
-                std::vector<std::pair<std::string, FluxType>>{{"value", tGen}});
+                "__enum_Option_Some_Fields", std::vector<std::pair<std::string, FluxType>>{{"value", tGen}});
             parser.getKnownStructTypeNames().insert("__enum_Option_Some_Fields");
             structs.push_back(std::move(optionSomeFields));
-            auto optionEnum = std::make_unique<EnumDeclAST>(
-                "Option",
-                std::vector<std::string>{"Some", "None"},
-                std::vector<FluxType>{tGen, FluxType(TypeKind::Void)});
+            auto optionEnum = std::make_unique<EnumDeclAST>("Option", std::vector<std::string>{"Some", "None"},
+                                                            std::vector<FluxType>{tGen, FluxType(TypeKind::Void)});
             optionEnum->setGenericParams({"T"});
             enums.push_back(std::move(optionEnum));
         }
@@ -1590,9 +1589,8 @@ bool CompilerInstance::compileParser(Parser& parser, CodegenContext& context,
                 std::string anonName = "__enum_" + e->getName() + "_" + variants[i] + "_Fields";
                 if (!parser.getKnownStructTypeNames().count(anonName)) {
                     parser.getKnownStructTypeNames().insert(anonName);
-                    structs.push_back(
-                        std::make_unique<StructDeclAST>(anonName,
-                            std::vector<std::pair<std::string, FluxType>>{{"value", payloads[i]}}));
+                    structs.push_back(std::make_unique<StructDeclAST>(
+                        anonName, std::vector<std::pair<std::string, FluxType>>{{"value", payloads[i]}}));
                 }
             }
         }
@@ -1631,8 +1629,7 @@ bool CompilerInstance::compileParser(Parser& parser, CodegenContext& context,
                 importedNames.insert(f->getProto()->getName());
             }
         }
-        functions.insert(functions.begin(),
-                         std::make_move_iterator(preParsedFunctions->begin()),
+        functions.insert(functions.begin(), std::make_move_iterator(preParsedFunctions->begin()),
                          std::make_move_iterator(preParsedFunctions->end()));
     }
 
@@ -1645,7 +1642,8 @@ bool CompilerInstance::compileParser(Parser& parser, CodegenContext& context,
         std::vector<std::unique_ptr<FunctionAST>> deduped;
         std::map<std::string, size_t> nameToSlot;
         for (auto& func : functions) {
-            if (!func) continue;
+            if (!func)
+                continue;
             std::string name = func->getProto()->getName();
             auto it = nameToSlot.find(name);
             if (it == nameToSlot.end()) {
@@ -1766,8 +1764,8 @@ bool CompilerInstance::compileParser(Parser& parser, CodegenContext& context,
         std::map<std::string, FluxType> paramTypeMap;
         for (auto& arg : func->getProto()->getArgs())
             paramTypeMap[arg.first] = arg.second;
-        FluxType inferred = inferReturnType(func->getBody(), context.ExternFuncTypes, &context.FuncReturnTypes,
-                                            &paramTypeMap, nullptr);
+        FluxType inferred =
+            inferReturnType(func->getBody(), context.ExternFuncTypes, &context.FuncReturnTypes, &paramTypeMap, nullptr);
         if (inferred.Kind == TypeKind::Matrix || inferred.Kind == TypeKind::ComplexMatrix ||
             inferred.Kind == TypeKind::Vector || inferred.Kind == TypeKind::UserStruct ||
             inferred.Kind == TypeKind::UserEnum) {
@@ -1863,7 +1861,8 @@ bool CompilerInstance::compileParser(Parser& parser, CodegenContext& context,
         // --- Parallel codegen: per-function in isolated threads ---
         int nJobs = std::min(m_options.numJobs, static_cast<int>(numFunctions));
 
-        struct TRes {
+        struct TRes
+        {
             std::unique_ptr<CodegenContext> ctx;
             std::string error;
         };
@@ -1876,8 +1875,7 @@ bool CompilerInstance::compileParser(Parser& parser, CodegenContext& context,
             size_t e = (j + 1) * numFunctions / nJobs;
             thrds.emplace_back([&, j, b, e]() {
                 auto tcg = std::make_unique<CodegenContext>();
-                tcg->OwnedModule =
-                    std::make_unique<llvm::Module>("t", tcg->TheContext);
+                tcg->OwnedModule = std::make_unique<llvm::Module>("t", tcg->TheContext);
                 tcg->TheModule = tcg->OwnedModule.get();
 
                 tcg->FuncReturnTypes = context.FuncReturnTypes;
@@ -1914,11 +1912,15 @@ bool CompilerInstance::compileParser(Parser& parser, CodegenContext& context,
                 tres[j].ctx = std::move(tcg);
             });
         }
-        for (auto& t : thrds) t.join();
+        for (auto& t : thrds)
+            t.join();
 
         if (cncl) {
             for (auto& r : tres)
-                if (!r.error.empty()) { error = r.error; break; }
+                if (!r.error.empty()) {
+                    error = r.error;
+                    break;
+                }
             context.importModuleFn = std::move(savedImportFn);
             return false;
         }
@@ -1927,15 +1929,15 @@ bool CompilerInstance::compileParser(Parser& parser, CodegenContext& context,
         // into main context, then link the thread module into the
         // main module using the same-context linker.
         for (auto& tr : tres) {
-            if (!tr.ctx || !tr.ctx->OwnedModule) continue;
+            if (!tr.ctx || !tr.ctx->OwnedModule)
+                continue;
             auto& threadMod = *tr.ctx->OwnedModule;
 
             llvm::SmallVector<char, 0> buf;
             llvm::raw_svector_ostream os(buf);
             llvm::WriteBitcodeToFile(threadMod, os);
 
-            auto mb = llvm::MemoryBuffer::getMemBufferCopy(
-                llvm::StringRef(buf.data(), buf.size()));
+            auto mb = llvm::MemoryBuffer::getMemBufferCopy(llvm::StringRef(buf.data(), buf.size()));
             auto exp = llvm::parseBitcodeFile(mb->getMemBufferRef(), context.TheContext);
             if (!exp) {
                 error = "Parallel codegen: serialisation round-trip failed";
@@ -1997,26 +1999,28 @@ std::vector<TokenInfo> CompilerInstance::tokenize(const std::string& code, std::
 }
 
 bool CompilerInstance::loadAndLinkBitcodeModule(const std::string& bcPath, CodegenContext& context,
-                                                std::map<std::string, FluxType>& returnTypes,
-                                                std::string* error) const
+                                                std::map<std::string, FluxType>& returnTypes, std::string* error) const
 {
     llvm::SMDiagnostic diag;
     auto mod = parseIRFile(bcPath, diag, context.TheContext);
     if (!mod) {
-        if (error) *error = "Failed to parse bitcode file: " + bcPath + " - " + diag.getMessage().str();
+        if (error)
+            *error = "Failed to parse bitcode file: " + bcPath + " - " + diag.getMessage().str();
         return false;
     }
 
     // Register return types and parameter types from the loaded module's function signatures
     for (auto& F : *mod) {
-        if (F.isDeclaration()) continue;
+        if (F.isDeclaration())
+            continue;
         F.setLinkage(llvm::GlobalValue::InternalLinkage); // Internalize stdlib functions to avoid JIT conflicts
         std::string name = F.getName().str();
         bool hasSret = F.arg_size() > 0 && F.hasParamAttribute(0, llvm::Attribute::StructRet);
         FluxType retTy;
         if (hasSret) {
             llvm::Type* sretTy = F.getParamStructRetType(0);
-            if (sretTy && sretTy->isStructTy() && llvm::cast<llvm::StructType>(sretTy)->getName().contains("ComplexMatrix")) {
+            if (sretTy && sretTy->isStructTy() &&
+                llvm::cast<llvm::StructType>(sretTy)->getName().contains("ComplexMatrix")) {
                 retTy = FluxType(TypeKind::ComplexMatrix);
             } else {
                 retTy = FluxType(TypeKind::Matrix);
@@ -2060,7 +2064,8 @@ bool CompilerInstance::loadAndLinkBitcodeModule(const std::string& bcPath, Codeg
 
     // Link the loaded module into the main module
     if (llvm::Linker::linkModules(*context.TheModule, std::move(mod))) {
-        if (error) *error = "Failed to link bitcode module: " + bcPath;
+        if (error)
+            *error = "Failed to link bitcode module: " + bcPath;
         return false;
     }
     return true;
@@ -2107,8 +2112,8 @@ std::unique_ptr<CompileArtifacts> CompilerInstance::compileToIR(const std::strin
         std::vector<std::string> stdlibModules = {"math", "trig", "array", "stats", "signal", "string", "cmatrix"};
         for (const auto& mod : stdlibModules) {
             std::string importError;
-            collectImportFunctions(mod, preParsedFunctions, *artifacts->codegenContext,
-                                   artifacts->functionReturnTypes, &importError, importedModules);
+            collectImportFunctions(mod, preParsedFunctions, *artifacts->codegenContext, artifacts->functionReturnTypes,
+                                   &importError, importedModules);
         }
     }
 
@@ -2137,8 +2142,8 @@ std::unique_ptr<CompileArtifacts> CompilerInstance::compileToIR(const std::strin
             auto diags = parser.getErrors();
             if (!diags.empty()) {
                 auto& d = diags.front();
-                *error = "Error at line " + std::to_string(d.line) +
-                         ", column " + std::to_string(d.column) + ": " + d.message;
+                *error = "Error at line " + std::to_string(d.line) + ", column " + std::to_string(d.column) + ": " +
+                         d.message;
             } else {
                 *error = compileError;
             }

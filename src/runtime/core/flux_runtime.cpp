@@ -12,11 +12,11 @@
  limitations under the License. */
 
 #include "flux/runtime/flux_runtime.h"
-#include "flux/runtime/runtime_helpers.h"
-#include "flux/runtime/matrix_tracker.h"
-#include "flux/runtime/symbolic_helpers.h"
 #include "flux/ai/surrogate.h"
 #include "flux/analysis/advanced_analysis.h"
+#include "flux/runtime/matrix_tracker.h"
+#include "flux/runtime/runtime_helpers.h"
+#include "flux/runtime/symbolic_helpers.h"
 #ifndef FLUX_RUNTIME_STANDALONE
 #include "flux/jit/flux_jit.h"
 #endif
@@ -34,8 +34,8 @@
 #ifdef FLUX_HAS_CURL
 #include <curl/curl.h>
 #endif
-#include <cstdio>
 #include <csetjmp>
+#include <cstdio>
 #include <cstring>
 #include <fstream>
 #include <iomanip>
@@ -81,12 +81,12 @@ double flux_regex_replace(double str_dbl, double pat_dbl, double repl_dbl);
 // Analysis functions (defined in analysis_runtime.cpp)
 double flux_stability_run(double output_dbl);
 double flux_sensitivity_run(double output_dbl);
-double flux_register_worst_case(double output_dbl, double names_dbl, double nominals_dbl,
-                                double tolerances_dbl, int iterations);
-double flux_monte_carlo_analyze(double output_dbl, double names_dbl, double nominals_dbl,
-                                double tolerances_dbl, int iterations);
-double flux_optimize_analyze(double output_dbl, double names_dbl, double inits_dbl,
-                             double mins_dbl, double maxs_dbl, int num_vars, int max_iter);
+double flux_register_worst_case(double output_dbl, double names_dbl, double nominals_dbl, double tolerances_dbl,
+                                int iterations);
+double flux_monte_carlo_analyze(double output_dbl, double names_dbl, double nominals_dbl, double tolerances_dbl,
+                                int iterations);
+double flux_optimize_analyze(double output_dbl, double names_dbl, double inits_dbl, double mins_dbl, double maxs_dbl,
+                             int num_vars, int max_iter);
 double flux_bode_analyze(double output_dbl, double freqStart, double freqEnd, int pointsPerDecade);
 double flux_plot_data(double* yData, int yRows, int yCols, double* xData, int hasX, double title_dbl);
 
@@ -212,10 +212,10 @@ double flux_register_gsource(const char* name, const char* pos_node, const char*
 double flux_register_hsource(const char* name, const char* pos_node, const char* neg_node, const char* vsense,
                              double transres);
 void flux_register_adevice(const char* name, int device_type, const char* input_nodes, const char* output_nodes);
-void flux_register_wavefile(const char* name, const char* pos_node, const char* neg_node,
-                            const char* file_path, int channel);
- double flux_optimize_analyze(double output_dbl, double names_dbl, double inits_dbl,
-                              double mins_dbl, double maxs_dbl, int num_vars, int max_iter);
+void flux_register_wavefile(const char* name, const char* pos_node, const char* neg_node, const char* file_path,
+                            int channel);
+double flux_optimize_analyze(double output_dbl, double names_dbl, double inits_dbl, double mins_dbl, double maxs_dbl,
+                             int num_vars, int max_iter);
 
 // LLVM C-API bridge functions (defined in flux_llvm_bridge.cpp)
 double flux_llvm_context_create();
@@ -313,7 +313,8 @@ double flux_llvm_build_bitcast(double builder, double val, double dest_ty, doubl
 double flux_llvm_verify_module(double module, double action, double out_message);
 double flux_llvm_verify_function(double fn, double action);
 double flux_llvm_get_target_from_triple(double triple, double out_target);
-double flux_llvm_create_target_machine(double triple, double cpu, double features, double opt_level, double reloc, double code_model);
+double flux_llvm_create_target_machine(double triple, double cpu, double features, double opt_level, double reloc,
+                                       double code_model);
 double flux_llvm_target_machine_emit_to_file(double tm, double module, double filename, double file_type);
 double flux_llvm_target_machine_emit_to_mem_buf(double tm, double module, double file_type);
 double flux_llvm_initialize_native_target();
@@ -385,7 +386,6 @@ double jit_register_ic(double name_ptr, double value)
     return flux_register_ic(name, value);
 }
 
-
 namespace Flux {
 
 static thread_local std::vector<void*> g_tracked_allocations;
@@ -424,14 +424,16 @@ extern "C" double flux_dyn_ptr_push(double data, double vtable)
 extern "C" double flux_dyn_ptr_get_data(double idx)
 {
     size_t i = static_cast<size_t>(idx);
-    if (i >= g_dyn_ptrs.size()) return 0.0;
+    if (i >= g_dyn_ptrs.size())
+        return 0.0;
     return jit_bitcast<double>(g_dyn_ptrs[i].first);
 }
 
 extern "C" double flux_dyn_ptr_get_vtable(double idx)
 {
     size_t i = static_cast<size_t>(idx);
-    if (i >= g_dyn_ptrs.size()) return 0.0;
+    if (i >= g_dyn_ptrs.size())
+        return 0.0;
     return jit_bitcast<double>(g_dyn_ptrs[i].second);
 }
 
@@ -491,7 +493,6 @@ extern "C" void flux_gpu_set_enabled(double enabled)
     g_matrix_tracker.use_gpu = (enabled != 0.0);
 }
 
-
 // Forward declarations for JIT-callable parallel runtime functions
 extern "C" void flux_parallel_for(int64_t start, int64_t end, int64_t chunk_size, void* body_func_ptr, void* user_data);
 extern "C" int64_t flux_get_num_threads();
@@ -522,49 +523,105 @@ extern "C" void flux_rwlock_destroy(double rw);
 #ifndef FLUX_RUNTIME_STANDALONE
 #endif
 
-
 // Weak forwarding wrappers for AOT compilation.
 // These provide short names (matrix_mul, etc.) that forward to the
 // flux_-prefixed implementations.  Unlike GNU asm .equ aliases,
 // this pattern works on both ELF and Mach-O (macOS).
 extern "C" void* matrix_mul(void* a, void* b);
-extern "C" void* matrix_mul(void* a, void* b) { return flux_matrix_mul(a, b); }
+extern "C" void* matrix_mul(void* a, void* b)
+{
+    return flux_matrix_mul(a, b);
+}
 extern "C" void* matrix_add(void* a, void* b);
-extern "C" void* matrix_add(void* a, void* b) { return flux_matrix_add(a, b); }
+extern "C" void* matrix_add(void* a, void* b)
+{
+    return flux_matrix_add(a, b);
+}
 extern "C" void* matrix_sub(void* a, void* b);
-extern "C" void* matrix_sub(void* a, void* b) { return flux_matrix_sub(a, b); }
+extern "C" void* matrix_sub(void* a, void* b)
+{
+    return flux_matrix_sub(a, b);
+}
 extern "C" void* matrix_transpose(void* m);
-extern "C" void* matrix_transpose(void* m) { return flux_matrix_transpose(m); }
+extern "C" void* matrix_transpose(void* m)
+{
+    return flux_matrix_transpose(m);
+}
 extern "C" void* matrix_inv(void* m);
-extern "C" void* matrix_inv(void* m) { return flux_matrix_inv(m); }
+extern "C" void* matrix_inv(void* m)
+{
+    return flux_matrix_inv(m);
+}
 extern "C" void* matrix_solve(void* a, void* b);
-extern "C" void* matrix_solve(void* a, void* b) { return flux_matrix_solve(a, b); }
+extern "C" void* matrix_solve(void* a, void* b)
+{
+    return flux_matrix_solve(a, b);
+}
 extern "C" double matrix_det(void* m);
-extern "C" double matrix_det(void* m) { return flux_matrix_det(m); }
+extern "C" double matrix_det(void* m)
+{
+    return flux_matrix_det(m);
+}
 extern "C" double matrix_get(void* m, int row, int col);
-extern "C" double matrix_get(void* m, int row, int col) { return flux_matrix_get(m, row, col); }
+extern "C" double matrix_get(void* m, int row, int col)
+{
+    return flux_matrix_get(m, row, col);
+}
 extern "C" int matrix_rows(void* m);
-extern "C" int matrix_rows(void* m) { return flux_matrix_rows(m); }
+extern "C" int matrix_rows(void* m)
+{
+    return flux_matrix_rows(m);
+}
 extern "C" int matrix_cols(void* m);
-extern "C" int matrix_cols(void* m) { return flux_matrix_cols(m); }
+extern "C" int matrix_cols(void* m)
+{
+    return flux_matrix_cols(m);
+}
 extern "C" void matrix_set(void* m, int row, int col, double val);
-extern "C" void matrix_set(void* m, int row, int col, double val) { return flux_matrix_set(m, row, col, val); }
+extern "C" void matrix_set(void* m, int row, int col, double val)
+{
+    return flux_matrix_set(m, row, col, val);
+}
 extern "C" void* matrix_zeros(int rows, int cols);
-extern "C" void* matrix_zeros(int rows, int cols) { return flux_matrix_zeros(rows, cols); }
+extern "C" void* matrix_zeros(int rows, int cols)
+{
+    return flux_matrix_zeros(rows, cols);
+}
 extern "C" void* matrix_ones(int rows, int cols);
-extern "C" void* matrix_ones(int rows, int cols) { return flux_matrix_ones(rows, cols); }
+extern "C" void* matrix_ones(int rows, int cols)
+{
+    return flux_matrix_ones(rows, cols);
+}
 extern "C" void* matrix_eye(int n);
-extern "C" void* matrix_eye(int n) { return flux_matrix_eye(n); }
+extern "C" void* matrix_eye(int n)
+{
+    return flux_matrix_eye(n);
+}
 extern "C" void* matrix_copy(void* m);
-extern "C" void* matrix_copy(void* m) { return flux_matrix_copy(m); }
+extern "C" void* matrix_copy(void* m)
+{
+    return flux_matrix_copy(m);
+}
 extern "C" double matrix_sum(void* m);
-extern "C" double matrix_sum(void* m) { return flux_matrix_sum(m); }
+extern "C" double matrix_sum(void* m)
+{
+    return flux_matrix_sum(m);
+}
 extern "C" double matrix_mean(void* m);
-extern "C" double matrix_mean(void* m) { return flux_matrix_mean(m); }
+extern "C" double matrix_mean(void* m)
+{
+    return flux_matrix_mean(m);
+}
 extern "C" void* matrix_slice(void* m, int r0, int r1, int c0, int c1);
-extern "C" void* matrix_slice(void* m, int r0, int r1, int c0, int c1) { return flux_matrix_slice(m, r0, r1, c0, c1); }
+extern "C" void* matrix_slice(void* m, int r0, int r1, int c0, int c1)
+{
+    return flux_matrix_slice(m, r0, r1, c0, c1);
+}
 extern "C" double pi();
-extern "C" double pi() { return flux_pi(); }
+extern "C" double pi()
+{
+    return flux_pi();
+}
 
 extern "C" double flux_print_string(double str_dbl)
 {
@@ -611,8 +668,7 @@ extern "C" double flux_set_diagnostic(double node_dbl, double type_dbl, double t
     const char* node = reinterpret_cast<const char*>(static_cast<uintptr_t>(jit_bitcast<uint64_t>(node_dbl)));
     const char* diagType = reinterpret_cast<const char*>(static_cast<uintptr_t>(jit_bitcast<uint64_t>(type_dbl)));
     std::cout << "[Runtime] Diagnostic: node=" << (node ? node : "null")
-              << " type=" << (diagType && diagType[0] ? diagType : "all")
-              << " threshold=" << threshold << std::endl;
+              << " type=" << (diagType && diagType[0] ? diagType : "all") << " threshold=" << threshold << std::endl;
     return 1.0;
 }
 
@@ -623,40 +679,76 @@ extern "C" double flux_set_diagnostic(double node_dbl, double type_dbl, double t
 // forwarding functions that the linker inlines to a tail call (jmp).
 // The declarations are already provided by the "advanced_math.h" include above.
 extern "C" void* matrix_lu(void*);
-extern "C" void* matrix_lu(void* m) { return flux_matrix_lu(m); }
+extern "C" void* matrix_lu(void* m)
+{
+    return flux_matrix_lu(m);
+}
 
 extern "C" void* matrix_qr(void*);
-extern "C" void* matrix_qr(void* m) { return flux_matrix_qr(m); }
+extern "C" void* matrix_qr(void* m)
+{
+    return flux_matrix_qr(m);
+}
 
 extern "C" void* matrix_svd(void*);
-extern "C" void* matrix_svd(void* m) { return flux_matrix_svd(m); }
+extern "C" void* matrix_svd(void* m)
+{
+    return flux_matrix_svd(m);
+}
 
 extern "C" void* matrix_cholesky(void*);
-extern "C" void* matrix_cholesky(void* m) { return flux_matrix_cholesky(m); }
+extern "C" void* matrix_cholesky(void* m)
+{
+    return flux_matrix_cholesky(m);
+}
 
 extern "C" void* matrix_eigenvalues(void*);
-extern "C" void* matrix_eigenvalues(void* m) { return flux_matrix_eigenvalues(m); }
+extern "C" void* matrix_eigenvalues(void* m)
+{
+    return flux_matrix_eigenvalues(m);
+}
 
 extern "C" void* matrix_eigenvectors(void*);
-extern "C" void* matrix_eigenvectors(void* m) { return flux_matrix_eigenvectors(m); }
+extern "C" void* matrix_eigenvectors(void* m)
+{
+    return flux_matrix_eigenvectors(m);
+}
 
 extern "C" double matrix_rank(void*);
-extern "C" double matrix_rank(void* m) { return flux_matrix_rank(m); }
+extern "C" double matrix_rank(void* m)
+{
+    return flux_matrix_rank(m);
+}
 
 extern "C" double matrix_cond(void*);
-extern "C" double matrix_cond(void* m) { return flux_matrix_cond(m); }
+extern "C" double matrix_cond(void* m)
+{
+    return flux_matrix_cond(m);
+}
 
 extern "C" double matrix_norm(void*, double);
-extern "C" double matrix_norm(void* m, double p) { return flux_matrix_norm(m, p); }
+extern "C" double matrix_norm(void* m, double p)
+{
+    return flux_matrix_norm(m, p);
+}
 
 extern "C" void* fft(void*, double);
-extern "C" void* fft(void* sig, double sr) { return flux_fft(sig, sr); }
+extern "C" void* fft(void* sig, double sr)
+{
+    return flux_fft(sig, sr);
+}
 
 extern "C" double fft_thd(void*, double);
-extern "C" double fft_thd(void* sig, double sr) { return flux_fft_thd(sig, sr); }
+extern "C" double fft_thd(void* sig, double sr)
+{
+    return flux_fft_thd(sig, sr);
+}
 
 extern "C" double fft_snr(void*, double);
-extern "C" double fft_snr(void* sig, double sr) { return flux_fft_snr(sig, sr); }
+extern "C" double fft_snr(void* sig, double sr)
+{
+    return flux_fft_snr(sig, sr);
+}
 
 // ============================================================================
 // try / catch / throw runtime support
@@ -678,18 +770,22 @@ extern "C" double fft_snr(void* sig, double sr) { return flux_fft_snr(sig, sr); 
 static DWORD g_jmp_key;
 static bool g_jmp_key_init = false;
 
-static void jmp_key_init() {
+static void jmp_key_init()
+{
     g_jmp_key = TlsAlloc();
     g_jmp_key_init = true;
 }
 
-struct JmpBufStack {
+struct JmpBufStack
+{
     jmp_buf* slots[256];
     int depth;
 };
 
-static JmpBufStack* get_jmp_stack() {
-    if (!g_jmp_key_init) jmp_key_init();
+static JmpBufStack* get_jmp_stack()
+{
+    if (!g_jmp_key_init)
+        jmp_key_init();
     void* p = TlsGetValue(g_jmp_key);
     if (!p) {
         p = calloc(1, sizeof(JmpBufStack));
@@ -702,18 +798,24 @@ static JmpBufStack* get_jmp_stack() {
 static pthread_key_t g_jmp_key;
 static pthread_once_t g_jmp_once = PTHREAD_ONCE_INIT;
 
-static void jmp_key_destructor(void* p) { free(p); }
+static void jmp_key_destructor(void* p)
+{
+    free(p);
+}
 
-static void jmp_key_init() {
+static void jmp_key_init()
+{
     pthread_key_create(&g_jmp_key, jmp_key_destructor);
 }
 
-struct JmpBufStack {
+struct JmpBufStack
+{
     jmp_buf* slots[256];
     int depth;
 };
 
-static JmpBufStack* get_jmp_stack() {
+static JmpBufStack* get_jmp_stack()
+{
     pthread_once(&g_jmp_once, jmp_key_init);
     void* p = pthread_getspecific(g_jmp_key);
     if (!p) {
@@ -741,7 +843,8 @@ extern "C" void flux_push_jmp_buf(void* buf)
 extern "C" void flux_pop_jmp_buf()
 {
     JmpBufStack* s = get_jmp_stack();
-    if (s->depth > 0) s->depth--;
+    if (s->depth > 0)
+        s->depth--;
 }
 
 extern "C" void flux_throw_error(double value, const char* msg)
@@ -750,15 +853,20 @@ extern "C" void flux_throw_error(double value, const char* msg)
     g_last_thrown_msg = msg;
     JmpBufStack* s = get_jmp_stack();
     if (s->depth == 0) {
-        std::fprintf(stderr, "[FATAL] uncaught Flux exception: %s\n",
-                     msg ? msg : "(no message)");
+        std::fprintf(stderr, "[FATAL] uncaught Flux exception: %s\n", msg ? msg : "(no message)");
         std::abort();
     }
     longjmp(*s->slots[--s->depth], 1);
 }
 
-extern "C" double flux_last_thrown_value() { return g_last_thrown_value; }
-extern "C" const char* flux_last_thrown_msg() { return g_last_thrown_msg; }
+extern "C" double flux_last_thrown_value()
+{
+    return g_last_thrown_value;
+}
+extern "C" const char* flux_last_thrown_msg()
+{
+    return g_last_thrown_msg;
+}
 
 extern "C" void println_string(const char* str)
 {
@@ -775,10 +883,10 @@ extern "C" void println_string(const char* str)
 
 #ifdef _MSC_VER
 static __declspec(thread) char tls_runtime_error[1024] = {0};
-static __declspec(thread) int  tls_runtime_error_set = 0;
+static __declspec(thread) int tls_runtime_error_set = 0;
 #else
 static thread_local char tls_runtime_error[1024] = {0};
-static thread_local int  tls_runtime_error_set = 0;
+static thread_local int tls_runtime_error_set = 0;
 #endif
 
 extern "C" void flux_set_error(const char* msg)

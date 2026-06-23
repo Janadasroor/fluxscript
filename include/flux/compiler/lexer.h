@@ -92,7 +92,7 @@ enum class TokenType
     tok_false = -107,
 
     // Type annotation
-    tok_arrow = -41, // ->
+    tok_arrow = -41,      // ->
     tok_fat_arrow = -150, // => (match arms)
 
     // Complex numbers
@@ -137,7 +137,7 @@ enum class TokenType
     tok_slash_equal = -148, // /=
 
     // From-import
-    tok_from = -100,            // from keyword (from module import symbol)
+    tok_from = -100, // from keyword (from module import symbol)
 
     // Control flow
     tok_break = -149,
@@ -216,7 +216,7 @@ enum class TokenType
     tok_stability = -302,       // Stability analysis
     // tok_sensitivity already defined at -137
     tok_optimize = -303, // Optimization
-    tok_plot = -301,          // ASCII plot
+    tok_plot = -301,     // ASCII plot
 
     tok_phasor = -305,        // Phasor type
     tok_bode = -306,          // Bode plot
@@ -238,9 +238,9 @@ enum class TokenType
     tok_hot_swap = -284,      // AI model hot-swapping
 
     // Method dispatch & traits
-    tok_impl = -285,          // impl block
-    tok_trait = -286,         // trait declaration
-    tok_lifetime = -310,      // lifetime annotation: 'a, 'b
+    tok_impl = -285,     // impl block
+    tok_trait = -286,    // trait declaration
+    tok_lifetime = -310, // lifetime annotation: 'a, 'b
 
     // Analysis Control
     tok_analysis = -116, // analysis directive
@@ -283,13 +283,13 @@ enum class TokenType
     tok_hier = -323,     // hierarchical separator
 
     /* Verilog-A Lite */
-    tok_analog = -200,      // analog block
-    tok_branch = -325,      // branch declaration
+    tok_analog = -200, // analog block
+    tok_branch = -325, // branch declaration
     // (tok_V and tok_I were removed — "V" and "I" are lexed as tok_identifier)
-    tok_ddt = -115,         // ddt() time derivative
-    tok_idt = -114,         // idt() time integral
-    tok_abstol = -326,      // absolute tolerance
-    tok_reltol = -202,      // relative tolerance
+    tok_ddt = -115,    // ddt() time derivative
+    tok_idt = -114,    // idt() time integral
+    tok_abstol = -326, // absolute tolerance
+    tok_reltol = -202, // relative tolerance
 
     /* Symbol Pin Mapping */
     tok_symbol = -203,         // symbol declaration
@@ -436,7 +436,8 @@ public:
     const std::vector<LexerDiagnostic>& getErrors() const;
     bool hasErrors() const;
 
-    struct SavedState {
+    struct SavedState
+    {
         size_t pos;
         size_t tokenStart;
         int lastChar;

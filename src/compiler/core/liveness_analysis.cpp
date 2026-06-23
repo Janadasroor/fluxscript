@@ -4,15 +4,16 @@
 
 namespace Flux {
 
-void LivenessAnalyzer::analyze(const ExprAST* root) {
+void LivenessAnalyzer::analyze(const ExprAST* root)
+{
     results.clear();
     walkAllBlocks(root);
 }
 
-static void walkExpr(const ExprAST* expr,
-                     void (*cb)(const BlockExprAST*, void*),
-                     void* ctx) {
-    if (!expr) return;
+static void walkExpr(const ExprAST* expr, void (*cb)(const BlockExprAST*, void*), void* ctx)
+{
+    if (!expr)
+        return;
 
     if (auto* block = dynamic_cast<const BlockExprAST*>(expr)) {
         cb(block, ctx);
@@ -26,13 +27,15 @@ static void walkExpr(const ExprAST* expr,
     if (auto* ife = dynamic_cast<const IfExprAST*>(expr)) {
         walk(ife->getCond());
         walk(ife->getThen());
-        if (ife->getElse()) walk(ife->getElse());
+        if (ife->getElse())
+            walk(ife->getElse());
         return;
     }
     if (auto* fore = dynamic_cast<const ForExprAST*>(expr)) {
         walk(fore->getStart());
         walk(fore->getEnd());
-        if (fore->getStep()) walk(fore->getStep());
+        if (fore->getStep())
+            walk(fore->getStep());
         walk(fore->getBody());
         return;
     }
@@ -42,7 +45,8 @@ static void walkExpr(const ExprAST* expr,
         return;
     }
     if (auto* ret = dynamic_cast<const ReturnExprAST*>(expr)) {
-        if (ret->getVal()) walk(ret->getVal());
+        if (ret->getVal())
+            walk(ret->getVal());
         return;
     }
     if (auto* assign = dynamic_cast<const AssignExprAST*>(expr)) {
@@ -51,8 +55,10 @@ static void walkExpr(const ExprAST* expr,
         return;
     }
     if (auto* let = dynamic_cast<const LetExprAST*>(expr)) {
-        if (let->getInit()) walk(let->getInit());
-        if (let->getBody()) walk(let->getBody());
+        if (let->getInit())
+            walk(let->getInit());
+        if (let->getBody())
+            walk(let->getBody());
         return;
     }
     if (auto* bin = dynamic_cast<const BinaryExprAST*>(expr)) {
@@ -70,15 +76,18 @@ static void walkExpr(const ExprAST* expr,
         return;
     }
     if (auto* member = dynamic_cast<const MemberExprAST*>(expr)) {
-        if (member->getObject()) walk(member->getObject());
+        if (member->getObject())
+            walk(member->getObject());
         return;
     }
     if (auto* deref = dynamic_cast<const DerefExprAST*>(expr)) {
-        if (deref->getOperand()) walk(deref->getOperand());
+        if (deref->getOperand())
+            walk(deref->getOperand());
         return;
     }
     if (auto* borrow = dynamic_cast<const BorrowExprAST*>(expr)) {
-        if (borrow->getOperand()) walk(borrow->getOperand());
+        if (borrow->getOperand())
+            walk(borrow->getOperand());
         return;
     }
     if (auto* idx = dynamic_cast<const IndexExprAST*>(expr)) {
@@ -93,13 +102,15 @@ static void walkExpr(const ExprAST* expr,
     }
 }
 
-static void countBlocks(const BlockExprAST* block, void* ctx) {
+static void countBlocks(const BlockExprAST* block, void* ctx)
+{
     auto* count = static_cast<int*>(ctx);
     (void)block;
     (*count)++;
 }
 
-void LivenessAnalyzer::walkAllBlocks(const ExprAST* root) {
+void LivenessAnalyzer::walkAllBlocks(const ExprAST* root)
+{
     // First pass: count blocks to reserve space
     int totalBlocks = 0;
     walkExpr(root, countBlocks, &totalBlocks);
@@ -108,26 +119,31 @@ void LivenessAnalyzer::walkAllBlocks(const ExprAST* root) {
     // (But we need to do it inline since we need the CFG results)
     // Actually, analyze each BlockExprAST as we encounter it.
     // Use a separate walk that does the analysis.
-    struct WalkCtx {
+    struct WalkCtx
+    {
         LivenessAnalyzer* self;
     };
     WalkCtx wctx{this};
 
-    walkExpr(root, [](const BlockExprAST* block, void* ctx) {
-        auto* wctx = static_cast<WalkCtx*>(ctx);
-        BlockCFG cfg;
-        cfg.block = block;
-        wctx->self->buildCFG(block, cfg);
-        wctx->self->solveLiveness(cfg);
-        StmtLiveness sl;
-        wctx->self->computeStmtLiveness(cfg, sl);
-        wctx->self->results[block] = std::move(sl);
-    }, &wctx);
+    walkExpr(
+        root,
+        [](const BlockExprAST* block, void* ctx) {
+            auto* wctx = static_cast<WalkCtx*>(ctx);
+            BlockCFG cfg;
+            cfg.block = block;
+            wctx->self->buildCFG(block, cfg);
+            wctx->self->solveLiveness(cfg);
+            StmtLiveness sl;
+            wctx->self->computeStmtLiveness(cfg, sl);
+            wctx->self->results[block] = std::move(sl);
+        },
+        &wctx);
 }
 
 // ---- CFG Builder ----
 
-void LivenessAnalyzer::buildCFG(const BlockExprAST* block, BlockCFG& cfg) {
+void LivenessAnalyzer::buildCFG(const BlockExprAST* block, BlockCFG& cfg)
+{
     const auto& stmts = block->getStatements();
     int n = static_cast<int>(stmts.size());
     if (n == 0) {
@@ -143,10 +159,9 @@ void LivenessAnalyzer::buildCFG(const BlockExprAST* block, BlockCFG& cfg) {
         const ExprAST* stmt = stmts[i].get();
 
         // Check if this is a control-flow statement
-        bool isCtrl = dynamic_cast<const IfExprAST*>(stmt) != nullptr ||
-                      dynamic_cast<const ForExprAST*>(stmt) != nullptr ||
-                      dynamic_cast<const WhileExprAST*>(stmt) != nullptr ||
-                      dynamic_cast<const ReturnExprAST*>(stmt) != nullptr;
+        bool isCtrl =
+            dynamic_cast<const IfExprAST*>(stmt) != nullptr || dynamic_cast<const ForExprAST*>(stmt) != nullptr ||
+            dynamic_cast<const WhileExprAST*>(stmt) != nullptr || dynamic_cast<const ReturnExprAST*>(stmt) != nullptr;
 
         if (!isCtrl) {
             cfg.bbs.back().stmtIndices.push_back(i);
@@ -161,8 +176,8 @@ void LivenessAnalyzer::buildCFG(const BlockExprAST* block, BlockCFG& cfg) {
         if (dynamic_cast<const ReturnExprAST*>(stmt)) {
             // Return terminates. Add it to the current block.
             cfg.bbs.back().stmtIndices.push_back(i);
-            cfg.bbs.back().succs.clear();  // no successors
-            cfg.bbs.emplace_back();  // unreachable block after return
+            cfg.bbs.back().succs.clear(); // no successors
+            cfg.bbs.emplace_back();       // unreachable block after return
             continue;
         }
 
@@ -193,8 +208,8 @@ void LivenessAnalyzer::buildCFG(const BlockExprAST* block, BlockCFG& cfg) {
             cfg.bbs.emplace_back();
 
             // Edges
-            cfg.bbs.back().succs.clear();  // previous block (the one before the if)
-            int prevBB = static_cast<int>(cfg.bbs.size()) - 4;  // block before thenBB
+            cfg.bbs.back().succs.clear();                      // previous block (the one before the if)
+            int prevBB = static_cast<int>(cfg.bbs.size()) - 4; // block before thenBB
             cfg.bbs[prevBB].succs.push_back(thenBB);
             cfg.bbs[prevBB].succs.push_back(ife->getElse() ? elseBB : mergeBB);
             cfg.bbs[thenBB].succs.push_back(mergeBB);
@@ -211,18 +226,18 @@ void LivenessAnalyzer::buildCFG(const BlockExprAST* block, BlockCFG& cfg) {
             int bodyBB = static_cast<int>(cfg.bbs.size());
             int afterBB = bodyBB + 1;
 
-            cfg.bbs.emplace_back();  // body
+            cfg.bbs.emplace_back(); // body
             if (auto* bodyBlock = dynamic_cast<const BlockExprAST*>(fore->getBody())) {
                 for (int j = 0; j < static_cast<int>(bodyBlock->getStatements().size()); ++j)
                     cfg.bbs[bodyBB].stmtIndices.push_back(i);
             }
 
-            cfg.bbs.emplace_back();  // after
+            cfg.bbs.emplace_back(); // after
 
             // Edges: current -> body, body -> body (loop) or body -> after
             int prevBB = static_cast<int>(cfg.bbs.size()) - 3;
             cfg.bbs[prevBB].succs.push_back(bodyBB);
-            cfg.bbs[bodyBB].succs.push_back(prevBB);  // back edge
+            cfg.bbs[bodyBB].succs.push_back(prevBB); // back edge
             cfg.bbs[bodyBB].succs.push_back(afterBB);
 
             // Continue from after block
@@ -234,14 +249,14 @@ void LivenessAnalyzer::buildCFG(const BlockExprAST* block, BlockCFG& cfg) {
             int bodyBB = headBB + 1;
             int afterBB = headBB + 2;
 
-            cfg.bbs.emplace_back();  // head (condition)
-            cfg.bbs.emplace_back();  // body
+            cfg.bbs.emplace_back(); // head (condition)
+            cfg.bbs.emplace_back(); // body
             if (auto* bodyBlock = dynamic_cast<const BlockExprAST*>(whilee->getBody())) {
                 for (int j = 0; j < static_cast<int>(bodyBlock->getStatements().size()); ++j)
                     cfg.bbs[bodyBB].stmtIndices.push_back(i);
             }
 
-            cfg.bbs.emplace_back();  // after
+            cfg.bbs.emplace_back(); // after
 
             // Edges: current -> head, head -> body, head -> after, body -> head
             int prevBB = static_cast<int>(cfg.bbs.size()) - 4;
@@ -257,18 +272,20 @@ void LivenessAnalyzer::buildCFG(const BlockExprAST* block, BlockCFG& cfg) {
 
 // ---- Def/Use Collection ----
 
-static void collectDefUseStmt(const ExprAST* stmt,
-                               std::set<std::string>& useOut,
-                               std::set<std::string>& defOut) {
-    if (!stmt) return;
+static void collectDefUseStmt(const ExprAST* stmt, std::set<std::string>& useOut, std::set<std::string>& defOut)
+{
+    if (!stmt)
+        return;
 
     if (auto* let = dynamic_cast<const LetExprAST*>(stmt)) {
         std::string name = let->getVarName();
         name.erase(0, name.find_first_not_of(" "));
         name.erase(name.find_last_not_of(" ") + 1);
         defOut.insert(name);
-        if (let->getInit()) collectDefUseStmt(let->getInit(), useOut, defOut);
-        if (let->getBody()) collectDefUseStmt(let->getBody(), useOut, defOut);
+        if (let->getInit())
+            collectDefUseStmt(let->getInit(), useOut, defOut);
+        if (let->getBody())
+            collectDefUseStmt(let->getBody(), useOut, defOut);
         return;
     }
 
@@ -335,7 +352,8 @@ static void collectDefUseStmt(const ExprAST* stmt,
 
 // ---- Liveness Solver ----
 
-void LivenessAnalyzer::solveLiveness(BlockCFG& cfg) {
+void LivenessAnalyzer::solveLiveness(BlockCFG& cfg)
+{
     int n = static_cast<int>(cfg.bbs.size());
 
     // Build predecessors
@@ -381,8 +399,7 @@ void LivenessAnalyzer::solveLiveness(BlockCFG& cfg) {
             std::set<std::string> newLiveOut;
             for (int s : cfg.bbs[i].succs) {
                 if (s >= 0 && s < n) {
-                    newLiveOut.insert(cfg.bbs[s].liveIn.begin(),
-                                      cfg.bbs[s].liveIn.end());
+                    newLiveOut.insert(cfg.bbs[s].liveIn.begin(), cfg.bbs[s].liveIn.end());
                 }
             }
             if (newLiveOut != cfg.bbs[i].liveOut) {
@@ -405,10 +422,12 @@ void LivenessAnalyzer::solveLiveness(BlockCFG& cfg) {
 
 // ---- Per-statement Liveness (Backward Dataflow) ----
 
-void LivenessAnalyzer::computeStmtLiveness(const BlockCFG& cfg, StmtLiveness& out) {
+void LivenessAnalyzer::computeStmtLiveness(const BlockCFG& cfg, StmtLiveness& out)
+{
     const auto& stmts = cfg.block->getStatements();
     int n = static_cast<int>(stmts.size());
-    if (n == 0) return;
+    if (n == 0)
+        return;
 
     // Map each statement index to the basic block that contains it
     std::vector<int> stmtToBB(n, -1);
@@ -427,7 +446,8 @@ void LivenessAnalyzer::computeStmtLiveness(const BlockCFG& cfg, StmtLiveness& ou
     for (int bi = 0; bi < static_cast<int>(cfg.bbs.size()); ++bi) {
         const auto& bb = cfg.bbs[bi];
         const auto& idxs = bb.stmtIndices;
-        if (idxs.empty()) continue;
+        if (idxs.empty())
+            continue;
 
         // Start with liveOut of this block
         std::set<std::string> liveAfter = bb.liveOut;
@@ -435,7 +455,8 @@ void LivenessAnalyzer::computeStmtLiveness(const BlockCFG& cfg, StmtLiveness& ou
         // Walk statements in reverse order
         for (auto it = idxs.rbegin(); it != idxs.rend(); ++it) {
             int i = *it;
-            if (i < 0 || i >= n) continue;
+            if (i < 0 || i >= n)
+                continue;
 
             // after[i] = liveAfter (what's live after executing this stmt)
             out.after[i] = liveAfter;
@@ -458,7 +479,8 @@ void LivenessAnalyzer::computeStmtLiveness(const BlockCFG& cfg, StmtLiveness& ou
 
 // ---- Public API ----
 
-const StmtLiveness* LivenessAnalyzer::getLiveness(const BlockExprAST* block) const {
+const StmtLiveness* LivenessAnalyzer::getLiveness(const BlockExprAST* block) const
+{
     auto it = results.find(block);
     return it != results.end() ? &it->second : nullptr;
 }

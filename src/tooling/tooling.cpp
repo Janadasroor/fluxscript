@@ -107,8 +107,7 @@ bool ensureParentDirectory(const std::string& path, std::string* error)
     return true;
 }
 
-std::unique_ptr<llvm::TargetMachine> createTargetMachine(const OptimizationLevel level, bool pic,
-                                                        std::string* error)
+std::unique_ptr<llvm::TargetMachine> createTargetMachine(const OptimizationLevel level, bool pic, std::string* error)
 {
     llvm::InitializeNativeTarget();
     llvm::InitializeNativeTargetAsmPrinter();
@@ -149,8 +148,8 @@ std::unique_ptr<llvm::TargetMachine> createTargetMachine(const OptimizationLevel
         features += (f.second ? "+" : "-") + f.first().str() + ",";
 
     return std::unique_ptr<llvm::TargetMachine>(
-        target->createTargetMachine(llvm::Triple(triple), llvm::sys::getHostCPUName().str(), features, options, relocModel,
-                                    std::nullopt, codegenLevel));
+        target->createTargetMachine(llvm::Triple(triple), llvm::sys::getHostCPUName().str(), features, options,
+                                    relocModel, std::nullopt, codegenLevel));
 }
 
 bool writeBufferToFile(llvm::MemoryBuffer& buffer, const std::string& outputPath, std::string* error)
@@ -264,8 +263,7 @@ std::string computeImportGraphHash(const std::string& mainCode)
     return os.str();
 }
 
-std::string computeCacheKey(const std::string& code, const CompilerOptions& options,
-                            const std::string& importHashes)
+std::string computeCacheKey(const std::string& code, const CompilerOptions& options, const std::string& importHashes)
 {
     const std::string payload = code + "|" + options.inputName + "|" + options.moduleName + "|" +
                                 std::to_string(static_cast<int>(options.optimizationLevel)) + "|" +
@@ -351,7 +349,8 @@ bool emitArtifact(const std::string& code, const AOTOptions& options, std::strin
 
     const std::string buildDir = []() {
         const char* env = std::getenv("FLUX_BUILD_DIR");
-        if (env && env[0]) return std::string(env);
+        if (env && env[0])
+            return std::string(env);
         return std::string("build");
     }();
 #ifdef _WIN32
@@ -361,9 +360,8 @@ bool emitArtifact(const std::string& code, const AOTOptions& options, std::strin
 #else
     const std::string linkLibs = "-lFluxRuntime -lcurl -lpthread -ldl -lm -lstdc++";
 #endif
-    const std::string command =
-        "c++ -shared -o " + shellQuote(options.outputPath) + " " + shellQuote(objectPath.string())
-        + " -L" + shellQuote(buildDir) + " " + linkLibs;
+    const std::string command = "c++ -shared -o " + shellQuote(options.outputPath) + " " +
+                                shellQuote(objectPath.string()) + " -L" + shellQuote(buildDir) + " " + linkLibs;
     if (std::system(command.c_str()) != 0) {
         if (error)
             *error = "Failed to link shared library with system C++ driver.";

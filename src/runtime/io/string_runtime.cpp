@@ -22,9 +22,11 @@ extern "C" double flux_strcmp(double a_ptr, double b_ptr)
 
 extern "C" double flux_vec_eq(double* a_data, int a_size, double* b_data, int b_size)
 {
-    if (a_size != b_size) return 0.0;
+    if (a_size != b_size)
+        return 0.0;
     for (int i = 0; i < a_size; ++i) {
-        if (a_data[i] != b_data[i]) return 0.0;
+        if (a_data[i] != b_data[i])
+            return 0.0;
     }
     return 1.0;
 }
@@ -169,4 +171,3 @@ extern "C" double flux_regex_replace(double str_dbl, double pat_dbl, double repl
         return 0.0;
     }
 }
-

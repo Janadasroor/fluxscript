@@ -14,8 +14,8 @@
 #ifndef FLUX_COMPILER_AST_H
 #define FLUX_COMPILER_AST_H
 
-#include "flux/compiler/lexer.h"
 #include "flux/compiler/codegen_context.h"
+#include "flux/compiler/lexer.h"
 #include <memory>
 #include <string>
 #include <vector>
@@ -116,7 +116,9 @@ class PhasorExprAST : public ExprAST
 
 public:
     PhasorExprAST(std::unique_ptr<ExprAST> mag, std::unique_ptr<ExprAST> phase)
-        : Magnitude(std::move(mag)), PhaseDeg(std::move(phase)) {}
+        : Magnitude(std::move(mag)), PhaseDeg(std::move(phase))
+    {
+    }
     TypedValue codegen(CodegenContext& context) override;
 };
 
@@ -248,8 +250,9 @@ class VariableExprAST : public ExprAST
 
 public:
     VariableExprAST(const std::string& Name) : Name(Name) {}
-    VariableExprAST(const std::string& Name, std::vector<FluxType> TypeArgs)
-        : Name(Name), TypeArgs(std::move(TypeArgs)) {}
+    VariableExprAST(const std::string& Name, std::vector<FluxType> TypeArgs) : Name(Name), TypeArgs(std::move(TypeArgs))
+    {
+    }
     TypedValue codegen(CodegenContext& context) override;
     const std::string& getName() const { return Name; }
     const std::vector<FluxType>& getTypeArgs() const { return TypeArgs; }
@@ -885,7 +888,10 @@ public:
     void addCatch(const std::string& var, std::unique_ptr<ExprAST> handler);
     void setFinally(std::unique_ptr<ExprAST> body);
     const ExprAST* getTryBody() const { return TryBody.get(); }
-    const std::vector<std::pair<std::string, std::unique_ptr<ExprAST>>>& getCatchClauses() const { return CatchClauses; }
+    const std::vector<std::pair<std::string, std::unique_ptr<ExprAST>>>& getCatchClauses() const
+    {
+        return CatchClauses;
+    }
     const ExprAST* getFinallyBody() const { return FinallyBody.get(); }
     bool containsYield() const override
     {
@@ -1107,9 +1113,15 @@ public:
                 const std::vector<std::pair<std::string, std::string>>& namedBindings = {});
     void setDefault(std::unique_ptr<ExprAST> arm);
     const ExprAST* getValue() const { return Value.get(); }
-    const std::vector<std::pair<std::vector<std::unique_ptr<ExprAST>>, std::unique_ptr<ExprAST>>>& getArms() const { return Arms; }
+    const std::vector<std::pair<std::vector<std::unique_ptr<ExprAST>>, std::unique_ptr<ExprAST>>>& getArms() const
+    {
+        return Arms;
+    }
     const std::vector<std::vector<std::string>>& getBindings() const { return Bindings; }
-    const std::vector<std::vector<std::pair<std::string,std::string>>>& getNamedFieldBindings() const { return NamedFieldBindings; }
+    const std::vector<std::vector<std::pair<std::string, std::string>>>& getNamedFieldBindings() const
+    {
+        return NamedFieldBindings;
+    }
     const ExprAST* getDefaultArm() const { return DefaultArm.get(); }
     bool containsYield() const override
     {
@@ -1181,14 +1193,17 @@ public:
     bool containsYield() const override { return Body->containsYield(); }
 };
 
-struct LifetimeParam {
+struct LifetimeParam
+{
     std::string Name;
     std::vector<std::string> Outlives;
 
     LifetimeParam() = default;
     explicit LifetimeParam(std::string name) : Name(std::move(name)) {}
     LifetimeParam(std::string name, std::vector<std::string> outlives)
-        : Name(std::move(name)), Outlives(std::move(outlives)) {}
+        : Name(std::move(name)), Outlives(std::move(outlives))
+    {
+    }
 };
 
 inline std::vector<std::string> getLifetimeNames(const std::vector<LifetimeParam>& params)
@@ -1208,7 +1223,7 @@ class PrototypeAST
     int Line = 0;
     bool IsGenerator = false;
     bool IsAsync = false;
-    std::vector<std::string> GenericParams; // Generic type parameter names (e.g., [T, U])
+    std::vector<std::string> GenericParams;                             // Generic type parameter names (e.g., [T, U])
     std::map<std::string, std::vector<std::string>> GenericParamBounds; // param name → trait bounds
     std::vector<LifetimeParam> LifetimeParams;
 
@@ -1258,9 +1273,8 @@ public:
     const std::map<std::string, std::vector<std::string>>& getGenericParamBounds() const { return GenericParamBounds; }
 
     // Create a concrete (specialized) prototype by substituting generic type params
-    std::unique_ptr<PrototypeAST> specialize(
-        const std::map<std::string, FluxType>& typeMap,
-        const std::string& suffix) const
+    std::unique_ptr<PrototypeAST> specialize(const std::map<std::string, FluxType>& typeMap,
+                                             const std::string& suffix) const
     {
         auto substitute = [&](const FluxType& T) -> FluxType {
             if (T.isGeneric()) {
@@ -1277,8 +1291,8 @@ public:
             ConcreteArgs.push_back({Arg.first, substitute(Arg.second)});
         }
 
-        auto ConcreteProto = std::make_unique<PrototypeAST>(
-            Name + suffix, std::move(ConcreteArgs), substitute(ReturnType));
+        auto ConcreteProto =
+            std::make_unique<PrototypeAST>(Name + suffix, std::move(ConcreteArgs), substitute(ReturnType));
         ConcreteProto->setLocation(Line);
         ConcreteProto->setLifetimeParams(LifetimeParams);
         if (IsGenerator)
@@ -1328,8 +1342,7 @@ class StructDeclAST
 public:
     bool IsNoCopy = false;
 
-    StructDeclAST(const std::string& Name,
-                  std::vector<std::pair<std::string, FluxType>> Fields,
+    StructDeclAST(const std::string& Name, std::vector<std::pair<std::string, FluxType>> Fields,
                   const std::string& ParentName = "")
         : Name(Name), ParentName(ParentName), Fields(std::move(Fields)), StructTypeId(-1)
     {
@@ -1361,14 +1374,12 @@ class StructConstructExprAST : public ExprAST
     std::vector<FluxType> GenericTypeArgs;
 
 public:
-    StructConstructExprAST(const std::string& Name, int TypeId,
-                           std::map<std::string, std::unique_ptr<ExprAST>> Fields)
+    StructConstructExprAST(const std::string& Name, int TypeId, std::map<std::string, std::unique_ptr<ExprAST>> Fields)
         : StructName(Name), StructTypeId(TypeId), FieldValues(std::move(Fields))
     {
     }
 
-    StructConstructExprAST(const std::string& Name, int TypeId,
-                           std::map<std::string, std::unique_ptr<ExprAST>> Fields,
+    StructConstructExprAST(const std::string& Name, int TypeId, std::map<std::string, std::unique_ptr<ExprAST>> Fields,
                            std::vector<FluxType> GenericTypeArgs)
         : StructName(Name), StructTypeId(TypeId), FieldValues(std::move(Fields)),
           GenericTypeArgs(std::move(GenericTypeArgs))
@@ -1383,7 +1394,8 @@ public:
     bool containsYield() const override
     {
         for (auto& [_, val] : FieldValues)
-            if (val->containsYield()) return true;
+            if (val->containsYield())
+                return true;
         return false;
     }
 };
@@ -1406,10 +1418,8 @@ class EnumDeclAST
 public:
     bool IsNoCopy = false;
 
-    EnumDeclAST(const std::string& Name, std::vector<std::string> Variants,
-                std::vector<FluxType> VariantPayloads = {})
-        : Name(Name), Variants(std::move(Variants)),
-          VariantPayloads(std::move(VariantPayloads)), EnumTypeId(-1)
+    EnumDeclAST(const std::string& Name, std::vector<std::string> Variants, std::vector<FluxType> VariantPayloads = {})
+        : Name(Name), Variants(std::move(Variants)), VariantPayloads(std::move(VariantPayloads)), EnumTypeId(-1)
     {
     }
 
@@ -1424,8 +1434,6 @@ public:
     void codegen(CodegenContext& context);
 };
 
-
-
 /// ImplDeclAST - Represents an impl block:
 ///   impl TypeName
 ///       def method1(self, args) -> ReturnType ... end
@@ -1438,14 +1446,15 @@ public:
 class ImplDeclAST
 {
     std::string TypeName;
-    std::string TraitName;  // Empty for inherent impl, set for trait impl
+    std::string TraitName; // Empty for inherent impl, set for trait impl
     std::string ParentName;
     std::vector<std::unique_ptr<FunctionAST>> Methods;
     std::vector<LifetimeParam> LifetimeParams;
     std::map<std::string, FluxType> AssociatedTypeMappings;
 
 public:
-    ImplDeclAST(const std::string& TypeName, std::vector<std::unique_ptr<FunctionAST>> Methods, const std::string& ParentName = "")
+    ImplDeclAST(const std::string& TypeName, std::vector<std::unique_ptr<FunctionAST>> Methods,
+                const std::string& ParentName = "")
         : TypeName(TypeName), TraitName(), ParentName(ParentName), Methods(std::move(Methods))
     {
     }
@@ -1460,7 +1469,10 @@ public:
     const std::vector<LifetimeParam>& getLifetimeParams() const { return LifetimeParams; }
     bool hasLifetimeParams() const { return !LifetimeParams.empty(); }
     const std::map<std::string, FluxType>& getAssociatedTypeMappings() const { return AssociatedTypeMappings; }
-    void setAssociatedTypeMapping(const std::string& name, const FluxType& type) { AssociatedTypeMappings[name] = type; }
+    void setAssociatedTypeMapping(const std::string& name, const FluxType& type)
+    {
+        AssociatedTypeMappings[name] = type;
+    }
     const std::vector<std::unique_ptr<FunctionAST>>& getMethods() const { return Methods; }
     std::vector<std::unique_ptr<FunctionAST>>& getMethods() { return Methods; }
     void codegen(CodegenContext& context);
@@ -1474,7 +1486,8 @@ class TraitDeclAST
 {
 public:
     // Method prototypes stored as (name, args, returnType)
-    struct MethodProto {
+    struct MethodProto
+    {
         std::string Name;
         std::vector<std::pair<std::string, FluxType>> Args;
         FluxType ReturnType;
@@ -1919,10 +1932,7 @@ class PlotExprAST : public ExprAST
     std::vector<std::unique_ptr<ExprAST>> Args;
 
 public:
-    PlotExprAST(std::vector<std::unique_ptr<ExprAST>> args)
-        : Args(std::move(args))
-    {
-    }
+    PlotExprAST(std::vector<std::unique_ptr<ExprAST>> args) : Args(std::move(args)) {}
     TypedValue codegen(CodegenContext& context) override;
 };
 
@@ -2400,7 +2410,9 @@ class SpawnExprAST : public ExprAST
 
 public:
     SpawnExprAST(const std::string& callee, std::vector<std::unique_ptr<ExprAST>> args)
-        : Callee(callee), Args(std::move(args)) {}
+        : Callee(callee), Args(std::move(args))
+    {
+    }
 
     TypedValue codegen(CodegenContext& context) override;
 

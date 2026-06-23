@@ -1,10 +1,10 @@
 /* Copyright 2026 Janada Sroor
  SPDX-License-Identifier: Apache-2.0 */
 
-#include "flux/tooling/lsp_server.h"
 #include "flux/compiler/ast.h"
 #include "flux/compiler/lexer.h"
 #include "flux/compiler/parser.h"
+#include "flux/tooling/lsp_server.h"
 #include <algorithm>
 #include <sstream>
 #include <string>
@@ -167,10 +167,12 @@ LspServer::CallHierarchyItem LspServer::getPrepareCallHierarchy(const std::strin
 {
     CallHierarchyItem result;
     auto* doc = getDocument(uri);
-    if (!doc) return result;
+    if (!doc)
+        return result;
 
     std::string word = doc->getWordAtPosition(pos);
-    if (word.empty()) return result;
+    if (word.empty())
+        return result;
 
     // Check if word is a function definition by scanning for `def <word>` pattern
     std::string searchStr = "def " + word;
@@ -205,14 +207,16 @@ LspServer::CallHierarchyItem LspServer::getPrepareCallHierarchy(const std::strin
     return result;
 }
 
-std::vector<LspServer::CallHierarchyIncomingCall> LspServer::getCallHierarchyIncomingCalls(
-    const CallHierarchyItem& item)
+std::vector<LspServer::CallHierarchyIncomingCall>
+LspServer::getCallHierarchyIncomingCalls(const CallHierarchyItem& item)
 {
     std::vector<CallHierarchyIncomingCall> result;
     auto* doc = getDocument(item.uri);
-    if (!doc || item.name.empty()) return result;
+    if (!doc || item.name.empty())
+        return result;
 
-    if (item.name.empty()) return result;
+    if (item.name.empty())
+        return result;
 
     // Build a map of function name -> function definition location
     // (for the "from" field of incoming calls)
@@ -251,22 +255,18 @@ std::vector<LspServer::CallHierarchyIncomingCall> LspServer::getCallHierarchyInc
     size_t searchPos = 0;
     while ((searchPos = doc->text.find(item.name, searchPos)) != std::string::npos) {
         // Skip the definition line
-        if (defPos != std::string::npos && searchPos >= defPos - 4 &&
-            searchPos < defEnd)
-        {
+        if (defPos != std::string::npos && searchPos >= defPos - 4 && searchPos < defEnd) {
             searchPos += item.name.size();
             continue;
         }
 
         // Check word boundaries
-        bool leftOk = searchPos == 0 ||
-                      (!isalnum(doc->text[searchPos - 1]) && doc->text[searchPos - 1] != '_');
-        bool rightOk = (searchPos + item.name.size() >= doc->text.size()) ||
-                       (!isalnum(doc->text[searchPos + item.name.size()]) &&
-                        doc->text[searchPos + item.name.size()] != '_');
+        bool leftOk = searchPos == 0 || (!isalnum(doc->text[searchPos - 1]) && doc->text[searchPos - 1] != '_');
+        bool rightOk =
+            (searchPos + item.name.size() >= doc->text.size()) ||
+            (!isalnum(doc->text[searchPos + item.name.size()]) && doc->text[searchPos + item.name.size()] != '_');
         if (leftOk && rightOk) {
-            Range callRange = {doc->offsetToPosition(searchPos),
-                               doc->offsetToPosition(searchPos + item.name.size())};
+            Range callRange = {doc->offsetToPosition(searchPos), doc->offsetToPosition(searchPos + item.name.size())};
 
             // Find which function this call is inside
             // Scan backward to find the nearest `def ... (` before this position
@@ -277,11 +277,11 @@ std::vector<LspServer::CallHierarchyIncomingCall> LspServer::getCallHierarchyInc
             while (backtrack > 0) {
                 // Find `def ` going backward
                 size_t prevDef = doc->text.rfind("def ", backtrack);
-                if (prevDef == std::string::npos || prevDef < 10) break;
+                if (prevDef == std::string::npos || prevDef < 10)
+                    break;
                 size_t cnStart = prevDef + 4;
                 size_t cnEnd = cnStart;
-                while (cnEnd < doc->text.size() &&
-                       (isalnum(doc->text[cnEnd]) || doc->text[cnEnd] == '_'))
+                while (cnEnd < doc->text.size() && (isalnum(doc->text[cnEnd]) || doc->text[cnEnd] == '_'))
                     cnEnd++;
                 callerName = doc->text.substr(cnStart, cnEnd - cnStart);
                 if (!callerName.empty()) {
@@ -290,7 +290,8 @@ std::vector<LspServer::CallHierarchyIncomingCall> LspServer::getCallHierarchyInc
                         break;
                     }
                 }
-                if (backtrack < 10) break;
+                if (backtrack < 10)
+                    break;
                 backtrack = prevDef - 1;
             }
 
@@ -319,29 +320,34 @@ std::vector<LspServer::CallHierarchyIncomingCall> LspServer::getCallHierarchyInc
     return result;
 }
 
-std::vector<LspServer::CallHierarchyOutgoingCall> LspServer::getCallHierarchyOutgoingCalls(
-    const CallHierarchyItem& item)
+std::vector<LspServer::CallHierarchyOutgoingCall>
+LspServer::getCallHierarchyOutgoingCalls(const CallHierarchyItem& item)
 {
     std::vector<CallHierarchyOutgoingCall> result;
     auto* doc = getDocument(item.uri);
-    if (!doc || item.name.empty()) return result;
+    if (!doc || item.name.empty())
+        return result;
 
     // Find the definition range of this function
     std::string defPattern = "def " + item.name;
     size_t defPos = doc->text.find(defPattern);
-    if (defPos == std::string::npos) return result;
+    if (defPos == std::string::npos)
+        return result;
 
     // Find the body start -- scan for `{` after `def name`
     size_t bodyStart = defPos + defPattern.size();
     size_t bracePos = doc->text.find('{', bodyStart);
-    if (bracePos == std::string::npos) return result;
+    if (bracePos == std::string::npos)
+        return result;
 
     // Find matching closing brace (simple depth count)
     size_t bodyEnd = bracePos + 1;
     int depth = 1;
     while (bodyEnd < doc->text.size() && depth > 0) {
-        if (doc->text[bodyEnd] == '{') depth++;
-        else if (doc->text[bodyEnd] == '}') depth--;
+        if (doc->text[bodyEnd] == '{')
+            depth++;
+        else if (doc->text[bodyEnd] == '}')
+            depth--;
         bodyEnd++;
     }
 
@@ -382,7 +388,8 @@ std::vector<LspServer::CallHierarchyOutgoingCall> LspServer::getCallHierarchyOut
         if (doc->text[i] == '"') {
             i++;
             while (i < doc->text.size() && doc->text[i] != '"') {
-                if (doc->text[i] == '\\') i++;
+                if (doc->text[i] == '\\')
+                    i++;
                 i++;
             }
             i++;
@@ -561,16 +568,20 @@ std::string LspServer::handleTypeHierarchySubtypes(const std::string& params)
 }
 
 // Helper: scan document for type definitions and return items
-static std::vector<LspServer::TypeHierarchyItem> scanTypeDefs(
-    Flux::Tooling::LspServer* server,
-    const std::string& uri)
+static std::vector<LspServer::TypeHierarchyItem> scanTypeDefs(Flux::Tooling::LspServer* server, const std::string& uri)
 {
     std::vector<LspServer::TypeHierarchyItem> result;
     auto* doc = server->getDocument(uri);
-    if (!doc) return result;
+    if (!doc)
+        return result;
 
     // Scan for `struct <name>`, `class <name>`, `enum <name>`, `trait <name>`
-    struct KeywordInfo { std::string keyword; int kind; std::string detail; };
+    struct KeywordInfo
+    {
+        std::string keyword;
+        int kind;
+        std::string detail;
+    };
     KeywordInfo keywords[] = {
         {"struct ", 22, "struct"},
         {"class ", 5, "class"},
@@ -609,10 +620,12 @@ LspServer::TypeHierarchyItem LspServer::getPrepareTypeHierarchy(const std::strin
 {
     TypeHierarchyItem result;
     auto* doc = getDocument(uri);
-    if (!doc) return result;
+    if (!doc)
+        return result;
 
     std::string word = doc->getWordAtPosition(pos);
-    if (word.empty()) return result;
+    if (word.empty())
+        return result;
 
     // Check if word is a type definition
     auto types = scanTypeDefs(this, uri);
@@ -625,12 +638,12 @@ LspServer::TypeHierarchyItem LspServer::getPrepareTypeHierarchy(const std::strin
     return result;
 }
 
-std::vector<LspServer::TypeHierarchyItem> LspServer::getTypeHierarchySupertypes(
-    const TypeHierarchyItem& item)
+std::vector<LspServer::TypeHierarchyItem> LspServer::getTypeHierarchySupertypes(const TypeHierarchyItem& item)
 {
     std::vector<TypeHierarchyItem> result;
     auto* doc = getDocument(item.uri);
-    if (!doc || item.name.empty()) return result;
+    if (!doc || item.name.empty())
+        return result;
 
     // Scan all type definitions to build a mapping
     auto allTypes = scanTypeDefs(this, item.uri);
@@ -644,11 +657,11 @@ std::vector<LspServer::TypeHierarchyItem> LspServer::getTypeHierarchySupertypes(
             size_t afterName = defPos + classPattern.size();
             size_t bracePos = doc->text.find('{', afterName);
             size_t colonPos = doc->text.find(':', afterName);
-            if (colonPos != std::string::npos &&
-                (bracePos == std::string::npos || colonPos < bracePos)) {
+            if (colonPos != std::string::npos && (bracePos == std::string::npos || colonPos < bracePos)) {
                 // Extract parent name after ':'
                 size_t ps = colonPos + 1;
-                while (ps < doc->text.size() && doc->text[ps] == ' ') ps++;
+                while (ps < doc->text.size() && doc->text[ps] == ' ')
+                    ps++;
                 size_t pe = ps;
                 while (pe < doc->text.size() && (isalnum(doc->text[pe]) || doc->text[pe] == '_'))
                     pe++;
@@ -680,7 +693,10 @@ std::vector<LspServer::TypeHierarchyItem> LspServer::getTypeHierarchySupertypes(
     size_t implPos = 0;
     while ((implPos = doc->text.find("impl ", implPos)) != std::string::npos) {
         size_t forPos = doc->text.find(" for ", implPos);
-        if (forPos == std::string::npos) { implPos += 5; continue; }
+        if (forPos == std::string::npos) {
+            implPos += 5;
+            continue;
+        }
         size_t typePos = forPos + 5;
         size_t typeEnd = typePos + item.name.size();
         if (typeEnd <= doc->text.size() && doc->text.substr(typePos, item.name.size()) == item.name) {
@@ -696,7 +712,10 @@ std::vector<LspServer::TypeHierarchyItem> LspServer::getTypeHierarchySupertypes(
                 if (!traitName.empty() && traitName != item.name) {
                     bool alreadyAdded = false;
                     for (auto& r : result) {
-                        if (r.name == traitName) { alreadyAdded = true; break; }
+                        if (r.name == traitName) {
+                            alreadyAdded = true;
+                            break;
+                        }
                     }
                     if (!alreadyAdded) {
                         // Find the trait in allTypes
@@ -726,12 +745,12 @@ std::vector<LspServer::TypeHierarchyItem> LspServer::getTypeHierarchySupertypes(
     return result;
 }
 
-std::vector<LspServer::TypeHierarchyItem> LspServer::getTypeHierarchySubtypes(
-    const TypeHierarchyItem& item)
+std::vector<LspServer::TypeHierarchyItem> LspServer::getTypeHierarchySubtypes(const TypeHierarchyItem& item)
 {
     std::vector<TypeHierarchyItem> result;
     auto* doc = getDocument(item.uri);
-    if (!doc || item.name.empty()) return result;
+    if (!doc || item.name.empty())
+        return result;
 
     auto allTypes = scanTypeDefs(this, item.uri);
 
@@ -749,10 +768,10 @@ std::vector<LspServer::TypeHierarchyItem> LspServer::getTypeHierarchySubtypes(
                 // Find colon and parent name
                 size_t bracePos = doc->text.find('{', nameEnd);
                 size_t colonPos = doc->text.find(':', nameEnd);
-                if (colonPos != std::string::npos &&
-                    (bracePos == std::string::npos || colonPos < bracePos)) {
+                if (colonPos != std::string::npos && (bracePos == std::string::npos || colonPos < bracePos)) {
                     size_t ps = colonPos + 1;
-                    while (ps < doc->text.size() && doc->text[ps] == ' ') ps++;
+                    while (ps < doc->text.size() && doc->text[ps] == ' ')
+                        ps++;
                     size_t pe = ps;
                     while (pe < doc->text.size() && (isalnum(doc->text[pe]) || doc->text[pe] == '_'))
                         pe++;
@@ -794,7 +813,10 @@ std::vector<LspServer::TypeHierarchyItem> LspServer::getTypeHierarchySubtypes(
             if (!typeName.empty()) {
                 bool alreadyAdded = false;
                 for (auto& r : result) {
-                    if (r.name == typeName) { alreadyAdded = true; break; }
+                    if (r.name == typeName) {
+                        alreadyAdded = true;
+                        break;
+                    }
                 }
                 if (!alreadyAdded) {
                     bool found = false;
@@ -825,7 +847,6 @@ std::vector<LspServer::TypeHierarchyItem> LspServer::getTypeHierarchySubtypes(
 // ============================================================================
 // Linked Editing Range
 // ============================================================================
-
 
 } // namespace Tooling
 } // namespace Flux

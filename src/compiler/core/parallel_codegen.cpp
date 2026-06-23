@@ -66,9 +66,7 @@ TypedValue ParallelForExprAST::codegen(CodegenContext& context)
         }
     }
 
-    llvm::StructType* CaptureStructTy = !CapturedNames.empty()
-        ? llvm::StructType::get(Ctx, CapturedTypes)
-        : nullptr;
+    llvm::StructType* CaptureStructTy = !CapturedNames.empty() ? llvm::StructType::get(Ctx, CapturedTypes) : nullptr;
     llvm::Value* CaptureStruct = nullptr;
     if (CaptureStructTy) {
         CaptureStruct = context.Builder.CreateAlloca(CaptureStructTy, nullptr, "par_capture");
@@ -106,8 +104,8 @@ TypedValue ParallelForExprAST::codegen(CodegenContext& context)
 
     if (CaptureStructTy && CaptureStruct) {
         llvm::Value* UserDataPtr = BodyFunc->arg_begin() + 1;
-        llvm::Value* CastData = BodyBuilder.CreateBitCast(UserDataPtr,
-            llvm::PointerType::get(context.TheContext, 0), "capture_ptr");
+        llvm::Value* CastData =
+            BodyBuilder.CreateBitCast(UserDataPtr, llvm::PointerType::get(context.TheContext, 0), "capture_ptr");
         for (size_t i = 0; i < CapturedNames.size(); i++) {
             llvm::Value* MemberPtr = BodyBuilder.CreateStructGEP(CaptureStructTy, CastData, i);
             BodyCtx.NamedValues[CapturedNames[i]] = BodyBuilder.CreateLoad(CapturedTypes[i], MemberPtr);
@@ -132,8 +130,7 @@ TypedValue ParallelForExprAST::codegen(CodegenContext& context)
     if (!ParForFunc) {
         llvm::FunctionType* ParForTy = llvm::FunctionType::get(
             llvm::Type::getVoidTy(Ctx), {Int64Ty, Int64Ty, Int64Ty, VoidPtrTy, VoidPtrTy}, false);
-        ParForFunc = llvm::Function::Create(ParForTy, llvm::Function::ExternalLinkage,
-                                             "flux_parallel_for", TheModule);
+        ParForFunc = llvm::Function::Create(ParForTy, llvm::Function::ExternalLinkage, "flux_parallel_for", TheModule);
     }
 
     context.Builder.SetInsertPoint(SavedBB);
@@ -141,9 +138,8 @@ TypedValue ParallelForExprAST::codegen(CodegenContext& context)
 
     llvm::Value* ChunkSizeV = llvm::ConstantInt::get(Int64Ty, ChunkSize);
     llvm::Value* BodyFuncPtr = context.Builder.CreateBitCast(BodyFunc, VoidPtrTy, "par_body_ptr");
-    llvm::Value* CapturePtr = CaptureStruct
-        ? context.Builder.CreateBitCast(CaptureStruct, VoidPtrTy, "par_capture_ptr")
-        : llvm::Constant::getNullValue(VoidPtrTy);
+    llvm::Value* CapturePtr = CaptureStruct ? context.Builder.CreateBitCast(CaptureStruct, VoidPtrTy, "par_capture_ptr")
+                                            : llvm::Constant::getNullValue(VoidPtrTy);
 
     context.Builder.CreateCall(ParForFunc, {StartIdx, EndIdx, ChunkSizeV, BodyFuncPtr, CapturePtr});
 
