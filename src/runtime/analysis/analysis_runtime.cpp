@@ -256,7 +256,7 @@ extern "C" double flux_bode_analyze(double output_dbl, double freqStart, double 
     // Print magnitude table
     printf("  Freq (Hz)  |  Mag (dB)  | Phase (deg)\n");
     printf("  -----------+-----------+-------------\n");
-    for (size_t i = 0; i < freqs.size(); i += std::max(1, numPoints / 20)) {
+    for (size_t i = 0; i < freqs.size(); i += static_cast<size_t>(std::max(1, numPoints / 20))) {
         printf("  %9.2f  |  %+8.2f  |  %+8.2f\n", freqs[i], magDB[i], phaseDeg[i]);
     }
 
@@ -270,7 +270,7 @@ extern "C" double flux_bode_analyze(double output_dbl, double freqStart, double 
         double level = magMax - (row + 0.5) * magRange / 10.0;
         printf("  %+6.1f |", level);
         for (size_t i = 0; i < freqs.size(); i++) {
-            if (i % std::max(1, numPoints / 60) != 0) continue;
+            if (i % static_cast<size_t>(std::max(1, numPoints / 60)) != 0) continue;
             if (magDB[i] >= level)
                 printf("*");
             else
@@ -279,7 +279,7 @@ extern "C" double flux_bode_analyze(double output_dbl, double freqStart, double 
         printf("\n");
     }
     printf("  --------+");
-    for (size_t i = 0; i < freqs.size(); i += std::max(1, numPoints / 60))
+    for (size_t i = 0; i < freqs.size(); i += static_cast<size_t>(std::max(1, numPoints / 60)))
         printf("-");
     printf("\n");
 
@@ -293,7 +293,7 @@ extern "C" double flux_bode_analyze(double output_dbl, double freqStart, double 
         double level = phaseMax - (row + 0.5) * phaseRange / 10.0;
         printf("  %+6.1f |", level);
         for (size_t i = 0; i < freqs.size(); i++) {
-            if (i % std::max(1, numPoints / 60) != 0) continue;
+            if (i % static_cast<size_t>(std::max(1, numPoints / 60)) != 0) continue;
             if (phaseDeg[i] >= level)
                 printf("*");
             else
@@ -302,7 +302,7 @@ extern "C" double flux_bode_analyze(double output_dbl, double freqStart, double 
         printf("\n");
     }
     printf("  --------+");
-    for (size_t i = 0; i < freqs.size(); i += std::max(1, numPoints / 60))
+    for (size_t i = 0; i < freqs.size(); i += static_cast<size_t>(std::max(1, numPoints / 60)))
         printf("-");
     printf("\n\n");
 

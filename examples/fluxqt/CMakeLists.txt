@@ -31,8 +31,13 @@ set(FLUXSCRIPT_BUILD_DIR "${FLUXSCRIPT_ROOT}/build")
 
 # FluxScript library (built in-tree)
 add_library(FluxScript SHARED IMPORTED)
+if(APPLE)
+    set(FLUXSCRIPT_LIB_NAME "libFluxScript.dylib")
+else()
+    set(FLUXSCRIPT_LIB_NAME "libFluxScript.so")
+endif()
 set_target_properties(FluxScript PROPERTIES
-    IMPORTED_LOCATION "${FLUXSCRIPT_BUILD_DIR}/libFluxScript.so"
+    IMPORTED_LOCATION "${FLUXSCRIPT_BUILD_DIR}/${FLUXSCRIPT_LIB_NAME}"
     INTERFACE_INCLUDE_DIRECTORIES "${FLUXSCRIPT_ROOT}/include"
 )
 
@@ -45,6 +50,8 @@ llvm_map_components_to_libnames(llvm_libs
 
 # Qt
 find_package(Qt6 REQUIRED COMPONENTS Widgets SvgWidgets Charts Multimedia MultimediaWidgets PrintSupport SerialPort Bluetooth Network WebSockets OpenGLWidgets Sensors)
+find_package(Threads REQUIRED)
+find_package(ZLIB QUIET)
 
 # ── Main executable ──────────────────────────────────────────────────────
 add_executable(fluxqt
@@ -67,10 +74,15 @@ target_link_libraries(fluxqt PRIVATE
     Qt6::Sensors
     FluxScript
     ${llvm_libs}
-    dl
-    pthread
-    z
+    ${CMAKE_DL_LIBS}
+    Threads::Threads
 )
+
+if(ZLIB_FOUND)
+    target_link_libraries(fluxqt PRIVATE ZLIB::ZLIB)
+else()
+    target_link_libraries(fluxqt PRIVATE z)
+endif()
 
 target_include_directories(fluxqt PRIVATE
     "${FLUXSCRIPT_ROOT}/include"

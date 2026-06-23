@@ -358,7 +358,7 @@ set_source_files_properties(
     src/jit/simulation_hook.cpp
     src/jit/zero_copy_data.cpp
     src/jit/scaling_security.cpp
-    PROPERTIES COMPILE_FLAGS "-O1"
+    PROPERTIES COMPILE_FLAGS "$<$<CXX_COMPILER_ID:MSVC>:/O1>$<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-O1>"
 )
 
 if(ANDROID)

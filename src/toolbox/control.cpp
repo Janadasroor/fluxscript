@@ -122,13 +122,13 @@ std::complex<double> TransferFunction::eval(std::complex<double> s) const
     std::complex<double> num(0, 0), den(0, 0);
     std::complex<double> sPow(1, 0);
 
-    for (int i = m_num.size() - 1; i >= 0; --i) {
+    for (int i = static_cast<int>(m_num.size()) - 1; i >= 0; --i) {
         num += m_num[i] * sPow;
         sPow *= s;
     }
 
     sPow = std::complex<double>(1, 0);
-    for (int i = m_den.size() - 1; i >= 0; --i) {
+    for (int i = static_cast<int>(m_den.size()) - 1; i >= 0; --i) {
         den += m_den[i] * sPow;
         sPow *= s;
     }
@@ -138,7 +138,7 @@ std::complex<double> TransferFunction::eval(std::complex<double> s) const
 
 int TransferFunction::order() const
 {
-    return m_den.size() - 1;
+    return static_cast<int>(m_den.size()) - 1;
 }
 
 double TransferFunction::dcGain() const

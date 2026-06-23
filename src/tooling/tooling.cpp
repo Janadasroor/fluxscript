@@ -336,7 +336,8 @@ bool emitArtifact(const std::string& code, const AOTOptions& options, std::strin
     if (!artifacts)
         return false;
 
-    const bool emitShared = options.sharedLibrary || fs::path(options.outputPath).extension() == ".so";
+    const auto ext = fs::path(options.outputPath).extension();
+    const bool emitShared = options.sharedLibrary || ext == ".so" || ext == ".dylib";
     std::unique_ptr<llvm::MemoryBuffer> objectBuffer;
     if (!emitObjectBuffer(*artifacts, options.optimizationLevel, objectBuffer, error, emitShared))
         return false;
@@ -353,9 +354,16 @@ bool emitArtifact(const std::string& code, const AOTOptions& options, std::strin
         if (env && env[0]) return std::string(env);
         return std::string("build");
     }();
+#ifdef _WIN32
+    const std::string linkLibs = "-lFluxRuntime -lm";
+#elif defined(__APPLE__)
+    const std::string linkLibs = "-lFluxRuntime -lcurl -lm -lstdc++";
+#else
+    const std::string linkLibs = "-lFluxRuntime -lcurl -lpthread -ldl -lm -lstdc++";
+#endif
     const std::string command =
         "c++ -shared -o " + shellQuote(options.outputPath) + " " + shellQuote(objectPath.string())
-        + " -L" + shellQuote(buildDir) + " -lFluxRuntime -lcurl -lpthread -ldl -lm -lstdc++";
+        + " -L" + shellQuote(buildDir) + " " + linkLibs;
     if (std::system(command.c_str()) != 0) {
         if (error)
             *error = "Failed to link shared library with system C++ driver.";

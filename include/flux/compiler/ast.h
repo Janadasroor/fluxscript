@@ -78,7 +78,7 @@ class FixedExprAST : public ExprAST
     int Fract;
 
 public:
-    FixedExprAST(double Val, int Bits, int Fract) : Val(std::move(Val)), Bits(Bits), Fract(Fract) {}
+    FixedExprAST(double Val, int Bits, int Fract) : Val(Val), Bits(Bits), Fract(Fract) {}
     TypedValue codegen(CodegenContext& context) override;
     bool containsYield() const override { return false; }
 };

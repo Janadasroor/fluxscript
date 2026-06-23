@@ -703,6 +703,12 @@ TypedValue MemberExprAST::codegen(CodegenContext& context)
 
     // Try to codegen the object as an expression (for struct field access)
     TypedValue objVal = Object->codegen(context);
+    if (objVal.Val && objVal.Type.Kind == TypeKind::Ref && objVal.Type.RefInnerType) {
+        FluxType innerTy = *objVal.Type.RefInnerType;
+        resolveUserStructType(innerTy, context);
+        resolveUserEnumType(innerTy, context);
+        objVal = TypedValue(objVal.Val, innerTy);
+    }
     if (objVal.Val && objVal.Type.isStruct()) {
         // Struct field access: GEP + load (same as before)
         int typeId = objVal.Type.StructTypeId;
@@ -899,11 +905,43 @@ TypedValue MemberExprAST::codegen(CodegenContext& context)
 TypedValue AssignExprAST::codegen(CodegenContext& context)
 {
     emitLocation(this, context);
+
+    if (auto* UNARY = dynamic_cast<UnaryExprAST*>(LHS.get())) {
+        if (UNARY->getOp() == '*') {
+            TypedValue PtrTV = const_cast<ExprAST*>(UNARY->getOperand())->codegen(context);
+            if (!PtrTV.Val || !PtrTV.Val->getType()->isPointerTy()) {
+                std::cerr << "[FLUX ERROR] Cannot assign through non-pointer dereference" << std::endl;
+                return TypedValue();
+            }
+            TypedValue ValTV = Val->codegen(context);
+            if (!ValTV.Val) {
+                std::cerr << "[FLUX ERROR] Dereference assignment value expression failed to codegen" << std::endl;
+                return TypedValue();
+            }
+            llvm::Type* InnerTy = nullptr;
+            if (PtrTV.Type.Kind == TypeKind::Ref && PtrTV.Type.RefInnerType) {
+                InnerTy = PtrTV.Type.RefInnerType->getLLVMType(context.TheContext);
+            }
+            llvm::Value* StoreVal = ValTV.Val;
+            if (InnerTy && StoreVal->getType() != InnerTy) {
+                if (StoreVal->getType()->isFloatingPointTy() && InnerTy->isIntegerTy())
+                    StoreVal = context.Builder.CreateFPToSI(StoreVal, InnerTy, "ref_cast");
+                else if (StoreVal->getType()->isIntegerTy() && InnerTy->isFloatingPointTy())
+                    StoreVal = context.Builder.CreateSIToFP(StoreVal, InnerTy, "ref_cast");
+                else
+                    StoreVal = context.Builder.CreateBitCast(StoreVal, InnerTy, "ref_cast");
+            }
+            context.Builder.CreateStore(StoreVal, PtrTV.Val);
+            return ValTV;
+        }
+    }
+
     std::string TargetName;
     bool isSpice = false;
     llvm::Value* Variable = nullptr;
 
     if (auto* IDX = dynamic_cast<IndexExprAST*>(LHS.get())) {
+
         // A[i,j] = val — matrix element assignment
         if (!IDX->isMatrixIndex() || !IDX->getColIndex()) {
             std::cerr << "Matrix assignment requires two indices: A[row, col] = val\n";
@@ -994,8 +1032,15 @@ TypedValue AssignExprAST::codegen(CodegenContext& context)
             if (objAlloca && llvm::isa<llvm::AllocaInst>(objAlloca)) {
                 // Check type of the variable
                 auto typeIt = context.NamedTypes.find(objName);
-                if (typeIt != context.NamedTypes.end() && typeIt->second.isStruct()) {
-                    int typeId = typeIt->second.StructTypeId;
+                FluxType varType = (typeIt != context.NamedTypes.end()) ? typeIt->second : FluxType();
+                bool isRefType = (varType.Kind == TypeKind::Ref && varType.RefInnerType);
+                if (isRefType) {
+                    varType = *varType.RefInnerType;
+                    resolveUserStructType(varType, context);
+                    resolveUserEnumType(varType, context);
+                }
+                if (varType.isStruct()) {
+                    int typeId = varType.StructTypeId;
                     if (typeId >= 0 && typeId < static_cast<int>(context.StructTypes.size())) {
                         auto& structInfo = context.StructTypes[typeId];
                         int fieldIdx = -1;
@@ -1377,8 +1422,45 @@ TypedValue UnaryExprAST::codegen(CodegenContext& context)
     }
     case static_cast<int>(TokenType::tok_bitwise_and):
     case static_cast<int>(TokenType::tok_bitwise_and) + 2600: {
-        // &expr or &mut expr: create alloca, store operand, return pointer
+        // &expr or &mut expr: return pointer to the operand's storage
         bool isMut = (Op == static_cast<int>(TokenType::tok_bitwise_and) + 2600);
+        if (auto* VarExpr = dynamic_cast<VariableExprAST*>(Operand.get())) {
+            const std::string& VarName = VarExpr->getName();
+            if (auto it = context.NamedValues.find(VarName); it != context.NamedValues.end()) {
+                return TypedValue(it->second, FluxType::reference(OperandTV.Type, isMut));
+            }
+        }
+        if (auto* MemExpr = dynamic_cast<MemberExprAST*>(Operand.get())) {
+            auto* ObjExpr = const_cast<ExprAST*>(MemExpr->getObject());
+            if (auto* ObjVar = dynamic_cast<VariableExprAST*>(ObjExpr)) {
+                const std::string& ObjName = ObjVar->getName();
+                llvm::Value* objAlloca = context.NamedValues[ObjName];
+                if (objAlloca && llvm::isa<llvm::AllocaInst>(objAlloca)) {
+                    auto typeIt = context.NamedTypes.find(ObjName);
+                    if (typeIt != context.NamedTypes.end() && typeIt->second.isStruct()) {
+                        int typeId = typeIt->second.StructTypeId;
+                        if (typeId >= 0 && typeId < static_cast<int>(context.StructTypes.size())) {
+                            auto& structInfo = context.StructTypes[typeId];
+                            const std::string& fieldName = MemExpr->getMemberName();
+                            for (size_t i = 0; i < structInfo.Fields.size(); ++i) {
+                                if (structInfo.Fields[i].first == fieldName) {
+                                    if (!structInfo.LLVMType) break;
+                                    auto* allocaInst = llvm::cast<llvm::AllocaInst>(objAlloca);
+                                    llvm::Value* structPtr = objAlloca;
+                                    if (allocaInst->getAllocatedType()->isPointerTy())
+                                        structPtr = context.Builder.CreateLoad(allocaInst->getAllocatedType(), allocaInst, "ptr_val");
+                                    if (structPtr->getType() != llvm::PointerType::get(context.TheContext, 0))
+                                        structPtr = context.Builder.CreateBitCast(structPtr, llvm::PointerType::get(context.TheContext, 0));
+                                    llvm::Value* gep = context.Builder.CreateStructGEP(structInfo.LLVMType, structPtr, static_cast<unsigned>(i), fieldName);
+                                    FluxType fieldType = structInfo.Fields[i].second;
+                                    return TypedValue(gep, FluxType::reference(fieldType, isMut));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
         llvm::Type* ValTy = V->getType();
         llvm::Value* Alloca = context.Builder.CreateAlloca(ValTy, nullptr, "ref_slot");
         context.Builder.CreateStore(V, Alloca);

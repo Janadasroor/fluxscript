@@ -372,9 +372,10 @@ extern "C" double flux_str_concat(double a_ptr, double b_ptr);
 extern "C" double flux_str_from_double(double val);
 extern "C" double flux_str_cmp(double a_ptr, double b_ptr);
 
-void registerRuntimeFunctions(Flux::FluxJIT& jit)
+namespace Flux {
+
+void registerRuntimeFunctions(FluxJIT& jit)
 {
-    using namespace Flux;
     jit.registerFunction("flux_create_matrix", (void*)&flux_create_matrix);
     jit.registerFunction("flux_matrix_mul", (void*)&flux_matrix_mul);
     jit.registerFunction("flux_matrix_mul_ms", (void*)&flux_matrix_mul_ms);
@@ -780,3 +781,5 @@ void registerRuntimeFunctions(Flux::FluxJIT& jit)
     jit.registerFunction("flux_get_error", (void*)&flux_get_error);
     jit.registerFunction("flux_clear_error", (void*)&flux_clear_error);
 }
+
+} // namespace Flux

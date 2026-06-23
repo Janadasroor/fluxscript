@@ -231,7 +231,7 @@ Eigen::VectorXd NeuralNetworkSurrogate::forward(const Eigen::VectorXd& input) co
         Eigen::VectorXd z = (m_weights[i] * current) + m_biases[i];
 
         current.resize(z.size());
-        for (int j = 0; j < z.size(); ++j) {
+        for (Eigen::Index j = 0; j < z.size(); ++j) {
             if (i < m_weights.size() - 1) {
                 if (m_arch.activation == "relu")
                     current(j) = relu(z(j));
@@ -262,7 +262,7 @@ void NeuralNetworkSurrogate::backward(const Eigen::VectorXd& input, const Eigen:
     Eigen::VectorXd delta = output - target;
 
     if (m_arch.outputActivation == "sigmoid") {
-        for (int j = 0; j < delta.size(); ++j)
+        for (Eigen::Index j = 0; j < delta.size(); ++j)
             delta(j) *= sigmoid_derivative(output(j));
     }
     m_deltas.back() = delta;
@@ -271,7 +271,7 @@ void NeuralNetworkSurrogate::backward(const Eigen::VectorXd& input, const Eigen:
         Eigen::VectorXd grad = m_weights[i + 1].transpose() * m_deltas[i + 1];
 
         m_deltas[i].resize(grad.size());
-        for (int j = 0; j < grad.size(); ++j) {
+        for (Eigen::Index j = 0; j < grad.size(); ++j) {
             double a = m_activations[i + 1](j);
             double deriv = 1.0;
             if (m_arch.activation == "relu")
@@ -289,7 +289,7 @@ void NeuralNetworkSurrogate::backward(const Eigen::VectorXd& input, const Eigen:
     for (size_t i = 0; i < m_weights.size(); ++i) {
         // Gradient Clipping
         Eigen::VectorXd clipped_delta = m_deltas[i];
-        for (int j = 0; j < clipped_delta.size(); ++j) {
+        for (Eigen::Index j = 0; j < clipped_delta.size(); ++j) {
             if (clipped_delta(j) > 1.0)
                 clipped_delta(j) = 1.0;
             if (clipped_delta(j) < -1.0)

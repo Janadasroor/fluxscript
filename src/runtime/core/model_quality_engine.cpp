@@ -249,10 +249,10 @@ bool ModelQualityEngine::checkConvergence(const std::string& node, int maxIter, 
         return true;
 
     // Check if voltage changes are below epsilon over recent iterations
-    int checkCount = std::min((int)history.size(), maxIter);
+    int checkCount = std::min(static_cast<int>(history.size()), maxIter);
     double maxChange = 0.0;
 
-    for (int i = history.size() - checkCount; i < (int)history.size() - 1; ++i) {
+    for (int i = static_cast<int>(history.size()) - checkCount; i < static_cast<int>(history.size()) - 1; ++i) {
         double change = std::abs(history[i + 1].value - history[i].value);
         maxChange = std::max(maxChange, change);
     }
