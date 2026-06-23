@@ -28,7 +28,7 @@ TypedValue ParallelForExprAST::codegen(CodegenContext& context)
     llvm::Module* TheModule = context.TheModule;
     llvm::Type* DoubleTy = llvm::Type::getDoubleTy(Ctx);
     llvm::Type* Int64Ty = llvm::Type::getInt64Ty(Ctx);
-    llvm::Type* VoidPtrTy = llvm::PointerType::get(Ctx, 0);
+    llvm::Type* VoidPtrTy = llvm::PointerType::get(context.TheContext, 0);
 
     // 1. Generate start and end values
     TypedValue StartTV = Start->codegen(context);
@@ -107,7 +107,7 @@ TypedValue ParallelForExprAST::codegen(CodegenContext& context)
     if (CaptureStructTy && CaptureStruct) {
         llvm::Value* UserDataPtr = BodyFunc->arg_begin() + 1;
         llvm::Value* CastData = BodyBuilder.CreateBitCast(UserDataPtr,
-            llvm::PointerType::get(CaptureStructTy, 0), "capture_ptr");
+            llvm::PointerType::get(context.TheContext, 0), "capture_ptr");
         for (size_t i = 0; i < CapturedNames.size(); i++) {
             llvm::Value* MemberPtr = BodyBuilder.CreateStructGEP(CaptureStructTy, CastData, i);
             BodyCtx.NamedValues[CapturedNames[i]] = BodyBuilder.CreateLoad(CapturedTypes[i], MemberPtr);

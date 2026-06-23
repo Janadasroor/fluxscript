@@ -400,7 +400,7 @@ extern "C" void* flux_malloc(size_t size)
     return ptr;
 }
 
-static void flux_join_all_pending();
+extern void flux_join_all_pending();
 
 extern "C" void flux_free_all_allocations()
 {

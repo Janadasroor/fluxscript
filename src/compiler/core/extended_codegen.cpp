@@ -40,7 +40,7 @@ TypedValue TryCatchExprAST::codegen(CodegenContext& context)
     llvm::LLVMContext& Ctx = context.TheContext;
     llvm::Type* DoubleTy = llvm::Type::getDoubleTy(Ctx);
     llvm::Type* Int32Ty = llvm::Type::getInt32Ty(Ctx);
-    llvm::Type* VoidPtrTy = llvm::PointerType::get(Ctx, 0);
+    llvm::Type* VoidPtrTy = llvm::PointerType::get(context.TheContext, 0);
 
     // Create unique blocks with prefixes to avoid numbering collisions
     llvm::BasicBlock* TryBB = llvm::BasicBlock::Create(Ctx, "flux_try_" + IDStr, TheFunction);
@@ -249,7 +249,7 @@ TypedValue ThrowExprAST::codegen(CodegenContext& context)
     // Always use runtime throw which handles the non-local jump via longjmp
     llvm::Function* ThrowFunc = TheModule->getFunction("flux_throw_error");
     if (!ThrowFunc) {
-        llvm::Type* Params[] = {llvm::Type::getDoubleTy(Ctx), llvm::PointerType::get(Ctx, 0)};
+        llvm::Type* Params[] = {llvm::Type::getDoubleTy(Ctx), llvm::PointerType::get(context.TheContext, 0)};
         ThrowFunc = llvm::Function::Create(llvm::FunctionType::get(llvm::Type::getVoidTy(Ctx), Params, false),
                                            llvm::Function::ExternalLinkage, "flux_throw_error", TheModule);
     }
@@ -484,7 +484,7 @@ TypedValue CornerExprAST::codegen(CodegenContext& context)
     }
 
     // Return pointer to results array
-    llvm::Type* PtrTy = llvm::PointerType::get(Ctx, 0);
+    llvm::Type* PtrTy = llvm::PointerType::get(context.TheContext, 0);
     return TypedValue(context.Builder.CreateBitCast(ResultArray, PtrTy), TypeKind::Double);
 }
 
@@ -944,14 +944,14 @@ TypedValue MatchExprAST::codegen(CodegenContext& context)
                     llvm::Value* concretePayloadPtr = nullptr;
                     if (isBoxed) {
                         llvm::Value* unionPayloadPtr = context.Builder.CreatePointerCast(
-                            payloadPtr, llvm::PointerType::get(llvm::PointerType::get(context.TheContext, 0), 0), "union_payload_ptr");
+                            payloadPtr, llvm::PointerType::get(context.TheContext, 0), "union_payload_ptr");
                         llvm::Value* heapPtrVal = context.Builder.CreateLoad(
                             llvm::PointerType::get(context.TheContext, 0), unionPayloadPtr, "heap_ptr_val");
                         concretePayloadPtr = context.Builder.CreatePointerCast(
-                            heapPtrVal, llvm::PointerType::get(concretePayloadLLVMTy, 0), "concrete_payload_ptr");
+                            heapPtrVal, llvm::PointerType::get(context.TheContext, 0), "concrete_payload_ptr");
                     } else {
                         concretePayloadPtr = context.Builder.CreatePointerCast(
-                            payloadPtr, llvm::PointerType::get(concretePayloadLLVMTy, 0), "concrete_payload_ptr");
+                            payloadPtr, llvm::PointerType::get(context.TheContext, 0), "concrete_payload_ptr");
                     }
 
                     if (!armNamedBindings.empty() && concretePayloadLLVMTy->isStructTy() &&

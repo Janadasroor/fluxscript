@@ -209,7 +209,7 @@ extern "C" double flux_join(double handle)
 }
 
 // Clean up all pending spawned threads (called on error paths / shutdown)
-static void flux_join_all_pending()
+void flux_join_all_pending()
 {
     std::lock_guard<std::mutex> lock(g_thread_map_mutex);
     for (auto& [id, ctx] : g_thread_map) {

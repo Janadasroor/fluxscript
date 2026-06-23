@@ -405,7 +405,7 @@ TypedValue CallExprAST::codegen(CodegenContext& context)
                 llvm::Type* fnRetTy = sig.ReturnType.getLLVMType(context.TheContext);
                 llvm::FunctionType* fnFT = llvm::FunctionType::get(fnRetTy, fnArgTypes, false);
                 llvm::Value* typedFnPtr = context.Builder.CreatePointerCast(fnPtr,
-                    llvm::PointerType::get(fnFT, 0), "typed_fn");
+                    llvm::PointerType::get(context.TheContext, 0), "typed_fn");
 
                 // Build call arguments
                 std::vector<llvm::Value*> callArgs;
@@ -821,25 +821,25 @@ TypedValue CallExprAST::codegen(CodegenContext& context)
             }
         } else if (Arg.Type.Kind == TypeKind::Double) {
             if (Name == "abs") {
-                llvm::Function* FabsF = llvm::Intrinsic::getDeclaration(
+                llvm::Function* FabsF = llvm::Intrinsic::getOrInsertDeclaration(
                     context.TheModule, llvm::Intrinsic::fabs, {llvm::Type::getDoubleTy(context.TheContext)});
                 return TypedValue(context.Builder.CreateCall(FabsF, {Arg.Val}, "abstmp"),
                                   FluxType(TypeKind::Double, Arg.Type.Dimensions));
             }
             if (Name == "floor") {
-                llvm::Function* FloorF = llvm::Intrinsic::getDeclaration(
+                llvm::Function* FloorF = llvm::Intrinsic::getOrInsertDeclaration(
                     context.TheModule, llvm::Intrinsic::floor, {llvm::Type::getDoubleTy(context.TheContext)});
                 return TypedValue(context.Builder.CreateCall(FloorF, {Arg.Val}, "floortmp"),
                                   FluxType(TypeKind::Double, Arg.Type.Dimensions));
             }
             if (Name == "ceil") {
-                llvm::Function* CeilF = llvm::Intrinsic::getDeclaration(
+                llvm::Function* CeilF = llvm::Intrinsic::getOrInsertDeclaration(
                     context.TheModule, llvm::Intrinsic::ceil, {llvm::Type::getDoubleTy(context.TheContext)});
                 return TypedValue(context.Builder.CreateCall(CeilF, {Arg.Val}, "ceiltmp"),
                                   FluxType(TypeKind::Double, Arg.Type.Dimensions));
             }
             if (Name == "round") {
-                llvm::Function* RoundF = llvm::Intrinsic::getDeclaration(
+                llvm::Function* RoundF = llvm::Intrinsic::getOrInsertDeclaration(
                     context.TheModule, llvm::Intrinsic::round, {llvm::Type::getDoubleTy(context.TheContext)});
                 return TypedValue(context.Builder.CreateCall(RoundF, {Arg.Val}, "roundtmp"),
                                   FluxType(TypeKind::Double, Arg.Type.Dimensions));
@@ -1108,7 +1108,7 @@ TypedValue CallExprAST::codegen(CodegenContext& context)
                 llvm::Value* fnDouble = context.Builder.CreateLoad(DoubleTy, localVar, "fnptr_val");
                 // Convert double back to function pointer: double → i64 → ptr
                 llvm::Value* fnInt = context.Builder.CreateBitCast(fnDouble, Int64Ty, "fnptr_int");
-                llvm::Value* fnPtr = context.Builder.CreateIntToPtr(fnInt, llvm::PointerType::get(IndirectFT, 0), "fnptr_cast");
+                llvm::Value* fnPtr = context.Builder.CreateIntToPtr(fnInt, llvm::PointerType::get(context.TheContext, 0), "fnptr_cast");
 
                 for (auto& arg : Args) {
                     TypedValue argTV = arg->codegen(context);

@@ -381,8 +381,8 @@ TypedValue PhasorExprAST::codegen(CodegenContext& context)
     llvm::Value* PhaseRad = context.Builder.CreateFMul(Phase, Deg2Rad, "phase_rad");
 
     // Get cos and sin intrinsics
-    llvm::Function* CosF = llvm::Intrinsic::getDeclaration(context.TheModule, llvm::Intrinsic::cos, {DoubleTy});
-    llvm::Function* SinF = llvm::Intrinsic::getDeclaration(context.TheModule, llvm::Intrinsic::sin, {DoubleTy});
+    llvm::Function* CosF = llvm::Intrinsic::getOrInsertDeclaration(context.TheModule, llvm::Intrinsic::cos, {DoubleTy});
+    llvm::Function* SinF = llvm::Intrinsic::getOrInsertDeclaration(context.TheModule, llvm::Intrinsic::sin, {DoubleTy});
 
     llvm::Value* CosVal = context.Builder.CreateCall(CosF, {PhaseRad}, "cos_phase");
     llvm::Value* SinVal = context.Builder.CreateCall(SinF, {PhaseRad}, "sin_phase");
@@ -849,7 +849,7 @@ TypedValue MemberExprAST::codegen(CodegenContext& context)
                     llvm::Value* heapPtr = context.Builder.CreateLoad(
                         llvm::PointerType::get(context.TheContext, 0), payloadPtr, "heap_ptr");
                     llvm::Value* concretePtr = context.Builder.CreatePointerCast(
-                        heapPtr, llvm::PointerType::get(payloadStructInfo.LLVMType, 0), "concrete_ptr");
+                        heapPtr, llvm::PointerType::get(context.TheContext, 0), "concrete_ptr");
                     fieldPtr = context.Builder.CreateStructGEP(
                         payloadStructInfo.LLVMType, concretePtr, fieldIdx, MemberName);
                 } else {
@@ -2043,7 +2043,7 @@ TypedValue MatrixExprAST::codegen(CodegenContext& context)
     llvm::Value* RowsVal = llvm::ConstantInt::get(Int32Ty, NumRows);
     llvm::Value* ColsVal = llvm::ConstantInt::get(Int32Ty, NumCols);
     llvm::Value* DataPtr = context.Builder.CreateCall(NewMatF, {RowsVal, ColsVal}, "mat_data");
-    DataPtr = context.Builder.CreateBitCast(DataPtr, llvm::PointerType::get(ElemTy->getContext(), 0));
+    DataPtr = context.Builder.CreateBitCast(DataPtr, llvm::PointerType::get(context.TheContext, 0));
 
     // Write elements directly into Eigen's internal data buffer
     UnitDimensions elemDims;

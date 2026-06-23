@@ -47,7 +47,7 @@ llvm::Function* PrototypeAST::codegen(CodegenContext& context)
     std::vector<llvm::Type*> ArgTypes;
     llvm::Type* DoubleTy = llvm::Type::getDoubleTy(context.TheContext);
     llvm::Type* VoidPtrTy = llvm::PointerType::get(context.TheContext, 0);
-    llvm::Type* DoublePtrTy = llvm::PointerType::get(DoubleTy->getContext(), 0);
+    llvm::Type* DoublePtrTy = llvm::PointerType::get(context.TheContext, 0);
 
     const bool useSRet = shouldReturnBySRet(ReturnType, context);
 
@@ -701,7 +701,7 @@ void ImplDeclAST::codegen(CodegenContext& context)
                     auto thArgIt = thunk->arg_begin();
                     llvm::Value* dataPtr = thArgIt;
                     llvm::Value* selfPtr = thunkBuilder.CreatePointerCast(dataPtr,
-                        llvm::PointerType::get(selfLLVMTy, 0), "self_ptr");
+                        llvm::PointerType::get(context.TheContext, 0), "self_ptr");
                     llvm::Value* selfVal;
                     if (passSelfByPointer) {
                         selfVal = selfPtr;

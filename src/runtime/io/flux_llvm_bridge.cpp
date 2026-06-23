@@ -154,7 +154,8 @@ extern "C" double flux_read_file(double path_dbl)
     long sz = std::ftell(f);
     std::fseek(f, 0, SEEK_SET);
     std::string result(static_cast<size_t>(sz), '\0');
-    fread(result.data(), 1, static_cast<size_t>(sz), f);
+    size_t bytesRead = fread(result.data(), 1, static_cast<size_t>(sz), f);
+    (void)bytesRead;
     std::fclose(f);
     g_llvm_pool.push_back(std::move(result)); pool_evict_if_full(g_llvm_pool);
     return u64_as_dbl(reinterpret_cast<uintptr_t>(g_llvm_pool.back().c_str()));
