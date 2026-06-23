@@ -948,8 +948,12 @@ std::unique_ptr<ExprAST> Parser::ParseLetExpr()
 
     // In block contexts, 'in' is optional. If not present, we assume it's part of a sequence.
     if (CurTok == static_cast<int>(TokenType::tok_in)) {
-        getNextToken();
-        auto Body = ParseExpression();
+    getNextToken();
+    // Support optional arrow syntax: fn(x) -> expr
+    if (CurTok == static_cast<int>(TokenType::tok_arrow)) {
+        getNextToken(); // eat ->
+    }
+    auto Body = ParseExpression();
         if (!Body)
             return nullptr;
         return std::make_unique<LetExprAST>(IdName, Type, std::move(Init), std::move(Body));
@@ -989,6 +993,9 @@ std::unique_ptr<ExprAST> Parser::ParseLambdaExpr()
         }
     }
     getNextToken();
+    if (CurTok == static_cast<int>(TokenType::tok_arrow)) {
+        getNextToken();
+    }
     auto Body = ParseExpression();
     if (!Body)
         return nullptr;

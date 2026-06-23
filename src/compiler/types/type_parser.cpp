@@ -415,6 +415,50 @@ std::unique_ptr<EnumDeclAST> Parser::ParseEnumDecl(
         FluxType Payload(TypeKind::Void);
         if (CurTok == '(') {
             getNextToken(); // eat (
+
+            // Support named field syntax: Some(value: Double)
+            if (CurTok == static_cast<int>(TokenType::tok_identifier)) {
+                int peek = m_lexer.peekToken();
+                if (peek == static_cast<int>(TokenType::tok_colon)) {
+                    // Named field: consume identifier and colon, then parse type
+                    std::string fieldName = m_lexer.IdentifierStr;
+                    getNextToken(); // eat field name
+                    getNextToken(); // eat :
+
+                    FluxType fieldType = parseTypeName(GenericParams);
+
+                    if (CurTok != ')') {
+                        ReportError("expected ')' after named field type");
+                        return nullptr;
+                    }
+                    getNextToken(); // eat )
+
+                    // Generate a synthetic struct type for this variant's payload
+                    std::string anonName = "__enum_" + Name + "_" + VariantName + "_Fields";
+                    m_knownStructTypeNames.insert(anonName);
+
+                    std::vector<std::pair<std::string, FluxType>> fields;
+                    fields.push_back({fieldName, fieldType});
+
+                    Payload = FluxType(TypeKind::UserStruct);
+                    Payload.StructTypeId = -1;
+                    Payload.StructLLVMType = nullptr;
+                    Payload.GenericName = anonName;
+
+                    if (anonStructs) {
+                        anonStructs->push_back(
+                            std::make_unique<StructDeclAST>(anonName, std::move(fields)));
+                    }
+
+                    Variants.push_back(VariantName);
+                    Payloads.push_back(Payload);
+                    if (useBraceBlock && CurTok == ',')
+                        getNextToken();
+                    continue;
+                }
+            }
+
+            // Anonymous type: Some(Double)
             Payload = parseTypeName(GenericParams);
 
             if (CurTok != ')') {
