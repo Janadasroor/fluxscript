@@ -1,9 +1,7 @@
 /* Copyright 2026 Janada Sroor
  SPDX-License-Identifier: Apache-2.0 */
 
-#ifndef FLUX_RUNTIME_STANDALONE
 #include "flux/jit/flux_jit.h"
-#endif
 #include "flux/runtime/flux_runtime.h"
 #include "flux/runtime/advanced_math.h"
 #include <complex>

@@ -235,15 +235,22 @@ int runJIT(const std::string& code)
 
     // Set a 30-second timeout for JIT execution to prevent infinite loops
     static constexpr unsigned int JIT_TIMEOUT_SECONDS = 30;
+#ifndef _WIN32
     static volatile sig_atomic_t timed_out = 0;
     auto prev_handler = std::signal(SIGALRM, [](int) { timed_out = 1; });
     alarm(JIT_TIMEOUT_SECONDS);
+#endif
 
     const auto result = engine.callFunction(actualEntryPoint, {}, &error);
 
+#ifndef _WIN32
     alarm(0); // Cancel alarm
     std::signal(SIGALRM, prev_handler);
+#endif
 
+#ifdef _WIN32
+    bool timed_out = false;
+#endif
     if (timed_out) {
         llvm::errs() << "Runtime Error: Execution timed out after " << JIT_TIMEOUT_SECONDS << " seconds (possible infinite loop)\n";
         return 1;
