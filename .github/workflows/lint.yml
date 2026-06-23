@@ -54,7 +54,7 @@ jobs:
             -name '*.cpp' -o -name '*.h' -o -name '*.hpp' \
             | grep -v 'liveness_analysis.cpp' \
             | xargs clang-tidy-21 -p build/ \
-              --header-filter='(src|include)/' \
+              --header-filter='fluxscript/(src|include)/' \
               --checks='-*,clang-analyzer-core.*,clang-analyzer-cplusplus.*,clang-analyzer-unix.*,bugprone-use-after-move,bugprone-unused-return-value' \
               --warnings-as-errors='clang-analyzer-core.*,clang-analyzer-cplusplus.*,clang-analyzer-unix.*,bugprone-use-after-move,bugprone-unused-return-value' 2>&1
 
