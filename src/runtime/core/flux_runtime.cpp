@@ -54,7 +54,7 @@ FluxSimulationService* g_flux_sim_service = nullptr;
 // Global C-API declarations
 extern "C" {
 
-// File I/O (defined in fileio_runtime.cpp)
+// File I/O (defined in file_io_runtime.cpp)
 double flux_fopen(double filename_ptr, double mode_ptr);
 double flux_fclose(double handle);
 double flux_fflush(double handle);

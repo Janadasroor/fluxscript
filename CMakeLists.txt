@@ -168,16 +168,15 @@ set(FLUXSCRIPT_SOURCES
     src/compiler/core/preprocessor.cpp
     src/compiler/core/control_flow_parser.cpp
     src/compiler/core/control_flow_codegen.cpp
-    src/compiler/core/extended_parser.cpp
+    src/compiler/core/match_trycatch_parser.cpp
     src/compiler/core/extended_codegen.cpp
     src/compiler/core/parallel_parser.cpp
     src/compiler/core/parallel_codegen.cpp
-    src/compiler/core/new_features_codegen.cpp
-    src/compiler/core/codegen_new.cpp
+    src/compiler/core/diagnostic_codegen.cpp
     # Compiler - SPICE
     src/compiler/spice/spice_parser.cpp
     src/compiler/spice/spice_codegen.cpp
-    src/compiler/spice/adevice_codegen.cpp
+    src/compiler/spice/alog_device_codegen.cpp
     # Compiler - Mixed Signal
     src/compiler/mixed_signal/mixed_signal_parser.cpp
     src/compiler/mixed_signal/mixed_signal_codegen.cpp
@@ -194,7 +193,7 @@ set(FLUXSCRIPT_SOURCES
     src/compiler/domains/schematic_codegen.cpp
     src/compiler/domains/time_domain_parser.cpp
     src/compiler/domains/time_domain_codegen.cpp
-    src/compiler/domains/advanced_features.cpp
+    src/compiler/domains/plot_benchmark_parser.cpp
     src/compiler/domains/netlist_generator.cpp
     # Security
     src/security/security.cpp
@@ -202,7 +201,7 @@ set(FLUXSCRIPT_SOURCES
     src/runtime/core/flux_runtime.cpp
     src/runtime/core/registration.cpp
     src/runtime/core/units.cpp
-    src/runtime/core/autodiff.cpp
+    src/runtime/core/auto_diff.cpp
     src/runtime/core/spice_runtime.cpp
     src/runtime/core/ngspice_bridge.cpp
     src/runtime/core/mixed_signal_runtime.cpp
@@ -214,7 +213,7 @@ set(FLUXSCRIPT_SOURCES
     src/runtime/matrix/advanced_math.cpp
     # Runtime - IO
     src/runtime/io/string_runtime.cpp
-    src/runtime/io/fileio_runtime.cpp
+    src/runtime/io/file_io_runtime.cpp
     src/runtime/io/flux_llvm_bridge.cpp
     # Runtime - Threading
     src/runtime/threading/threading_runtime.cpp
@@ -311,7 +310,7 @@ set(FLUX_RUNTIME_SOURCES
     src/runtime/core/flux_runtime.cpp
     src/runtime/matrix/matrix_runtime.cpp
     src/runtime/io/string_runtime.cpp
-    src/runtime/io/fileio_runtime.cpp
+    src/runtime/io/file_io_runtime.cpp
     src/runtime/threading/threading_runtime.cpp
     src/runtime/analysis/analysis_runtime.cpp
     src/runtime/symbolic/symbolic_runtime.cpp
@@ -321,7 +320,7 @@ set(FLUX_RUNTIME_SOURCES
     src/runtime/threading/parallel_runtime.cpp
     src/runtime/symbolic/symbolic_engine.cpp
     src/runtime/core/units.cpp
-    src/runtime/core/autodiff.cpp
+    src/runtime/core/auto_diff.cpp
     src/runtime/core/mixed_signal_runtime.cpp
     src/runtime/core/time_domain_api.cpp
     src/runtime/core/model_quality_engine.cpp

@@ -11,7 +11,7 @@
  See the License for the specific language governing permissions and
  limitations under the License. */
 
-#include "flux/compiler/advanced_features.h"
+#include "flux/compiler/plot_benchmark_ast.h"
 #include "flux/compiler/parser.h"
 #include <sstream>
 
