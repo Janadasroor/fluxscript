@@ -1,6 +1,6 @@
 #include <iostream>
 #include <cmath>
-#include "flux/runtime/autodiff.h"
+#include "flux/runtime/auto_diff.h"
 
 using namespace Flux::Autodiff;
 
