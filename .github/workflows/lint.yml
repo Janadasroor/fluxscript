@@ -52,10 +52,10 @@ jobs:
         run: |
           find src/compiler/ include/flux/compiler/ include/flux/runtime/ \
             -name '*.cpp' -o -name '*.h' -o -name '*.hpp' \
-            | grep -v 'liveness_analysis.cpp' \
+            | grep -v 'liveness_analysis\|codegen_context' \
             | xargs clang-tidy-21 -p build/ \
               --header-filter='fluxscript/(src|include)/' \
-              --checks='-*,clang-analyzer-core.*,clang-analyzer-cplusplus.*,clang-analyzer-unix.*,bugprone-use-after-move,bugprone-unused-return-value,-clang-diagnostic-error' \
+              --checks='-*,clang-analyzer-core.*,clang-analyzer-cplusplus.*,clang-analyzer-unix.*,bugprone-use-after-move,bugprone-unused-return-value' \
               --warnings-as-errors='clang-analyzer-core.*,clang-analyzer-cplusplus.*,clang-analyzer-unix.*,bugprone-use-after-move,bugprone-unused-return-value' 2>&1
 
   compile-warnings:

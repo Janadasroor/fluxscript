@@ -137,7 +137,6 @@ public:
     std::set<std::string> CompiledSpecializations;
 
     // Owning storage for generic function definitions.
-    // NOLINTBEGIN(clang-diagnostic-error) — unique_ptr with incomplete types is valid here
     std::vector<std::unique_ptr<FunctionAST>> GenericFunctionDefs;
 
     // Generic struct definitions
@@ -151,7 +150,6 @@ public:
     // Generic impl definitions
     std::map<std::string, ImplDeclAST*> GenericImpls;
     std::vector<std::unique_ptr<ImplDeclAST>> GenericImplDefs;
-    // NOLINTEND(clang-diagnostic-error)
 
     // Trait definitions
     struct TraitInfo {
