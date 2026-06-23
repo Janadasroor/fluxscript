@@ -127,7 +127,7 @@ enum class TokenType
     tok_pp_elif = -58,     // #elif
     tok_pp_else = -59,     // #else
     tok_pp_defined = -60,  // defined()
-    tok_pp_warning = -143, // #warning
+    tok_pp_warning = -320, // #warning
     tok_pp_error = -144,   // #error
 
     // Compound assignment operators
@@ -267,7 +267,7 @@ enum class TokenType
     tok_integ = -135,     // INTEG measurement
 
     // Probing
-    tok_probe = -150, // probe directive
+    tok_probe = -321, // probe directive
     tok_save = -151,  // save directive
 
     // Subcircuits and Models
@@ -278,17 +278,17 @@ enum class TokenType
     tok_ic = -156,     // initial condition
 
     /* Hierarchical Design */
-    tok_instance = -190, // subckt instance (X prefix)
+    tok_instance = -322, // subckt instance (X prefix)
     tok_params = -191,   // parameter block
-    tok_hier = -192,     // hierarchical separator
+    tok_hier = -323,     // hierarchical separator
 
     /* Verilog-A Lite */
     tok_analog = -200,      // analog block
-    tok_branch = -195,      // branch declaration
+    tok_branch = -325,      // branch declaration
     // (tok_V and tok_I were removed — "V" and "I" are lexed as tok_identifier)
     tok_ddt = -115,         // ddt() time derivative
     tok_idt = -114,         // idt() time integral
-    tok_abstol = -201,      // absolute tolerance
+    tok_abstol = -326,      // absolute tolerance
     tok_reltol = -202,      // relative tolerance
 
     /* Symbol Pin Mapping */
@@ -392,7 +392,7 @@ enum class TokenType
     tok_await = -309,
 
     // Threading primitives
-    tok_spawn = -310,
+    tok_spawn = -327,
     tok_join = -311,
 
     // Postfix `?` operator (Result/Option early-return propagation)

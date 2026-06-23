@@ -155,39 +155,77 @@ include_directories(${CMAKE_CURRENT_SOURCE_DIR}/src)
 # =============================================================================
 
 set(FLUXSCRIPT_SOURCES
-    src/compiler/compiler_instance.cpp
-    src/compiler/lexer.cpp
-    src/compiler/parser.cpp
-    src/compiler/lifetime_inference.cpp
-    src/compiler/codegen.cpp
-    src/compiler/module_loader.cpp
-    src/compiler/preprocessor.cpp
-    src/compiler/control_flow_parser.cpp
-    src/compiler/control_flow_codegen.cpp
-    src/compiler/extended_parser.cpp
-    src/compiler/extended_codegen.cpp
-    src/compiler/parallel_parser.cpp
-    src/compiler/parallel_codegen.cpp
-    src/compiler/schematic_parser.cpp
-    src/compiler/schematic_codegen.cpp
-    src/compiler/time_domain_parser.cpp
-    src/compiler/time_domain_codegen.cpp
-    src/compiler/component_modeling_parser.cpp
-    src/compiler/component_modeling_codegen.cpp
-    src/compiler/model_quality_parser.cpp
-    src/compiler/model_quality_codegen.cpp
-    src/compiler/mixed_signal_codegen.cpp
-    src/compiler/symbolic_parser.cpp
-    src/compiler/symbolic_codegen.cpp
-    src/compiler/advanced_features.cpp
-    src/compiler/netlist_generator.cpp
-    src/compiler/new_features_codegen.cpp
-    src/compiler/adevice_codegen.cpp
-    src/compiler/codegen_new.cpp
+    # Compiler - Core
+    src/compiler/core/compiler_instance.cpp
+    src/compiler/core/lexer.cpp
+    src/compiler/core/parser.cpp
+    src/compiler/core/lifetime_inference.cpp
+    src/compiler/core/codegen.cpp
+    src/compiler/core/call_codegen.cpp
+    src/compiler/core/binary_codegen.cpp
+    src/compiler/core/declaration_codegen.cpp
+    src/compiler/core/module_loader.cpp
+    src/compiler/core/preprocessor.cpp
+    src/compiler/core/control_flow_parser.cpp
+    src/compiler/core/control_flow_codegen.cpp
+    src/compiler/core/extended_parser.cpp
+    src/compiler/core/extended_codegen.cpp
+    src/compiler/core/parallel_parser.cpp
+    src/compiler/core/parallel_codegen.cpp
+    src/compiler/core/new_features_codegen.cpp
+    src/compiler/core/codegen_new.cpp
+    # Compiler - SPICE
+    src/compiler/spice/spice_parser.cpp
+    src/compiler/spice/spice_codegen.cpp
+    src/compiler/spice/adevice_codegen.cpp
+    # Compiler - Mixed Signal
+    src/compiler/mixed_signal/mixed_signal_parser.cpp
+    src/compiler/mixed_signal/mixed_signal_codegen.cpp
+    # Compiler - Types
+    src/compiler/types/type_parser.cpp
+    # Compiler - Domains
+    src/compiler/domains/symbolic_parser.cpp
+    src/compiler/domains/symbolic_codegen.cpp
+    src/compiler/domains/model_quality_parser.cpp
+    src/compiler/domains/model_quality_codegen.cpp
+    src/compiler/domains/component_modeling_parser.cpp
+    src/compiler/domains/component_modeling_codegen.cpp
+    src/compiler/domains/schematic_parser.cpp
+    src/compiler/domains/schematic_codegen.cpp
+    src/compiler/domains/time_domain_parser.cpp
+    src/compiler/domains/time_domain_codegen.cpp
+    src/compiler/domains/advanced_features.cpp
+    src/compiler/domains/netlist_generator.cpp
+    # Security
     src/security/security.cpp
-    src/runtime/units.cpp
-    src/runtime/mixed_signal_runtime.cpp
-    src/runtime/autodiff.cpp
+    # Runtime - Core
+    src/runtime/core/flux_runtime.cpp
+    src/runtime/core/registration.cpp
+    src/runtime/core/units.cpp
+    src/runtime/core/autodiff.cpp
+    src/runtime/core/spice_runtime.cpp
+    src/runtime/core/ngspice_bridge.cpp
+    src/runtime/core/mixed_signal_runtime.cpp
+    src/runtime/core/model_quality_engine.cpp
+    src/runtime/core/flux_model_bridge.cpp
+    src/runtime/core/time_domain_api.cpp
+    # Runtime - Matrix
+    src/runtime/matrix/matrix_runtime.cpp
+    src/runtime/matrix/advanced_math.cpp
+    # Runtime - IO
+    src/runtime/io/string_runtime.cpp
+    src/runtime/io/fileio_runtime.cpp
+    src/runtime/io/flux_llvm_bridge.cpp
+    # Runtime - Threading
+    src/runtime/threading/threading_runtime.cpp
+    src/runtime/threading/parallel_runtime.cpp
+    # Runtime - Analysis
+    src/runtime/analysis/analysis_runtime.cpp
+    src/runtime/analysis/advanced_runtime.cpp
+    # Runtime - Symbolic
+    src/runtime/symbolic/symbolic_runtime.cpp
+    src/runtime/symbolic/symbolic_engine.cpp
+    # JIT
     src/jit/flux_jit.cpp
     src/jit/jit_manager.cpp
     src/jit/simulation_hook.cpp
@@ -195,16 +233,13 @@ set(FLUXSCRIPT_SOURCES
     src/jit/smart_signal.cpp
     src/jit/zero_copy_data.cpp
     src/jit_engine.cpp
-    src/runtime/flux_runtime.cpp
-    src/runtime/flux_llvm_bridge.cpp
-    src/runtime/advanced_runtime.cpp
-    src/runtime/time_domain_api.cpp
-    src/runtime/model_quality_engine.cpp
-    src/runtime/symbolic_engine.cpp
-    src/runtime/parallel_runtime.cpp
-    src/runtime/ngspice_bridge.cpp
-    src/runtime/flux_model_bridge.cpp
-    src/runtime/spice_runtime.cpp
+    # Tooling - LSP
+    src/tooling/lsp/lsp_server.cpp
+    src/tooling/lsp/lsp_completions.cpp
+    src/tooling/lsp/lsp_hierarchy.cpp
+    src/tooling/lsp/lsp_semantic.cpp
+    src/tooling/lsp/lsp_utils.cpp
+    # Tooling - Core
     src/tooling/tooling.cpp
     src/tooling/package_manager.cpp
     src/tooling/repl.cpp
@@ -215,26 +250,25 @@ set(FLUXSCRIPT_SOURCES
     src/tooling/benchmark.cpp
     src/tooling/circuit_diff.cpp
     src/tooling/auto_docs.cpp
-    src/tooling/lsp_server.cpp
     src/tooling/source_docs.cpp
+    # Analysis
     src/analysis/advanced_analysis.cpp
     src/analysis/fft_engine.cpp
+    src/analysis/component_substitution.cpp
+    # Other
     src/doctor/circuit_doctor.cpp
     src/instruments/instrument.cpp
     src/sweep/parametric_sweep.cpp
     src/testing/circuit_fuzz.cpp
     src/toolbox/power.cpp
     src/toolbox/control.cpp
-    src/runtime/advanced_math.cpp
     src/ai/surrogate.cpp
     src/phase3_stubs.cpp
     src/phase4a_stubs.cpp
-
     src/package/http_client.cpp
     src/package/toml_parser.cpp
     src/package/package_manager.cpp
     src/package/dependency_resolver.cpp
-    src/analysis/component_substitution.cpp
     src/verification/verification_dx.cpp
     src/verification/property_testing.cpp
     src/verification/cross_simulator_validation.cpp
@@ -274,20 +308,23 @@ endif()
 # =============================================================================
 
 set(FLUX_RUNTIME_SOURCES
-    src/runtime/flux_runtime.cpp
-    src/runtime/advanced_runtime.cpp
-    src/runtime/advanced_math.cpp
-    src/runtime/spice_runtime.cpp
-    src/runtime/parallel_runtime.cpp
-    src/runtime/symbolic_engine.cpp
-    src/runtime/ngspice_bridge.cpp
-    src/runtime/units.cpp
-    src/runtime/mixed_signal_runtime.cpp
-    src/runtime/autodiff.cpp
-    src/runtime/time_domain_api.cpp
-    src/runtime/model_quality_engine.cpp
-    src/analysis/advanced_analysis.cpp
-    src/analysis/fft_engine.cpp
+    src/runtime/core/flux_runtime.cpp
+    src/runtime/matrix/matrix_runtime.cpp
+    src/runtime/io/string_runtime.cpp
+    src/runtime/io/fileio_runtime.cpp
+    src/runtime/threading/threading_runtime.cpp
+    src/runtime/analysis/analysis_runtime.cpp
+    src/runtime/symbolic/symbolic_runtime.cpp
+    src/runtime/analysis/advanced_runtime.cpp
+    src/runtime/matrix/advanced_math.cpp
+    src/runtime/core/spice_runtime.cpp
+    src/runtime/threading/parallel_runtime.cpp
+    src/runtime/symbolic/symbolic_engine.cpp
+    src/runtime/core/units.cpp
+    src/runtime/core/autodiff.cpp
+    src/runtime/core/mixed_signal_runtime.cpp
+    src/runtime/core/time_domain_api.cpp
+    src/runtime/core/model_quality_engine.cpp
 )
 
 add_library(FluxRuntime STATIC ${FLUX_RUNTIME_SOURCES})
@@ -418,13 +455,13 @@ endif()
 add_executable(flux-pkg cli/flux-pkg.cpp)
 target_link_libraries(flux-pkg PRIVATE FluxScript)
 
-add_executable(flux-spice cli/flux-spice.cpp src/runtime/ngspice_bridge.cpp)
+add_executable(flux-spice cli/flux-spice.cpp src/runtime/core/ngspice_bridge.cpp)
 if(NGSPICE_FOUND)
     target_link_libraries(flux-spice PRIVATE ${NGSPICE_LIBRARY})
 endif()
 target_link_libraries(flux-spice PRIVATE FluxScript)
 
-add_executable(flux-run src/cli/flux_run.cpp src/runtime/ngspice_bridge.cpp)
+add_executable(flux-run src/cli/flux_run.cpp src/runtime/core/ngspice_bridge.cpp)
 if(NGSPICE_FOUND)
     target_link_libraries(flux-run PRIVATE ${NGSPICE_LIBRARY})
     target_compile_definitions(flux-run PRIVATE FLUX_HAS_NGSPICE=1)
