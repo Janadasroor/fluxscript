@@ -11,10 +11,6 @@ on:
         type: boolean
         default: true
         description: Linux x86_64
-      linux-arm64:
-        type: boolean
-        default: true
-        description: Linux ARM64
       macos-arm64:
         type: boolean
         default: true
@@ -101,55 +97,6 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: fluxscript-linux-x86_64.tar.gz
-
-  # ------------------------------------------------------------------
-  # Linux ARM64 — native arm runner
-  # ------------------------------------------------------------------
-  linux-arm64:
-    if: github.event_name != 'workflow_dispatch' || inputs['linux-arm64']
-    runs-on: ubuntu-24.04-arm
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install deps
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq wget lsb-release software-properties-common gnupg
-          wget -q https://apt.llvm.org/llvm.sh && chmod +x llvm.sh && sudo ./llvm.sh 21 all
-          sudo apt-get install -y -qq libclang-21-dev liblld-21-dev cmake libcurl4-openssl-dev g++ libeigen3-dev ninja-build ccache
-
-      - name: Build
-        run: |
-          cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
-            -DLLVM_DIR=/usr/lib/llvm-21/lib/cmake/llvm \
-            -DClang_DIR=/usr/lib/llvm-21/lib/cmake/clang \
-            -DLLD_DIR=/usr/lib/llvm-21/lib/cmake/lld \
-            -DFLUX_BUILD_TESTS=ON
-          ninja -C build -j$(nproc)
-
-      - name: Test
-        run: cd build && ctest --output-on-failure -R "flux-test" -E "all-features|waveform-extraction|tiered-jit|module-system" -j$(nproc)
-
-      - name: Package
-        if: startsWith(github.ref, 'refs/tags/v')
-        run: |
-          mkdir -p install/include install/lib
-          cp -r include/flux install/include/
-          cp build/libFluxScript.so install/lib/
-          LLVM_SO="$(ldd build/libFluxScript.so | grep libLLVM | awk '{print $3}' | head -1)"
-          if [ -n "$LLVM_SO" ]; then
-            LLVM_REAL="$(readlink -f "$LLVM_SO" || echo "$LLVM_SO")"
-            cp -L "$LLVM_REAL" install/lib/
-            ln -sf "$(basename "$LLVM_REAL")" install/lib/libLLVM.so
-          fi
-          patchelf --set-rpath '$ORIGIN' install/lib/libFluxScript.so
-          tar czf fluxscript-linux-arm64.tar.gz -C install .
-
-      - name: Upload release asset
-        if: startsWith(github.ref, 'refs/tags/v')
-        uses: softprops/action-gh-release@v2
-        with:
-          files: fluxscript-linux-arm64.tar.gz
 
   # ------------------------------------------------------------------
   # macOS ARM64
