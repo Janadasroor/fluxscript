@@ -442,19 +442,10 @@ std::unique_ptr<ExprAST> Parser::ParsePiecewiseExpr()
             // If we see interpolate= or a standalone x (query), handle accordingly
             if (CurTok == static_cast<int>(TokenType::tok_identifier) &&
                 (m_lexer.IdentifierStr == "interpolate" || m_lexer.IdentifierStr == "query")) {
-                // This comma was for the next arg, put back conceptually
-                // Actually we already consumed it, so X,Y is a point
-                PW->addPoint(std::move(X), std::move(Y));
-                // Continue loop to parse interpolate or query
                 auto KeyId = m_lexer.IdentifierStr;
                 getNextToken(); // eat identifier
                 if (CurTok != '=') {
-                    // It was query x, not interpolate
-                    PW->setQueryX(std::move(X)); // X was actually the query
-                    // Y should not have been parsed yet... let me reconsider
-                    // Actually if it's `piecewise(x1,y1, x2,y2, x_query)`
-                    // the last comma leads to an expression that has no comma after
-                    // Let me simplify: just treat last expression as query
+                    PW->setQueryX(std::move(X));
                     break;
                 }
                 getNextToken(); // eat =

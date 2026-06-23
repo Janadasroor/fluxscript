@@ -1309,7 +1309,7 @@ llvm::Function* FunctionAST::codegenWithProto(CodegenContext& context, Prototype
     context.LexicalBlocks = std::move(SavedLexicalBlocks);
     context.Builder.SetCurrentDebugLocation(SavedDebugLoc);
     // Release without deleting (customProto is owned by the caller)
-    Proto.release();
+    (void)Proto.release();
     Proto = std::move(savedProto);
     return result;
 }
