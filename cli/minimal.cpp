@@ -18,6 +18,9 @@
 #include <cstdlib>
 #include <filesystem>
 #include <string>
+#ifndef _WIN32
+#include <unistd.h>
+#endif
 
 #include <llvm/Bitcode/BitcodeWriter.h>
 #include <llvm/Support/CommandLine.h>
