@@ -325,6 +325,8 @@ set(FLUX_RUNTIME_SOURCES
     src/runtime/core/mixed_signal_runtime.cpp
     src/runtime/core/time_domain_api.cpp
     src/runtime/core/model_quality_engine.cpp
+    src/analysis/fft_engine.cpp
+    src/analysis/advanced_analysis.cpp
 )
 
 add_library(FluxRuntime STATIC ${FLUX_RUNTIME_SOURCES})
@@ -436,20 +438,22 @@ set(STDLIB_SOURCE_DIR "${CMAKE_SOURCE_DIR}/stdlib")
 set(STDLIB_BC_DIR "${CMAKE_BINARY_DIR}/stdlib_bc")
 file(MAKE_DIRECTORY "${STDLIB_BC_DIR}")
 file(GLOB STDLIB_FLUX_FILES "${STDLIB_SOURCE_DIR}/*.flux")
-foreach(FLUX_FILE ${STDLIB_FLUX_FILES})
-    get_filename_component(MODULE_NAME "${FLUX_FILE}" NAME_WE)
-    set(BC_FILE "${STDLIB_BC_DIR}/${MODULE_NAME}.flux.bc")
-    add_custom_command(
-        OUTPUT "${BC_FILE}"
-        COMMAND ${CMAKE_COMMAND} -E make_directory "${STDLIB_BC_DIR}"
-        COMMAND $<TARGET_FILE:flux> --emit bc -o "${BC_FILE}" "${FLUX_FILE}"
-        DEPENDS flux "${FLUX_FILE}"
-        COMMENT "Compiling stdlib/${MODULE_NAME}.flux to bitcode"
-    )
-    list(APPEND STDLIB_BC_FILES "${BC_FILE}")
-endforeach()
-if(STDLIB_BC_FILES)
-    add_custom_target(stdlib_bc ALL DEPENDS ${STDLIB_BC_FILES})
+if(NOT CMAKE_CROSSCOMPILING)
+    foreach(FLUX_FILE ${STDLIB_FLUX_FILES})
+        get_filename_component(MODULE_NAME "${FLUX_FILE}" NAME_WE)
+        set(BC_FILE "${STDLIB_BC_DIR}/${MODULE_NAME}.flux.bc")
+        add_custom_command(
+            OUTPUT "${BC_FILE}"
+            COMMAND ${CMAKE_COMMAND} -E make_directory "${STDLIB_BC_DIR}"
+            COMMAND $<TARGET_FILE:flux> --emit bc -o "${BC_FILE}" "${FLUX_FILE}"
+            DEPENDS flux "${FLUX_FILE}"
+            COMMENT "Compiling stdlib/${MODULE_NAME}.flux to bitcode"
+        )
+        list(APPEND STDLIB_BC_FILES "${BC_FILE}")
+    endforeach()
+    if(STDLIB_BC_FILES)
+        add_custom_target(stdlib_bc ALL DEPENDS ${STDLIB_BC_FILES})
+    endif()
 endif()
 
 add_executable(flux-pkg cli/flux-pkg.cpp)
