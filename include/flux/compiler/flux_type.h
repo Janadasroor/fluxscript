@@ -205,7 +205,7 @@ public:
 
     bool isRef() const { return Kind == TypeKind::Ref; }
     bool isMutRef() const { return Kind == TypeKind::Ref && RefIsMut; }
-    const FluxType& getRefInnerType() const { return *RefInnerType; }
+    const FluxType& getRefInnerType() const { return RefInnerType ? *RefInnerType : *this; }
     const std::string& getRefLifetime() const { return Lifetime; }
 
     // Create a Generic type parameter placeholder
