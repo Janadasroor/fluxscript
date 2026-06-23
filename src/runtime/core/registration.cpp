@@ -6,6 +6,7 @@
 #endif
 #include "flux/runtime/flux_runtime.h"
 #include "flux/runtime/advanced_math.h"
+#include <complex>
 
 // JIT-callable wrappers (flux_runtime.cpp, C++ linkage)
 double jit_register_analysis(double name_ptr);
