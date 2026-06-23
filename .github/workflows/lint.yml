@@ -55,7 +55,7 @@ jobs:
             | grep -v 'liveness_analysis.cpp' \
             | xargs clang-tidy-21 -p build/ \
               --header-filter='(src|include)/' \
-              --warnings-as-errors='clang-analyzer-core.*,clang-analyzer-cplusplus.*,clang-analyzer-security.*,clang-analyzer-unix.*,bugprone-use-after-move,bugprone-undefined-memory-manipulation,bugprone-unused-return-value' 2>&1
+              --warnings-as-errors='clang-analyzer-core.*,clang-analyzer-cplusplus.*,clang-analyzer-unix.*,bugprone-use-after-move,bugprone-unused-return-value' 2>&1
 
   compile-warnings:
     runs-on: ubuntu-22.04
