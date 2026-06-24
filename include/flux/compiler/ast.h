@@ -14,11 +14,11 @@
 #ifndef FLUX_COMPILER_AST_H
 #define FLUX_COMPILER_AST_H
 
-#include "flux/compiler/ast_core.h"
 #include "flux/compiler/ast_control_flow.h"
+#include "flux/compiler/ast_core.h"
 #include "flux/compiler/ast_data.h"
 #include "flux/compiler/ast_declarations.h"
-#include "flux/compiler/ast_spice.h"
 #include "flux/compiler/ast_mixed_signal.h"
+#include "flux/compiler/ast_spice.h"
 
 #endif // FLUX_COMPILER_AST_H
