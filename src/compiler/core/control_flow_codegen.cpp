@@ -12,6 +12,7 @@
  limitations under the License. */
 
 #include "flux/compiler/ast.h"
+#include "flux/compiler/codegen_helpers.h"
 #include <iostream>
 #include <llvm/IR/BasicBlock.h>
 #include <llvm/IR/Function.h>
@@ -255,6 +256,227 @@ TypedValue ReturnExprAST::codegen(CodegenContext& context)
     }
 
     return RetValTV;
+}
+
+// ============ If Expression Codegen ============
+
+TypedValue IfExprAST::codegen(CodegenContext& context)
+{
+    TypedValue CondTV = Cond->codegen(context);
+    if (!CondTV.Val) {
+        std::cerr << "[FLUX ERROR] If condition sub-expression failed to codegen" << std::endl;
+        return TypedValue();
+    }
+
+    llvm::Value* CondV = boolCondition(CondTV.Val, context.Builder, context.TheContext);
+    llvm::Function* TheFunction = context.Builder.GetInsertBlock()->getParent();
+
+    llvm::BasicBlock* ThenBB = llvm::BasicBlock::Create(context.TheContext, "then", TheFunction);
+    llvm::BasicBlock* ElseBB = llvm::BasicBlock::Create(context.TheContext, "else", TheFunction);
+    llvm::BasicBlock* MergeBB = nullptr;
+
+    context.Builder.CreateCondBr(CondV, ThenBB, ElseBB);
+
+    // Generate Then block
+    context.Builder.SetInsertPoint(ThenBB);
+    if (context.DebugEnabled) {
+        llvm::DIScope* parentScope =
+            context.LexicalBlocks.empty() ? context.DebugCompileUnit : context.LexicalBlocks.back();
+        auto* block = context.DebugBuilder->createLexicalBlockFile(parentScope, context.DebugFile);
+        context.LexicalBlocks.push_back(block);
+    }
+    TypedValue ThenTV = Then->codegen(context);
+    if (!ThenTV.Val && ThenTV.Type.Kind != TypeKind::Void) {
+        std::cerr << "[FLUX ERROR] If-then branch failed to codegen" << std::endl;
+        return TypedValue();
+    }
+
+    bool thenTerminated = context.Builder.GetInsertBlock()->getTerminator() != nullptr;
+    ThenBB = context.Builder.GetInsertBlock();
+    if (context.DebugEnabled)
+        context.LexicalBlocks.pop_back();
+
+    // Generate Else block
+    context.Builder.SetInsertPoint(ElseBB);
+    if (context.DebugEnabled) {
+        llvm::DIScope* parentScope =
+            context.LexicalBlocks.empty() ? context.DebugCompileUnit : context.LexicalBlocks.back();
+        auto* block = context.DebugBuilder->createLexicalBlockFile(parentScope, context.DebugFile);
+        context.LexicalBlocks.push_back(block);
+    }
+    TypedValue ElseTV = Else->codegen(context);
+    if (!ElseTV.Val && ElseTV.Type.Kind != TypeKind::Void) {
+        std::cerr << "[FLUX ERROR] If-else branch failed to codegen" << std::endl;
+        return TypedValue();
+    }
+
+    bool elseTerminated = context.Builder.GetInsertBlock()->getTerminator() != nullptr;
+    ElseBB = context.Builder.GetInsertBlock();
+    if (context.DebugEnabled)
+        context.LexicalBlocks.pop_back();
+
+    // Determine if we need a merge block
+    if (!thenTerminated || !elseTerminated) {
+        MergeBB = llvm::BasicBlock::Create(context.TheContext, "ifcont", TheFunction);
+
+        if (!thenTerminated) {
+            context.Builder.SetInsertPoint(ThenBB);
+            context.Builder.CreateBr(MergeBB);
+            ThenBB = context.Builder.GetInsertBlock();
+        }
+
+        if (!elseTerminated) {
+            context.Builder.SetInsertPoint(ElseBB);
+            context.Builder.CreateBr(MergeBB);
+            ElseBB = context.Builder.GetInsertBlock();
+        }
+
+        context.Builder.SetInsertPoint(MergeBB);
+
+        if (ThenTV.Type.Kind == TypeKind::Void && ElseTV.Type.Kind == TypeKind::Void) {
+            return ThenTV;
+        }
+
+        // PHI node for reachable paths
+        llvm::Type* PhiTy = ThenTV.Val ? ThenTV.Val->getType() : ElseTV.Val->getType();
+        llvm::PHINode* PN = context.Builder.CreatePHI(PhiTy, 2, "iftmp");
+
+        if (!thenTerminated) {
+            llvm::Value* TV = ThenTV.Val;
+            if (TV->getType() != PhiTy)
+                TV = context.Builder.CreateSIToFP(TV, PhiTy, "cast_then");
+            PN->addIncoming(TV, ThenBB);
+        }
+        if (!elseTerminated) {
+            llvm::Value* EV = ElseTV.Val;
+            if (EV->getType() != PhiTy)
+                EV = context.Builder.CreateSIToFP(EV, PhiTy, "cast_else");
+            PN->addIncoming(EV, ElseBB);
+        }
+        return TypedValue(PN, ThenTV.Type);
+    }
+
+    // Both paths are terminated
+    return ThenTV;
+}
+
+// ============ For Expression Codegen ============
+
+TypedValue ForExprAST::codegen(CodegenContext& context)
+{
+    TypedValue StartTV = Start->codegen(context);
+    TypedValue EndTV = End->codegen(context);
+    TypedValue StepTV =
+        Step ? Step->codegen(context)
+             : TypedValue(llvm::ConstantFP::get(llvm::Type::getDoubleTy(context.TheContext), 1.0), TypeKind::Double);
+    if (!StartTV.Val || !EndTV.Val || !StepTV.Val) {
+        std::cerr << "[FLUX ERROR] For-loop range sub-expression failed to codegen" << std::endl;
+        return TypedValue();
+    }
+    auto ensureDouble = [&](TypedValue& TV) {
+        if (TV.Type.Kind == TypeKind::Int)
+            TV = TypedValue(
+                context.Builder.CreateSIToFP(TV.Val, llvm::Type::getDoubleTy(context.TheContext), "int2double"),
+                TypeKind::Double);
+    };
+    ensureDouble(StartTV);
+    ensureDouble(EndTV);
+    ensureDouble(StepTV);
+    llvm::Function* TheFunction = context.Builder.GetInsertBlock()->getParent();
+    llvm::BasicBlock* PreheaderBB = context.Builder.GetInsertBlock();
+    llvm::BasicBlock* LoopBB = llvm::BasicBlock::Create(context.TheContext, "loop", TheFunction);
+    llvm::BasicBlock* AfterBB = llvm::BasicBlock::Create(context.TheContext, "afterloop");
+
+    // Set up break/continue targets
+    llvm::BasicBlock* OldLoopEnd = context.CurrentLoopEnd;
+    llvm::BasicBlock* OldLoopCont = context.CurrentLoopCont;
+    context.CurrentLoopEnd = AfterBB;
+    context.CurrentLoopCont = LoopBB;
+
+    llvm::AllocaInst* LoopAlloca =
+        context.Builder.CreateAlloca(llvm::Type::getDoubleTy(context.TheContext), nullptr, VarName.c_str());
+    context.Builder.CreateStore(StartTV.Val, LoopAlloca);
+    context.NamedValues[VarName] = LoopAlloca;
+
+    context.Builder.CreateBr(LoopBB);
+    context.Builder.SetInsertPoint(LoopBB);
+    if (context.DebugEnabled) {
+        llvm::DIScope* parentScope =
+            context.LexicalBlocks.empty() ? context.DebugCompileUnit : context.LexicalBlocks.back();
+        auto* block = context.DebugBuilder->createLexicalBlockFile(parentScope, context.DebugFile);
+        context.LexicalBlocks.push_back(block);
+    }
+    TypedValue BodyTV = Body->codegen(context);
+    if (!BodyTV.Val) {
+        std::cerr << "[FLUX ERROR] For-loop body failed to codegen" << std::endl;
+        return TypedValue();
+    }
+    llvm::Value* CurrentVar =
+        context.Builder.CreateLoad(llvm::Type::getDoubleTy(context.TheContext), LoopAlloca, VarName.c_str());
+    llvm::Value* NextVar = context.Builder.CreateFAdd(CurrentVar, StepTV.Val, "nextvar");
+    context.Builder.CreateStore(NextVar, LoopAlloca);
+    if (context.DebugEnabled)
+        context.LexicalBlocks.pop_back();
+    llvm::Value* EndCond = context.Builder.CreateFCmpOLT(NextVar, EndTV.Val, "loopcond");
+    context.Builder.CreateCondBr(EndCond, LoopBB, AfterBB);
+    TheFunction->insert(TheFunction->end(), AfterBB);
+    context.Builder.SetInsertPoint(AfterBB);
+
+    // Restore break/continue targets
+    context.CurrentLoopEnd = OldLoopEnd;
+    context.CurrentLoopCont = OldLoopCont;
+
+    return BodyTV;
+}
+
+// ============ While Expression Codegen ============
+
+TypedValue WhileExprAST::codegen(CodegenContext& context)
+{
+    llvm::Function* TheFunction = context.Builder.GetInsertBlock()->getParent();
+    llvm::BasicBlock* CondBB = llvm::BasicBlock::Create(context.TheContext, "whilecond", TheFunction);
+    llvm::BasicBlock* BodyBB = llvm::BasicBlock::Create(context.TheContext, "whilebody");
+    llvm::BasicBlock* AfterBB = llvm::BasicBlock::Create(context.TheContext, "afterwhile");
+
+    // Set up break/continue targets
+    llvm::BasicBlock* OldLoopEnd = context.CurrentLoopEnd;
+    llvm::BasicBlock* OldLoopCont = context.CurrentLoopCont;
+    context.CurrentLoopEnd = AfterBB;
+    context.CurrentLoopCont = CondBB;
+
+    context.Builder.CreateBr(CondBB);
+    context.Builder.SetInsertPoint(CondBB);
+    TypedValue CondTV = Cond->codegen(context);
+    if (!CondTV.Val) {
+        std::cerr << "[FLUX ERROR] While condition failed to codegen" << std::endl;
+        return TypedValue();
+    }
+    llvm::Value* CondV = boolCondition(CondTV.Val, context.Builder, context.TheContext);
+    context.Builder.CreateCondBr(CondV, BodyBB, AfterBB);
+    TheFunction->insert(TheFunction->end(), BodyBB);
+    context.Builder.SetInsertPoint(BodyBB);
+    if (context.DebugEnabled) {
+        llvm::DIScope* parentScope =
+            context.LexicalBlocks.empty() ? context.DebugCompileUnit : context.LexicalBlocks.back();
+        auto* block = context.DebugBuilder->createLexicalBlockFile(parentScope, context.DebugFile);
+        context.LexicalBlocks.push_back(block);
+    }
+    TypedValue BodyTV = Body->codegen(context);
+    if (!BodyTV.Val) {
+        std::cerr << "[FLUX ERROR] While body failed to codegen" << std::endl;
+        return TypedValue();
+    }
+    if (context.DebugEnabled)
+        context.LexicalBlocks.pop_back();
+    context.Builder.CreateBr(CondBB);
+    TheFunction->insert(TheFunction->end(), AfterBB);
+    context.Builder.SetInsertPoint(AfterBB);
+
+    // Restore break/continue targets
+    context.CurrentLoopEnd = OldLoopEnd;
+    context.CurrentLoopCont = OldLoopCont;
+
+    return BodyTV;
 }
 
 } // namespace Flux

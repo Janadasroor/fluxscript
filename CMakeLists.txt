@@ -164,6 +164,7 @@ set(FLUXSCRIPT_SOURCES
     src/compiler/core/call_codegen.cpp
     src/compiler/core/binary_codegen.cpp
     src/compiler/core/declaration_codegen.cpp
+    src/compiler/core/data_codegen.cpp
     src/compiler/core/module_loader.cpp
     src/compiler/core/preprocessor.cpp
     src/compiler/core/control_flow_parser.cpp

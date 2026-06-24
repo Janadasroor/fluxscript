@@ -321,6 +321,13 @@ inline void ensureGenericTypeArgSpecialized(FluxType& typeArg, CodegenContext& c
     }
 }
 
+inline llvm::Value* boolCondition(llvm::Value* V, llvm::IRBuilder<>& Builder, llvm::LLVMContext& Ctx)
+{
+    if (V->getType()->isIntegerTy(1))
+        return V;
+    return Builder.CreateFCmpONE(V, llvm::ConstantFP::get(llvm::Type::getDoubleTy(Ctx), 0.0), "boolcond");
+}
+
 } // namespace Flux
 
 #endif // FLUX_COMPILER_CODEGEN_HELPERS_H
