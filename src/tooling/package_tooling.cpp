@@ -11,7 +11,7 @@
  See the License for the specific language governing permissions and
  limitations under the License. */
 
-#include "flux/tooling/package_manager.h"
+#include "flux/tooling/package_tooling.h"
 #include "flux/runtime/flux_runtime.h"
 
 #include <algorithm>

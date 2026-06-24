@@ -242,8 +242,8 @@ set(FLUXSCRIPT_SOURCES
     src/tooling/lsp/lsp_utils.cpp
     # Tooling - Core
     src/tooling/tooling.cpp
-    src/tooling/package_manager.cpp
-    src/tooling/repl.cpp
+    src/tooling/package_tooling.cpp
+    src/tooling/repl_impl.cpp
     src/tooling/notebook_kernel.cpp
     src/tooling/doc_generator.cpp
     src/tooling/example_gallery.cpp

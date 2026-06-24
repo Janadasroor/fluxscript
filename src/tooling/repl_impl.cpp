@@ -11,7 +11,7 @@
  See the License for the specific language governing permissions and
  limitations under the License. */
 
-#include "flux/tooling/repl.h"
+#include "flux/tooling/repl_impl.h"
 #include <cstdlib>
 #include <ctime>
 // #include <readline/readline.h>
