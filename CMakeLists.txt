@@ -169,6 +169,8 @@ set(FLUXSCRIPT_SOURCES
     src/compiler/core/control_flow_parser.cpp
     src/compiler/core/control_flow_codegen.cpp
     src/compiler/core/match_trycatch_parser.cpp
+    src/compiler/core/import_parser.cpp
+    src/compiler/core/diagnostic_parser.cpp
     src/compiler/core/extended_codegen.cpp
     src/compiler/core/parallel_parser.cpp
     src/compiler/core/parallel_codegen.cpp
