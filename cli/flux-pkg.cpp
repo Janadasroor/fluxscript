@@ -17,7 +17,7 @@
 #include <string>
 #include <vector>
 
-#include "flux/tooling/package_manager.h"
+#include "flux/tooling/package_tooling.h"
 
 void printHelp()
 {
