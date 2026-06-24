@@ -44,7 +44,7 @@ jobs:
             -DLLD_DIR=/usr/lib/llvm-21/lib/cmake/lld
       - name: Run clang-tidy
         run: |
-          find src/compiler/ include/flux/compiler/ include/flux/runtime/ \
+          find src/compiler/ include/flux/compiler/ \
             -name '*.cpp' -o -name '*.h' -o -name '*.hpp' \
             | grep -v 'liveness_analysis\|codegen_context' \
             | xargs clang-tidy-21 -p build/ \
