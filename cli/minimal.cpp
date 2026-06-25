@@ -58,7 +58,7 @@ static const char* HelpText = "FluxScript — LLVM JIT-compiled scripting langua
                                "  flux test [directory]           Run integration tests\n"
                                "  flux repl                       Start interactive REPL\n"
                                "  flux lsp                        Start the LSP server\n"
-                               "  flux doc <script.flux>          Generate documentation\n"
+                               "  flux docs [keyword]             Show documentation (optionally search by keyword)\n"
                                "  flux pkg <command>              Package management\n"
                                "\n"
                                "OPTIONS:\n"
@@ -521,10 +521,46 @@ int main(int argc, char** argv)
             return std::system("flux-lsp");
         }
 
-        if (subcmd == "doc" && argc >= 3) {
-            std::string cmd = "flux-doc " + std::string(argv[2]);
-            for (int i = 3; i < argc; i++)
-                cmd += " " + std::string(argv[i]);
+        if (subcmd == "docs") {
+            // Find the docs file relative to the binary
+            std::string docsPath;
+            // Try relative to executable
+            {
+                char exePath[4096];
+                ssize_t len = readlink("/proc/self/exe", exePath, sizeof(exePath) - 1);
+                if (len > 0) {
+                    exePath[len] = '\0';
+                    std::filesystem::path exeDir = std::filesystem::path(exePath).parent_path();
+                    auto candidate = exeDir / ".." / "docs" / "FLUXSCRIPT.md";
+                    if (std::filesystem::exists(candidate))
+                        docsPath = candidate.string();
+                }
+            }
+            // Try workspace paths
+            if (docsPath.empty()) {
+                std::filesystem::path cwd = std::filesystem::current_path();
+                auto candidates = {
+                    cwd / "docs" / "FLUXSCRIPT.md",
+                    cwd / ".." / "docs" / "FLUXSCRIPT.md",
+                    cwd / ".." / ".." / "docs" / "FLUXSCRIPT.md",
+                };
+                for (auto& c : candidates) {
+                    if (std::filesystem::exists(c)) { docsPath = c.string(); break; }
+                }
+            }
+            if (docsPath.empty()) {
+                llvm::errs() << "Error: Could not find docs/FLUXSCRIPT.md\n";
+                return 1;
+            }
+
+            // If keyword provided, grep for it
+            if (argc >= 3) {
+                std::string keyword = argv[2];
+                std::string cmd = "grep -n -i -C 2 '" + keyword + "' '" + docsPath + "'";
+                return std::system(cmd.c_str());
+            }
+            // Otherwise, show full docs
+            std::string cmd = "cat '" + docsPath + "'";
             return std::system(cmd.c_str());
         }
 

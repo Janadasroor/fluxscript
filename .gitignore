@@ -8,13 +8,15 @@
 /build/
 /build_local/
 /build_debug/
-/docs/
+/docs/*
+!/docs/FLUXSCRIPT.md
 /examples/*.md
 /editor/
 /gui/
 /scripts/
 *.md
 !examples/fullcircuit/*.md
+!docs/FLUXSCRIPT.md
 tests/integration/results/
 todo/
 TODO.md
