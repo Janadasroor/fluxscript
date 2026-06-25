@@ -57,6 +57,7 @@ def ac_build(comps: matrix, ctrl: matrix, freq: Double, V: matrix) -> matrix {
             ac_stamp_bjt_ss(A, comps, ci, np, nm, V, N, dim)
         } else if (t == 12.0 || t == 13.0) {
             ac_stamp_mos_ss(A, comps, ci, np, nm, V, N, dim)
+            
         } else if (t == 14.0 || t == 15.0) {
             ac_stamp_jfet_ss(A, comps, ci, np, nm, V, N, dim)
         } else if (t == 16.0) {

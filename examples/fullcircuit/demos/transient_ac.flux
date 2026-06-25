@@ -15,30 +15,29 @@ import examples
 # -------------------------------------------------------
 def demo_transient() {
     var max_comps = 100
-    var comps = matrix_zeros(max_comps, 12)
     var ctrl = circuit_create(2, max_comps)
 
     # Resistor R=1k between node 1 and 2
-    circuit_add_resistor(comps, ctrl, 1, 2, 1000.0)
+    circuit_add_resistor(ctrl, 1, 2, 1000.0)
     # Capacitor C=1uF between node 2 and 0
-    circuit_add_capacitor(comps, ctrl, 2, 0, 1e-6, 0.0)
+    circuit_add_capacitor(ctrl, 2, 0, 1e-6, 0.0)
     # DC voltage source 5V between node 1 and 0
-    var src_idx = circuit_add_vdc(comps, ctrl, 1, 0, 5.0)
+    var src_idx = circuit_add_vdc(ctrl, 1, 0, 5.0)
     # Configure it as a pulse source (col[11]=1)
     #   col[5]=t_rise=0.1ms, col[6]=t_fall=0.1ms,
     #   col[7]=pw=2ms, col[8]=v1=0, col[9]=v2=5, col[10]=td=0
-    circuit_set_param(comps, src_idx, 5, 0.0001)
-    circuit_set_param(comps, src_idx, 6, 0.0001)
-    circuit_set_param(comps, src_idx, 7, 0.002)
-    circuit_set_param(comps, src_idx, 8, 0.0)
-    circuit_set_param(comps, src_idx, 9, 5.0)
-    circuit_set_param(comps, src_idx, 10, 0.0)
-    circuit_set_param(comps, src_idx, 11, 1.0)
+    matrix_set(ctrl.get_comps(), src_idx, 5, 0.0001)
+    matrix_set(ctrl.get_comps(), src_idx, 6, 0.0001)
+    matrix_set(ctrl.get_comps(), src_idx, 7, 0.002)
+    matrix_set(ctrl.get_comps(), src_idx, 8, 0.0)
+    matrix_set(ctrl.get_comps(), src_idx, 9, 5.0)
+    matrix_set(ctrl.get_comps(), src_idx, 10, 0.0)
+    matrix_set(ctrl.get_comps(), src_idx, 11, 1.0)
 
     var t_start = 0.0
     var t_stop = 0.005
     var h = 0.000025
-    var results = tr_solve(comps, ctrl, t_start, t_stop, h)
+    var results = tr_solve(ctrl.get_comps(), ctrl.get_ctrl(), t_start, t_stop, h)
 
     println("Transient: RC Low-Pass (R=1k, C=1uF, tau=1ms)")
     println("  Pulse: 0->5V, t_rise=0.1ms, pw=2ms, per=5ms")
@@ -72,20 +71,19 @@ def demo_transient() {
 # -------------------------------------------------------
 def demo_ac() {
     var max_comps = 100
-    var comps = matrix_zeros(max_comps, 12)
     var ctrl = circuit_create(2, max_comps)
 
-    circuit_add_resistor(comps, ctrl, 1, 2, 1000.0)
-    circuit_add_capacitor(comps, ctrl, 2, 0, 1e-6, 0.0)
-    circuit_add_vac(comps, ctrl, 1, 0, 0.0, 1.0, 1000.0, 0.0)
+    circuit_add_resistor(ctrl, 1, 2, 1000.0)
+    circuit_add_capacitor(ctrl, 2, 0, 1e-6, 0.0)
+    circuit_add_vac(ctrl, 1, 0, 0.0, 1.0, 1000.0, 0.0)
 
     # DC operating point (V is needed by ac_sweep for nonlinear devices)
-    var V = dc_solve(comps, ctrl, 100, 1e-9)
+    var V = dc_solve(ctrl.get_comps(), ctrl.get_ctrl(), 100, 1e-9)
 
     var f_start = 10.0
     var f_stop = 100000.0
     var npts = 30.0
-    var results = ac_sweep(comps, ctrl, f_start, f_stop, npts, V)
+    var results = ac_sweep(ctrl.get_comps(), ctrl.get_ctrl(), f_start, f_stop, npts, V)
 
     println("AC Sweep: RC Low-Pass (R=1k, C=1uF, fc ~ 159 Hz)")
     println("")
@@ -97,7 +95,7 @@ def demo_ac() {
     var ri = 0.0
     while (ri <= npts) {
         var freq = exp(log_fs + ri * step)
-        var sol = ac_build(comps, ctrl, freq, V)
+        var sol = ac_build(ctrl.get_comps(), ctrl.get_ctrl(), freq, V)
         var dim = matrix_get(sol, 0, 0)
         var v2r = matrix_get(sol, 2.0 + mna_ndx(2), 0)
         var v2i = matrix_get(sol, 2.0 + dim + mna_ndx(2), 0)
@@ -117,15 +115,14 @@ def demo_ac() {
 # -------------------------------------------------------
 def demo_analysis() {
     var max_comps = 100
-    var comps = matrix_zeros(max_comps, 12)
     var ctrl = circuit_create(2, max_comps)
 
-    circuit_add_resistor(comps, ctrl, 1, 2, 1000.0)
-    circuit_add_resistor(comps, ctrl, 2, 0, 2000.0)
-    circuit_add_vdc(comps, ctrl, 1, 0, 5.0)
+    circuit_add_resistor(ctrl, 1, 2, 1000.0)
+    circuit_add_resistor(ctrl, 2, 0, 2000.0)
+    circuit_add_vdc(ctrl, 1, 0, 5.0)
 
     # DC operating point
-    var V = dc_solve(comps, ctrl, 100, 1e-9)
+    var V = dc_solve(ctrl.get_comps(), ctrl.get_ctrl(), 100, 1e-9)
     println("Analysis: Voltage Divider (R1=1k, R2=2k, Vin=5V)")
     println("")
 
@@ -135,7 +132,7 @@ def demo_analysis() {
     println("")
 
     # Power dissipation (resistors only; source power needs branch currents)
-    var Pd = an_power_dissipation(comps, ctrl, V)
+    var Pd = an_power_dissipation(ctrl.get_comps(), ctrl.get_ctrl(), V)
     print("  Resistor power dissipation = "); print(Pd); println(" W")
     print("  V(1)-V(2) = ")
     print(matrix_get(V, 1, 0) - matrix_get(V, 2, 0))
@@ -149,13 +146,13 @@ def demo_analysis() {
     println("")
 
     # Sensitivity of V(2) to R1 (comp 0, 1% delta)
-    var S1 = an_sensitivity(comps, ctrl, 0.0, 0.01, 100, 1e-9)
+    var S1 = an_sensitivity(ctrl.get_comps(), ctrl.get_ctrl(), 0.0, 0.01, 100, 1e-9)
     print("  dV(2)/dR1 (1% pert) = "); print(matrix_get(S1, 2, 0)); println(" V/Ω")
     # Analytical: dV2/dR1 = -Vin * R2 / (R1+R2)^2 = -5*2000/3000^2 = -0.001111
     println("")
 
     # Sensitivity of V(2) to R2 (comp 1, 1% delta)
-    var S2 = an_sensitivity(comps, ctrl, 1.0, 0.01, 100, 1e-9)
+    var S2 = an_sensitivity(ctrl.get_comps(), ctrl.get_ctrl(), 1.0, 0.01, 100, 1e-9)
     print("  dV(2)/dR2 (1% pert) = "); print(matrix_get(S2, 2, 0)); println(" V/Ω")
     # Analytical: dV2/dR2 = Vin * R1 / (R1+R2)^2 = 5*1000/3000^2 = 0.000556
     println("")

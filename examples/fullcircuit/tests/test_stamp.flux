@@ -1,9 +1,11 @@
 import circuit
 import mna
 
-def test_A_after_stamp(comps : matrix, ctrl : matrix) {
-    var N = circuit_num_nodes(ctrl)
-    var nc = circuit_count(ctrl)
+def test_A_after_stamp(c: Circuit) {
+    var comps = c.comps
+    var ctrl = c.ctrl
+    var N = c.num_nodes()
+    var nc = c.count()
     var M = mna_count_branches(comps, ctrl)
     var dim = N + M
     var A = matrix_zeros(dim, dim)
@@ -23,14 +25,13 @@ def test_A_after_stamp(comps : matrix, ctrl : matrix) {
 }
 
 def main() {
-    var comps = matrix_zeros(500, 12)
     var ctrl = circuit_create(2, 500)
-    circuit_add_resistor(comps, ctrl, 1, 2, 1000.0)
-    circuit_add_resistor(comps, ctrl, 2, 0, 1000.0)
-    circuit_add_vdc(comps, ctrl, 1, 0, 5.0)
+    circuit_add_resistor(ctrl, 1, 2, 1000.0)
+    circuit_add_resistor(ctrl, 2, 0, 1000.0)
+    circuit_add_vdc(ctrl, 1, 0, 5.0)
 
     println("Testing A matrix after stamp_g calls from module function:")
-    var A_res = test_A_after_stamp(comps, ctrl)
+    var A_res = test_A_after_stamp(ctrl)
     var i = 0.0
     while (i < 3.0) {
         var j = 0.0

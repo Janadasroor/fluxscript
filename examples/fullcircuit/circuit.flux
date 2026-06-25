@@ -279,17 +279,7 @@ def circuit_create(num_nodes: Double, max_comps: Double) -> Circuit {
     c
 }
 
-def circuit_new(num_nodes: Double, max_comps: Double) -> Circuit {
-    var c = Circuit {
-        comps: matrix_zeros(max_comps, 12.0),
-        ctrl: matrix_zeros(3.0, 1.0)
-    }
-    matrix_set(c.ctrl, 0.0, 0.0, num_nodes)
-    matrix_set(c.ctrl, 2.0, 0.0, max_comps)
-    c
-}
-
-# --- backward-compatible free functions ---
+# --- backward-compatible free functions (take raw matrices) ---
 
 def circuit_count(ctrl: matrix) -> Double {
     matrix_get(ctrl, 1.0, 0.0)
@@ -323,251 +313,253 @@ def circuit_set_param(comps: matrix, idx: Double, col: Double, val: Double) {
     matrix_set(comps, idx, col, val)
 }
 
-def circuit_add_resistor(comps: matrix, ctrl: matrix, n_plus: Double, n_minus: Double, r_val: Double) -> Double {
-    var i = matrix_get(ctrl, 1.0, 0.0)
-    matrix_set(comps, i, 0.0, 0.0)
-    matrix_set(comps, i, 1.0, n_plus)
-    matrix_set(comps, i, 2.0, n_minus)
-    matrix_set(comps, i, 4.0, r_val)
-    matrix_set(ctrl, 1.0, 0.0, i + 1.0)
+# --- circuit_add_* functions (take Circuit, unpack internally) ---
+
+def circuit_add_resistor(c: Circuit, n_plus: Double, n_minus: Double, r_val: Double) -> Double {
+    var i = matrix_get(c.ctrl, 1.0, 0.0)
+    matrix_set(c.comps, i, 0.0, 0.0)
+    matrix_set(c.comps, i, 1.0, n_plus)
+    matrix_set(c.comps, i, 2.0, n_minus)
+    matrix_set(c.comps, i, 4.0, r_val)
+    matrix_set(c.ctrl, 1.0, 0.0, i + 1.0)
     i
 }
 
-def circuit_add_capacitor(comps: matrix, ctrl: matrix, n_plus: Double, n_minus: Double, c_val: Double, init_v: Double) -> Double {
-    var i = matrix_get(ctrl, 1.0, 0.0)
-    matrix_set(comps, i, 0.0, 1.0)
-    matrix_set(comps, i, 1.0, n_plus)
-    matrix_set(comps, i, 2.0, n_minus)
-    matrix_set(comps, i, 4.0, c_val)
-    matrix_set(comps, i, 10.0, init_v)
-    matrix_set(ctrl, 1.0, 0.0, i + 1.0)
+def circuit_add_capacitor(c: Circuit, n_plus: Double, n_minus: Double, c_val: Double, init_v: Double) -> Double {
+    var i = matrix_get(c.ctrl, 1.0, 0.0)
+    matrix_set(c.comps, i, 0.0, 1.0)
+    matrix_set(c.comps, i, 1.0, n_plus)
+    matrix_set(c.comps, i, 2.0, n_minus)
+    matrix_set(c.comps, i, 4.0, c_val)
+    matrix_set(c.comps, i, 10.0, init_v)
+    matrix_set(c.ctrl, 1.0, 0.0, i + 1.0)
     i
 }
 
-def circuit_add_inductor(comps: matrix, ctrl: matrix, n_plus: Double, n_minus: Double, l_val: Double, init_i: Double) -> Double {
-    var i = matrix_get(ctrl, 1.0, 0.0)
-    matrix_set(comps, i, 0.0, 2.0)
-    matrix_set(comps, i, 1.0, n_plus)
-    matrix_set(comps, i, 2.0, n_minus)
-    matrix_set(comps, i, 4.0, l_val)
-    matrix_set(comps, i, 10.0, init_i)
-    matrix_set(ctrl, 1.0, 0.0, i + 1.0)
+def circuit_add_inductor(c: Circuit, n_plus: Double, n_minus: Double, l_val: Double, init_i: Double) -> Double {
+    var i = matrix_get(c.ctrl, 1.0, 0.0)
+    matrix_set(c.comps, i, 0.0, 2.0)
+    matrix_set(c.comps, i, 1.0, n_plus)
+    matrix_set(c.comps, i, 2.0, n_minus)
+    matrix_set(c.comps, i, 4.0, l_val)
+    matrix_set(c.comps, i, 10.0, init_i)
+    matrix_set(c.ctrl, 1.0, 0.0, i + 1.0)
     i
 }
 
-def circuit_add_vdc(comps: matrix, ctrl: matrix, n_plus: Double, n_minus: Double, v_val: Double) -> Double {
-    var i = matrix_get(ctrl, 1.0, 0.0)
-    matrix_set(comps, i, 0.0, 3.0)
-    matrix_set(comps, i, 1.0, n_plus)
-    matrix_set(comps, i, 2.0, n_minus)
-    matrix_set(comps, i, 4.0, v_val)
-    matrix_set(ctrl, 1.0, 0.0, i + 1.0)
+def circuit_add_vdc(c: Circuit, n_plus: Double, n_minus: Double, v_val: Double) -> Double {
+    var i = matrix_get(c.ctrl, 1.0, 0.0)
+    matrix_set(c.comps, i, 0.0, 3.0)
+    matrix_set(c.comps, i, 1.0, n_plus)
+    matrix_set(c.comps, i, 2.0, n_minus)
+    matrix_set(c.comps, i, 4.0, v_val)
+    matrix_set(c.ctrl, 1.0, 0.0, i + 1.0)
     i
 }
 
-def circuit_add_idc(comps: matrix, ctrl: matrix, n_plus: Double, n_minus: Double, i_val: Double) -> Double {
-    var i = matrix_get(ctrl, 1.0, 0.0)
-    matrix_set(comps, i, 0.0, 4.0)
-    matrix_set(comps, i, 1.0, n_plus)
-    matrix_set(comps, i, 2.0, n_minus)
-    matrix_set(comps, i, 4.0, i_val)
-    matrix_set(ctrl, 1.0, 0.0, i + 1.0)
+def circuit_add_idc(c: Circuit, n_plus: Double, n_minus: Double, i_val: Double) -> Double {
+    var i = matrix_get(c.ctrl, 1.0, 0.0)
+    matrix_set(c.comps, i, 0.0, 4.0)
+    matrix_set(c.comps, i, 1.0, n_plus)
+    matrix_set(c.comps, i, 2.0, n_minus)
+    matrix_set(c.comps, i, 4.0, i_val)
+    matrix_set(c.ctrl, 1.0, 0.0, i + 1.0)
     i
 }
 
-def circuit_add_vac(comps: matrix, ctrl: matrix, n_plus: Double, n_minus: Double, dc_val: Double, ac_mag: Double, ac_freq: Double, ac_phase: Double) -> Double {
-    var i = matrix_get(ctrl, 1.0, 0.0)
-    matrix_set(comps, i, 0.0, 5.0)
-    matrix_set(comps, i, 1.0, n_plus)
-    matrix_set(comps, i, 2.0, n_minus)
-    matrix_set(comps, i, 4.0, dc_val)
-    matrix_set(comps, i, 8.0, ac_mag)
-    matrix_set(comps, i, 9.0, ac_freq)
-    matrix_set(comps, i, 10.0, ac_phase)
-    matrix_set(ctrl, 1.0, 0.0, i + 1.0)
+def circuit_add_vac(c: Circuit, n_plus: Double, n_minus: Double, dc_val: Double, ac_mag: Double, ac_freq: Double, ac_phase: Double) -> Double {
+    var i = matrix_get(c.ctrl, 1.0, 0.0)
+    matrix_set(c.comps, i, 0.0, 5.0)
+    matrix_set(c.comps, i, 1.0, n_plus)
+    matrix_set(c.comps, i, 2.0, n_minus)
+    matrix_set(c.comps, i, 4.0, dc_val)
+    matrix_set(c.comps, i, 8.0, ac_mag)
+    matrix_set(c.comps, i, 9.0, ac_freq)
+    matrix_set(c.comps, i, 10.0, ac_phase)
+    matrix_set(c.ctrl, 1.0, 0.0, i + 1.0)
     i
 }
 
-def circuit_add_iac(comps: matrix, ctrl: matrix, n_plus: Double, n_minus: Double, dc_val: Double, ac_mag: Double, ac_freq: Double, ac_phase: Double) -> Double {
-    var i = matrix_get(ctrl, 1.0, 0.0)
-    matrix_set(comps, i, 0.0, 6.0)
-    matrix_set(comps, i, 1.0, n_plus)
-    matrix_set(comps, i, 2.0, n_minus)
-    matrix_set(comps, i, 4.0, dc_val)
-    matrix_set(comps, i, 8.0, ac_mag)
-    matrix_set(comps, i, 9.0, ac_freq)
-    matrix_set(comps, i, 10.0, ac_phase)
-    matrix_set(ctrl, 1.0, 0.0, i + 1.0)
+def circuit_add_iac(c: Circuit, n_plus: Double, n_minus: Double, dc_val: Double, ac_mag: Double, ac_freq: Double, ac_phase: Double) -> Double {
+    var i = matrix_get(c.ctrl, 1.0, 0.0)
+    matrix_set(c.comps, i, 0.0, 6.0)
+    matrix_set(c.comps, i, 1.0, n_plus)
+    matrix_set(c.comps, i, 2.0, n_minus)
+    matrix_set(c.comps, i, 4.0, dc_val)
+    matrix_set(c.comps, i, 8.0, ac_mag)
+    matrix_set(c.comps, i, 9.0, ac_freq)
+    matrix_set(c.comps, i, 10.0, ac_phase)
+    matrix_set(c.ctrl, 1.0, 0.0, i + 1.0)
     i
 }
 
-def circuit_add_vpulse(comps: matrix, ctrl: matrix, n_plus: Double, n_minus: Double, per: Double, v1: Double, v2: Double, td: Double, tr_val: Double, tfall: Double, pw: Double) -> Double {
-    var i = circuit_add_vdc(comps, ctrl, n_plus, n_minus, per)
-    circuit_set_param(comps, i, 5.0, tr_val)
-    circuit_set_param(comps, i, 6.0, tfall)
-    circuit_set_param(comps, i, 7.0, pw)
-    circuit_set_param(comps, i, 8.0, v1)
-    circuit_set_param(comps, i, 9.0, v2)
-    circuit_set_param(comps, i, 10.0, td)
-    circuit_set_param(comps, i, 11.0, 1.0)
+def circuit_add_vpulse(c: Circuit, n_plus: Double, n_minus: Double, per: Double, v1: Double, v2: Double, td: Double, tr_val: Double, tfall: Double, pw: Double) -> Double {
+    var i = circuit_add_vdc(c, n_plus, n_minus, per)
+    circuit_set_param(c.comps, i, 5.0, tr_val)
+    circuit_set_param(c.comps, i, 6.0, tfall)
+    circuit_set_param(c.comps, i, 7.0, pw)
+    circuit_set_param(c.comps, i, 8.0, v1)
+    circuit_set_param(c.comps, i, 9.0, v2)
+    circuit_set_param(c.comps, i, 10.0, td)
+    circuit_set_param(c.comps, i, 11.0, 1.0)
     i
 }
 
-def circuit_add_vsin(comps: matrix, ctrl: matrix, n_plus: Double, n_minus: Double, voff: Double, vamp: Double, freq: Double, phase: Double) -> Double {
-    var i = circuit_add_vdc(comps, ctrl, n_plus, n_minus, 0.0)
-    circuit_set_param(comps, i, 5.0, phase)
-    circuit_set_param(comps, i, 8.0, voff)
-    circuit_set_param(comps, i, 9.0, vamp)
-    circuit_set_param(comps, i, 10.0, freq)
-    circuit_set_param(comps, i, 11.0, 2.0)
+def circuit_add_vsin(c: Circuit, n_plus: Double, n_minus: Double, voff: Double, vamp: Double, freq: Double, phase: Double) -> Double {
+    var i = circuit_add_vdc(c, n_plus, n_minus, 0.0)
+    circuit_set_param(c.comps, i, 5.0, phase)
+    circuit_set_param(c.comps, i, 8.0, voff)
+    circuit_set_param(c.comps, i, 9.0, vamp)
+    circuit_set_param(c.comps, i, 10.0, freq)
+    circuit_set_param(c.comps, i, 11.0, 2.0)
     i
 }
 
-def circuit_add_vcvs(comps: matrix, ctrl: matrix, n_op: Double, n_on: Double, n_ip: Double, n_in: Double, gain: Double) -> Double {
-    var i = matrix_get(ctrl, 1.0, 0.0)
-    matrix_set(comps, i, 0.0, 7.0)
-    matrix_set(comps, i, 1.0, n_op)
-    matrix_set(comps, i, 2.0, n_on)
-    matrix_set(comps, i, 3.0, n_ip)
-    matrix_set(comps, i, 4.0, n_in)
-    matrix_set(comps, i, 5.0, gain)
-    matrix_set(ctrl, 1.0, 0.0, i + 1.0)
+def circuit_add_vcvs(c: Circuit, n_op: Double, n_on: Double, n_ip: Double, n_in: Double, gain: Double) -> Double {
+    var i = matrix_get(c.ctrl, 1.0, 0.0)
+    matrix_set(c.comps, i, 0.0, 7.0)
+    matrix_set(c.comps, i, 1.0, n_op)
+    matrix_set(c.comps, i, 2.0, n_on)
+    matrix_set(c.comps, i, 3.0, n_ip)
+    matrix_set(c.comps, i, 4.0, n_in)
+    matrix_set(c.comps, i, 5.0, gain)
+    matrix_set(c.ctrl, 1.0, 0.0, i + 1.0)
     i
 }
 
-def circuit_add_vccs(comps: matrix, ctrl: matrix, n_op: Double, n_on: Double, n_ip: Double, n_in: Double, gm: Double) -> Double {
-    var i = matrix_get(ctrl, 1.0, 0.0)
-    matrix_set(comps, i, 0.0, 8.0)
-    matrix_set(comps, i, 1.0, n_op)
-    matrix_set(comps, i, 2.0, n_on)
-    matrix_set(comps, i, 3.0, n_ip)
-    matrix_set(comps, i, 4.0, n_in)
-    matrix_set(comps, i, 5.0, gm)
-    matrix_set(ctrl, 1.0, 0.0, i + 1.0)
+def circuit_add_vccs(c: Circuit, n_op: Double, n_on: Double, n_ip: Double, n_in: Double, gm: Double) -> Double {
+    var i = matrix_get(c.ctrl, 1.0, 0.0)
+    matrix_set(c.comps, i, 0.0, 8.0)
+    matrix_set(c.comps, i, 1.0, n_op)
+    matrix_set(c.comps, i, 2.0, n_on)
+    matrix_set(c.comps, i, 3.0, n_ip)
+    matrix_set(c.comps, i, 4.0, n_in)
+    matrix_set(c.comps, i, 5.0, gm)
+    matrix_set(c.ctrl, 1.0, 0.0, i + 1.0)
     i
 }
 
-def circuit_add_diode(comps: matrix, ctrl: matrix, n_plus: Double, n_minus: Double, isat: Double, n_factor: Double, vt: Double) -> Double {
-    var i = matrix_get(ctrl, 1.0, 0.0)
-    matrix_set(comps, i, 0.0, 9.0)
-    matrix_set(comps, i, 1.0, n_plus)
-    matrix_set(comps, i, 2.0, n_minus)
-    matrix_set(comps, i, 4.0, isat)
-    matrix_set(comps, i, 5.0, n_factor)
-    matrix_set(comps, i, 7.0, vt)
-    matrix_set(ctrl, 1.0, 0.0, i + 1.0)
+def circuit_add_diode(c: Circuit, n_plus: Double, n_minus: Double, isat: Double, n_factor: Double, vt: Double) -> Double {
+    var i = matrix_get(c.ctrl, 1.0, 0.0)
+    matrix_set(c.comps, i, 0.0, 9.0)
+    matrix_set(c.comps, i, 1.0, n_plus)
+    matrix_set(c.comps, i, 2.0, n_minus)
+    matrix_set(c.comps, i, 4.0, isat)
+    matrix_set(c.comps, i, 5.0, n_factor)
+    matrix_set(c.comps, i, 7.0, vt)
+    matrix_set(c.ctrl, 1.0, 0.0, i + 1.0)
     i
 }
 
-def circuit_add_npn(comps: matrix, ctrl: matrix, n_c: Double, n_b: Double, n_e: Double, bf: Double, isat: Double, vaf: Double, vt: Double) -> Double {
-    var i = matrix_get(ctrl, 1.0, 0.0)
-    matrix_set(comps, i, 0.0, 10.0)
-    matrix_set(comps, i, 1.0, n_c)
-    matrix_set(comps, i, 2.0, n_b)
-    matrix_set(comps, i, 3.0, n_e)
-    matrix_set(comps, i, 4.0, bf)
-    matrix_set(comps, i, 5.0, isat)
-    matrix_set(comps, i, 6.0, vaf)
-    matrix_set(comps, i, 7.0, vt)
-    matrix_set(ctrl, 1.0, 0.0, i + 1.0)
+def circuit_add_npn(c: Circuit, n_c: Double, n_b: Double, n_e: Double, bf: Double, isat: Double, vaf: Double, vt: Double) -> Double {
+    var i = matrix_get(c.ctrl, 1.0, 0.0)
+    matrix_set(c.comps, i, 0.0, 10.0)
+    matrix_set(c.comps, i, 1.0, n_c)
+    matrix_set(c.comps, i, 2.0, n_b)
+    matrix_set(c.comps, i, 3.0, n_e)
+    matrix_set(c.comps, i, 4.0, bf)
+    matrix_set(c.comps, i, 5.0, isat)
+    matrix_set(c.comps, i, 6.0, vaf)
+    matrix_set(c.comps, i, 7.0, vt)
+    matrix_set(c.ctrl, 1.0, 0.0, i + 1.0)
     i
 }
 
-def circuit_add_pnp(comps: matrix, ctrl: matrix, n_c: Double, n_b: Double, n_e: Double, bf: Double, isat: Double, vaf: Double, vt: Double) -> Double {
-    var i = matrix_get(ctrl, 1.0, 0.0)
-    matrix_set(comps, i, 0.0, 11.0)
-    matrix_set(comps, i, 1.0, n_c)
-    matrix_set(comps, i, 2.0, n_b)
-    matrix_set(comps, i, 3.0, n_e)
-    matrix_set(comps, i, 4.0, bf)
-    matrix_set(comps, i, 5.0, isat)
-    matrix_set(comps, i, 6.0, vaf)
-    matrix_set(comps, i, 7.0, vt)
-    matrix_set(ctrl, 1.0, 0.0, i + 1.0)
+def circuit_add_pnp(c: Circuit, n_c: Double, n_b: Double, n_e: Double, bf: Double, isat: Double, vaf: Double, vt: Double) -> Double {
+    var i = matrix_get(c.ctrl, 1.0, 0.0)
+    matrix_set(c.comps, i, 0.0, 11.0)
+    matrix_set(c.comps, i, 1.0, n_c)
+    matrix_set(c.comps, i, 2.0, n_b)
+    matrix_set(c.comps, i, 3.0, n_e)
+    matrix_set(c.comps, i, 4.0, bf)
+    matrix_set(c.comps, i, 5.0, isat)
+    matrix_set(c.comps, i, 6.0, vaf)
+    matrix_set(c.comps, i, 7.0, vt)
+    matrix_set(c.ctrl, 1.0, 0.0, i + 1.0)
     i
 }
 
-def circuit_add_nmos(comps: matrix, ctrl: matrix, n_d: Double, n_g: Double, n_s: Double, n_b: Double, kp: Double, vto: Double, lambda_val: Double) -> Double {
-    var i = matrix_get(ctrl, 1.0, 0.0)
-    matrix_set(comps, i, 0.0, 12.0)
-    matrix_set(comps, i, 1.0, n_d)
-    matrix_set(comps, i, 2.0, n_g)
-    matrix_set(comps, i, 3.0, n_s)
-    matrix_set(comps, i, 4.0, n_b)
-    matrix_set(comps, i, 5.0, kp)
-    matrix_set(comps, i, 6.0, vto)
-    matrix_set(comps, i, 7.0, lambda_val)
-    matrix_set(ctrl, 1.0, 0.0, i + 1.0)
+def circuit_add_nmos(c: Circuit, n_d: Double, n_g: Double, n_s: Double, n_b: Double, kp: Double, vto: Double, lambda_val: Double) -> Double {
+    var i = matrix_get(c.ctrl, 1.0, 0.0)
+    matrix_set(c.comps, i, 0.0, 12.0)
+    matrix_set(c.comps, i, 1.0, n_d)
+    matrix_set(c.comps, i, 2.0, n_g)
+    matrix_set(c.comps, i, 3.0, n_s)
+    matrix_set(c.comps, i, 4.0, n_b)
+    matrix_set(c.comps, i, 5.0, kp)
+    matrix_set(c.comps, i, 6.0, vto)
+    matrix_set(c.comps, i, 7.0, lambda_val)
+    matrix_set(c.ctrl, 1.0, 0.0, i + 1.0)
     i
 }
 
-def circuit_add_pmos(comps: matrix, ctrl: matrix, n_d: Double, n_g: Double, n_s: Double, n_b: Double, kp: Double, vto: Double, lambda_val: Double) -> Double {
-    var i = matrix_get(ctrl, 1.0, 0.0)
-    matrix_set(comps, i, 0.0, 13.0)
-    matrix_set(comps, i, 1.0, n_d)
-    matrix_set(comps, i, 2.0, n_g)
-    matrix_set(comps, i, 3.0, n_s)
-    matrix_set(comps, i, 4.0, n_b)
-    matrix_set(comps, i, 5.0, kp)
-    matrix_set(comps, i, 6.0, vto)
-    matrix_set(comps, i, 7.0, lambda_val)
-    matrix_set(ctrl, 1.0, 0.0, i + 1.0)
+def circuit_add_pmos(c: Circuit, n_d: Double, n_g: Double, n_s: Double, n_b: Double, kp: Double, vto: Double, lambda_val: Double) -> Double {
+    var i = matrix_get(c.ctrl, 1.0, 0.0)
+    matrix_set(c.comps, i, 0.0, 13.0)
+    matrix_set(c.comps, i, 1.0, n_d)
+    matrix_set(c.comps, i, 2.0, n_g)
+    matrix_set(c.comps, i, 3.0, n_s)
+    matrix_set(c.comps, i, 4.0, n_b)
+    matrix_set(c.comps, i, 5.0, kp)
+    matrix_set(c.comps, i, 6.0, vto)
+    matrix_set(c.comps, i, 7.0, lambda_val)
+    matrix_set(c.ctrl, 1.0, 0.0, i + 1.0)
     i
 }
 
-def circuit_add_njf(comps: matrix, ctrl: matrix, n_d: Double, n_g: Double, n_s: Double, beta_val: Double, vto: Double, lambda_val: Double) -> Double {
-    var i = matrix_get(ctrl, 1.0, 0.0)
-    matrix_set(comps, i, 0.0, 14.0)
-    matrix_set(comps, i, 1.0, n_d)
-    matrix_set(comps, i, 2.0, n_g)
-    matrix_set(comps, i, 3.0, n_s)
-    matrix_set(comps, i, 4.0, 0.0)
-    matrix_set(comps, i, 5.0, beta_val)
-    matrix_set(comps, i, 6.0, vto)
-    matrix_set(comps, i, 7.0, lambda_val)
-    matrix_set(ctrl, 1.0, 0.0, i + 1.0)
+def circuit_add_njf(c: Circuit, n_d: Double, n_g: Double, n_s: Double, beta_val: Double, vto: Double, lambda_val: Double) -> Double {
+    var i = matrix_get(c.ctrl, 1.0, 0.0)
+    matrix_set(c.comps, i, 0.0, 14.0)
+    matrix_set(c.comps, i, 1.0, n_d)
+    matrix_set(c.comps, i, 2.0, n_g)
+    matrix_set(c.comps, i, 3.0, n_s)
+    matrix_set(c.comps, i, 4.0, 0.0)
+    matrix_set(c.comps, i, 5.0, beta_val)
+    matrix_set(c.comps, i, 6.0, vto)
+    matrix_set(c.comps, i, 7.0, lambda_val)
+    matrix_set(c.ctrl, 1.0, 0.0, i + 1.0)
     i
 }
 
-def circuit_add_pjf(comps: matrix, ctrl: matrix, n_d: Double, n_g: Double, n_s: Double, beta_val: Double, vto: Double, lambda_val: Double) -> Double {
-    var i = matrix_get(ctrl, 1.0, 0.0)
-    matrix_set(comps, i, 0.0, 15.0)
-    matrix_set(comps, i, 1.0, n_d)
-    matrix_set(comps, i, 2.0, n_g)
-    matrix_set(comps, i, 3.0, n_s)
-    matrix_set(comps, i, 4.0, 0.0)
-    matrix_set(comps, i, 5.0, beta_val)
-    matrix_set(comps, i, 6.0, vto)
-    matrix_set(comps, i, 7.0, lambda_val)
-    matrix_set(ctrl, 1.0, 0.0, i + 1.0)
+def circuit_add_pjf(c: Circuit, n_d: Double, n_g: Double, n_s: Double, beta_val: Double, vto: Double, lambda_val: Double) -> Double {
+    var i = matrix_get(c.ctrl, 1.0, 0.0)
+    matrix_set(c.comps, i, 0.0, 15.0)
+    matrix_set(c.comps, i, 1.0, n_d)
+    matrix_set(c.comps, i, 2.0, n_g)
+    matrix_set(c.comps, i, 3.0, n_s)
+    matrix_set(c.comps, i, 4.0, 0.0)
+    matrix_set(c.comps, i, 5.0, beta_val)
+    matrix_set(c.comps, i, 6.0, vto)
+    matrix_set(c.comps, i, 7.0, lambda_val)
+    matrix_set(c.ctrl, 1.0, 0.0, i + 1.0)
     i
 }
 
-def circuit_add_vcsw(comps: matrix, ctrl: matrix, n_plus: Double, n_minus: Double, n_cp: Double, n_cm: Double, ron: Double, roff: Double, von: Double, voff: Double) -> Double {
-    var i = matrix_get(ctrl, 1.0, 0.0)
-    matrix_set(comps, i, 0.0, 16.0)
-    matrix_set(comps, i, 1.0, n_plus)
-    matrix_set(comps, i, 2.0, n_minus)
-    matrix_set(comps, i, 3.0, n_cp)
-    matrix_set(comps, i, 4.0, n_cm)
-    matrix_set(comps, i, 5.0, ron)
-    matrix_set(comps, i, 6.0, roff)
-    matrix_set(comps, i, 7.0, von)
-    matrix_set(comps, i, 8.0, voff)
-    matrix_set(ctrl, 1.0, 0.0, i + 1.0)
+def circuit_add_vcsw(c: Circuit, n_plus: Double, n_minus: Double, n_cp: Double, n_cm: Double, ron: Double, roff: Double, von: Double, voff: Double) -> Double {
+    var i = matrix_get(c.ctrl, 1.0, 0.0)
+    matrix_set(c.comps, i, 0.0, 16.0)
+    matrix_set(c.comps, i, 1.0, n_plus)
+    matrix_set(c.comps, i, 2.0, n_minus)
+    matrix_set(c.comps, i, 3.0, n_cp)
+    matrix_set(c.comps, i, 4.0, n_cm)
+    matrix_set(c.comps, i, 5.0, ron)
+    matrix_set(c.comps, i, 6.0, roff)
+    matrix_set(c.comps, i, 7.0, von)
+    matrix_set(c.comps, i, 8.0, voff)
+    matrix_set(c.ctrl, 1.0, 0.0, i + 1.0)
     i
 }
 
-def circuit_add_ccsw(comps: matrix, ctrl: matrix, n_plus: Double, n_minus: Double, vsrc_idx: Double, ron: Double, roff: Double, ion: Double, ioff: Double) -> Double {
-    var i = matrix_get(ctrl, 1.0, 0.0)
-    matrix_set(comps, i, 0.0, 17.0)
-    matrix_set(comps, i, 1.0, n_plus)
-    matrix_set(comps, i, 2.0, n_minus)
-    matrix_set(comps, i, 3.0, vsrc_idx)
-    matrix_set(comps, i, 5.0, ron)
-    matrix_set(comps, i, 6.0, roff)
-    matrix_set(comps, i, 7.0, ion)
-    matrix_set(comps, i, 8.0, ioff)
-    matrix_set(ctrl, 1.0, 0.0, i + 1.0)
+def circuit_add_ccsw(c: Circuit, n_plus: Double, n_minus: Double, vsrc_idx: Double, ron: Double, roff: Double, ion: Double, ioff: Double) -> Double {
+    var i = matrix_get(c.ctrl, 1.0, 0.0)
+    matrix_set(c.comps, i, 0.0, 17.0)
+    matrix_set(c.comps, i, 1.0, n_plus)
+    matrix_set(c.comps, i, 2.0, n_minus)
+    matrix_set(c.comps, i, 3.0, vsrc_idx)
+    matrix_set(c.comps, i, 5.0, ron)
+    matrix_set(c.comps, i, 6.0, roff)
+    matrix_set(c.comps, i, 7.0, ion)
+    matrix_set(c.comps, i, 8.0, ioff)
+    matrix_set(c.ctrl, 1.0, 0.0, i + 1.0)
     i
 }

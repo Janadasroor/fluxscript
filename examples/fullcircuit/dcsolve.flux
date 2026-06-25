@@ -37,7 +37,7 @@ def bjt_junction(vd: Double, isat: Double, vt: Double) -> matrix {
 }
 
 def dc_solve_linear(comps: matrix, ctrl: matrix) -> matrix {
-    mna_dc_solve(comps, ctrl)
+    mna_dc_solve_raw(comps, ctrl)
 }
 
 def dc_nonlinear_solve(comps: matrix, ctrl: matrix, max_iter: Double, tol: Double) -> matrix {
@@ -431,7 +431,7 @@ def dc_solve(comps: matrix, ctrl: matrix, max_iter: Double, tol: Double) -> matr
         ci = ci + 1.0
     }
     if (has_nonlinear == 0.0) {
-        var sol = mna_dc_solve(comps, ctrl)
+        var sol = mna_dc_solve_raw(comps, ctrl)
         var Nv = matrix_get(sol, 0, 0)
         var V = matrix_zeros(Nv + 1.0, 1)
         var vi = 1.0

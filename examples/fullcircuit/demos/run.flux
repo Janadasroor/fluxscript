@@ -6,46 +6,46 @@ import dcsolve
 # ---------------------------------------------------------------------------
 
 def voltage_divider(c: Circuit, r1: Double, r2: Double, vin: Double) {
-    circuit_add_resistor(c.get_comps(), c.get_ctrl(), 1.0, 2.0, r1)
-    circuit_add_resistor(c.get_comps(), c.get_ctrl(), 2.0, 0.0, r2)
-    circuit_add_vdc(c.get_comps(), c.get_ctrl(), 1.0, 0.0, vin)
+    circuit_add_resistor(c, 1.0, 2.0, r1)
+    circuit_add_resistor(c, 2.0, 0.0, r2)
+    circuit_add_vdc(c, 1.0, 0.0, vin)
 }
 
 def rc_lowpass(c: Circuit, r: Double, cap: Double, vin: Double) {
-    circuit_add_resistor(c.get_comps(), c.get_ctrl(), 1.0, 2.0, r)
-    circuit_add_capacitor(c.get_comps(), c.get_ctrl(), 2.0, 0.0, cap, 0.0)
-    circuit_add_vdc(c.get_comps(), c.get_ctrl(), 1.0, 0.0, vin)
+    circuit_add_resistor(c, 1.0, 2.0, r)
+    circuit_add_capacitor(c, 2.0, 0.0, cap, 0.0)
+    circuit_add_vdc(c, 1.0, 0.0, vin)
 }
 
 def rlc_series(c: Circuit, r: Double, l: Double, cap: Double, vin: Double) {
-    circuit_add_resistor(c.get_comps(), c.get_ctrl(), 1.0, 2.0, r)
-    circuit_add_inductor(c.get_comps(), c.get_ctrl(), 2.0, 3.0, l, 0.0)
-    circuit_add_capacitor(c.get_comps(), c.get_ctrl(), 3.0, 0.0, cap, 0.0)
-    circuit_add_vdc(c.get_comps(), c.get_ctrl(), 1.0, 0.0, vin)
+    circuit_add_resistor(c, 1.0, 2.0, r)
+    circuit_add_inductor(c, 2.0, 3.0, l, 0.0)
+    circuit_add_capacitor(c, 3.0, 0.0, cap, 0.0)
+    circuit_add_vdc(c, 1.0, 0.0, vin)
 }
 
 def wheatstone_bridge(c: Circuit, r1: Double, r2: Double, r3: Double, r4: Double, r5: Double, vin: Double) {
-    circuit_add_resistor(c.get_comps(), c.get_ctrl(), 1.0, 2.0, r1)
-    circuit_add_resistor(c.get_comps(), c.get_ctrl(), 2.0, 0.0, r2)
-    circuit_add_resistor(c.get_comps(), c.get_ctrl(), 1.0, 3.0, r3)
-    circuit_add_resistor(c.get_comps(), c.get_ctrl(), 3.0, 0.0, r4)
-    circuit_add_resistor(c.get_comps(), c.get_ctrl(), 2.0, 3.0, r5)
-    circuit_add_vdc(c.get_comps(), c.get_ctrl(), 1.0, 0.0, vin)
+    circuit_add_resistor(c, 1.0, 2.0, r1)
+    circuit_add_resistor(c, 2.0, 0.0, r2)
+    circuit_add_resistor(c, 1.0, 3.0, r3)
+    circuit_add_resistor(c, 3.0, 0.0, r4)
+    circuit_add_resistor(c, 2.0, 3.0, r5)
+    circuit_add_vdc(c, 1.0, 0.0, vin)
 }
 
 def opamp_inverting(c: Circuit, r1: Double, rf: Double, vin: Double) {
-    circuit_add_resistor(c.get_comps(), c.get_ctrl(), 1.0, 2.0, r1)
-    circuit_add_resistor(c.get_comps(), c.get_ctrl(), 2.0, 3.0, rf)
-    circuit_add_vcvs(c.get_comps(), c.get_ctrl(), 3.0, 0.0, 2.0, 0.0, 1e6)
-    circuit_add_vdc(c.get_comps(), c.get_ctrl(), 1.0, 0.0, vin)
+    circuit_add_resistor(c, 1.0, 2.0, r1)
+    circuit_add_resistor(c, 2.0, 3.0, rf)
+    circuit_add_vcvs(c, 3.0, 0.0, 2.0, 0.0, 1e6)
+    circuit_add_vdc(c, 1.0, 0.0, vin)
 }
 
 def vcvs_amplifier(c: Circuit, gain: Double, rin: Double, rout: Double, rload: Double, vin: Double) {
-    circuit_add_resistor(c.get_comps(), c.get_ctrl(), 1.0, 0.0, rin)
-    circuit_add_vdc(c.get_comps(), c.get_ctrl(), 1.0, 0.0, vin)
-    circuit_add_vcvs(c.get_comps(), c.get_ctrl(), 3.0, 0.0, 1.0, 0.0, gain)
-    circuit_add_resistor(c.get_comps(), c.get_ctrl(), 3.0, 2.0, rout)
-    circuit_add_resistor(c.get_comps(), c.get_ctrl(), 2.0, 0.0, rload)
+    circuit_add_resistor(c, 1.0, 0.0, rin)
+    circuit_add_vdc(c, 1.0, 0.0, vin)
+    circuit_add_vcvs(c, 3.0, 0.0, 1.0, 0.0, gain)
+    circuit_add_resistor(c, 3.0, 2.0, rout)
+    circuit_add_resistor(c, 2.0, 0.0, rload)
 }
 
 # ---------------------------------------------------------------------------
@@ -53,31 +53,31 @@ def vcvs_amplifier(c: Circuit, gain: Double, rin: Double, rout: Double, rload: D
 # ---------------------------------------------------------------------------
 
 def diode_rectifier(c: Circuit, rload: Double, cfilter: Double, isat: Double, vt: Double) {
-    circuit_add_vdc(c.get_comps(), c.get_ctrl(), 1.0, 0.0, 5.0)
-    circuit_add_diode(c.get_comps(), c.get_ctrl(), 1.0, 2.0, isat, 1.0, vt)
-    circuit_add_resistor(c.get_comps(), c.get_ctrl(), 2.0, 0.0, rload)
-    circuit_add_capacitor(c.get_comps(), c.get_ctrl(), 2.0, 0.0, cfilter, 0.0)
+    circuit_add_vdc(c, 1.0, 0.0, 5.0)
+    circuit_add_diode(c, 1.0, 2.0, isat, 1.0, vt)
+    circuit_add_resistor(c, 2.0, 0.0, rload)
+    circuit_add_capacitor(c, 2.0, 0.0, cfilter, 0.0)
 }
 
 def bjt_ce_amplifier(c: Circuit, rc: Double, r1: Double, r2: Double, re: Double, bf: Double, isat: Double, vaf: Double, vt: Double, vcc: Double) {
-    circuit_add_vdc(c.get_comps(), c.get_ctrl(), 5.0, 0.0, vcc)
-    circuit_add_resistor(c.get_comps(), c.get_ctrl(), 5.0, 1.0, rc)
-    circuit_add_resistor(c.get_comps(), c.get_ctrl(), 5.0, 2.0, r1)
-    circuit_add_resistor(c.get_comps(), c.get_ctrl(), 2.0, 0.0, r2)
-    circuit_add_resistor(c.get_comps(), c.get_ctrl(), 3.0, 0.0, re)
-    circuit_add_npn(c.get_comps(), c.get_ctrl(), 1.0, 2.0, 3.0, bf, isat, vaf, vt)
+    circuit_add_vdc(c, 5.0, 0.0, vcc)
+    circuit_add_resistor(c, 5.0, 1.0, rc)
+    circuit_add_resistor(c, 5.0, 2.0, r1)
+    circuit_add_resistor(c, 2.0, 0.0, r2)
+    circuit_add_resistor(c, 3.0, 0.0, re)
+    circuit_add_npn(c, 1.0, 2.0, 3.0, bf, isat, vaf, vt)
 }
 
 def differential_pair(c: Circuit, rc: Double, ree: Double, bf: Double, isat: Double, vaf: Double, vt: Double, vcc: Double, vee: Double) {
-    circuit_add_vdc(c.get_comps(), c.get_ctrl(), 6.0, 0.0, vcc)
-    circuit_add_vdc(c.get_comps(), c.get_ctrl(), 7.0, 0.0, vee)
-    circuit_add_resistor(c.get_comps(), c.get_ctrl(), 6.0, 1.0, rc)
-    circuit_add_resistor(c.get_comps(), c.get_ctrl(), 6.0, 2.0, rc)
-    circuit_add_resistor(c.get_comps(), c.get_ctrl(), 3.0, 7.0, ree)
-    circuit_add_npn(c.get_comps(), c.get_ctrl(), 1.0, 4.0, 3.0, bf, isat, vaf, vt)
-    circuit_add_npn(c.get_comps(), c.get_ctrl(), 2.0, 5.0, 3.0, bf, isat, vaf, vt)
-    circuit_add_vdc(c.get_comps(), c.get_ctrl(), 4.0, 0.0, 0.0)
-    circuit_add_vdc(c.get_comps(), c.get_ctrl(), 5.0, 0.0, 0.0)
+    circuit_add_vdc(c, 6.0, 0.0, vcc)
+    circuit_add_vdc(c, 7.0, 0.0, vee)
+    circuit_add_resistor(c, 6.0, 1.0, rc)
+    circuit_add_resistor(c, 6.0, 2.0, rc)
+    circuit_add_resistor(c, 3.0, 7.0, ree)
+    circuit_add_npn(c, 1.0, 4.0, 3.0, bf, isat, vaf, vt)
+    circuit_add_npn(c, 2.0, 5.0, 3.0, bf, isat, vaf, vt)
+    circuit_add_vdc(c, 4.0, 0.0, 0.0)
+    circuit_add_vdc(c, 5.0, 0.0, 0.0)
 }
 
 # ---------------------------------------------------------------------------

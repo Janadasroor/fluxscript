@@ -114,7 +114,9 @@ def mna_count_branches(comps: matrix, ctrl: matrix) -> Double {
     M
 }
 
-def mna_build_A_b(comps: matrix, ctrl: matrix) {
+def mna_build_A_b(c: Circuit) {
+    var comps = c.comps
+    var ctrl = c.ctrl
     var N = matrix_get(ctrl, 0.0, 0.0)
     var nc = matrix_get(ctrl, 1.0, 0.0)
     var M = mna_count_branches(comps, ctrl)
@@ -163,7 +165,11 @@ def mna_build_A_b(comps: matrix, ctrl: matrix) {
     result
 }
 
-def mna_dc_solve(comps: matrix, ctrl: matrix) -> matrix {
+def mna_dc_solve(c: Circuit) -> matrix {
+    mna_dc_solve_raw(c.comps, c.ctrl)
+}
+
+def mna_dc_solve_raw(comps: matrix, ctrl: matrix) -> matrix {
     var N = matrix_get(ctrl, 0.0, 0.0)
     var nc = matrix_get(ctrl, 1.0, 0.0)
     var M = mna_count_branches(comps, ctrl)

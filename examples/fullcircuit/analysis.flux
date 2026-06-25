@@ -8,9 +8,9 @@ def an_sensitivity(comps : matrix, ctrl : matrix, comp_idx: Double, delta: Doubl
     var N = matrix_get(ctrl, 0.0, 0.0)
     var Vnom = dc_solve(comps, ctrl, max_iter, tol)
     var orig_val = matrix_get(comps, comp_idx, 4.0)
-    circuit_set_param(comps, comp_idx, 4.0, orig_val * (1.0 + delta))
+    matrix_set(comps, comp_idx, 4.0, orig_val * (1.0 + delta))
     var Vpert = dc_solve(comps, ctrl, max_iter, tol)
-    circuit_set_param(comps, comp_idx, 4.0, orig_val)
+    matrix_set(comps, comp_idx, 4.0, orig_val)
     var S = matrix_zeros(N + 1.0, 1)
     var vi = 0.0
     while (vi <= N) {
@@ -31,9 +31,9 @@ def an_sensitivity_all(comps : matrix, ctrl : matrix, delta: Double, max_iter: D
         var tc = matrix_get(comps, ci, 0.0)
         if (tc == 0.0 || tc == 1.0 || tc == 2.0) {
             var orig = matrix_get(comps, ci, 4.0)
-            circuit_set_param(comps, ci, 4.0, orig * (1.0 + delta))
+            matrix_set(comps, ci, 4.0, orig * (1.0 + delta))
             var Vp = dc_solve(comps, ctrl, max_iter, tol)
-            circuit_set_param(comps, ci, 4.0, orig)
+            matrix_set(comps, ci, 4.0, orig)
             var vi = 0.0
             while (vi <= N) {
                 var dv = matrix_get(Vp, vi, 0) - matrix_get(Vnom, vi, 0)
@@ -63,7 +63,7 @@ def an_monte_carlo(comps : matrix, ctrl : matrix, n_runs: Double, sigma: Double,
             var tc = matrix_get(comps, ci, 0.0)
             var orig = matrix_get(orig_vals, ci, 0)
             if (tc == 0.0 || tc == 1.0 || tc == 2.0) {
-                circuit_set_param(comps, ci, 4.0, orig * (1.0 + sigma * randn()))
+                matrix_set(comps, ci, 4.0, orig * (1.0 + sigma * randn()))
             }
             ci = ci + 1.0
         }
@@ -78,7 +78,7 @@ def an_monte_carlo(comps : matrix, ctrl : matrix, n_runs: Double, sigma: Double,
     }
     ci = 0.0
     while (ci < nc) {
-        circuit_set_param(comps, ci, 4.0, matrix_get(orig_vals, ci, 0))
+        matrix_set(comps, ci, 4.0, matrix_get(orig_vals, ci, 0))
         ci = ci + 1.0
     }
     results
