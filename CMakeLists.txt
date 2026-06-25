@@ -432,7 +432,7 @@ target_include_directories(FluxScript PUBLIC
 # =============================================================================
 
 # Main CLI (replaces the old Qt-based flux)
-add_executable(flux cli/minimal.cpp)
+add_executable(flux cli/minimal.cpp cli/docs_embedded.cpp)
 target_link_libraries(flux PRIVATE FluxScript)
 
 # Build stdlib bitcode cache for faster subsequent compilations

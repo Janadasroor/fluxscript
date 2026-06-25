@@ -34,6 +34,7 @@
 #include "flux/mlir/flux_mlir.h"
 #include "flux/runtime/flux_runtime.h"
 #include "flux/tooling/tooling.h"
+#include "flux/docs_embedded.h"
 
 namespace {
 
@@ -522,46 +523,16 @@ int main(int argc, char** argv)
         }
 
         if (subcmd == "docs") {
-            // Find the docs file relative to the binary
-            std::string docsPath;
-            // Try relative to executable
-            {
-                char exePath[4096];
-                ssize_t len = readlink("/proc/self/exe", exePath, sizeof(exePath) - 1);
-                if (len > 0) {
-                    exePath[len] = '\0';
-                    std::filesystem::path exeDir = std::filesystem::path(exePath).parent_path();
-                    auto candidate = exeDir / ".." / "docs" / "FLUXSCRIPT.md";
-                    if (std::filesystem::exists(candidate))
-                        docsPath = candidate.string();
-                }
-            }
-            // Try workspace paths
-            if (docsPath.empty()) {
-                std::filesystem::path cwd = std::filesystem::current_path();
-                auto candidates = {
-                    cwd / "docs" / "FLUXSCRIPT.md",
-                    cwd / ".." / "docs" / "FLUXSCRIPT.md",
-                    cwd / ".." / ".." / "docs" / "FLUXSCRIPT.md",
-                };
-                for (auto& c : candidates) {
-                    if (std::filesystem::exists(c)) { docsPath = c.string(); break; }
-                }
-            }
-            if (docsPath.empty()) {
-                llvm::errs() << "Error: Could not find docs/FLUXSCRIPT.md\n";
-                return 1;
-            }
-
-            // If keyword provided, grep for it
+            // If keyword provided, search embedded docs
             if (argc >= 3) {
                 std::string keyword = argv[2];
-                std::string cmd = "grep -n -i -C 2 '" + keyword + "' '" + docsPath + "'";
-                return std::system(cmd.c_str());
+                std::string result = Flux::Docs::searchDocs(keyword);
+                llvm::outs() << result;
+                return 0;
             }
-            // Otherwise, show full docs
-            std::string cmd = "cat '" + docsPath + "'";
-            return std::system(cmd.c_str());
+            // Otherwise, show full embedded docs
+            llvm::outs() << Flux::Docs::getDocsText();
+            return 0;
         }
 
         if (subcmd == "pkg") {
