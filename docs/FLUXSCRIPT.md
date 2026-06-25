@@ -1,3 +1,18 @@
+# FluxScript Documentation
+
+A JIT-compiled scripting language for circuit simulation with compile-time SI unit analysis.
+
+## Table of Contents
+
+1. Types, Structs, and Enums
+2. Classes and Traits
+3. Control Flow and Error Handling
+4. Advanced Features
+5. Standard Library and SPICE Integration
+6. Examples
+
+---
+
 # Types, Structs, and Enums
 
 ## Primitive Types

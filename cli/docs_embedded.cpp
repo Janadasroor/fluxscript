@@ -11,6 +11,21 @@ namespace Docs {
 
 const char* getDocsText() {
     return R"MARKDOWN(
+# FluxScript Documentation
+
+A JIT-compiled scripting language for circuit simulation with compile-time SI unit analysis.
+
+## Table of Contents
+
+1. Types, Structs, and Enums
+2. Classes and Traits
+3. Control Flow and Error Handling
+4. Advanced Features
+5. Standard Library and SPICE Integration
+6. Examples
+
+---
+
 # Types, Structs, and Enums
 
 ## Primitive Types
@@ -5442,7 +5457,7 @@ std::string searchDocs(const std::string& keyword) {
             matches.push_back({lineNum, line});
         }
     }
-    if (matches.empty()) return "No results found for: " + keyword + "\n";
+    if (matches.empty()) return "No results found for: " + keyword + "\\n";
     stream.clear(); stream.seekg(0);
     std::vector<std::string> allLines;
     while (std::getline(stream, line)) allLines.push_back(line);
@@ -5451,12 +5466,12 @@ std::string searchDocs(const std::string& keyword) {
         int start = std::max(0, num - 3);
         int end = std::min((int)allLines.size(), num + 2);
         for (int i = start; i < end; i++) {
-            std::string prefix = (i == num - 1) ? ">> " : "   ";
-            result += prefix + std::to_string(i + 1) + "  " + allLines[i] + "\n";
+            std::string prefix = (i == num - 1) ? "> " : "  ";
+            result += prefix + std::to_string(i + 1) + ": " + allLines[i] + "\\n";
         }
-        result += "\n";
+        result += "---\\n";
     }
-    result += std::to_string(matches.size()) + " match(es) found.\n";
+    result += std::to_string(matches.size()) + " match(es) found.\\n";
     return result;
 }
 
