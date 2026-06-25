@@ -17,7 +17,11 @@
 #include <csignal>
 #include <cstdlib>
 #include <filesystem>
+#include <fstream>
+#include <iostream>
 #include <string>
+#include <thread>
+#include <chrono>
 #ifndef _WIN32
 #include <unistd.h>
 #endif
@@ -53,13 +57,15 @@ static const char* HelpText = "FluxScript — LLVM JIT-compiled scripting langua
                                "USAGE:\n"
                                "  flux <script.flux>              Run a script (default JIT mode)\n"
                                "  flux run <script.flux>          Run a script\n"
+                               "  flux run --watch <script.flux>  Run and re-run on file changes\n"
                                "  flux check <script.flux>        Parse and type-check without executing\n"
                                "  flux parse <script.flux>        Parse only — report syntax errors\n"
                                "  flux fmt <script.flux>          Format a FluxScript file\n"
+                               "  flux new <project>              Create a new FluxScript project\n"
                                "  flux test [directory]           Run integration tests\n"
                                "  flux repl                       Start interactive REPL\n"
                                "  flux lsp                        Start the LSP server\n"
-                               "  flux docs [keyword]             Show documentation (optionally search by keyword)\n"
+                               "  flux docs [keyword]             Show/search documentation\n"
                                "  flux pkg <command>              Package management\n"
                                "\n"
                                "OPTIONS:\n"
@@ -446,11 +452,133 @@ int main(int argc, char** argv)
         }
 
         if (subcmd == "run") {
-            // Shift args: flux run file.flux [args...] → flux file.flux [args...]
+            // Check for --watch flag
+            bool watch = false;
             std::vector<const char*> newArgs = {argv[0]};
-            for (int i = 2; i < argc; i++)
-                newArgs.push_back(argv[i]);
+            for (int i = 2; i < argc; i++) {
+                std::string arg = argv[i];
+                if (arg == "--watch") {
+                    watch = true;
+                } else {
+                    newArgs.push_back(argv[i]);
+                }
+            }
+            if (watch && newArgs.size() >= 2) {
+                std::string filePath = newArgs[1];
+                std::cout << "Watching " << filePath << " for changes... (Ctrl+C to stop)\n";
+                auto lastWrite = std::filesystem::last_write_time(filePath);
+                while (true) {
+                    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+                    auto currentWrite = std::filesystem::last_write_time(filePath);
+                    if (currentWrite != lastWrite) {
+                        lastWrite = currentWrite;
+                        std::cout << "\n--- File changed, re-running ---\n";
+                        auto result = std::system(("'" + std::string(argv[0]) + "' --cache=0 '" + filePath + "'").c_str());
+                        (void)result;
+                    }
+                }
+                return 0;
+            }
             return main(static_cast<int>(newArgs.size()), const_cast<char**>(newArgs.data()));
+        }
+
+        if (subcmd == "new" && argc >= 3) {
+            std::string projectName = argv[2];
+            std::filesystem::path projectDir(projectName);
+
+            if (std::filesystem::exists(projectDir)) {
+                std::cerr << "Error: Directory '" << projectName << "' already exists\n";
+                return 1;
+            }
+
+            std::filesystem::create_directories(projectDir);
+            std::filesystem::create_directories(projectDir / "src");
+            std::filesystem::create_directories(projectDir / "tests");
+
+            // main.flux
+            {
+                std::ofstream f(projectDir / "main.flux");
+                f << "# " << projectName << "\n"
+                  << "#\n"
+                  << "# Run with:  flux main.flux\n"
+                  << "# Check:    flux check main.flux\n"
+                  << "\n"
+                  << "def main() -> Double {\n"
+                  << "    println(\"Hello from " << projectName << "!\")\n"
+                  << "    0.0\n"
+                  << "}\n"
+                  << "\n"
+                  << "main()\n";
+            }
+
+            // src/core.flux
+            {
+                std::ofstream f(projectDir / "src" / "core.flux");
+                f << "# Core library for " << projectName << "\n"
+                  << "# Import with: import core\n"
+                  << "\n"
+                  << "def add(x: Double, y: Double) -> Double {\n"
+                  << "    x + y\n"
+                  << "}\n";
+            }
+
+            // tests/test_main.flux
+            {
+                std::ofstream f(projectDir / "tests" / "test_main.flux");
+                f << "import ../src/core\n"
+                  << "\n"
+                  << "def test_add() {\n"
+                  << "    var result = add(2.0, 3.0)\n"
+                  << "    assert(result == 5.0, \"add(2,3) should be 5\")\n"
+                  << "    println(\"PASS: add\")\n"
+                  << "}\n"
+                  << "\n"
+                  << "def main() -> Double {\n"
+                  << "    test_add()\n"
+                  << "    println(\"All tests passed!\")\n"
+                  << "    0.0\n"
+                  << "}\n"
+                  << "\n"
+                  << "main()\n";
+            }
+
+            // .gitignore
+            {
+                std::ofstream f(projectDir / ".gitignore");
+                f << "*.bc\n"
+                  << ".flux_cache/\n"
+                  << "build/\n";
+            }
+
+            // README.md
+            {
+                std::ofstream f(projectDir / "README.md");
+                f << "# " << projectName << "\n"
+                  << "\n"
+                  << "A FluxScript project.\n"
+                  << "\n"
+                  << "## Quick Start\n"
+                  << "\n"
+                  << "```bash\n"
+                  << "flux run main.flux        # Run the project\n"
+                  << "flux check main.flux      # Type-check\n"
+                  << "flux run tests/test_main.flux  # Run tests\n"
+                  << "```\n";
+            }
+
+            std::cout << "Created project '" << projectName << "'\n\n";
+            std::cout << "  " << projectName << "/\n";
+            std::cout << "  ├── main.flux          # Entry point\n";
+            std::cout << "  ├── src/\n";
+            std::cout << "  │   └── core.flux       # Core library\n";
+            std::cout << "  ├── tests/\n";
+            std::cout << "  │   └── test_main.flux  # Tests\n";
+            std::cout << "  ├── .gitignore\n";
+            std::cout << "  └── README.md\n\n";
+            std::cout << "Next steps:\n";
+            std::cout << "  cd " << projectName << "\n";
+            std::cout << "  flux run main.flux\n";
+            return 0;
         }
 
         if (subcmd == "check" && argc >= 3) {
