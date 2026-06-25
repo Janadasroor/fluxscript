@@ -163,37 +163,8 @@ async function activate(context) {
   context.subscriptions.push(diagnosticCollection);
 
   const fluxPath = findFluxPath(context);
-  const hasFlux = fs.existsSync(fluxPath);
 
-  // --- Lint on save ---
-  context.subscriptions.push(
-    vscode.workspace.onDidSaveTextDocument(async (doc) => {
-      if (!hasFlux) return;
-      const config = vscode.workspace.getConfiguration('fluxscript');
-      if (!config.get('lintOnSave', true)) return;
-      await lintDocument(doc, fluxPath);
-    })
-  );
-
-  // --- Lint on open ---
-  context.subscriptions.push(
-    vscode.workspace.onDidOpenTextDocument(async (doc) => {
-      if (!hasFlux) return;
-      const config = vscode.workspace.getConfiguration('fluxscript');
-      if (!config.get('lintOnSave', true)) return;
-      await lintDocument(doc, fluxPath);
-    })
-  );
-
-  // --- Lint active editor on activation ---
-  if (hasFlux && vscode.window.activeTextEditor) {
-    const config = vscode.workspace.getConfiguration('fluxscript');
-    if (config.get('lintOnSave', true)) {
-      lintDocument(vscode.window.activeTextEditor.document, fluxPath);
-    }
-  }
-
-  // --- Lint File command (explicit) ---
+  // --- Lint File command (explicit only — LSP handles real-time diagnostics) ---
   const lintFileCmd = vscode.commands.registerCommand('fluxscript.lintFile', async () => {
     const editor = vscode.window.activeTextEditor;
     if (!editor) {

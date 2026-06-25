@@ -84,11 +84,6 @@
           "type": "string",
           "default": "",
           "description": "Path to the flux binary. Leave empty to auto-detect from build directory."
-        },
-        "fluxscript.lintOnSave": {
-          "type": "boolean",
-          "default": true,
-          "description": "Automatically lint FluxScript files when saved."
         }
       }
     }
