@@ -3,6 +3,7 @@
 !stdlib/*.flux
 !tests/integration/tests/*.flux
 !examples/fullcircuit/**/*.flux
+!src/fluxc/*.flux
 !examples/fluxqt/*.flux
 /build/
 /build_local/

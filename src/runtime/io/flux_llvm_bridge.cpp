@@ -386,14 +386,18 @@ double flux_llvm_pointer_type_in_ctx(double ctx, double addr_space)
 double flux_llvm_function_type(double ret_ty, double param_count, double is_var_arg)
 {
     LLVMTypeRef* paramTypes = g_type_args.empty() ? nullptr : g_type_args.data();
-    return ptr_to_dbl(LLVMFunctionType(dbl_to_ptr<LLVMOpaqueType>(ret_ty), paramTypes,
+    double result = ptr_to_dbl(LLVMFunctionType(dbl_to_ptr<LLVMOpaqueType>(ret_ty), paramTypes,
                                        static_cast<unsigned>(param_count), static_cast<int>(is_var_arg)));
+    g_type_args.clear();
+    return result;
 }
 double flux_llvm_struct_type_in_ctx(double ctx, double elem_count, double packed)
 {
     LLVMTypeRef* elemTypes = g_type_args.empty() ? nullptr : g_type_args.data();
-    return ptr_to_dbl(LLVMStructTypeInContext(dbl_to_ptr<LLVMOpaqueContext>(ctx), elemTypes,
+    double result = ptr_to_dbl(LLVMStructTypeInContext(dbl_to_ptr<LLVMOpaqueContext>(ctx), elemTypes,
                                               static_cast<unsigned>(elem_count), static_cast<int>(packed)));
+    g_type_args.clear();
+    return result;
 }
 double flux_llvm_struct_create_named(double ctx, double name)
 {
@@ -404,6 +408,7 @@ double flux_llvm_struct_set_body(double struct_ty, double elem_count, double pac
     LLVMTypeRef* elemTypes = g_type_args.empty() ? nullptr : g_type_args.data();
     LLVMStructSetBody(dbl_to_ptr<LLVMOpaqueType>(struct_ty), elemTypes, static_cast<unsigned>(elem_count),
                       static_cast<int>(packed));
+    g_type_args.clear();
     return 0.0;
 }
 double flux_llvm_array_type(double elem_ty, double elem_count)
@@ -546,8 +551,10 @@ double flux_llvm_const_string_in_ctx(double ctx, double str, double length, doub
 double flux_llvm_const_struct_in_ctx(double ctx, double elem_count, double packed)
 {
     LLVMValueRef* elems = g_const_args.empty() ? nullptr : g_const_args.data();
-    return ptr_to_dbl(LLVMConstStructInContext(dbl_to_ptr<LLVMOpaqueContext>(ctx), elems,
+    double result = ptr_to_dbl(LLVMConstStructInContext(dbl_to_ptr<LLVMOpaqueContext>(ctx), elems,
                                                static_cast<unsigned>(elem_count), static_cast<int>(packed)));
+    g_const_args.clear();
+    return result;
 }
 double flux_llvm_get_undef(double ty)
 {
@@ -560,8 +567,10 @@ double flux_llvm_const_bitcast(double val, double dest_type)
 double flux_llvm_const_named_struct(double struct_ty, double elem_count)
 {
     LLVMValueRef* elems = g_const_args.empty() ? nullptr : g_const_args.data();
-    return ptr_to_dbl(
+    double result = ptr_to_dbl(
         LLVMConstNamedStruct(dbl_to_ptr<LLVMOpaqueType>(struct_ty), elems, static_cast<unsigned>(elem_count)));
+    g_const_args.clear();
+    return result;
 }
 
 /* ------------------------------------------------------------------ */
@@ -708,9 +717,11 @@ double flux_llvm_build_store(double builder, double val, double ptr)
 double flux_llvm_build_gep2(double builder, double ty, double ptr, double num_indices, double name)
 {
     LLVMValueRef* indices = g_index_args.empty() ? nullptr : g_index_args.data();
-    return ptr_to_dbl(LLVMBuildGEP2(dbl_to_ptr<LLVMOpaqueBuilder>(builder), dbl_to_ptr<LLVMOpaqueType>(ty),
+    double result = ptr_to_dbl(LLVMBuildGEP2(dbl_to_ptr<LLVMOpaqueBuilder>(builder), dbl_to_ptr<LLVMOpaqueType>(ty),
                                     dbl_to_ptr<LLVMOpaqueValue>(ptr), indices, static_cast<unsigned>(num_indices),
                                     dbl_to_cstr(name)));
+    g_index_args.clear();
+    return result;
 }
 double flux_llvm_build_struct_gep2(double builder, double ty, double ptr, double index, double name)
 {
@@ -731,9 +742,11 @@ double flux_llvm_build_global_string_ptr(double builder, double str, double name
 double flux_llvm_build_call2(double builder, double func_ty, double fn, double num_args, double name)
 {
     LLVMValueRef* args = g_call_args.empty() ? nullptr : g_call_args.data();
-    return ptr_to_dbl(LLVMBuildCall2(dbl_to_ptr<LLVMOpaqueBuilder>(builder), dbl_to_ptr<LLVMOpaqueType>(func_ty),
+    double result = ptr_to_dbl(LLVMBuildCall2(dbl_to_ptr<LLVMOpaqueBuilder>(builder), dbl_to_ptr<LLVMOpaqueType>(func_ty),
                                      dbl_to_ptr<LLVMOpaqueValue>(fn), args, static_cast<unsigned>(num_args),
                                      dbl_to_cstr(name)));
+    g_call_args.clear();
+    return result;
 }
 
 /* ------------------------------------------------------------------ */
@@ -846,7 +859,7 @@ double flux_llvm_build_bitcast(double builder, double val, double dest_ty, doubl
 /*  Verification                                                      */
 /* ------------------------------------------------------------------ */
 
-double flux_llvm_verify_module(double module, double action, double out_message)
+double flux_llvm_verify_module(double module, double action)
 {
     char* err = nullptr;
     LLVMBool result =
@@ -877,13 +890,20 @@ double flux_llvm_get_target_from_triple(double triple, double out_target)
     }
     return ptr_to_dbl(target);
 }
-double flux_llvm_create_target_machine(double target, double triple, double cpu, double features, double opt_level,
-                                       double reloc, double code_model)
+double flux_llvm_create_target_machine(double triple, double cpu, double features, double opt_level, double reloc,
+                                       double code_model)
 {
-    return ptr_to_dbl(LLVMCreateTargetMachine(
-        reinterpret_cast<LLVMTargetRef>(reinterpret_cast<void*>(static_cast<uintptr_t>(dbl_as_u64(target)))),
-        dbl_to_cstr(triple), dbl_to_cstr(cpu), dbl_to_cstr(features), static_cast<LLVMCodeGenOptLevel>(opt_level),
-        static_cast<LLVMRelocMode>(reloc), static_cast<LLVMCodeModel>(code_model)));
+    LLVMTargetRef target = nullptr;
+    char* err = nullptr;
+    if (LLVMGetTargetFromTriple(dbl_to_cstr(triple), &target, &err)) {
+        if (err)
+            LLVMDisposeMessage(err);
+        return 0.0;
+    }
+    return ptr_to_dbl(LLVMCreateTargetMachine(target, dbl_to_cstr(triple), dbl_to_cstr(cpu), dbl_to_cstr(features),
+                                              static_cast<LLVMCodeGenOptLevel>(opt_level),
+                                              static_cast<LLVMRelocMode>(reloc),
+                                              static_cast<LLVMCodeModel>(code_model)));
 }
 double flux_llvm_target_machine_emit_to_file(double tm, double module, double filename, double file_type)
 {
