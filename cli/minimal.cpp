@@ -37,6 +37,15 @@
 
 namespace {
 
+std::string moduleNameFromInput(const std::string& input)
+{
+    if (input == "-")
+        return "stdin";
+    std::filesystem::path p(input);
+    auto stem = p.stem();
+    return stem.empty() ? input : stem.string();
+}
+
 static const char* VersionStr = "FluxScript v0.1.0 (LLVM JIT)";
 static const char* HelpExamples = "EXAMPLES:\n"
                                   "\n"
@@ -73,6 +82,7 @@ enum class EmitMode
 {
     Tokens,
     Check,
+    ParseOnly,
     LLVM,
     Bitcode,
     JIT,
@@ -88,6 +98,7 @@ llvm::cl::opt<EmitMode> EmitAction(
     "emit", llvm::cl::desc("Compiler output mode (default: jit)"),
     llvm::cl::values(clEnumValN(EmitMode::Tokens, "tokens", "Lex and dump token stream"),
                      clEnumValN(EmitMode::Check, "check", "Parse, type-check, and verify IR without executing"),
+                     clEnumValN(EmitMode::ParseOnly, "parse-only", "Parse only — report syntax errors without codegen"),
                      clEnumValN(EmitMode::LLVM, "llvm", "Emit human-readable LLVM IR to stdout"),
                      clEnumValN(EmitMode::Bitcode, "bc", "Emit LLVM bitcode (.bc) to file (use -o)"),
                      clEnumValN(EmitMode::JIT, "jit", "Compile and execute using the LLVM JIT engine (default)"),
@@ -292,7 +303,7 @@ int checkOnly(const std::string& code)
 {
     Flux::CompilerOptions options;
     options.inputName = InputFilename;
-    options.moduleName = InputFilename == "-" ? std::string("stdin") : std::string(InputFilename);
+    options.moduleName = moduleNameFromInput(InputFilename);
     options.optimizationLevel = toOptimizationLevel(OptLevel);
     Flux::CompilerInstance compiler(options);
     std::string error;
@@ -306,11 +317,30 @@ int checkOnly(const std::string& code)
     return 0;
 }
 
+int parseCheckOnly(const std::string& code)
+{
+    Flux::CompilerOptions options;
+    options.inputName = InputFilename;
+    options.moduleName = moduleNameFromInput(InputFilename);
+    options.optimizationLevel = Flux::OptimizationLevel::O0;
+    options.parseOnly = true;
+    Flux::CompilerInstance compiler(options);
+    std::string error;
+    auto artifacts = compiler.compileToIR(code, &error);
+    if (!artifacts) {
+        llvm::errs() << "Parse Error: " << error << "\n";
+        return 1;
+    }
+
+    llvm::outs() << "OK\n";
+    return 0;
+}
+
 int emitLLVM(const std::string& code)
 {
     Flux::CompilerOptions options;
     options.inputName = InputFilename;
-    options.moduleName = InputFilename == "-" ? std::string("stdin") : std::string(InputFilename);
+    options.moduleName = moduleNameFromInput(InputFilename);
     options.optimizationLevel = toOptimizationLevel(OptLevel);
     Flux::CompilerInstance compiler(options);
     std::string error;
@@ -340,7 +370,7 @@ int emitBitcode(const std::string& code)
 {
     Flux::CompilerOptions options;
     options.inputName = InputFilename;
-    options.moduleName = InputFilename == "-" ? std::string("stdin") : std::string(InputFilename);
+    options.moduleName = moduleNameFromInput(InputFilename);
     options.optimizationLevel = toOptimizationLevel(OptLevel);
     Flux::CompilerInstance compiler(options);
     std::string error;
@@ -408,6 +438,8 @@ int main(int argc, char** argv)
         return dumpTokens(code);
     case EmitMode::Check:
         return checkOnly(code);
+    case EmitMode::ParseOnly:
+        return parseCheckOnly(code);
     case EmitMode::LLVM:
         return emitLLVM(code);
     case EmitMode::Bitcode:

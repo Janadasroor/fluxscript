@@ -2081,8 +2081,11 @@ std::unique_ptr<CompileArtifacts> CompilerInstance::compileToIR(const std::strin
     // import resolution checks the same directory as the source file.
     if (!m_options.inputName.empty() && m_options.inputName != "-" && m_options.inputName != "<stdin>") {
         std::filesystem::path inputDir = std::filesystem::path(m_options.inputName).parent_path();
-        if (!inputDir.empty()) {
+        // Walk up parent directories so imports resolve relative to any ancestor.
+        // e.g. tests/test.flux can import circuit.flux from the parent directory.
+        while (!inputDir.empty() && inputDir != inputDir.parent_path()) {
             m_moduleLoader.addSearchPath(inputDir);
+            inputDir = inputDir.parent_path();
         }
     }
 
@@ -2149,6 +2152,13 @@ std::unique_ptr<CompileArtifacts> CompilerInstance::compileToIR(const std::strin
             }
         }
         return nullptr;
+    }
+
+    // In parse-only mode, skip codegen verification — return as soon as parsing succeeds.
+    if (m_options.parseOnly) {
+        if (error)
+            error->clear();
+        return artifacts;
     }
 
     if (artifacts->codegenContext->DebugBuilder)

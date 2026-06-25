@@ -58,6 +58,10 @@ struct CompilerOptions
     bool injectStdlib = true;
     bool debugInfo = false;
 
+    /// When true, stop after parsing — skip codegen and LLVM IR verification.
+    /// Parse errors are still returned via the error output.
+    bool parseOnly = false;
+
     /// Optional progress callback for AOT compilation of large projects.
     /// Set before calling compileToIR() / emitArtifact().
     CompileProgressCallback progressCallback = nullptr;
