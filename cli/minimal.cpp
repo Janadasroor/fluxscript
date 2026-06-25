@@ -64,6 +64,7 @@ static const char* HelpText = "FluxScript — LLVM JIT-compiled scripting langua
                                "  flux fmt <script.flux>          Format a FluxScript file\n"
                                "  flux new <project>              Create a new FluxScript project\n"
                                "  flux stats [directory]          Show project statistics\n"
+                               "  flux bench <script.flux>        Benchmark across opt levels\n"
                                "  flux test [directory]           Run integration tests\n"
                                "  flux repl                       Start interactive REPL\n"
                                "  flux lsp                        Start the LSP server\n"
@@ -669,6 +670,69 @@ int main(int argc, char** argv)
             }
             // Otherwise, show full embedded docs
             llvm::outs() << Flux::Docs::getDocsText();
+            return 0;
+        }
+
+        if (subcmd == "bench" && argc >= 3) {
+            std::string filePath = argv[2];
+            int iterations = 5;
+            if (argc >= 5 && std::string(argv[3]) == "--iterations") {
+                iterations = std::stoi(argv[4]);
+            }
+
+            std::cout << "Benchmarking " << filePath << " (" << iterations << " iterations per opt level)\n";
+            std::cout << std::string(60, '=') << "\n";
+            printf("%-8s  %12s  %12s  %8s\n", "Opt", "Compile(ms)", "Run(ms)", "Result");
+            std::cout << std::string(60, '-') << "\n";
+
+            for (int opt = 0; opt <= 3; opt++) {
+                double totalCompile = 0, totalRun = 0;
+                double lastResult = 0;
+
+                for (int iter = 0; iter < iterations; iter++) {
+                    // Fresh JIT engine for each run
+                    auto& engine = Flux::JITEngine::instance();
+                    engine.initialize();
+                    engine.setOptimizationLevel(static_cast<Flux::OptimizationLevel>(opt));
+                    engine.setJITCacheEnabled(false);
+                    engine.setInputName(filePath);
+
+                    auto buf = llvm::MemoryBuffer::getFile(filePath);
+                    if (!buf) {
+                        std::cerr << "Error: Could not read '" << filePath << "'\n";
+                        return 1;
+                    }
+                    std::string code = (*buf)->getBuffer().str();
+
+                    auto compileStart = std::chrono::high_resolution_clock::now();
+                    std::string error;
+                    if (!engine.compileScript(code, &error)) {
+                        std::cerr << "Compile Error (opt=" << opt << "): " << error << "\n";
+                        return 1;
+                    }
+                    auto compileEnd = std::chrono::high_resolution_clock::now();
+                    double compileMs = std::chrono::duration<double, std::milli>(compileEnd - compileStart).count();
+
+                    auto runStart = std::chrono::high_resolution_clock::now();
+                    auto result = engine.callFunction("__anon_expr", {}, &error);
+                    auto runEnd = std::chrono::high_resolution_clock::now();
+                    double runMs = std::chrono::duration<double, std::milli>(runEnd - runStart).count();
+
+                    if (!error.empty()) {
+                        std::cerr << "Runtime Error (opt=" << opt << "): " << error << "\n";
+                        return 1;
+                    }
+
+                    totalCompile += compileMs;
+                    totalRun += runMs;
+                    if (std::holds_alternative<double>(result))
+                        lastResult = std::get<double>(result);
+                }
+
+                printf("  -O%d    %10.1f ms  %10.1f ms  %8.4g\n",
+                       opt, totalCompile / iterations, totalRun / iterations, lastResult);
+            }
+            std::cout << std::string(60, '=') << "\n";
             return 0;
         }
 
