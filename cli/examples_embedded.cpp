@@ -120,8 +120,10 @@ def describe(c: Color) -> String {
     }
 }
 
-println(describe(Color.Red))    # Stop
-println(describe(Color.Green))  # Go
+let c1 = Color.Red
+let c2 = Color.Green
+println(describe(c1))  # Stop
+println(describe(c2))  # Go
 ```
 
 ---
@@ -131,24 +133,37 @@ println(describe(Color.Green))  # Go
 Enums carrying data, matched with pattern bindings.
 
 ```flux
-enum Shape {
-    Circle { radius: Double },
-    Rect { width: Double, height: Double },
-    Triangle { base: Double, height: Double }
+enum Option {
+    Some(value: Double),
+    None
 }
 
-def area(s: Shape) -> Double {
-    match s {
-        Shape.Circle(payload) -> 3.14159 * payload.radius * payload.radius,
-        Shape.Rect(payload) -> payload.width * payload.height,
-        Shape.Triangle(payload) -> 0.5 * payload.base * payload.height
+def unwrap_or(opt: Option, default: Double) -> Double {
+    match opt {
+        Option.Some(v) -> v,
+        Option.None -> default
     }
 }
 
-let c = Shape.Circle { radius: 5.0 }
-let r = Shape.Rect { width: 3.0, height: 4.0 }
-println("Circle area: " + str(area(c)))   # 78.54
-println("Rect area: " + str(area(r)))     # 12.0
+let x = Option.Some(42.0)
+let y = Option.None
+println(unwrap_or(x, 0.0))   # 42.0
+println(unwrap_or(y, 99.0))  # 99.0
+```
+
+Named-field enum constructors:
+
+```flux
+enum Info {
+    Person { age: Double, score: Double },
+    Empty
+}
+
+let p = Info.Person { age: 25.0, score: 98.0 }
+match p {
+    Info.Person(payload) -> println(payload.age),   # 25.0
+    default -> println("empty")
+}
 ```
 
 ---
