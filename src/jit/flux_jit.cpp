@@ -677,8 +677,12 @@ void FluxJIT::addModule(std::unique_ptr<llvm::Module> M, std::unique_ptr<llvm::L
     for (auto& F : *M) {
         if (!F.isDeclaration() && F.hasExternalLinkage() && !F.getName().empty()) {
             std::string name = F.getName().str();
-            if (name.find("anon_expr") == std::string::npos)
-                userFns.push_back(std::move(name));
+            if (name.find("anon_expr") != std::string::npos) {
+                // Save the actual anon_expr name for JITEngine to use
+                m_lastAnonExprName = name;
+                continue;
+            }
+            userFns.push_back(std::move(name));
         }
     }
 

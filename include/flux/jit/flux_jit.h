@@ -215,6 +215,7 @@ public:
     void addModule(std::unique_ptr<llvm::Module> M, std::unique_ptr<llvm::LLVMContext> Ctx);
     void addObjectFile(std::unique_ptr<llvm::MemoryBuffer> ObjectBuffer);
     void* getPointerToFunction(const std::string& Name);
+    const std::string& getLastAnonExprName() const { return m_lastAnonExprName; }
     void registerFunction(const std::string& Name, void* FuncPtr);
 
     void setOptimizationLevel(OptimizationLevel level);
@@ -296,6 +297,10 @@ private:
     // Symbols already defined in the JIT via addModule (used to detect
     // duplicate definitions across multiple module loads)
     std::unordered_set<std::string> m_moduleSymbols;
+
+    // Last anon_expr function name seen in addModule — used by JITEngine
+    // to look up the correct name without guessing
+    std::string m_lastAnonExprName;
 
     // PGO profiler
     PGOProfiler m_pgoProfiler;

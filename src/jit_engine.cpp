@@ -186,12 +186,22 @@ FluxValue JITEngine::callFunction(const std::string& name, const std::vector<dou
     void* fnPtr = nullptr;
     std::string resolvedName = name;
     if (name == "__anon_expr") {
-        std::string base = m_compilerOptions.moduleName + "_anon_expr";
-        for (int i = -1; i < 100; i++) {
-            resolvedName = (i == -1) ? base : (base + "_" + std::to_string(i));
-            fnPtr = m_jit->getPointerToFunction(resolvedName);
+        // Use the actual anon_expr name saved by FluxJIT::addModule
+        const std::string& savedName = m_jit->getLastAnonExprName();
+        if (!savedName.empty()) {
+            fnPtr = m_jit->getPointerToFunction(savedName);
             if (fnPtr)
-                break;
+                resolvedName = savedName;
+        }
+        // Fallback: try the old guessing approach
+        if (!fnPtr) {
+            std::string base = m_compilerOptions.moduleName + "_anon_expr";
+            for (int i = -1; i < 100; i++) {
+                resolvedName = (i == -1) ? base : (base + "_" + std::to_string(i));
+                fnPtr = m_jit->getPointerToFunction(resolvedName);
+                if (fnPtr)
+                    break;
+            }
         }
         if (!fnPtr)
             resolvedName = name;
