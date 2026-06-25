@@ -74,8 +74,6 @@ void JITEngine::initialize()
     m_codegenCtx = nullptr;
     m_initialized = true;
     registerEigenFunctions();
-
-    std::cout << "FluxScript C++ LLVM JIT Engine Initialized." << std::endl;
 }
 
 void JITEngine::registerFunction(const std::string& name, void* funcPtr)

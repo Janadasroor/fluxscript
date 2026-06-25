@@ -74,6 +74,7 @@ static const char* HelpText = "FluxScript — LLVM JIT-compiled scripting langua
                                "  --emit=<mode>    Compiler output mode (tokens, check, parse-only, llvm, bc, jit)\n"
                                "  --opt=<0-3>      LLVM optimization level (default: 2)\n"
                                "  --cache=0        Disable JIT compilation cache\n"
+                               "  --quiet, -q      Suppress JIT debug output\n"
                                "  --entry=<name>   Function to invoke in JIT mode\n"
                                "  --profile        Benchmark mode\n"
                                "  --version, -v    Print version\n"
@@ -155,6 +156,10 @@ llvm::cl::opt<int> Iterations("iterations", llvm::cl::desc("Number of iterations
 llvm::cl::opt<bool>
     EnableCache("cache", llvm::cl::desc("Enable on-disk JIT compilation cache (default: on, use --cache=0 to disable)"),
                 llvm::cl::init(true), llvm::cl::cat(FluxCategory));
+
+llvm::cl::opt<bool>
+    Quiet("q", llvm::cl::desc("Quiet mode — suppress JIT debug output"),
+          llvm::cl::init(false), llvm::cl::cat(FluxCategory));
 
 llvm::cl::opt<std::string> OutputFilename("o", llvm::cl::desc("Output file path (used with --emit=bc)"),
                                           llvm::cl::init(""), llvm::cl::cat(FluxCategory));
@@ -270,8 +275,10 @@ int runJIT(const std::string& code)
         return 1;
     }
 
-    llvm::outs() << "Compiled successfully.\n";
-    llvm::outs() << "JIT cache: " << (engine.lastCompileUsedCache() ? "hit" : "miss") << "\n";
+    if (!Quiet) {
+        llvm::outs() << "Compiled successfully.\n";
+        llvm::outs() << "JIT cache: " << (engine.lastCompileUsedCache() ? "hit" : "miss") << "\n";
+    }
     if (NoRun)
         return 0;
 
