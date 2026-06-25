@@ -10,6 +10,7 @@
 /build_debug/
 /docs/*
 !/docs/FLUXSCRIPT.md
+!/docs/sections/
 /examples/*.md
 /editor/
 /gui/
