@@ -14,6 +14,10 @@ double jit_register_save(double name_ptr);
 double jit_register_param(double name_ptr, double value);
 double jit_register_ic(double name_ptr, double value);
 
+// Time-domain analysis stubs
+extern "C" double flux_ddt(double val);
+extern "C" double flux_idt(double val, double ic);
+
 // Additional matrix functions not in flux_runtime.h
 extern "C" void flux_matrix_set(void* m_ptr, int row, int col, double val);
 extern "C" void* flux_matrix_mul_ms(void* m_ptr, double s);
@@ -476,6 +480,8 @@ void registerRuntimeFunctions(FluxJIT& jit)
     jit.registerFunction("flux_nn_create", (void*)&flux_nn_create);
     jit.registerFunction("flux_nn_train", (void*)&flux_nn_train);
     jit.registerFunction("flux_nn_predict", (void*)&flux_nn_predict);
+    jit.registerFunction("flux_ddt", (void*)&flux_ddt);
+    jit.registerFunction("flux_idt", (void*)&flux_idt);
     // SPICE runtime functions
     jit.registerFunction("flux_register_subckt", (void*)&flux_register_subckt);
     jit.registerFunction("flux_register_model", (void*)&flux_register_model);

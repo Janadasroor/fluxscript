@@ -909,4 +909,16 @@ extern "C" void flux_clear_error()
     tls_runtime_error_set = 0;
 }
 
+// Time-domain analysis functions (ddt = derivative, idt = integral)
+// Stub implementations — actual transient solver handles these via back-Euler
+extern "C" double flux_ddt(double val)
+{
+    return val;
+}
+
+extern "C" double flux_idt(double val, double ic)
+{
+    return ic;
+}
+
 } // namespace Flux
