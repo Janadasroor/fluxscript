@@ -19,6 +19,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <map>
 #include <string>
 #include <thread>
 #include <chrono>
@@ -62,6 +63,7 @@ static const char* HelpText = "FluxScript — LLVM JIT-compiled scripting langua
                                "  flux parse <script.flux>        Parse only — report syntax errors\n"
                                "  flux fmt <script.flux>          Format a FluxScript file\n"
                                "  flux new <project>              Create a new FluxScript project\n"
+                               "  flux stats [directory]          Show project statistics\n"
                                "  flux test [directory]           Run integration tests\n"
                                "  flux repl                       Start interactive REPL\n"
                                "  flux lsp                        Start the LSP server\n"
@@ -660,6 +662,67 @@ int main(int argc, char** argv)
             }
             // Otherwise, show full embedded docs
             llvm::outs() << Flux::Docs::getDocsText();
+            return 0;
+        }
+
+        if (subcmd == "stats") {
+            std::string dir = (argc >= 3) ? argv[2] : ".";
+            int totalLines = 0, totalFiles = 0;
+            int funcCount = 0, structCount = 0, enumCount = 0, classCount = 0, traitCount = 0;
+            int importCount = 0;
+            std::map<std::string, int> fileLines;
+
+            for (auto& entry : std::filesystem::recursive_directory_iterator(dir)) {
+                if (!entry.is_regular_file()) continue;
+                if (entry.path().extension() != ".flux") continue;
+                totalFiles++;
+                std::ifstream ifs(entry.path());
+                std::string line;
+                int lines = 0;
+                while (std::getline(ifs, line)) {
+                    lines++;
+                    totalLines++;
+                    std::string trimmed = line;
+                    // Trim leading whitespace
+                    size_t start = trimmed.find_first_not_of(" \t");
+                    if (start != std::string::npos) trimmed = trimmed.substr(start);
+                    // Skip comments
+                    if (trimmed.empty() || trimmed[0] == '#') continue;
+                    // Count constructs
+                    if (trimmed.substr(0, 4) == "def " || trimmed.substr(0, 11) == "async def ") funcCount++;
+                    if (trimmed.substr(0, 7) == "struct ") structCount++;
+                    if (trimmed.substr(0, 5) == "enum ") enumCount++;
+                    if (trimmed.substr(0, 6) == "class ") classCount++;
+                    if (trimmed.substr(0, 6) == "trait ") traitCount++;
+                    if (trimmed.substr(0, 7) == "import " || trimmed.substr(0, 5) == "from ") importCount++;
+                }
+                std::string relPath = std::filesystem::relative(entry.path(), dir).string();
+                fileLines[relPath] = lines;
+            }
+
+            std::cout << "FluxScript Project Statistics\n";
+            std::cout << "=============================\n\n";
+            std::cout << "  Files:       " << totalFiles << "\n";
+            std::cout << "  Lines:       " << totalLines << "\n";
+            std::cout << "  Functions:   " << funcCount << "\n";
+            std::cout << "  Structs:     " << structCount << "\n";
+            std::cout << "  Enums:       " << enumCount << "\n";
+            std::cout << "  Classes:     " << classCount << "\n";
+            std::cout << "  Traits:      " << traitCount << "\n";
+            std::cout << "  Imports:     " << importCount << "\n\n";
+
+            // Top 10 largest files
+            if (!fileLines.empty()) {
+                std::vector<std::pair<std::string, int>> sorted(fileLines.begin(), fileLines.end());
+                std::sort(sorted.begin(), sorted.end(), [](auto& a, auto& b) { return a.second > b.second; });
+                int show = std::min(10, (int)sorted.size());
+                std::cout << "Largest files:\n";
+                for (int i = 0; i < show; i++) {
+                    char buf[64];
+                    snprintf(buf, sizeof(buf), "  %-40s %5d lines\n", sorted[i].first.c_str(), sorted[i].second);
+                    std::cout << buf;
+                }
+            }
             return 0;
         }
 
