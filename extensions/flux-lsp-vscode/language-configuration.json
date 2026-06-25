@@ -12,12 +12,30 @@
     { "open": "{", "close": "}" },
     { "open": "[", "close": "]" },
     { "open": "(", "close": ")" },
-    { "open": "\"", "close": "\"", "notIn": ["string"] }
+    { "open": "\"", "close": "\"", "notIn": ["string"] },
+    { "open": "'", "close": "'", "notIn": ["string", "comment"] }
   ],
   "surroundingPairs": [
     { "open": "{", "close": "}" },
     { "open": "[", "close": "]" },
     { "open": "(", "close": ")" },
-    { "open": "\"", "close": "\"" }
-  ]
+    { "open": "\"", "close": "\"" },
+    { "open": "'", "close": "'" }
+  ],
+  "folding": {
+    "markers": {
+      "start": "^\\s*// region\\b",
+      "end": "^\\s*// endregion\\b"
+    }
+  },
+  "indentationRules": {
+    "increaseIndentPattern": "^.*\\b(def|extern|if|else|elif|while|for|do|match|switch|case|class|struct|enum|trait|impl|try|catch|async)\\b.*$",
+    "decreaseIndentPattern": "^\\s*(case\\s|default:|\\}|else\\b|elif\\b|catch\\b)"
+  },
+  "colorizedBracketPairs": [
+    ["{", "}"],
+    ["[", "]"],
+    ["(", ")"]
+  ],
+  "wordPattern": "(-?\\d*\\.\\d\\w*)|([^\\`\\~\\!\\@\\#\\%\\&\\*\\(\\)\\=\\+\\{\\}\\\\\\|\\;\\:\\'\\\"\\,\\.\\<\\>\\/\\?\\s]+)"
 }

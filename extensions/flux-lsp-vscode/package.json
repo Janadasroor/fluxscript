@@ -1,12 +1,14 @@
 {
   "name": "flux-lsp-vscode",
-  "displayName": "FluxScript LSP",
-  "description": "FluxScript language support via LSP",
+  "displayName": "FluxScript",
+  "description": "Language support for FluxScript — a JIT-compiled scripting language for circuit simulation",
   "version": "0.1.0",
   "publisher": "fluxscript",
+  "license": "Apache-2.0",
   "engines": { "vscode": "^1.85.0" },
   "categories": ["Programming Languages"],
-  "activationEvents": ["onLanguage:fluxscript"],
+  "keywords": ["fluxscript", "circuit", "simulation", "spice", "JIT", "signal"],
+  "activationEvents": [],
   "main": "./extension.js",
   "contributes": {
     "languages": [{
@@ -19,7 +21,77 @@
       "language": "fluxscript",
       "scopeName": "source.flux",
       "path": "./syntaxes/fluxscript.tmLanguage.json"
-    }]
+    }],
+    "commands": [
+      {
+        "command": "fluxscript.runFile",
+        "title": "Run File",
+        "category": "FluxScript",
+        "icon": "$(play)"
+      },
+      {
+        "command": "fluxscript.runSelection",
+        "title": "Run Selection",
+        "category": "FluxScript",
+        "icon": "$(debug-alt)"
+      },
+      {
+        "command": "fluxscript.checkFile",
+        "title": "Check File (parse + type-check)",
+        "category": "FluxScript"
+      },
+      {
+        "command": "fluxscript.lintFile",
+        "title": "Lint File",
+        "category": "FluxScript",
+        "icon": "$(pass)"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "fluxscript.runFile",
+        "key": "ctrl+shift+r",
+        "mac": "cmd+shift+r",
+        "when": "editorTextFocus && editorLangId == fluxscript"
+      },
+      {
+        "command": "fluxscript.runSelection",
+        "key": "ctrl+shift+s",
+        "mac": "cmd+shift+s",
+        "when": "editorTextFocus && editorHasSelection && editorLangId == fluxscript"
+      }
+    ],
+    "menus": {
+      "editor/context": [
+        { "command": "fluxscript.runFile", "when": "editorLangId == fluxscript", "group": "fluxscript@1" },
+        { "command": "fluxscript.runSelection", "when": "editorLangId == fluxscript && editorHasSelection", "group": "fluxscript@2" },
+        { "command": "fluxscript.checkFile", "when": "editorLangId == fluxscript", "group": "fluxscript@3" },
+        { "command": "fluxscript.lintFile", "when": "editorLangId == fluxscript", "group": "fluxscript@4" }
+      ],
+      "editor/title": [
+        { "command": "fluxscript.runFile", "when": "editorLangId == fluxscript", "group": "navigation" }
+      ]
+    },
+    "configuration": {
+      "title": "FluxScript",
+      "properties": {
+        "fluxscript.lspPath": {
+          "type": "string",
+          "default": "",
+          "description": "Path to the flux-lsp binary. Leave empty to auto-detect from build directory."
+        },
+        "fluxscript.fluxPath": {
+          "type": "string",
+          "default": "",
+          "description": "Path to the flux binary. Leave empty to auto-detect from build directory."
+        },
+        "fluxscript.lintOnSave": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically lint FluxScript files when saved."
+        }
+      }
+    }
   },
   "dependencies": {
     "vscode-languageclient": "^9.0.1"
