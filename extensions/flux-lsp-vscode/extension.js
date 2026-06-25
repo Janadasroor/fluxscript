@@ -64,6 +64,11 @@ function runProcess(fluxPath, args) {
   });
 }
 
+function cleanMessage(msg) {
+  // Trailing backslash causes VSCode to merge source label into the message
+  return msg.replace(/\\+$/, '').trim();
+}
+
 function parseCheckErrors(stderr) {
   const diagnostics = [];
   // Match: <flux>:LINE:COL: error: MESSAGE
@@ -72,7 +77,7 @@ function parseCheckErrors(stderr) {
   while ((match = lineColRe.exec(stderr)) !== null) {
     const line = parseInt(match[1], 10) - 1; // 0-indexed
     const col = parseInt(match[2], 10) - 1;
-    const message = match[3].trim();
+    const message = cleanMessage(match[3]);
     if (!message) continue;
     const range = new vscode.Range(line, col, line, col + 1);
     diagnostics.push(new vscode.Diagnostic(range, message, vscode.DiagnosticSeverity.Error));
@@ -85,7 +90,7 @@ function parseCheckErrors(stderr) {
     if (checkMatch) {
       const line = parseInt(checkMatch[1], 10) - 1;
       const col = parseInt(checkMatch[2], 10) - 1;
-      const message = checkMatch[3].trim();
+      const message = cleanMessage(checkMatch[3]);
       const range = new vscode.Range(line, col, line, col + 1);
       diagnostics.push(new vscode.Diagnostic(range, message, vscode.DiagnosticSeverity.Error));
     }

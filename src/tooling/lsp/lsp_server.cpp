@@ -550,6 +550,9 @@ std::vector<Diagnostic> LspServer::analyzeDocument(const std::string& uri)
                     continue; // strip other control chars
                 msg += c;
             }
+            // Strip trailing backslash — VSCode merges it with source label
+            while (!msg.empty() && msg.back() == '\\')
+                msg.pop_back();
             d.message = msg;
             d.source = "fluxscript-compiler";
             d.range.start = {err.line - 1, err.column - 1};
