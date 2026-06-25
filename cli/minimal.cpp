@@ -47,6 +47,28 @@ std::string moduleNameFromInput(const std::string& input)
 }
 
 static const char* VersionStr = "FluxScript v0.1.0 (LLVM JIT)";
+static const char* HelpText = "FluxScript — LLVM JIT-compiled scripting language\n"
+                               "\n"
+                               "USAGE:\n"
+                               "  flux <script.flux>              Run a script (default JIT mode)\n"
+                               "  flux run <script.flux>          Run a script\n"
+                               "  flux check <script.flux>        Parse and type-check without executing\n"
+                               "  flux parse <script.flux>        Parse only — report syntax errors\n"
+                               "  flux fmt <script.flux>          Format a FluxScript file\n"
+                               "  flux test [directory]           Run integration tests\n"
+                               "  flux repl                       Start interactive REPL\n"
+                               "  flux lsp                        Start the LSP server\n"
+                               "  flux doc <script.flux>          Generate documentation\n"
+                               "  flux pkg <command>              Package management\n"
+                               "\n"
+                               "OPTIONS:\n"
+                               "  --emit=<mode>    Compiler output mode (tokens, check, parse-only, llvm, bc, jit)\n"
+                               "  --opt=<0-3>      LLVM optimization level (default: 2)\n"
+                               "  --cache=0        Disable JIT compilation cache\n"
+                               "  --entry=<name>   Function to invoke in JIT mode\n"
+                               "  --profile        Benchmark mode\n"
+                               "  --version, -v    Print version\n"
+                               "  --help, -h       Print this help\n";
 static const char* HelpExamples = "EXAMPLES:\n"
                                   "\n"
                                   "  Run a script and print the result (default JIT mode):\n"
@@ -410,6 +432,114 @@ int main(int argc, char** argv)
             llvm::outs() << VersionStr << "\n";
             llvm::outs() << "LLVM " << LLVM_VERSION_STRING << "\n";
             return 0;
+        }
+    }
+
+    // --- Subcommand dispatch (before LLVM cl::Parse) ---
+    if (argc >= 2) {
+        std::string subcmd = argv[1];
+
+        if (subcmd == "--help" || subcmd == "-h") {
+            llvm::outs() << HelpText;
+            return 0;
+        }
+
+        if (subcmd == "run") {
+            // Shift args: flux run file.flux [args...] → flux file.flux [args...]
+            std::vector<const char*> newArgs = {argv[0]};
+            for (int i = 2; i < argc; i++)
+                newArgs.push_back(argv[i]);
+            return main(static_cast<int>(newArgs.size()), const_cast<char**>(newArgs.data()));
+        }
+
+        if (subcmd == "check" && argc >= 3) {
+            std::string filePath = argv[2];
+            auto buf = llvm::MemoryBuffer::getFile(filePath);
+            if (!buf) {
+                llvm::errs() << "Error: Could not read '" << filePath << "'\n";
+                return 1;
+            }
+            Flux::CompilerOptions opts;
+            opts.inputName = filePath;
+            opts.moduleName = moduleNameFromInput(filePath);
+            opts.optimizationLevel = Flux::OptimizationLevel::O0;
+            Flux::CompilerInstance compiler(opts);
+            std::string code = (*buf)->getBuffer().str();
+            std::string error;
+            auto artifacts = compiler.compileToIR(code, &error);
+            if (!artifacts) {
+                llvm::errs() << "Check Error: " << error << "\n";
+                return 1;
+            }
+            llvm::outs() << "OK\n";
+            return 0;
+        }
+
+        if (subcmd == "parse" && argc >= 3) {
+            std::string filePath = argv[2];
+            auto buf = llvm::MemoryBuffer::getFile(filePath);
+            if (!buf) {
+                llvm::errs() << "Error: Could not read '" << filePath << "'\n";
+                return 1;
+            }
+            Flux::CompilerOptions opts;
+            opts.inputName = filePath;
+            opts.moduleName = moduleNameFromInput(filePath);
+            opts.optimizationLevel = Flux::OptimizationLevel::O0;
+            opts.parseOnly = true;
+            Flux::CompilerInstance compiler(opts);
+            std::string code = (*buf)->getBuffer().str();
+            std::string error;
+            auto artifacts = compiler.compileToIR(code, &error);
+            if (!artifacts) {
+                llvm::errs() << "Parse Error: " << error << "\n";
+                return 1;
+            }
+            llvm::outs() << "OK\n";
+            return 0;
+        }
+
+        if (subcmd == "fmt" && argc >= 3) {
+            std::string cmd = "flux-format " + std::string(argv[2]);
+            for (int i = 3; i < argc; i++)
+                cmd += " " + std::string(argv[i]);
+            return std::system(cmd.c_str());
+        }
+
+        if (subcmd == "test") {
+            std::string cmd = "flux-test";
+            for (int i = 2; i < argc; i++)
+                cmd += " " + std::string(argv[i]);
+            return std::system(cmd.c_str());
+        }
+
+        if (subcmd == "repl") {
+            return std::system("flux-repl");
+        }
+
+        if (subcmd == "lsp") {
+            return std::system("flux-lsp");
+        }
+
+        if (subcmd == "doc" && argc >= 3) {
+            std::string cmd = "flux-doc " + std::string(argv[2]);
+            for (int i = 3; i < argc; i++)
+                cmd += " " + std::string(argv[i]);
+            return std::system(cmd.c_str());
+        }
+
+        if (subcmd == "pkg") {
+            std::string cmd = "flux-pkg";
+            for (int i = 2; i < argc; i++)
+                cmd += " " + std::string(argv[i]);
+            return std::system(cmd.c_str());
+        }
+
+        // If it looks like a subcommand but wasn't recognized, show help
+        if (subcmd[0] != '-' && subcmd.find(".flux") == std::string::npos) {
+            llvm::errs() << "Unknown command: " << subcmd << "\n";
+            llvm::errs() << "Run 'flux --help' for usage.\n";
+            return 1;
         }
     }
 
