@@ -527,6 +527,13 @@ std::vector<Diagnostic> LspServer::analyzeDocument(const std::string& uri)
                 // Semicolons and stray commas are statement separators — skip them
                 parser.getNextToken();
                 continue;
+            } else if (parser.CurTok == static_cast<int>(Flux::TokenType::tok_import)) {
+                // Skip import statements: import <name>
+                parser.getNextToken(); // consume 'import'
+                while (parser.CurTok != static_cast<int>(Flux::TokenType::tok_eof) &&
+                       parser.CurTok != '\n' && parser.CurTok != ';')
+                    parser.getNextToken();
+                parsed = true;
             } else {
                 parsed = parser.ParseTopLevelExpr() != nullptr;
             }
