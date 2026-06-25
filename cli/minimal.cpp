@@ -40,6 +40,7 @@
 #include "flux/runtime/flux_runtime.h"
 #include "flux/tooling/tooling.h"
 #include "flux/docs_embedded.h"
+#include "flux/examples_embedded.h"
 
 namespace {
 
@@ -69,6 +70,7 @@ static const char* HelpText = "FluxScript — LLVM JIT-compiled scripting langua
                                "  flux repl                       Start interactive REPL\n"
                                "  flux lsp                        Start the LSP server\n"
                                "  flux docs [keyword]             Show/search documentation\n"
+                               "  flux examples [keyword]        Show/search code examples\n"
                                "  flux pkg <command>              Package management\n"
                                "\n"
                                "OPTIONS:\n"
@@ -670,6 +672,17 @@ int main(int argc, char** argv)
             }
             // Otherwise, show full embedded docs
             llvm::outs() << Flux::Docs::getDocsText();
+            return 0;
+        }
+
+        if (subcmd == "examples") {
+            if (argc >= 3) {
+                std::string keyword = argv[2];
+                std::string result = Flux::Examples::searchExamples(keyword);
+                llvm::outs() << result;
+                return 0;
+            }
+            llvm::outs() << Flux::Examples::getExamplesText();
             return 0;
         }
 
