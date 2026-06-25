@@ -534,6 +534,23 @@ std::vector<Diagnostic> LspServer::analyzeDocument(const std::string& uri)
                        parser.CurTok != '\n' && parser.CurTok != ';')
                     parser.getNextToken();
                 parsed = true;
+            } else if (parser.CurTok == static_cast<int>(Flux::TokenType::tok_from)) {
+                // from <module> import <symbol> — skip entire line
+                parser.getNextToken(); // consume 'from'
+                while (parser.CurTok != static_cast<int>(Flux::TokenType::tok_eof) &&
+                       parser.CurTok != '\n' && parser.CurTok != ';')
+                    parser.getNextToken();
+                parsed = true;
+            } else if (parser.CurTok == static_cast<int>(Flux::TokenType::tok_async)) {
+                // async def ...
+                parsed = parser.ParseAsyncDef() != nullptr;
+            } else if (parser.CurTok == static_cast<int>(Flux::TokenType::tok_update)) {
+                // Skip update functions — they're program-specific
+                parser.getNextToken();
+            } else if (parser.CurTok == '}') {
+                // Stray closing brace — skip
+                parser.getNextToken();
+                continue;
             } else {
                 parsed = parser.ParseTopLevelExpr() != nullptr;
             }
