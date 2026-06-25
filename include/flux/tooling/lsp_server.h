@@ -202,6 +202,7 @@ public:
     std::string handleTextDocumentDidOpen(const std::string& params);
     std::string handleTextDocumentDidChange(const std::string& params);
     std::string handleTextDocumentDidClose(const std::string& params);
+    std::string handleTextDocumentDidSave(const std::string& params);
     std::string handleTextDocumentCompletion(const std::string& params);
     std::string handleTextDocumentHover(const std::string& params);
     std::string handleTextDocumentDefinition(const std::string& params);

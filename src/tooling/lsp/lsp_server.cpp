@@ -136,6 +136,9 @@ std::string LspServer::processRequest(const std::string& jsonRequest)
     } else if (method == "textDocument/didClose") {
         handleTextDocumentDidClose(params);
         return "";
+    } else if (method == "textDocument/didSave") {
+        handleTextDocumentDidSave(params);
+        return "";
     } else if (method == "textDocument/completion") {
         return makeResponse(id, handleTextDocumentCompletion(params));
     } else if (method == "textDocument/hover") {
@@ -256,10 +259,6 @@ void LspServer::changeDocument(const std::string& uri, int version, const std::s
     if (it != m_documents.end()) {
         it->second.version = version;
         it->second.text = text;
-
-        // Re-analyze and publish diagnostics
-        auto diags = analyzeDocument(uri);
-        publishDiagnostics(uri, diags);
     }
 }
 
@@ -617,7 +616,8 @@ std::string LspServer::handleInitialize(const std::string& params)
         "capabilities": {
             "textDocumentSync": {
                 "openClose": true,
-                "change": 2
+                "change": 2,
+                "save": { "includeText": true }
             },
             "completionProvider": {
                 "resolveProvider": false,
@@ -763,10 +763,6 @@ std::string LspServer::handleTextDocumentDidChange(const std::string& params)
         size_t endOffset = it->second.positionToOffset({endLine, endChar});
         it->second.text.replace(startOffset, endOffset - startOffset, replacement);
         it->second.version = version;
-
-        // Re-analyze and publish diagnostics
-        auto diags = analyzeDocument(uri);
-        publishDiagnostics(uri, diags);
     } else {
         // Full text replacement (mode 1 fallback)
         size_t textStart = params.find("\"text\"", arrStart);
@@ -791,6 +787,15 @@ std::string LspServer::handleTextDocumentDidClose(const std::string& params)
 {
     std::string uri = jsonGet(params, "textDocument.uri");
     closeDocument(uri);
+    return "";
+}
+
+std::string LspServer::handleTextDocumentDidSave(const std::string& params)
+{
+    std::string uri = jsonGet(params, "textDocument.uri");
+    // Publish diagnostics on save
+    auto diags = analyzeDocument(uri);
+    publishDiagnostics(uri, diags);
     return "";
 }
 
