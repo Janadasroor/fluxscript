@@ -371,11 +371,16 @@ std::unique_ptr<ExprAST> Parser::ParseDiscontinuityDecl()
 
 std::unique_ptr<ExprAST> Parser::ParseStateDecl()
 {
+    int line = m_lexer.getCurrentLine();
+    int col = m_lexer.getCurrentColumn();
+
     getNextToken(); // eat state
 
+    // If not followed by "V", treat "state" as a regular identifier
     if (CurTok != static_cast<int>(TokenType::tok_identifier) || m_lexer.IdentifierStr != "V") {
-        ReportError("expected V() after state");
-        return nullptr;
+        auto Result = std::make_unique<VariableExprAST>("state", std::vector<FluxType>{});
+        Result->setLocation(line, col);
+        return Result;
     }
     getNextToken();
 

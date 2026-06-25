@@ -31,11 +31,11 @@ std::string LspServer::handleTextDocumentPrepareCallHierarchy(const std::string&
     oss << R"("range":{"start":{"line":)" << item.range.start.line << ",";
     oss << R"("character":)" << item.range.start.character << "},";
     oss << R"("end":{"line":)" << item.range.end.line << ",";
-    oss << R"("character":)" << item.range.end.character << "},";
+    oss << R"("character":)" << item.range.end.character << "}},";
     oss << R"("selectionRange":{"start":{"line":)" << item.selectionRange.start.line << ",";
     oss << R"("character":)" << item.selectionRange.start.character << "},";
     oss << R"("end":{"line":)" << item.selectionRange.end.line << ",";
-    oss << R"("character":)" << item.selectionRange.end.character << "}})";
+    oss << R"("character":)" << item.selectionRange.end.character << "}}}";
     return oss.str();
 }
 
@@ -82,7 +82,7 @@ std::string LspServer::handleCallHierarchyIncomingCalls(const std::string& param
         oss << R"("range":{"start":{"line":)" << call.from.range.start.line << ",";
         oss << R"("character":)" << call.from.range.start.character << "},";
         oss << R"("end":{"line":)" << call.from.range.end.line << ",";
-        oss << R"("character":)" << call.from.range.end.character << "},";
+        oss << R"("character":)" << call.from.range.end.character << "}},";
         oss << R"("selectionRange":{"start":{"line":)" << call.from.selectionRange.start.line << ",";
         oss << R"("character":)" << call.from.selectionRange.start.character << "},";
         oss << R"("end":{"line":)" << call.from.selectionRange.end.line << ",";
@@ -143,7 +143,7 @@ std::string LspServer::handleCallHierarchyOutgoingCalls(const std::string& param
         oss << R"("range":{"start":{"line":)" << call.to.range.start.line << ",";
         oss << R"("character":)" << call.to.range.start.character << "},";
         oss << R"("end":{"line":)" << call.to.range.end.line << ",";
-        oss << R"("character":)" << call.to.range.end.character << "},";
+        oss << R"("character":)" << call.to.range.end.character << "}},";
         oss << R"("selectionRange":{"start":{"line":)" << call.to.selectionRange.start.line << ",";
         oss << R"("character":)" << call.to.selectionRange.start.character << "},";
         oss << R"("end":{"line":)" << call.to.selectionRange.end.line << ",";
@@ -459,11 +459,11 @@ std::string LspServer::handleTextDocumentPrepareTypeHierarchy(const std::string&
     oss << R"("range":{"start":{"line":)" << item.range.start.line << ",";
     oss << R"("character":)" << item.range.start.character << "},";
     oss << R"("end":{"line":)" << item.range.end.line << ",";
-    oss << R"("character":)" << item.range.end.character << "},";
+    oss << R"("character":)" << item.range.end.character << "}},";
     oss << R"("selectionRange":{"start":{"line":)" << item.selectionRange.start.line << ",";
     oss << R"("character":)" << item.selectionRange.start.character << "},";
     oss << R"("end":{"line":)" << item.selectionRange.end.line << ",";
-    oss << R"("character":)" << item.selectionRange.end.character << "}})";
+    oss << R"("character":)" << item.selectionRange.end.character << "}}}";
     return oss.str();
 }
 
@@ -507,7 +507,7 @@ std::string LspServer::handleTypeHierarchySupertypes(const std::string& params)
         oss << R"("range":{"start":{"line":)" << t.range.start.line << ",";
         oss << R"("character":)" << t.range.start.character << "},";
         oss << R"("end":{"line":)" << t.range.end.line << ",";
-        oss << R"("character":)" << t.range.end.character << "},";
+        oss << R"("character":)" << t.range.end.character << "}},";
         oss << R"("selectionRange":{"start":{"line":)" << t.selectionRange.start.line << ",";
         oss << R"("character":)" << t.selectionRange.start.character << "},";
         oss << R"("end":{"line":)" << t.selectionRange.end.line << ",";
@@ -557,7 +557,7 @@ std::string LspServer::handleTypeHierarchySubtypes(const std::string& params)
         oss << R"("range":{"start":{"line":)" << t.range.start.line << ",";
         oss << R"("character":)" << t.range.start.character << "},";
         oss << R"("end":{"line":)" << t.range.end.line << ",";
-        oss << R"("character":)" << t.range.end.character << "},";
+        oss << R"("character":)" << t.range.end.character << "}},";
         oss << R"("selectionRange":{"start":{"line":)" << t.selectionRange.start.line << ",";
         oss << R"("character":)" << t.selectionRange.start.character << "},";
         oss << R"("end":{"line":)" << t.selectionRange.end.line << ",";

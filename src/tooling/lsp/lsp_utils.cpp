@@ -211,10 +211,11 @@ void LspServer::publishDiagnostics(const std::string& uri, const std::vector<Dia
         oss << R"("range":{"start":{"line":)" << d.range.start.line << ",";
         oss << R"("character":)" << d.range.start.character << "},";
         oss << R"("end":{"line":)" << d.range.end.line << ",";
-        oss << R"("character":)" << d.range.end.character << "},";
-        oss << R"("severity":)" << static_cast<int>(d.severity) << ",";
-        oss << R"("source":")" << jsonEscape(d.source) << "\",";
-        oss << R"("message":")" << jsonEscape(d.message) << "\"}";
+        oss << R"("character":)" << d.range.end.character << "}}";
+        oss << R"(,"severity":)" << static_cast<int>(d.severity);
+        oss << R"(,"source":")" << jsonEscape(d.source) << "\"";
+        oss << R"(,"message":")" << jsonEscape(d.message) << "\"";
+        oss << "}";
     }
     oss << "]}";
     std::string notification = makeNotification("textDocument/publishDiagnostics", oss.str());

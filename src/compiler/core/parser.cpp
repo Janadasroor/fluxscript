@@ -311,18 +311,18 @@ std::unique_ptr<ExprAST> Parser::ParseIdentifierExpr()
 
     getNextToken();
 
-    // Handle namespace qualifier: math::fft
+    // Handle namespace qualifier: math::fft, flux::circuit::circuit_create
     if (CurTok == static_cast<int>(TokenType::tok_namespace_sep)) {
-        getNextToken(); // eat ::
-        if (CurTok != static_cast<int>(TokenType::tok_identifier) && CurTok != static_cast<int>(TokenType::tok_end)) {
-            ReportError("expected identifier after ::");
-            return nullptr;
+        std::string qualifiedName = IdName;
+        while (CurTok == static_cast<int>(TokenType::tok_namespace_sep)) {
+            getNextToken(); // eat ::
+            if (CurTok != static_cast<int>(TokenType::tok_identifier) && CurTok != static_cast<int>(TokenType::tok_end)) {
+                ReportError("expected identifier after ::");
+                return nullptr;
+            }
+            qualifiedName += "::" + m_lexer.IdentifierStr;
+            getNextToken(); // eat identifier
         }
-        std::string memberName = m_lexer.IdentifierStr;
-        getNextToken(); // eat member identifier
-
-        // Create namespace-qualified variable name
-        std::string qualifiedName = IdName + "::" + memberName;
 
         // Check if followed by function call
         if (CurTok == '(') {
@@ -1512,6 +1512,7 @@ std::unique_ptr<ExprAST> Parser::ParsePrimary()
                 Res = std::make_unique<CallExprAST>(std::move(member), std::move(CallArgs));
             } else if (CurTok == static_cast<int>(TokenType::tok_lbrace)) {
                 // Check if this is an enum variant construction with named fields: EnumName.VariantName { fields }
+                // Also handles Module.EnumName.VariantName { fields }
                 bool isEnumVariant = false;
                 std::string enumName;
                 if (!m_parsingMatchPattern) {
@@ -1519,6 +1520,14 @@ std::unique_ptr<ExprAST> Parser::ParsePrimary()
                         enumName = varExpr->getName();
                         if (m_knownEnumTypeNames.count(enumName)) {
                             isEnumVariant = true;
+                        }
+                    } else if (auto* memberExpr = dynamic_cast<MemberExprAST*>(Res.get())) {
+                        // Handle Module.EnumName.VariantName { fields }
+                        if (auto* baseVar = dynamic_cast<VariableExprAST*>(memberExpr->getObject())) {
+                            enumName = memberExpr->getMemberName();
+                            if (m_knownEnumTypeNames.count(enumName)) {
+                                isEnumVariant = true;
+                            }
                         }
                     }
                 }
@@ -1819,7 +1828,8 @@ std::unique_ptr<PrototypeAST> Parser::ParsePrototype()
         return nullptr;
     getNextToken();
     FluxType RetType(TypeKind::Double);
-    if (CurTok == static_cast<int>(TokenType::tok_arrow)) {
+    if (CurTok == static_cast<int>(TokenType::tok_arrow) ||
+        CurTok == static_cast<int>(TokenType::tok_colon)) {
         getNextToken();
         if (CurTok == static_cast<int>(TokenType::tok_identifier) && m_lexer.IdentifierStr == "dyn") {
             RetType = parseTypeName(m_activeGenericParams, LifetimeParamsList);

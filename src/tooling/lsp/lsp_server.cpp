@@ -20,6 +20,7 @@
 #include <cstring>
 #include <iostream>
 #include <sstream>
+#include <fstream>
 
 namespace Flux {
 namespace Tooling {
@@ -281,21 +282,252 @@ TextDocument* LspServer::getDocument(const std::string& uri)
 std::vector<Diagnostic> LspServer::analyzeDocument(const std::string& uri)
 {
     std::vector<Diagnostic> diags;
+    std::vector<SymbolEntry> importedSymbols;
     auto* doc = getDocument(uri);
     if (!doc)
         return diags;
 
-    // Parse the full script (handles def, extern, and top-level expressions)
+    // Parse the full script (handles def, extern, class/struct/enum/trait/impl, and top-level expressions)
     {
         Flux::Parser parser(doc->text);
 
-        // Parse all top-level constructs in a loop
+        // Pre-scan source for enum/struct/class/trait declarations so the parser
+        // recognizes Enum.Variant { fields } and TypeName { fields } syntax.
+        {
+            const std::string& src = doc->text;
+            size_t scanPos = 0;
+            while (scanPos < src.size()) {
+                // Skip to start of a word
+                while (scanPos < src.size() && !isalpha(src[scanPos]) && src[scanPos] != '_')
+                    scanPos++;
+                if (scanPos >= src.size())
+                    break;
+                // Read the word
+                size_t wordStart = scanPos;
+                while (scanPos < src.size() && (isalnum(src[scanPos]) || src[scanPos] == '_'))
+                    scanPos++;
+                std::string word = src.substr(wordStart, scanPos - wordStart);
+
+                if (word == "enum" || word == "struct" || word == "class" || word == "trait") {
+                    // Skip whitespace to find the type name
+                    while (scanPos < src.size() && (src[scanPos] == ' ' || src[scanPos] == '\t'))
+                        scanPos++;
+                    size_t nameStart = scanPos;
+                    while (scanPos < src.size() && (isalnum(src[scanPos]) || src[scanPos] == '_'))
+                        scanPos++;
+                    if (scanPos > nameStart) {
+                        std::string name = src.substr(nameStart, scanPos - nameStart);
+                        if (word == "enum")
+                            parser.getKnownEnumTypeNames().insert(name);
+                        else
+                            parser.getKnownStructTypeNames().insert(name);
+                    }
+                }
+            }
+
+            // Also scan for Name.Variant { patterns to infer enum types from usage
+            // (handles cross-module enums like Component.R { ... })
+            scanPos = 0;
+            while (scanPos < src.size()) {
+                // Look for: word.word {
+                size_t w1Start = scanPos;
+                while (scanPos < src.size() && (isalnum(src[scanPos]) || src[scanPos] == '_'))
+                    scanPos++;
+                if (scanPos >= src.size() || src[scanPos] != '.') {
+                    scanPos = w1Start + 1;
+                    continue;
+                }
+                size_t dotPos = scanPos;
+                scanPos++; // skip .
+                if (scanPos >= src.size() || !(isalpha(src[scanPos]) || src[scanPos] == '_')) {
+                    scanPos = dotPos + 1;
+                    continue;
+                }
+                size_t w2Start = scanPos;
+                while (scanPos < src.size() && (isalnum(src[scanPos]) || src[scanPos] == '_'))
+                    scanPos++;
+                // Skip whitespace, then check for {
+                size_t peek = scanPos;
+                while (peek < src.size() && (src[peek] == ' ' || src[peek] == '\t'))
+                    peek++;
+                if (peek < src.size() && src[peek] == '{') {
+                    std::string parent = src.substr(w1Start, dotPos - w1Start);
+                    std::string variant = src.substr(w2Start, scanPos - w2Start);
+                    // Heuristic: if variant starts with uppercase, it's likely an enum variant
+                    if (!variant.empty() && std::isupper(static_cast<unsigned char>(variant[0]))) {
+                        parser.getKnownEnumTypeNames().insert(parent);
+                    }
+                }
+            }
+        }
+
+        // Resolve cross-file imports: scan imported files for type/function/variable declarations
+        {
+            const std::string& src = doc->text;
+            size_t scanPos = 0;
+            while (scanPos < src.size()) {
+                // Find "import" keyword
+                size_t impPos = src.find("import ", scanPos);
+                if (impPos == std::string::npos)
+                    break;
+                // Make sure it's at start of line (after whitespace)
+                bool atLineStart = (impPos == 0) || src[impPos - 1] == '\n' || src[impPos - 1] == '\r';
+                if (!atLineStart) {
+                    scanPos = impPos + 7;
+                    continue;
+                }
+                size_t nameStart = impPos + 7;
+                while (nameStart < src.size() && (src[nameStart] == ' ' || src[nameStart] == '\t'))
+                    nameStart++;
+                size_t nameEnd = nameStart;
+                while (nameEnd < src.size() && (isalnum(src[nameEnd]) || src[nameEnd] == '_'))
+                    nameEnd++;
+                if (nameEnd > nameStart) {
+                    std::string moduleName = src.substr(nameStart, nameEnd - nameStart);
+                    // Resolve module path using search paths (CWD, stdlib/, modules/, etc.)
+                    std::vector<std::string> searchPaths = {
+                        ".",
+                        "modules",
+                        "lib",
+                        "stdlib",
+                    };
+                    const char* home = std::getenv("HOME");
+                    if (home) {
+                        searchPaths.push_back(std::string(home) + "/.flux/modules");
+                        searchPaths.push_back(std::string(home) + "/.flux/stdlib");
+                    }
+                    const char* modPath = std::getenv("FLUX_MODULE_PATH");
+                    if (modPath) {
+                        std::istringstream mps(modPath);
+                        std::string p;
+                        while (std::getline(mps, p, ':'))
+                            if (!p.empty()) searchPaths.push_back(p);
+                    }
+                    // Also try relative to the document's directory
+                    std::string docDir;
+                    size_t lastSlash = uri.rfind('/');
+                    if (lastSlash != std::string::npos)
+                        docDir = uri.substr(7, lastSlash - 7); // strip "file://"
+                    if (!docDir.empty())
+                        searchPaths.insert(searchPaths.begin(), docDir);
+
+                    for (auto& sp : searchPaths) {
+                        std::string filePath = sp + "/" + moduleName + ".flux";
+                        std::ifstream ifs(filePath);
+                        if (!ifs.good())
+                            continue;
+                        std::string importedSrc((std::istreambuf_iterator<char>(ifs)), std::istreambuf_iterator<char>());
+                        // Scan for declarations: types, functions, variables
+                        size_t p2 = 0;
+                        while (p2 < importedSrc.size()) {
+                            while (p2 < importedSrc.size() && !isalpha(importedSrc[p2]) && importedSrc[p2] != '_')
+                                p2++;
+                            if (p2 >= importedSrc.size()) break;
+                            size_t ws = p2;
+                            while (p2 < importedSrc.size() && (isalnum(importedSrc[p2]) || importedSrc[p2] == '_'))
+                                p2++;
+                            std::string word = importedSrc.substr(ws, p2 - ws);
+
+                            if (word == "enum" || word == "struct" || word == "class" || word == "trait") {
+                                while (p2 < importedSrc.size() && (importedSrc[p2] == ' ' || importedSrc[p2] == '\t'))
+                                    p2++;
+                                size_t ns = p2;
+                                while (p2 < importedSrc.size() && (isalnum(importedSrc[p2]) || importedSrc[p2] == '_'))
+                                    p2++;
+                                if (p2 > ns) {
+                                    std::string name = importedSrc.substr(ns, p2 - ns);
+                                    if (word == "enum")
+                                        parser.getKnownEnumTypeNames().insert(name);
+                                    else
+                                        parser.getKnownStructTypeNames().insert(name);
+                                }
+                            } else if (word == "def") {
+                                while (p2 < importedSrc.size() && (importedSrc[p2] == ' ' || importedSrc[p2] == '\t'))
+                                    p2++;
+                                size_t ns = p2;
+                                while (p2 < importedSrc.size() && (isalnum(importedSrc[p2]) || importedSrc[p2] == '_'))
+                                    p2++;
+                                if (p2 > ns) {
+                                    std::string fnName = importedSrc.substr(ns, p2 - ns);
+                                    // Extract signature: read until newline
+                                    size_t sigStart = p2;
+                                    size_t sigEnd = importedSrc.find('\n', sigStart);
+                                    if (sigEnd == std::string::npos) sigEnd = importedSrc.size();
+                                    std::string sig = importedSrc.substr(sigStart, sigEnd - sigStart);
+                                    // Trim
+                                    while (!sig.empty() && sig[0] == ' ') sig.erase(0, 1);
+
+                                    SymbolEntry se;
+                                    se.name = fnName;
+                                    se.kind = SymbolEntry::Function;
+                                    se.typeStr = sig;
+                                    se.uri = "file://" + filePath;
+                                    se.range.start = {0, 0};
+                                    se.range.end = {0, static_cast<int>(fnName.size())};
+                                    importedSymbols.push_back(se);
+                                }
+                            } else if (word == "var" || word == "let") {
+                                while (p2 < importedSrc.size() && (importedSrc[p2] == ' ' || importedSrc[p2] == '\t'))
+                                    p2++;
+                                size_t ns = p2;
+                                while (p2 < importedSrc.size() && (isalnum(importedSrc[p2]) || importedSrc[p2] == '_'))
+                                    p2++;
+                                if (p2 > ns) {
+                                    std::string varName = importedSrc.substr(ns, p2 - ns);
+                                    SymbolEntry se;
+                                    se.name = varName;
+                                    se.kind = SymbolEntry::Variable;
+                                    se.uri = "file://" + filePath;
+                                    se.range.start = {0, 0};
+                                    se.range.end = {0, static_cast<int>(varName.size())};
+                                    importedSymbols.push_back(se);
+                                }
+                            }
+                        }
+                        break; // found the file, stop searching
+                    }
+                }
+                scanPos = nameEnd;
+            }
+        }
+
         while (parser.CurTok != static_cast<int>(Flux::TokenType::tok_eof)) {
             bool parsed = true;
             if (parser.CurTok == static_cast<int>(Flux::TokenType::tok_def)) {
                 parsed = parser.ParseDefinition() != nullptr;
             } else if (parser.CurTok == static_cast<int>(Flux::TokenType::tok_extern)) {
                 parsed = parser.ParseExtern() != nullptr;
+            } else if (parser.CurTok == static_cast<int>(Flux::TokenType::tok_class) ||
+                       parser.CurTok == static_cast<int>(Flux::TokenType::tok_struct) ||
+                       parser.CurTok == static_cast<int>(Flux::TokenType::tok_enum) ||
+                       parser.CurTok == static_cast<int>(Flux::TokenType::tok_trait) ||
+                       parser.CurTok == static_cast<int>(Flux::TokenType::tok_impl)) {
+                // Skip class/struct/enum/trait/impl body — consume tokens until matching '}'
+                parser.getNextToken(); // consume keyword
+                // Skip name, generics, colon, 'for', etc. until '{'
+                while (parser.CurTok != static_cast<int>(Flux::TokenType::tok_eof) &&
+                       parser.CurTok != '{')
+                    parser.getNextToken();
+                if (parser.CurTok == '{') {
+                    int depth = 1;
+                    parser.getNextToken();
+                    while (parser.CurTok != static_cast<int>(Flux::TokenType::tok_eof) && depth > 0) {
+                        if (parser.CurTok == '{')
+                            depth++;
+                        else if (parser.CurTok == '}')
+                            depth--;
+                        if (depth > 0)
+                            parser.getNextToken();
+                    }
+                    if (parser.CurTok == '}')
+                        parser.getNextToken();
+                }
+                parsed = true;
+            } else if (parser.CurTok == static_cast<int>(Flux::TokenType::tok_semicolon) ||
+                       parser.CurTok == ',') {
+                // Semicolons and stray commas are statement separators — skip them
+                parser.getNextToken();
+                continue;
             } else {
                 parsed = parser.ParseTopLevelExpr() != nullptr;
             }
@@ -309,7 +541,16 @@ std::vector<Diagnostic> LspServer::analyzeDocument(const std::string& uri)
         for (auto& err : parser.getErrors()) {
             Diagnostic d;
             d.severity = Diagnostic::Error;
-            d.message = err.message;
+            // Sanitize message: strip control characters that break JSON
+            std::string msg;
+            for (char c : err.message) {
+                if (c == '\n' || c == '\r')
+                    continue; // strip newlines — location info is in range
+                if (static_cast<unsigned char>(c) < 0x20 && c != '\t')
+                    continue; // strip other control chars
+                msg += c;
+            }
+            d.message = msg;
             d.source = "fluxscript-compiler";
             d.range.start = {err.line - 1, err.column - 1};
             d.range.end = {err.line - 1, err.column};
@@ -319,6 +560,11 @@ std::vector<Diagnostic> LspServer::analyzeDocument(const std::string& uri)
 
     // Build symbol table for completions
     m_symbolTables[uri] = buildSymbolTable(uri);
+
+    // Add imported symbols from cross-file imports
+    for (auto& sym : importedSymbols) {
+        m_symbolTables[uri].push_back(sym);
+    }
 
     return diags;
 }
@@ -589,11 +835,11 @@ std::string LspServer::handleTextDocumentHover(const std::string& params)
         return "null";
 
     std::ostringstream oss;
-    oss << R"({"contents":{"kind":"markdown","value":")" << jsonEscape(hover.contents) << "\"";
+    oss << R"({"contents":{"kind":"markdown","value":")" << jsonEscape(hover.contents) << "\"}";
     oss << R"(,"range":{"start":{"line":)" << hover.range.start.line << ",";
     oss << R"("character":)" << hover.range.start.character << "},";
     oss << R"("end":{"line":)" << hover.range.end.line << ",";
-    oss << R"("character":)" << hover.range.end.character << "}}}}";
+    oss << R"("character":)" << hover.range.end.character << "}}}";
     return oss.str();
 }
 
@@ -795,10 +1041,11 @@ std::string LspServer::handleTextDocumentDocumentSymbol(const std::string& param
         oss << "{";
         oss << R"("name":")" << jsonEscape(sym.name) << "\",";
         oss << R"("kind":)" << (sym.kind == SymbolEntry::Function ? "12" : "13") << ",";
+        oss << R"("location":{"uri":")" << jsonEscape(sym.uri) << "\",";
         oss << R"("range":{"start":{"line":)" << sym.range.start.line << ",";
         oss << R"("character":)" << sym.range.start.character << "},";
         oss << R"("end":{"line":)" << sym.range.end.line << ",";
-        oss << R"("character":)" << sym.range.end.character << "}}}";
+        oss << R"("character":)" << sym.range.end.character << "}}}}";
     }
     oss << "]";
     return oss.str();
@@ -1106,7 +1353,7 @@ std::string LspServer::handleTextDocumentCodeLens(const std::string& params)
         oss << R"({"range":{"start":{"line":)" << lenses[i].range.start.line;
         oss << R"(,"character":)" << lenses[i].range.start.character << "},";
         oss << R"("end":{"line":)" << lenses[i].range.end.line;
-        oss << R"(,"character":)" << lenses[i].range.end.character << "},";
+        oss << R"(,"character":)" << lenses[i].range.end.character << "}},";
         oss << R"("command":{"title":")" << jsonEscape(lenses[i].title) << "\",";
         oss << R"("command":")" << jsonEscape(lenses[i].command) << "\"";
         oss << "}}";
@@ -1137,7 +1384,7 @@ std::string LspServer::handleTextDocumentLinkedEditingRange(const std::string& p
         oss << R"({"start":{"line":)" << result.ranges[i].start.line;
         oss << R"(,"character":)" << result.ranges[i].start.character << "},";
         oss << R"("end":{"line":)" << result.ranges[i].end.line;
-        oss << R"(,"character":)" << result.ranges[i].end.character << "}";
+        oss << R"(,"character":)" << result.ranges[i].end.character << "}}";
     }
     oss << R"(],"wordPattern":")" << jsonEscape(result.wordPattern) << "\"}";
     return oss.str();
@@ -1469,7 +1716,7 @@ std::string LspServer::handleTextDocumentSelectionRange(const std::string& param
         oss << R"({"range":{"start":{"line":)" << result[i].range.start.line;
         oss << R"(,"character":)" << result[i].range.start.character << "},";
         oss << R"("end":{"line":)" << result[i].range.end.line;
-        oss << R"(,"character":)" << result[i].range.end.character << "},";
+        oss << R"(,"character":)" << result[i].range.end.character << "}},";
         oss << R"("parentIndex":)" << result[i].parentIndex << "}";
     }
     oss << "]";

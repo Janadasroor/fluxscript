@@ -795,12 +795,16 @@ std::unique_ptr<ExprAST> Parser::ParseParam()
 // Parse initial condition: ic V(node) = value
 std::unique_ptr<ExprAST> Parser::ParseIC()
 {
+    int line = m_lexer.getCurrentLine();
+    int col = m_lexer.getCurrentColumn();
+
     getNextToken(); // eat ic
 
-    // Parse V(node)
+    // If not followed by "V", treat "ic" as a regular identifier
     if (CurTok != static_cast<int>(TokenType::tok_identifier) || m_lexer.IdentifierStr != "V") {
-        ReportError("expected V(node) for initial condition");
-        return nullptr;
+        auto Result = std::make_unique<VariableExprAST>("ic", std::vector<FluxType>{});
+        Result->setLocation(line, col);
+        return Result;
     }
     getNextToken(); // eat V
 

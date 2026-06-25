@@ -90,7 +90,11 @@ LspServer::SemanticTokensResult LspServer::getSemanticTokens(const std::string& 
     int prevLine = 0;
     int prevCol = 0;
 
-    // Use Lexer to tokenize
+    // Track context for function definitions
+    bool expectFuncName = false;
+    bool inFuncParams = false;
+    int parenDepth = 0;
+
     Flux::Lexer lexer(doc->text);
 
     while (lexer.getNextToken() != static_cast<int>(Flux::TokenType::tok_eof)) {
@@ -104,7 +108,6 @@ LspServer::SemanticTokensResult LspServer::getSemanticTokens(const std::string& 
         } else if (token == static_cast<int>(Flux::TokenType::tok_string)) {
             len = static_cast<int>(lexer.StringVal.size()) + 2;
         } else {
-            // Compute length from source text for numbers and other tokens
             std::string lineText = lexer.getCurrentLineText();
             int startCol = lexer.getCurrentColumn() - 1;
             len = 1;
@@ -123,31 +126,46 @@ LspServer::SemanticTokensResult LspServer::getSemanticTokens(const std::string& 
         int typeIdx = -1;
         int modBits = 0;
 
+        // Track () depth for parameter detection
+        if (token == '(')
+            parenDepth++;
+        else if (token == ')')
+            parenDepth--;
+
         // Classify token
-        if (token == static_cast<int>(Flux::TokenType::tok_def) ||
-            token == static_cast<int>(Flux::TokenType::tok_let) ||
-            token == static_cast<int>(Flux::TokenType::tok_var) ||
-            token == static_cast<int>(Flux::TokenType::tok_extern) ||
-            token == static_cast<int>(Flux::TokenType::tok_if) ||
-            token == static_cast<int>(Flux::TokenType::tok_then) ||
-            token == static_cast<int>(Flux::TokenType::tok_else) ||
-            token == static_cast<int>(Flux::TokenType::tok_for) ||
-            token == static_cast<int>(Flux::TokenType::tok_while) ||
-            token == static_cast<int>(Flux::TokenType::tok_do) || token == static_cast<int>(Flux::TokenType::tok_in) ||
-            token == static_cast<int>(Flux::TokenType::tok_return) ||
-            token == static_cast<int>(Flux::TokenType::tok_match) ||
-            token == static_cast<int>(Flux::TokenType::tok_case) ||
-            token == static_cast<int>(Flux::TokenType::tok_break) ||
-            token == static_cast<int>(Flux::TokenType::tok_continue) ||
-            token == static_cast<int>(Flux::TokenType::tok_import) ||
-            token == static_cast<int>(Flux::TokenType::tok_from) ||
-            token == static_cast<int>(Flux::TokenType::tok_yield) ||
-            token == static_cast<int>(Flux::TokenType::tok_async) ||
-            token == static_cast<int>(Flux::TokenType::tok_await)) {
+        if (token == static_cast<int>(Flux::TokenType::tok_def)) {
+            typeIdx = TOK_KEYWORD;
+            expectFuncName = true;
+        } else if (expectFuncName && token == static_cast<int>(Flux::TokenType::tok_identifier)) {
+            typeIdx = TOK_FUNCTION;
+            modBits = MOD_DECLARATION | MOD_DEFINITION;
+            expectFuncName = false;
+            inFuncParams = true;
+        } else if (token == static_cast<int>(Flux::TokenType::tok_let) ||
+                   token == static_cast<int>(Flux::TokenType::tok_var) ||
+                   token == static_cast<int>(Flux::TokenType::tok_extern)) {
+            typeIdx = TOK_KEYWORD;
+            expectFuncName = (token == static_cast<int>(Flux::TokenType::tok_def));
+        } else if (token == static_cast<int>(Flux::TokenType::tok_if) ||
+                   token == static_cast<int>(Flux::TokenType::tok_then) ||
+                   token == static_cast<int>(Flux::TokenType::tok_else) ||
+                   token == static_cast<int>(Flux::TokenType::tok_for) ||
+                   token == static_cast<int>(Flux::TokenType::tok_while) ||
+                   token == static_cast<int>(Flux::TokenType::tok_do) ||
+                   token == static_cast<int>(Flux::TokenType::tok_in) ||
+                   token == static_cast<int>(Flux::TokenType::tok_return) ||
+                   token == static_cast<int>(Flux::TokenType::tok_match) ||
+                   token == static_cast<int>(Flux::TokenType::tok_case) ||
+                   token == static_cast<int>(Flux::TokenType::tok_break) ||
+                   token == static_cast<int>(Flux::TokenType::tok_continue) ||
+                   token == static_cast<int>(Flux::TokenType::tok_import) ||
+                   token == static_cast<int>(Flux::TokenType::tok_from) ||
+                   token == static_cast<int>(Flux::TokenType::tok_yield) ||
+                   token == static_cast<int>(Flux::TokenType::tok_async) ||
+                   token == static_cast<int>(Flux::TokenType::tok_await)) {
             typeIdx = TOK_KEYWORD;
         } else if (token == static_cast<int>(Flux::TokenType::tok_identifier)) {
             std::string id = lexer.IdentifierStr;
-            // Check if it's a type keyword
             if (id == "struct")
                 typeIdx = TOK_STRUCT;
             else if (id == "class")
@@ -162,12 +180,14 @@ LspServer::SemanticTokensResult LspServer::getSemanticTokens(const std::string& 
                 typeIdx = TOK_KEYWORD;
             else if (id == "true" || id == "false")
                 typeIdx = TOK_KEYWORD;
-            else if (id == "public" || id == "private" || id == "protected") {
+            else if (id == "self")
                 typeIdx = TOK_KEYWORD;
-                modBits |= MOD_DECLARATION;
-            } else {
+            else if (id == "pub" || id == "mut")
+                typeIdx = TOK_KEYWORD;
+            else if (inFuncParams && parenDepth == 1)
+                typeIdx = TOK_PARAMETER;
+            else
                 typeIdx = TOK_VARIABLE;
-            }
         } else if (token == static_cast<int>(Flux::TokenType::tok_number)) {
             typeIdx = TOK_NUMBER;
         } else if (token == static_cast<int>(Flux::TokenType::tok_string)) {
@@ -178,8 +198,11 @@ LspServer::SemanticTokensResult LspServer::getSemanticTokens(const std::string& 
             typeIdx = TOK_OPERATOR;
         }
 
+        // Reset function param context when we leave the param list
+        if (inFuncParams && parenDepth == 0 && token == ')')
+            inFuncParams = false;
+
         if (typeIdx >= 0) {
-            // Encode as relative (delta) to previous
             int deltaLine = line - prevLine;
             int deltaCol = (deltaLine == 0) ? (col - prevCol) : col;
             data.push_back(static_cast<unsigned int>(deltaLine));
