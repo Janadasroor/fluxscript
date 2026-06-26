@@ -1028,9 +1028,9 @@ TypedValue MatchExprAST::codegen(CodegenContext& context)
                             llvm::Type* fieldTy = fieldFluxType.getLLVMType(context.TheContext);
                             if (!fieldTy)
                                 fieldTy = concretePayloadLLVMTy->getStructElementType(0);
-                            llvm::Value* fieldPtr = context.Builder.CreateStructGEP(
-                                concretePayloadLLVMTy, concretePayloadPtr, 0, armBindings[0] + "_field");
-                            llvm::Value* val = context.Builder.CreateLoad(fieldTy, fieldPtr, armBindings[0] + "_val");
+                            // For single-field struct, the field IS the payload at offset 0.
+                            // Load directly from payload pointer using the correct field type.
+                            llvm::Value* val = context.Builder.CreateLoad(fieldTy, concretePayloadPtr, armBindings[0] + "_val");
                             context.Builder.CreateStore(val, sharedAllocas[armBindings[0]]);
                         } else {
                             // Multi-field struct: load the entire struct payload
