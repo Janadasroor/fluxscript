@@ -1600,23 +1600,70 @@ bool CompilerInstance::compileParser(Parser& parser, CodegenContext& context,
         }
     }
 
-    // Process struct declarations first so anonymous enum payload
-    // struct types are registered before enum codegen references them.
-    for (auto& s : structs) {
-        s->codegen(context);
+    // Interleaved codegen: process structs and enums in dependency order.
+    // Anonymous enum payload structs need their dependent enum types registered
+    // first (for field type resolution). Enums need anon struct types for tagged
+    // unions. We interleave to handle this circular dependency.
+    std::set<std::string> codegenDone;
+    bool progress = true;
+    while (progress) {
+        progress = false;
+        for (auto& s : structs) {
+            if (codegenDone.count(s->getName()))
+                continue;
+            bool depsMet = true;
+            for (auto& [fn, ft] : s->getFields()) {
+                FluxType resolved = ft;
+                resolveUserEnumType(resolved, context);
+                resolveUserStructType(resolved, context);
+                if (resolved.Kind == TypeKind::UserEnum) {
+                    // Enum must be registered (in EnumTypeIndex). It doesn't
+                    // need a tagged union LLVM type (enums without payloads
+                    // don't have one).
+                    auto eit = context.EnumTypeIndex.find(resolved.GenericName);
+                    if (eit == context.EnumTypeIndex.end()) {
+                        depsMet = false;
+                        break;
+                    }
+                }
+                if (resolved.Kind == TypeKind::UserStruct && !resolved.StructLLVMType) {
+                    depsMet = false;
+                    break;
+                }
+            }
+            if (depsMet) {
+                s->codegen(context);
+                codegenDone.insert(s->getName());
+                progress = true;
+            }
+        }
+        for (auto& e : enums) {
+            if (codegenDone.count(e->getName()))
+                continue;
+            bool depsMet = true;
+            for (auto& pt : e->getVariantPayloads()) {
+                FluxType resolved = pt;
+                resolveUserStructType(resolved, context);
+                resolveUserEnumType(resolved, context);
+                if (resolved.Kind == TypeKind::UserStruct && !resolved.StructLLVMType) {
+                    depsMet = false;
+                    break;
+                }
+            }
+            if (depsMet) {
+                e->codegen(context);
+                codegenDone.insert(e->getName());
+                progress = true;
+            }
+        }
     }
 
-    // Pre-populate GenericStructs so enum codegen below can specialize
+    // Pre-populate GenericStructs so method codegen below can specialize
     // generic struct payloads (e.g., Option.Some(Pair[Double, Double])).
     for (auto& s : structs) {
         if (s->isGeneric()) {
             context.GenericStructs[s->getName()] = s.get();
         }
-    }
-
-    // Process enum declarations: register enum types
-    for (auto& e : enums) {
-        e->codegen(context);
     }
 
     // Process impl declarations: register type methods
