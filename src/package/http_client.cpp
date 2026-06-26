@@ -38,6 +38,48 @@ static size_t WriteFileCallback(void* contents, size_t size, size_t nmemb, std::
 }
 #endif
 
+static bool isSSRFSafe(const std::string& url)
+{
+    std::string domain = URL::getDomain(url);
+    if (domain.empty())
+        return false;
+
+    // Block localhost variants
+    if (domain == "localhost" || domain == "127.0.0.1" || domain == "::1" || domain == "0.0.0.0")
+        return false;
+
+    // Block private/reserved IP ranges by parsing dotted-decimal
+    auto dotCount = std::count(domain.begin(), domain.end(), '.');
+    if (dotCount == 3) {
+        std::istringstream iss(domain);
+        std::string segment;
+        std::vector<int> octets;
+        while (std::getline(iss, segment, '.')) {
+            try {
+                octets.push_back(std::stoi(segment));
+            } catch (...) {
+                return true; // non-numeric, not an IP — allow
+            }
+        }
+        if (octets.size() == 4) {
+            // 10.x.x.x
+            if (octets[0] == 10)
+                return false;
+            // 172.16.x.x – 172.31.x.x
+            if (octets[0] == 172 && octets[1] >= 16 && octets[1] <= 31)
+                return false;
+            // 192.168.x.x
+            if (octets[0] == 192 && octets[1] == 168)
+                return false;
+            // 169.254.x.x (link-local)
+            if (octets[0] == 169 && octets[1] == 254)
+                return false;
+        }
+    }
+
+    return true;
+}
+
 Client::Client() : m_timeout(30), m_userAgent("FluxScript-PackageManager/1.0") {}
 
 Client::~Client() = default;
@@ -82,6 +124,13 @@ Response Client::request(const std::string& method, const std::string& url, cons
     std::string responseBody;
     std::string fullUrl = buildUrl(url);
 
+    // SSRF protection: block requests to internal/private networks
+    if (!isSSRFSafe(fullUrl)) {
+        m_lastError = "Request blocked: URL targets a private or internal network";
+        curl_easy_cleanup(curl);
+        return response;
+    }
+
     // Set URL
     curl_easy_setopt(curl, CURLOPT_URL, fullUrl.c_str());
 
@@ -106,8 +155,12 @@ Response Client::request(const std::string& method, const std::string& url, cons
     // Set timeout
     curl_easy_setopt(curl, CURLOPT_TIMEOUT, m_timeout);
 
-    // Follow redirects
+    // Follow redirects (limited to prevent redirect loops and SSRF-via-redirect)
     curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
+    curl_easy_setopt(curl, CURLOPT_MAXREDIRS, 10L);
+
+    // Restrict protocols to HTTP/HTTPS only (prevent file://, gopher://, etc.)
+    curl_easy_setopt(curl, CURLOPT_PROTOCOLS_STR, "http,https");
 
     // SSL verification
     curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 1L);
@@ -157,11 +210,21 @@ bool Client::downloadFile(const std::string& url, const std::string& destPath,
     }
 
     std::string fullUrl = buildUrl(url);
+
+    // SSRF protection: block requests to internal/private networks
+    if (!isSSRFSafe(fullUrl)) {
+        m_lastError = "Request blocked: URL targets a private or internal network";
+        curl_easy_cleanup(curl);
+        return false;
+    }
+
     curl_easy_setopt(curl, CURLOPT_URL, fullUrl.c_str());
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteFileCallback);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, file);
     curl_easy_setopt(curl, CURLOPT_TIMEOUT, m_timeout);
     curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
+    curl_easy_setopt(curl, CURLOPT_MAXREDIRS, 10L);
+    curl_easy_setopt(curl, CURLOPT_PROTOCOLS_STR, "http,https");
 
     // Progress callback
     if (callback) {

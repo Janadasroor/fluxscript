@@ -181,6 +181,9 @@ double flux_median_filter(double* data, int n, int window)
 // Numerical Methods
 // ============================================================================
 
+// NOTE: Returns pointer to thread-local buffer. The pointer is valid only until
+// the next call to any function using g_buf1 (including other ODE/interpolation functions).
+// Callers must copy the data before making subsequent calls.
 double* flux_ode_rk4(double t0, double y0, double h, int n)
 {
     g_buf1.resize(n + 1);
@@ -198,6 +201,8 @@ double* flux_ode_rk4(double t0, double y0, double h, int n)
     return g_buf1.data();
 }
 
+// NOTE: Returns pointer to thread-local buffer. The pointer is valid only until
+// the next call to any function using g_buf1.
 double* flux_ode_euler(double t0, double y0, double h, int n)
 {
     g_buf1.resize(n + 1);

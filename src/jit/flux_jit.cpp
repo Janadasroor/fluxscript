@@ -730,6 +730,8 @@ bool FluxJIT::redirectFunction(const std::string& Name, void* oldAddr, void* new
     if (!oldAddr || !newAddr)
         return false;
 
+    std::lock_guard<std::mutex> lock(m_fnMapMutex);
+
     // Relative JMP rel32: E9 <4-byte-little-endian-offset>
     // Offset = destination - (source + instruction_length)
     // instruction_length = 5 (1 byte opcode + 4 bytes offset)

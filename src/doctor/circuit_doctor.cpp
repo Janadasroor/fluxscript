@@ -259,9 +259,14 @@ double CircuitDoctor::parseValue(const std::string& valueStr)
     std::string val = valueStr;
     double multiplier = 1.0;
 
-    // Check for suffixes
-    char lastChar = tolower(val.back());
-    switch (lastChar) {
+    // Check for suffixes (case-sensitive: M = mega, m = milli)
+    char lastChar = val.back();
+    if (lastChar == 'M') {
+        multiplier = 1e6;
+        val.pop_back();
+    } else {
+        lastChar = tolower(lastChar);
+        switch (lastChar) {
     case 'k':
         multiplier = 1e3;
         val.pop_back();
@@ -296,6 +301,7 @@ double CircuitDoctor::parseValue(const std::string& valueStr)
         break;
     default:
         break;
+    }
     }
 
     try {
