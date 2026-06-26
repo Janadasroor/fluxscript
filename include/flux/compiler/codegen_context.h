@@ -192,6 +192,9 @@ public:
     // Method dispatch: type name -> { method name -> Function }
     std::map<std::string, std::map<std::string, llvm::Function*>> TypeMethods;
 
+    // Closure support
+    int ClosureStructTypeId = -1; // ID in StructTypes for { fnPtr, envPtr } closure struct
+
     CodegenContext()
         : OwnedContext(std::make_unique<llvm::LLVMContext>()), TheContext(*OwnedContext), Builder(TheContext)
     {

@@ -403,6 +403,7 @@ class LambdaExprAST : public ExprAST
 {
     std::vector<std::string> Args;
     std::unique_ptr<ExprAST> Body;
+    std::vector<std::string> Captures;
 
 public:
     LambdaExprAST(std::vector<std::string> Args, std::unique_ptr<ExprAST> Body)
@@ -412,7 +413,14 @@ public:
     TypedValue codegen(CodegenContext& context) override;
     const std::vector<std::string>& getArgs() const { return Args; }
     const ExprAST* getBody() const { return Body.get(); }
+    const std::vector<std::string>& getCaptures() const { return Captures; }
+    void setCaptures(std::vector<std::string> caps) { Captures = std::move(caps); }
     bool containsYield() const override { return Body && Body->containsYield(); }
+    bool containsAwait() const override { return Body && Body->containsAwait(); }
+
+    // Collect VariableExprAST names from the body (recursive).
+    // Used for closure capture detection.
+    void collectVarNames(std::vector<std::string>& names) const;
 };
 
 } // namespace Flux

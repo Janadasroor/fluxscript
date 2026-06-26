@@ -1600,6 +1600,14 @@ bool CompilerInstance::compileParser(Parser& parser, CodegenContext& context,
         }
     }
 
+    // Pre-populate GenericStructs so enum codegen can specialize
+    // generic struct payloads (e.g., Enum.Variant(Pair[Double, Double])).
+    for (auto& s : structs) {
+        if (s->isGeneric()) {
+            context.GenericStructs[s->getName()] = s.get();
+        }
+    }
+
     // Interleaved codegen: process structs and enums in dependency order.
     // Anonymous enum payload structs need their dependent enum types registered
     // first (for field type resolution). Enums need anon struct types for tagged
@@ -1655,14 +1663,6 @@ bool CompilerInstance::compileParser(Parser& parser, CodegenContext& context,
                 codegenDone.insert(e->getName());
                 progress = true;
             }
-        }
-    }
-
-    // Pre-populate GenericStructs so method codegen below can specialize
-    // generic struct payloads (e.g., Option.Some(Pair[Double, Double])).
-    for (auto& s : structs) {
-        if (s->isGeneric()) {
-            context.GenericStructs[s->getName()] = s.get();
         }
     }
 

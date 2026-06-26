@@ -1247,10 +1247,46 @@ TypedValue CallExprAST::codegen(CodegenContext& context)
                 }
             }
             if (localVar && localVar->getType()->isPointerTy()) {
-                // Indirect call through function pointer variable
                 llvm::Type* DoubleTy = llvm::Type::getDoubleTy(context.TheContext);
                 llvm::Type* Int64Ty = llvm::Type::getInt64Ty(context.TheContext);
                 llvm::Type* VoidPtrTy = llvm::PointerType::get(context.TheContext, 0);
+
+                // Check if this is a closure struct variable (type __closure)
+                auto* allocaI = llvm::dyn_cast<llvm::AllocaInst>(localVar);
+                if (allocaI) {
+                    llvm::Type* allocatedTy = allocaI->getAllocatedType();
+                    if (auto* ST = llvm::dyn_cast<llvm::StructType>(allocatedTy)) {
+                        if (ST->isStructTy() && ST->getNumElements() == 2 &&
+                            ST->getElementType(0)->isDoubleTy() &&
+                            ST->getElementType(1)->isDoubleTy() &&
+                            ST->getName().starts_with("__closure")) {
+                            // Closure call: extract fn and env doubles, call fn(env, args...)
+                            llvm::Value* closureVal = context.Builder.CreateLoad(ST, localVar, "closure_val");
+                            llvm::Value* fnDouble = context.Builder.CreateExtractValue(closureVal, 0, "closure_fn");
+                            llvm::Value* envDouble = context.Builder.CreateExtractValue(closureVal, 1, "closure_env");
+
+                            llvm::Value* fnInt2 = context.Builder.CreateBitCast(fnDouble, Int64Ty, "closure_fn_int");
+                            llvm::Value* fnPtr = context.Builder.CreateIntToPtr(fnInt2, VoidPtrTy, "closure_fn_ptr");
+
+                            std::vector<llvm::Type*> ClosureArgTys = {DoubleTy};
+                            for (size_t i = 0; i < Args.size(); ++i)
+                                ClosureArgTys.push_back(DoubleTy);
+                            llvm::FunctionType* ClosureFT = llvm::FunctionType::get(DoubleTy, ClosureArgTys, false);
+
+                            std::vector<llvm::Value*> ClosureArgsV = {envDouble};
+                            for (auto& arg : Args) {
+                                TypedValue argTV = arg->codegen(context);
+                                if (!argTV.Val)
+                                    return TypedValue();
+                                ClosureArgsV.push_back(argTV.Val);
+                            }
+                            llvm::Value* ret = context.Builder.CreateCall(ClosureFT, fnPtr, ClosureArgsV, "closure_call");
+                            return TypedValue(ret, TypeKind::Double);
+                        }
+                    }
+                }
+
+                // Indirect call through function pointer variable (non-closure fn ptr)
                 std::vector<llvm::Type*> IndirectArgTys;
                 for (size_t i = 0; i < Args.size(); ++i)
                     IndirectArgTys.push_back(DoubleTy);

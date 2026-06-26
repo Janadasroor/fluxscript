@@ -483,11 +483,9 @@ std::unique_ptr<ExprAST> Parser::ParseIfExpr()
     auto Cond = ParseExpression();
     if (!Cond)
         return nullptr;
-    if (CurTok != static_cast<int>(TokenType::tok_then)) {
-        ReportError("expected 'then' after if condition");
-        return nullptr;
+    if (CurTok == static_cast<int>(TokenType::tok_then)) {
+        getNextToken(); // optional then
     }
-    getNextToken();
     auto Then = ParseExpression();
     if (!Then)
         return nullptr;

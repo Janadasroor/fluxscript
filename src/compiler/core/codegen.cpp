@@ -1830,44 +1830,406 @@ TypedValue LetExprAST::codegen(CodegenContext& context)
     return BodyTV;
 }
 
+// Recursively collect VariableExprAST names from an expression tree.
+// Used for closure capture detection.
+static void collectVarNamesFromExpr(const ExprAST* Expr, std::vector<std::string>& names)
+{
+    if (!Expr) return;
+
+    if (auto* VE = dynamic_cast<const VariableExprAST*>(Expr)) {
+        names.push_back(VE->getName());
+        return;
+    }
+    if (auto* BE = dynamic_cast<const BinaryExprAST*>(Expr)) {
+        collectVarNamesFromExpr(BE->getLHS(), names);
+        collectVarNamesFromExpr(BE->getRHS(), names);
+        return;
+    }
+    if (auto* UE = dynamic_cast<const UnaryExprAST*>(Expr)) {
+        collectVarNamesFromExpr(UE->getOperand(), names);
+        return;
+    }
+    if (auto* CE = dynamic_cast<const CallExprAST*>(Expr)) {
+        if (CE->hasCalleeExpr())
+            collectVarNamesFromExpr(CE->getCalleeExpr(), names);
+        for (const auto& Arg : CE->getArgs())
+            collectVarNamesFromExpr(Arg.get(), names);
+        return;
+    }
+    if (auto* ME = dynamic_cast<const MemberExprAST*>(Expr)) {
+        collectVarNamesFromExpr(ME->getObject(), names);
+        return;
+    }
+    if (auto* TE = dynamic_cast<const TransposeExprAST*>(Expr)) {
+        collectVarNamesFromExpr(TE->getOperand(), names);
+        return;
+    }
+    if (auto* LE = dynamic_cast<const LetExprAST*>(Expr)) {
+        collectVarNamesFromExpr(LE->getInit(), names);
+        collectVarNamesFromExpr(LE->getBody(), names);
+        return;
+    }
+    if (auto* AE = dynamic_cast<const AssignExprAST*>(Expr)) {
+        collectVarNamesFromExpr(AE->getLHS(), names);
+        collectVarNamesFromExpr(AE->getValueExpr(), names);
+        return;
+    }
+    if (auto* IE = dynamic_cast<const IfExprAST*>(Expr)) {
+        collectVarNamesFromExpr(IE->getCond(), names);
+        collectVarNamesFromExpr(IE->getThen(), names);
+        collectVarNamesFromExpr(IE->getElse(), names);
+        return;
+    }
+    if (auto* FE = dynamic_cast<const ForExprAST*>(Expr)) {
+        collectVarNamesFromExpr(FE->getStart(), names);
+        collectVarNamesFromExpr(FE->getEnd(), names);
+        collectVarNamesFromExpr(FE->getStep(), names);
+        collectVarNamesFromExpr(FE->getBody(), names);
+        return;
+    }
+    if (auto* WE = dynamic_cast<const WhileExprAST*>(Expr)) {
+        collectVarNamesFromExpr(WE->getCond(), names);
+        collectVarNamesFromExpr(WE->getBody(), names);
+        return;
+    }
+    if (auto* SE = dynamic_cast<const SwitchExprAST*>(Expr)) {
+        collectVarNamesFromExpr(SE->getCondition(), names);
+        for (const auto& clause : SE->getCases()) {
+            if (clause.getValue())
+                collectVarNamesFromExpr(clause.getValue(), names);
+            for (const auto& stmt : clause.getBody())
+                collectVarNamesFromExpr(stmt.get(), names);
+        }
+        for (const auto& stmt : SE->getDefaultBody())
+            collectVarNamesFromExpr(stmt.get(), names);
+        return;
+    }
+    if (auto* Block = dynamic_cast<const BlockExprAST*>(Expr)) {
+        for (const auto& Stmt : Block->getStatements())
+            collectVarNamesFromExpr(Stmt.get(), names);
+        return;
+    }
+    if (auto* Vec = dynamic_cast<const VectorExprAST*>(Expr)) {
+        for (const auto& E : Vec->getElements())
+            collectVarNamesFromExpr(E.get(), names);
+        return;
+    }
+    if (auto* Mat = dynamic_cast<const MatrixExprAST*>(Expr)) {
+        for (const auto& Row : Mat->getRows())
+            for (const auto& E : Row)
+                collectVarNamesFromExpr(E.get(), names);
+        return;
+    }
+    if (auto* Idx = dynamic_cast<const IndexExprAST*>(Expr)) {
+        collectVarNamesFromExpr(Idx->getArray(), names);
+        if (Idx->getRowIndex()) collectVarNamesFromExpr(Idx->getRowIndex(), names);
+        if (Idx->getColIndex()) collectVarNamesFromExpr(Idx->getColIndex(), names);
+        return;
+    }
+    if (auto* Lan = dynamic_cast<const LambdaExprAST*>(Expr)) {
+        // Don't recurse into nested lambdas — their captures are separate
+        return;
+    }
+    // Match / try-catch / return / other types — recurse into known patterns
+    if (auto* ME2 = dynamic_cast<const MatchExprAST*>(Expr)) {
+        collectVarNamesFromExpr(ME2->getValue(), names);
+        for (const auto& [patterns, result] : ME2->getArms())
+            collectVarNamesFromExpr(result.get(), names);
+        if (ME2->getDefaultArm())
+            collectVarNamesFromExpr(ME2->getDefaultArm(), names);
+        return;
+    }
+    if (auto* Foreach = dynamic_cast<const ForeachExprAST*>(Expr)) {
+        collectVarNamesFromExpr(Foreach->getIterable(), names);
+        collectVarNamesFromExpr(Foreach->getBody(), names);
+        return;
+    }
+    if (auto* Repeat = dynamic_cast<const RepeatUntilExprAST*>(Expr)) {
+        collectVarNamesFromExpr(Repeat->getBody(), names);
+        collectVarNamesFromExpr(Repeat->getCond(), names);
+        return;
+    }
+    if (auto* PFor = dynamic_cast<const ParallelForExprAST*>(Expr)) {
+        collectVarNamesFromExpr(PFor->getStart(), names);
+        collectVarNamesFromExpr(PFor->getEnd(), names);
+        collectVarNamesFromExpr(PFor->getBody(), names);
+        return;
+    }
+    // IfStmtAST, ForStmtAST, WhileStmtAST — statement versions
+    if (auto* IfS = dynamic_cast<const IfStmtAST*>(Expr)) {
+        collectVarNamesFromExpr(IfS->getCond(), names);
+        for (const auto& stmt : IfS->getThenBody())
+            collectVarNamesFromExpr(stmt.get(), names);
+        for (const auto& stmt : IfS->getElseBody())
+            collectVarNamesFromExpr(stmt.get(), names);
+        return;
+    }
+    if (auto* ForS = dynamic_cast<const ForStmtAST*>(Expr)) {
+        collectVarNamesFromExpr(ForS->getInit(), names);
+        collectVarNamesFromExpr(ForS->getCond(), names);
+        collectVarNamesFromExpr(ForS->getStep(), names);
+        for (const auto& stmt : ForS->getBody())
+            collectVarNamesFromExpr(stmt.get(), names);
+        return;
+    }
+    if (auto* WhileS = dynamic_cast<const WhileStmtAST*>(Expr)) {
+        collectVarNamesFromExpr(WhileS->getCond(), names);
+        for (const auto& stmt : WhileS->getBody())
+            collectVarNamesFromExpr(stmt.get(), names);
+        return;
+    }
+    if (auto* DoWhile = dynamic_cast<const DoWhileExprAST*>(Expr)) {
+        collectVarNamesFromExpr(DoWhile->getBody(), names);
+        collectVarNamesFromExpr(DoWhile->getCond(), names);
+        return;
+    }
+    if (auto* Yield = dynamic_cast<const YieldExprAST*>(Expr)) {
+        // YieldExprAST has no public accessor for its inner value; skip
+        return;
+    }
+    if (auto* AwaitE = dynamic_cast<const AwaitExprAST*>(Expr)) {
+        collectVarNamesFromExpr(AwaitE->getExpr(), names);
+        return;
+    }
+    if (auto* TryProp = dynamic_cast<const TryPropagateExprAST*>(Expr)) {
+        // TryPropagateExprAST has no public getter for its inner expr; skip
+        return;
+    }
+    if (auto* RE = dynamic_cast<const ReturnExprAST*>(Expr)) {
+        collectVarNamesFromExpr(RE->getVal(), names);
+        return;
+    }
+    if (auto* Brk = dynamic_cast<const BreakExprAST*>(Expr)) {
+        (void)Brk;
+        return;
+    }
+    if (auto* Cont = dynamic_cast<const ContinueExprAST*>(Expr)) {
+        (void)Cont;
+        return;
+    }
+    if (auto* TryCatch = dynamic_cast<const TryCatchExprAST*>(Expr)) {
+        collectVarNamesFromExpr(TryCatch->getTryBody(), names);
+        for (const auto& [var, handler] : TryCatch->getCatchClauses())
+            collectVarNamesFromExpr(handler.get(), names);
+        if (TryCatch->getFinallyBody())
+            collectVarNamesFromExpr(TryCatch->getFinallyBody(), names);
+        return;
+    }
+    if (auto* ThrowE = dynamic_cast<const ThrowExprAST*>(Expr)) {
+        // ThrowExprAST doesn't expose its inner expr publicly; skip for now
+        return;
+    }
+    // Lambda, Range, and other leaf-like types have no variable references to capture
+}
+
 TypedValue LambdaExprAST::codegen(CodegenContext& context)
 {
-    std::vector<llvm::Type*> ArgTypes(Args.size(), llvm::Type::getDoubleTy(context.TheContext));
-    llvm::FunctionType* LambdaTy =
-        llvm::FunctionType::get(llvm::Type::getDoubleTy(context.TheContext), ArgTypes, false);
-    llvm::Function* LambdaFn =
-        llvm::Function::Create(LambdaTy, llvm::Function::InternalLinkage, "lambda", context.TheModule);
-    llvm::BasicBlock* BB = llvm::BasicBlock::Create(context.TheContext, "entry", LambdaFn);
-    llvm::BasicBlock* OldBB = context.Builder.GetInsertBlock();
-    std::map<std::string, llvm::Value*> OldNamedValues = context.NamedValues;
-    auto OldMovedVars = context.MovedVariables;
-    context.NamedValues.clear();
-    context.MovedVariables.clear();
+    // --- Detect captured variables from enclosing scope ---
+    std::vector<std::string> varNames;
+    collectVarNamesFromExpr(Body.get(), varNames);
+
+    // Build set of lambda args for quick exclusion
+    std::set<std::string> argSet(Args.begin(), Args.end());
+
+    // Collect captures: variables referenced in body that exist in outer NamedValues
+    Captures.clear();
     {
-        llvm::IRBuilder<> LambdaBuilder(BB);
-        unsigned Idx = 0;
-        for (auto& Arg : LambdaFn->args()) {
-            Arg.setName(Args[Idx++]);
-            llvm::AllocaInst* Alloca =
-                LambdaBuilder.CreateAlloca(llvm::Type::getDoubleTy(context.TheContext), nullptr, Arg.getName());
-            LambdaBuilder.CreateStore(&Arg, Alloca);
-            context.NamedValues[std::string(Arg.getName())] = Alloca;
+        std::set<std::string> seen;
+        for (const auto& vn : varNames) {
+            if (argSet.count(vn)) continue;
+            if (seen.count(vn)) continue;
+            seen.insert(vn);
+            // Check if this name exists in the enclosing scope's NamedValues/NamedTypes
+            if (context.NamedValues.count(vn)) {
+                Captures.push_back(vn);
+            }
         }
+    }
+
+    llvm::Type* DoubleTy = llvm::Type::getDoubleTy(context.TheContext);
+    llvm::Type* Int64Ty = llvm::Type::getInt64Ty(context.TheContext);
+    llvm::Type* VoidPtrTy = llvm::PointerType::get(context.TheContext, 0);
+
+    if (Captures.empty()) {
+        // --- Non-capturing lambda: existing behavior (double fn ptr) ---
+        std::vector<llvm::Type*> ArgTypes(Args.size(), DoubleTy);
+        llvm::FunctionType* LambdaTy = llvm::FunctionType::get(DoubleTy, ArgTypes, false);
+        llvm::Function* LambdaFn =
+            llvm::Function::Create(LambdaTy, llvm::Function::InternalLinkage, "lambda", context.TheModule);
+        llvm::BasicBlock* BB = llvm::BasicBlock::Create(context.TheContext, "entry", LambdaFn);
+        llvm::BasicBlock* OldBB = context.Builder.GetInsertBlock();
+        std::map<std::string, llvm::Value*> OldNamedValues = context.NamedValues;
+        std::map<std::string, FluxType> OldNamedTypes = context.NamedTypes;
+        auto OldMovedVars = context.MovedVariables;
+        context.NamedValues.clear();
+        context.NamedTypes.clear();
+        context.MovedVariables.clear();
+        {
+            llvm::IRBuilder<> LambdaBuilder(BB);
+            unsigned Idx = 0;
+            for (auto& Arg : LambdaFn->args()) {
+                Arg.setName(Args[Idx++]);
+                llvm::AllocaInst* Alloca =
+                    LambdaBuilder.CreateAlloca(DoubleTy, nullptr, Arg.getName());
+                LambdaBuilder.CreateStore(&Arg, Alloca);
+                context.NamedValues[std::string(Arg.getName())] = Alloca;
+            }
+            context.Builder.SetInsertPoint(BB);
+            TypedValue BodyTV = Body->codegen(context);
+            if (BodyTV.Val)
+                context.Builder.CreateRet(BodyTV.Val);
+        }
+        if (OldBB)
+            context.Builder.SetInsertPoint(OldBB);
+        context.NamedValues = OldNamedValues;
+        context.NamedTypes = OldNamedTypes;
+        context.MovedVariables = OldMovedVars;
+        llvm::Value* fnInt = context.Builder.CreatePtrToInt(LambdaFn, Int64Ty, "lambda_fnptr_int");
+        llvm::Value* fnDouble = context.Builder.CreateBitCast(fnInt, DoubleTy, "lambda_fnptr");
+        FluxType FnTy(TypeKind::Double);
+        FnTy.GenericName = "lambda";
+        return TypedValue(fnDouble, FnTy);
+    }
+
+    // --- Capturing lambda: build closure with environment ---
+
+    // 1. Build environment struct type: one field per captured variable
+    std::vector<llvm::Type*> envFieldTypes;
+    std::vector<FluxType> envFieldFluxTypes;
+    for (const auto& cap : Captures) {
+        auto nvIt = context.NamedValues.find(cap);
+        llvm::Type* capTy = DoubleTy;
+        FluxType capFluxTy(TypeKind::Double);
+        if (nvIt != context.NamedValues.end()) {
+            if (auto* allocaI = llvm::dyn_cast<llvm::AllocaInst>(nvIt->second)) {
+                capTy = allocaI->getAllocatedType();
+            }
+            auto ntIt = context.NamedTypes.find(cap);
+            if (ntIt != context.NamedTypes.end()) {
+                capFluxTy = ntIt->second;
+                resolveUserStructType(capFluxTy, context);
+                resolveUserEnumType(capFluxTy, context);
+            }
+        }
+        envFieldTypes.push_back(capTy);
+        envFieldFluxTypes.push_back(capFluxTy);
+    }
+
+    std::string envStructName = "lambda_env." + std::to_string(reinterpret_cast<uintptr_t>(this));
+    llvm::StructType* EnvStructTy = llvm::StructType::create(context.TheContext, envFieldTypes, envStructName);
+
+    // 2. Create lambda function signature: double(double %env, double %arg1, ...)
+    std::vector<llvm::Type*> ClosureArgTypes = {DoubleTy}; // env ptr as double
+    for (size_t i = 0; i < Args.size(); ++i)
+        ClosureArgTypes.push_back(DoubleTy);
+    llvm::FunctionType* ClosureFnTy = llvm::FunctionType::get(DoubleTy, ClosureArgTypes, false);
+    llvm::Function* ClosureFn =
+        llvm::Function::Create(ClosureFnTy, llvm::Function::InternalLinkage, "lambda_closure", context.TheModule);
+
+    // 3. Generate lambda function body with capture loading
+    {
+        llvm::BasicBlock* BB = llvm::BasicBlock::Create(context.TheContext, "entry", ClosureFn);
+        llvm::BasicBlock* OldBB = context.Builder.GetInsertBlock();
+        std::map<std::string, llvm::Value*> OldNamedValues = context.NamedValues;
+        std::map<std::string, FluxType> OldNamedTypes = context.NamedTypes;
+        auto OldMovedVars = context.MovedVariables;
+        context.NamedValues.clear();
+        context.NamedTypes.clear();
+        context.MovedVariables.clear();
+
+        llvm::IRBuilder<> LambdaBuilder(BB);
+        auto ArgIt = ClosureFn->arg_begin();
+        // First arg: env pointer (as double)
+        llvm::Argument* EnvArg = ArgIt++;
+        EnvArg->setName("__closure_env");
+
+        // Setup args
+        unsigned Idx = 0;
+        for (; ArgIt != ClosureFn->arg_end(); ++ArgIt) {
+            ArgIt->setName(Args[Idx++]);
+            llvm::AllocaInst* Alloca =
+                LambdaBuilder.CreateAlloca(DoubleTy, nullptr, ArgIt->getName());
+            LambdaBuilder.CreateStore(&*ArgIt, Alloca);
+            context.NamedValues[std::string(ArgIt->getName())] = Alloca;
+        }
+
+        // Load captured variables from env struct
+        // env double -> i64 -> ptr -> bitcast to env struct ptr
+        llvm::Value* envInt = LambdaBuilder.CreateBitCast(EnvArg, Int64Ty, "env_int");
+        llvm::Value* envPtr = LambdaBuilder.CreateIntToPtr(envInt, VoidPtrTy, "env_ptr");
+        llvm::Value* envStructPtr = LambdaBuilder.CreatePointerCast(envPtr,
+            llvm::PointerType::get(context.TheContext, 0), "env_struct_ptr");
+
+        for (size_t ci = 0; ci < Captures.size(); ++ci) {
+            llvm::Value* fieldPtr = LambdaBuilder.CreateStructGEP(EnvStructTy, envStructPtr, ci, "env_" + Captures[ci]);
+            llvm::Value* loaded = LambdaBuilder.CreateLoad(envFieldTypes[ci], fieldPtr, Captures[ci]);
+            // Store into an alloca so the rest of the body can reference it as a normal variable
+            llvm::AllocaInst* capAlloca = LambdaBuilder.CreateAlloca(envFieldTypes[ci], nullptr, Captures[ci]);
+            LambdaBuilder.CreateStore(loaded, capAlloca);
+            context.NamedValues[Captures[ci]] = capAlloca;
+            context.NamedTypes[Captures[ci]] = envFieldFluxTypes[ci];
+        }
+
         context.Builder.SetInsertPoint(BB);
         TypedValue BodyTV = Body->codegen(context);
         if (BodyTV.Val)
             context.Builder.CreateRet(BodyTV.Val);
+
+        if (OldBB)
+            context.Builder.SetInsertPoint(OldBB);
+        context.NamedValues = OldNamedValues;
+        context.NamedTypes = OldNamedTypes;
+        context.MovedVariables = OldMovedVars;
     }
-    if (OldBB)
-        context.Builder.SetInsertPoint(OldBB);
-    context.NamedValues = OldNamedValues;
-    llvm::Type* Int64Ty = llvm::Type::getInt64Ty(context.TheContext);
-    llvm::Type* DoubleTy = llvm::Type::getDoubleTy(context.TheContext);
-    llvm::Value* fnInt = context.Builder.CreatePtrToInt(LambdaFn, Int64Ty, "lambda_fnptr_int");
-    llvm::Value* fnDouble = context.Builder.CreateBitCast(fnInt, DoubleTy, "lambda_fnptr");
-    FluxType FnTy(TypeKind::Double);
-    FnTy.GenericName = "lambda";
-    return TypedValue(fnDouble, FnTy);
+
+    // 4. Allocate and populate environment struct
+    llvm::AllocaInst* envAlloca = context.Builder.CreateAlloca(EnvStructTy, nullptr, "closure_env");
+    for (size_t ci = 0; ci < Captures.size(); ++ci) {
+        llvm::Value* srcPtr = context.NamedValues[Captures[ci]];
+        llvm::Value* srcVal = nullptr;
+        if (auto* allocaI = llvm::dyn_cast<llvm::AllocaInst>(srcPtr)) {
+            srcVal = context.Builder.CreateLoad(allocaI->getAllocatedType(), allocaI, "cap_" + Captures[ci]);
+        } else {
+            srcVal = context.Builder.CreateLoad(envFieldTypes[ci], srcPtr, "cap_" + Captures[ci]);
+        }
+        llvm::Value* dstPtr = context.Builder.CreateStructGEP(EnvStructTy, envAlloca, ci, "env_" + Captures[ci]);
+        context.Builder.CreateStore(srcVal, dstPtr);
+    }
+
+    // 5. Build closure struct { fnPtr (double), envPtr (double) }
+    // Register closure struct type if not already registered
+    if (context.ClosureStructTypeId < 0) {
+        auto closureStruct = llvm::StructType::create(
+            {DoubleTy, DoubleTy}, "__closure");
+        int newId = static_cast<int>(context.StructTypes.size());
+        CodegenContext::StructTypeInfo info;
+        info.Name = "__closure";
+        info.Fields = {{"fn", FluxType(TypeKind::Double)}, {"env", FluxType(TypeKind::Double)}};
+        info.LLVMType = closureStruct;
+        context.StructTypes.push_back(std::move(info));
+        context.StructTypeIndex["__closure"] = newId;
+        context.ClosureStructTypeId = newId;
+    }
+
+    llvm::StructType* ClosureStructTy = llvm::cast<llvm::StructType>(
+        context.StructTypes[context.ClosureStructTypeId].LLVMType);
+
+    llvm::AllocaInst* closureAlloca = context.Builder.CreateAlloca(ClosureStructTy, nullptr, "closure");
+    // Store fn ptr
+    llvm::Value* fnInt = context.Builder.CreatePtrToInt(ClosureFn, Int64Ty, "closure_fn_int");
+    llvm::Value* fnDouble = context.Builder.CreateBitCast(fnInt, DoubleTy, "closure_fn");
+    llvm::Value* fnField = context.Builder.CreateStructGEP(ClosureStructTy, closureAlloca, 0, "fn_field");
+    context.Builder.CreateStore(fnDouble, fnField);
+    // Store env ptr
+    llvm::Value* envInt = context.Builder.CreatePtrToInt(envAlloca, Int64Ty, "closure_env_int");
+    llvm::Value* envDouble = context.Builder.CreateBitCast(envInt, DoubleTy, "closure_env");
+    llvm::Value* envField = context.Builder.CreateStructGEP(ClosureStructTy, closureAlloca, 1, "env_field");
+    context.Builder.CreateStore(envDouble, envField);
+
+    llvm::Value* closureVal = context.Builder.CreateLoad(ClosureStructTy, closureAlloca, "closure_val");
+    FluxType closureType = FluxType::userStruct(context.ClosureStructTypeId, ClosureStructTy);
+    closureType.isCopy = true;
+    return TypedValue(closureVal, closureType);
 }
 
 } // namespace Flux
