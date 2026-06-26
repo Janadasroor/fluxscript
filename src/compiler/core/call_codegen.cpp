@@ -786,7 +786,11 @@ TypedValue CallExprAST::codegen(CodegenContext& context)
     }
 
     // Handle print_sep(a, b, sep) — print a and b separated by sep
-    if (Name == "print_sep" && Args.size() == 3) {
+    if (Name == "print_sep") {
+        if (Args.size() != 3) {
+            std::cerr << "[FLUX ERROR] print_sep expects exactly 3 arguments: print_sep(a, b, separator)\n";
+            return TypedValue();
+        }
         TypedValue ArgA = Args[0]->codegen(context);
         TypedValue ArgB = Args[1]->codegen(context);
         TypedValue ArgSep = Args[2]->codegen(context);
@@ -814,7 +818,11 @@ TypedValue CallExprAST::codegen(CodegenContext& context)
     }
 
     // Handle print_end(x, end) — print x followed by custom end string
-    if (Name == "print_end" && Args.size() == 2) {
+    if (Name == "print_end") {
+        if (Args.size() != 2) {
+            std::cerr << "[FLUX ERROR] print_end expects exactly 2 arguments: print_end(value, end_string)\n";
+            return TypedValue();
+        }
         TypedValue ArgX = Args[0]->codegen(context);
         TypedValue ArgEnd = Args[1]->codegen(context);
         if (!ArgX.Val || !ArgEnd.Val)
