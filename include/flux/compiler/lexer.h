@@ -101,6 +101,7 @@ enum class TokenType
 
     // String literals
     tok_string = -44, // Quoted string (e.g., "hello")
+    tok_fstring = -444, // F-string (e.g., f"hello {x}")
 
     // Element-wise operators (MATLAB-style)
     tok_ew_mul = -45,   // .*  element-wise multiply

@@ -785,6 +785,54 @@ TypedValue CallExprAST::codegen(CodegenContext& context)
         return TypedValue(llvm::ConstantFP::get(llvm::Type::getDoubleTy(context.TheContext), 0.0), TypeKind::Double);
     }
 
+    // Handle print_sep(a, b, sep) — print a and b separated by sep
+    if (Name == "print_sep" && Args.size() == 3) {
+        TypedValue ArgA = Args[0]->codegen(context);
+        TypedValue ArgB = Args[1]->codegen(context);
+        TypedValue ArgSep = Args[2]->codegen(context);
+        if (!ArgA.Val || !ArgB.Val || !ArgSep.Val)
+            return TypedValue();
+
+        // Convert to double if needed
+        llvm::Value* ValA = ArgA.Val;
+        if (ArgA.Type.Kind == TypeKind::String) {
+            // String is already a double (bitcasted pointer)
+        } else if (!ValA->getType()->isDoubleTy()) {
+            ValA = context.Builder.CreateSIToFP(ValA, llvm::Type::getDoubleTy(context.TheContext));
+        }
+        llvm::Value* ValB = ArgB.Val;
+        if (ArgB.Type.Kind == TypeKind::String) {
+        } else if (!ValB->getType()->isDoubleTy()) {
+            ValB = context.Builder.CreateSIToFP(ValB, llvm::Type::getDoubleTy(context.TheContext));
+        }
+
+        llvm::Function* PrintSepFn = context.TheModule->getFunction("flux_print_sep");
+        if (PrintSepFn) {
+            context.Builder.CreateCall(PrintSepFn, {ValA, ValB, ArgSep.Val});
+        }
+        return TypedValue(llvm::ConstantFP::get(llvm::Type::getDoubleTy(context.TheContext), 0.0), TypeKind::Double);
+    }
+
+    // Handle print_end(x, end) — print x followed by custom end string
+    if (Name == "print_end" && Args.size() == 2) {
+        TypedValue ArgX = Args[0]->codegen(context);
+        TypedValue ArgEnd = Args[1]->codegen(context);
+        if (!ArgX.Val || !ArgEnd.Val)
+            return TypedValue();
+
+        llvm::Value* ValX = ArgX.Val;
+        if (ArgX.Type.Kind == TypeKind::String) {
+        } else if (!ValX->getType()->isDoubleTy()) {
+            ValX = context.Builder.CreateSIToFP(ValX, llvm::Type::getDoubleTy(context.TheContext));
+        }
+
+        llvm::Function* PrintEndFn = context.TheModule->getFunction("flux_print_end");
+        if (PrintEndFn) {
+            context.Builder.CreateCall(PrintEndFn, {ValX, ArgEnd.Val});
+        }
+        return TypedValue(llvm::ConstantFP::get(llvm::Type::getDoubleTy(context.TheContext), 0.0), TypeKind::Double);
+    }
+
     if (Args.size() == 1) {
         TypedValue Arg = Args[0]->codegen(context);
         if (!Arg.Val) {

@@ -172,6 +172,8 @@ extern "C" double flux_set_diagnostic(double node_dbl, double type_dbl, double t
 extern "C" double flux_gpu_available();
 extern "C" void flux_gpu_set_enabled(double enabled);
 extern "C" double flux_print_double(double x);
+extern "C" double flux_print_sep(double a, double b, double sep_str_dbl);
+extern "C" double flux_print_end(double x, double end_str_dbl);
 extern "C" void* flux_malloc(size_t size);
 extern "C" void flux_free_all_allocations();
 extern "C" double flux_dyn_ptr_push(double data, double vtable);
@@ -471,6 +473,8 @@ void registerRuntimeFunctions(FluxJIT& jit)
     jit.registerFunction("pow", (void*)&flux_pow);
     jit.registerFunction("flux_print_string", (void*)&flux_print_string);
     jit.registerFunction("flux_print_double", (void*)&flux_print_double);
+    jit.registerFunction("flux_print_sep", (void*)&flux_print_sep);
+    jit.registerFunction("flux_print_end", (void*)&flux_print_end);
     jit.registerFunction("flux_malloc", (void*)&flux_malloc);
     jit.registerFunction("flux_free_all_allocations", (void*)&flux_free_all_allocations);
     jit.registerFunction("flux_dyn_ptr_push", (void*)&flux_dyn_ptr_push);

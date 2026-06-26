@@ -349,6 +349,12 @@ int Lexer::gettok()
             IdentifierStr += m_lastChar;
         }
 
+        // Check for f-string: f"..." syntax
+        if (IdentifierStr == "f" && m_lastChar == '"') {
+            // Re-lex as f-string
+            return gettok(); // Will re-enter and hit the '"' branch with f-string logic
+        }
+
         if (IdentifierStr == "def")
             return static_cast<int>(TokenType::tok_def);
         if (IdentifierStr == "extern")
@@ -1036,7 +1042,15 @@ int Lexer::gettok()
         return static_cast<int>(TokenType::tok_dot);
     }
 
-    if (m_lastChar == '"') { // String literal: "..."
+    if (m_lastChar == '"' || m_lastChar == 'f') { // String literal: "..." or f"..."
+        bool isFString = (m_lastChar == 'f');
+        if (isFString) {
+            advance(); // consume 'f'
+            if (m_lastChar != '"') {
+                reportError("expected '\"' after 'f' in f-string");
+                return gettok();
+            }
+        }
         advance();           // consume opening quote
         StringVal = "";
         while (m_lastChar != '"' && m_lastChar != EOF && m_lastChar != '\n') {
@@ -1073,7 +1087,7 @@ int Lexer::gettok()
         } else {
             reportError("unterminated string literal");
         }
-        return static_cast<int>(TokenType::tok_string);
+        return static_cast<int>(isFString ? TokenType::tok_fstring : TokenType::tok_string);
     }
 
     if (m_lastChar == '#') {

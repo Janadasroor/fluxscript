@@ -639,6 +639,46 @@ extern "C" double flux_print_double(double x)
     return x;
 }
 
+// print_sep(a, b, sep) — print a and b separated by sep
+extern "C" double flux_print_sep(double a, double b, double sep_str_dbl)
+{
+    // Print first value
+    if (auto* strA = reinterpret_cast<const char*>(static_cast<uintptr_t>(jit_bitcast<uint64_t>(a)))) {
+        fwrite(strA, 1, strlen(strA), stdout);
+    } else {
+        printf("%g", a);
+    }
+    // Print separator
+    const char* sep = reinterpret_cast<const char*>(static_cast<uintptr_t>(jit_bitcast<uint64_t>(sep_str_dbl)));
+    if (sep) {
+        fwrite(sep, 1, strlen(sep), stdout);
+    }
+    // Print second value
+    if (auto* strB = reinterpret_cast<const char*>(static_cast<uintptr_t>(jit_bitcast<uint64_t>(b)))) {
+        fwrite(strB, 1, strlen(strB), stdout);
+    } else {
+        printf("%g", b);
+    }
+    fflush(stdout);
+    return 0.0;
+}
+
+// print_end(x, end) — print x followed by custom end string (no newline)
+extern "C" double flux_print_end(double x, double end_str_dbl)
+{
+    if (auto* str = reinterpret_cast<const char*>(static_cast<uintptr_t>(jit_bitcast<uint64_t>(x)))) {
+        fwrite(str, 1, strlen(str), stdout);
+    } else {
+        printf("%g", x);
+    }
+    const char* end = reinterpret_cast<const char*>(static_cast<uintptr_t>(jit_bitcast<uint64_t>(end_str_dbl)));
+    if (end) {
+        fwrite(end, 1, strlen(end), stdout);
+    }
+    fflush(stdout);
+    return 0.0;
+}
+
 static thread_local std::vector<std::pair<double, double>> g_goals;
 extern "C" void flux_register_goal(double current, double target)
 {

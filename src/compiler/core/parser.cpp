@@ -254,6 +254,13 @@ std::unique_ptr<ExprAST> Parser::ParseStringExpr()
     return Result;
 }
 
+std::unique_ptr<ExprAST> Parser::ParseFStringExpr()
+{
+    // F-strings are syntactic sugar for "${...}" interpolation
+    // The lexer already stored the content in StringVal
+    return ParseStringExpr();
+}
+
 std::unique_ptr<ExprAST> Parser::ParseBoolExpr()
 {
     int line = m_lexer.getCurrentLine();
@@ -1068,6 +1075,9 @@ std::unique_ptr<ExprAST> Parser::ParsePrimary()
         break;
     case static_cast<int>(TokenType::tok_string):
         Res = ParseStringExpr();
+        break;
+    case static_cast<int>(TokenType::tok_fstring):
+        Res = ParseFStringExpr();
         break;
     case '(':
         Res = ParseParenExpr();

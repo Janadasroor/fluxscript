@@ -173,6 +173,8 @@ void CompilerInstance::injectStandardLibrary(CodegenContext& context,
     regExtern("flux_regex_match", DblTy(), {DblTy(), DblTy()});
     regExtern("flux_regex_replace", DblTy(), {DblTy(), DblTy(), DblTy()});
     regExtern("flux_print_string", DblTy(), {DblTy()});
+    regExtern("flux_print_sep", DblTy(), {DblTy(), DblTy(), DblTy()});
+    regExtern("flux_print_end", DblTy(), {DblTy(), DblTy()});
 
     // Bridge string utility functions (return String handles as opaque doubles)
     regExtern("flux_str_len", DblTy(), {DblTy()});
