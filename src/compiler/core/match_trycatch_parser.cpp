@@ -240,11 +240,12 @@ std::unique_ptr<ExprAST> Parser::ParseMatchExpr()
                 if (CurTok == '_') {
                     getNextToken(); // eat _
 
-                    if (CurTok != static_cast<int>(TokenType::tok_arrow)) {
-                        ReportError("expected '=>' after match pattern");
+                    if (CurTok != static_cast<int>(TokenType::tok_arrow) &&
+                        CurTok != static_cast<int>(TokenType::tok_fat_arrow)) {
+                        ReportError("expected '->' or '=>' after match pattern");
                         return nullptr;
                     }
-                    getNextToken(); // eat =>
+                    getNextToken(); // eat -> or =>
 
                     auto result = ParseExpression();
                     if (!result)
@@ -354,11 +355,12 @@ std::unique_ptr<ExprAST> Parser::ParseMatchExpr()
                     patterns.push_back(std::move(pattern));
                 }
 
-                if (CurTok != static_cast<int>(TokenType::tok_arrow)) {
-                    ReportError("expected '=>' after match pattern");
+                if (CurTok != static_cast<int>(TokenType::tok_arrow) &&
+                    CurTok != static_cast<int>(TokenType::tok_fat_arrow)) {
+                    ReportError("expected '->' or '=>' after match pattern");
                     return nullptr;
                 }
-                getNextToken(); // eat =>
+                getNextToken(); // eat -> or =>
 
                 auto result = ParseExpression();
                 if (!result)
@@ -371,11 +373,12 @@ std::unique_ptr<ExprAST> Parser::ParseMatchExpr()
                 }
             } else if (CurTok == static_cast<int>(TokenType::tok_default)) {
                 getNextToken(); // eat default
-                if (CurTok != static_cast<int>(TokenType::tok_arrow)) {
-                    ReportError("expected '=>' after default");
+                if (CurTok != static_cast<int>(TokenType::tok_arrow) &&
+                    CurTok != static_cast<int>(TokenType::tok_fat_arrow)) {
+                    ReportError("expected '->' or '=>' after default");
                     return nullptr;
                 }
-                getNextToken(); // eat =>
+                getNextToken(); // eat -> or =>
 
                 auto defaultResult = ParseExpression();
                 if (!defaultResult)

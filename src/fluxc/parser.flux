@@ -502,6 +502,11 @@ def tok_expect(self: Compiler, tt: TokenType, msg: String) {
     self.parse_err(msg);
 }
 
+def tok_expect_arrow(self: Compiler, msg: String) {
+    if (self.tok_type == TokenType.Arrow || self.tok_type == TokenType.FatArrow) { self.lex_next(); return 0.0; }
+    self.parse_err(msg);
+}
+
 // ===================================================================
 // EXPRESSION PARSING
 // ===================================================================
@@ -1461,7 +1466,7 @@ def parse_lambda(self: Compiler) -> Double {
         }
     }
     self.tok_expect(TokenType.RParen, "expected ')'");
-    self.tok_expect(TokenType.Arrow, "expected '->' in lambda");
+    self.tok_expect_arrow("expected '->' or '=>' in lambda");
     // Save state
     let prev_fn = self.cur_fn;
     let prev_entry = self.entry_bb;
@@ -1533,7 +1538,7 @@ def parse_match(self: Compiler) -> Double {
     while (self.tok_type != TokenType.RBrace && self.tok_type != TokenType.Eof) {
         if (self.tok_type == TokenType.KwDefault) {
             self.lex_next();
-            self.tok_expect(TokenType.Arrow, "expected '->'");
+            self.tok_expect_arrow("expected '->' or '=>'");
             let def_bb = flux_llvm_append_basic_block(self.cur_fn, "mdef");
             flux_llvm_build_br(self.bld, def_bb);
             flux_llvm_position_builder_at_end(self.bld, def_bb);
@@ -1576,7 +1581,7 @@ def parse_match(self: Compiler) -> Double {
                     parsing_patterns = 0.0;
                 }
             }
-            self.tok_expect(TokenType.Arrow, "expected '->'");
+            self.tok_expect_arrow("expected '->' or '=>'");
 
             // Find if any pattern has a payload variable
             let has_any_payload_var = 0.0;
