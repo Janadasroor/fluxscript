@@ -456,6 +456,13 @@ if(NOT CMAKE_CROSSCOMPILING)
     if(STDLIB_BC_FILES)
         add_custom_target(stdlib_bc ALL DEPENDS ${STDLIB_BC_FILES})
     endif()
+
+    # Validate embedded examples at build time — fails build if any example breaks
+    add_custom_target(validate_examples ALL
+        COMMAND $<TARGET_FILE:flux> examples --validate
+        DEPENDS flux
+        COMMENT "Validating embedded code examples"
+    )
 endif()
 
 add_executable(flux-pkg cli/flux-pkg.cpp)
