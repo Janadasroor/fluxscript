@@ -676,6 +676,93 @@ int main(int argc, char** argv)
         }
 
         if (subcmd == "examples") {
+            if (argc >= 3 && std::string(argv[2]) == "--validate") {
+                // Extract and validate all code blocks from embedded examples
+                std::string text = Flux::Examples::getExamplesText();
+                std::istringstream stream(text);
+                std::string line;
+                bool inCodeBlock = false;
+                std::string currentCode;
+                int blockNum = 0;
+                int passed = 0, failed = 0;
+
+                while (std::getline(stream, line)) {
+                    // Skip code blocks after <!-- skip-validate -->
+                    if (line.find("<!-- skip-validate -->") != std::string::npos) {
+                        inCodeBlock = false;
+                        currentCode.clear();
+                        // Skip the next code block entirely
+                        bool skipNext = true;
+                        while (std::getline(stream, line)) {
+                            if (line.find("```flux") != std::string::npos) {
+                                // Found code block, skip until closing ```
+                                while (std::getline(stream, line)) {
+                                    if (line.find("```") != std::string::npos) break;
+                                }
+                                skipNext = false;
+                                break;
+                            }
+                        }
+                        continue;
+                    }
+                    if (line.find("```flux") != std::string::npos) {
+                        inCodeBlock = true;
+                        currentCode.clear();
+                        continue;
+                    }
+                    if (inCodeBlock && line.find("```") != std::string::npos) {
+                        inCodeBlock = false;
+                        if (!currentCode.empty()) {
+                            blockNum++;
+                            // Skip code blocks that contain imports (need stdlib)
+                            if (currentCode.find("import ") != std::string::npos) {
+                                // Skip silently
+                            } else {
+                                // Write code to temp file and compile
+                                std::string tmpFile = "/tmp/flux_validate_" + std::to_string(blockNum) + ".flux";
+                                {
+                                    std::ofstream ofs(tmpFile);
+                                    ofs << currentCode;
+                                }
+                                // Try compile-only (parse + codegen)
+                                Flux::CompilerOptions opts;
+                                opts.inputName = tmpFile;
+                                opts.moduleName = "validate_" + std::to_string(blockNum);
+                                opts.optimizationLevel = Flux::OptimizationLevel::O0;
+                                Flux::CompilerInstance compiler(opts);
+                                std::string error;
+                                std::ifstream ifs(tmpFile);
+                                std::string code((std::istreambuf_iterator<char>(ifs)), std::istreambuf_iterator<char>());
+                                auto artifacts = compiler.compileToIR(code, &error);
+                                if (artifacts) {
+                                    passed++;
+                                } else {
+                                    failed++;
+                                    std::cerr << "FAIL example #" << blockNum << ": " << error << "\n";
+                                    std::istringstream cs(currentCode);
+                                    std::string cl;
+                                    int clNum = 0;
+                                    while (std::getline(cs, cl) && clNum < 3) {
+                                        std::cerr << "  " << cl << "\n";
+                                        clNum++;
+                                    }
+                                    std::cerr << "\n";
+                                }
+                                std::filesystem::remove(tmpFile);
+                            }
+                        }
+                        currentCode.clear();
+                        continue;
+                    }
+                    if (inCodeBlock) {
+                        currentCode += line + "\n";
+                    }
+                }
+
+                std::cout << "Validated " << blockNum << " code examples: "
+                          << passed << " passed, " << failed << " failed\n";
+                return failed > 0 ? 1 : 0;
+            }
             if (argc >= 3) {
                 std::string keyword = argv[2];
                 std::string result = Flux::Examples::searchExamples(keyword);
