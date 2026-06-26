@@ -1331,6 +1331,24 @@ TypedValue AssignExprAST::codegen(CodegenContext& context)
             storeVal = tempAlloca;
         }
     }
+    // If the variable is a reference type, dereference the pointer before storing
+    if (VarFluxTy.Kind == TypeKind::Ref && Variable->getType()->isPointerTy()) {
+        auto* allocaInst = llvm::dyn_cast<llvm::AllocaInst>(Variable);
+        if (allocaInst && allocaInst->getAllocatedType()->isPointerTy()) {
+            llvm::Value* ptr = context.Builder.CreateLoad(allocaInst->getAllocatedType(), Variable, "deref_ptr");
+            if (VarFluxTy.RefInnerType) {
+                llvm::Type* innerTy = VarFluxTy.RefInnerType->getLLVMType(context.TheContext);
+                if (innerTy && storeVal->getType() != innerTy) {
+                    if (storeVal->getType()->isFloatingPointTy() && innerTy->isIntegerTy())
+                        storeVal = context.Builder.CreateFPToSI(storeVal, innerTy, "ref_cast");
+                    else if (storeVal->getType()->isIntegerTy() && innerTy->isFloatingPointTy())
+                        storeVal = context.Builder.CreateSIToFP(storeVal, innerTy, "ref_cast");
+                }
+            }
+            context.Builder.CreateStore(storeVal, ptr);
+            return ValTV;
+        }
+    }
     context.Builder.CreateStore(storeVal, Variable);
     return ValTV;
 }
