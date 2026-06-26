@@ -66,6 +66,10 @@ double flux_fetch_url(double url_ptr);
 // String operations (defined in string_runtime.cpp)
 double flux_strcmp(double a_ptr, double b_ptr);
 double flux_vec_eq(double* a_data, int a_size, double* b_data, int b_size);
+double* flux_vec_add(double* a_data, int a_size, double* b_data, int b_size);
+double* flux_vec_sub(double* a_data, int a_size, double* b_data, int b_size);
+double* flux_vec_mul(double* a_data, int a_size, double* b_data, int b_size);
+double* flux_vec_div(double* a_data, int a_size, double* b_data, int b_size);
 double flux_strlen(double s_ptr);
 double flux_string_at(double s_ptr, double index);
 double flux_string_slice(double s_ptr, double start, double end);

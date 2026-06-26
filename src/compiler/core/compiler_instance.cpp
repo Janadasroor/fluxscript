@@ -392,6 +392,25 @@ void CompilerInstance::injectStandardLibrary(CodegenContext& context,
     registerStringMethod("cmp", "flux_strcmp", 1);
     registerStringMethod("concat", "flux_string_concat", 1);
     registerStringMethod("regex", "flux_regex_match", 1);
+
+    // Register Vector.len method
+    {
+        llvm::Type* DoubleTy = llvm::Type::getDoubleTy(context.TheContext);
+        llvm::Type* Int32Ty = llvm::Type::getInt32Ty(context.TheContext);
+        llvm::StructType* VecSTy = llvm::cast<llvm::StructType>(FluxType(TypeKind::Vector).getLLVMType(context.TheContext));
+        std::vector<llvm::Type*> paramTypes = {VecSTy};
+        auto* ft = llvm::FunctionType::get(DoubleTy, paramTypes, false);
+        std::string fullName = "Vector.len";
+        auto* func = llvm::Function::Create(ft, llvm::Function::InternalLinkage, fullName, context.TheModule);
+        auto* entry = llvm::BasicBlock::Create(context.TheContext, "entry", func);
+        context.Builder.SetInsertPoint(entry);
+        auto* selfVal = func->arg_begin();
+        auto* lenVal = context.Builder.CreateExtractValue(selfVal, 1, "vec_len");
+        auto* lenDouble = context.Builder.CreateSIToFP(lenVal, DoubleTy, "len_dbl");
+        context.Builder.CreateRet(lenDouble);
+        context.TypeMethods["Vector"]["len"] = func;
+        context.FuncReturnTypes[fullName] = FluxType(TypeKind::Double);
+    }
 }
 
 std::string CompilerInstance::resolveImportPath(const std::string& moduleName) const

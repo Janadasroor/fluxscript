@@ -4,6 +4,7 @@
 #include "flux/runtime/runtime_helpers.h"
 #include "flux/runtime/string_pool.h"
 #include <algorithm>
+#include <cstdlib>
 #include <cmath>
 #include <cstdint>
 #include <cstdlib>
@@ -20,6 +21,8 @@ extern "C" double flux_strcmp(double a_ptr, double b_ptr)
     return static_cast<double>(std::strcmp(a, b));
 }
 
+extern "C" void* flux_malloc(size_t size);
+
 extern "C" double flux_vec_eq(double* a_data, int a_size, double* b_data, int b_size)
 {
     if (a_size != b_size)
@@ -29,6 +32,42 @@ extern "C" double flux_vec_eq(double* a_data, int a_size, double* b_data, int b_
             return 0.0;
     }
     return 1.0;
+}
+
+extern "C" double* flux_vec_add(double* a_data, int a_size, double* b_data, int b_size)
+{
+    if (a_size != b_size) return nullptr;
+    double* result = (double*)flux_malloc(a_size * sizeof(double));
+    for (int i = 0; i < a_size; ++i)
+        result[i] = a_data[i] + b_data[i];
+    return result;
+}
+
+extern "C" double* flux_vec_sub(double* a_data, int a_size, double* b_data, int b_size)
+{
+    if (a_size != b_size) return nullptr;
+    double* result = (double*)flux_malloc(a_size * sizeof(double));
+    for (int i = 0; i < a_size; ++i)
+        result[i] = a_data[i] - b_data[i];
+    return result;
+}
+
+extern "C" double* flux_vec_mul(double* a_data, int a_size, double* b_data, int b_size)
+{
+    if (a_size != b_size) return nullptr;
+    double* result = (double*)flux_malloc(a_size * sizeof(double));
+    for (int i = 0; i < a_size; ++i)
+        result[i] = a_data[i] * b_data[i];
+    return result;
+}
+
+extern "C" double* flux_vec_div(double* a_data, int a_size, double* b_data, int b_size)
+{
+    if (a_size != b_size) return nullptr;
+    double* result = (double*)flux_malloc(a_size * sizeof(double));
+    for (int i = 0; i < a_size; ++i)
+        result[i] = a_data[i] / b_data[i];
+    return result;
 }
 
 extern "C" double flux_strlen(double s_ptr)

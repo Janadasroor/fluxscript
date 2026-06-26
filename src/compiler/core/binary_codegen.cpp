@@ -274,7 +274,9 @@ TypedValue BinaryExprAST::codegen(CodegenContext& context)
                 return TypedValue();
             }
         } else if (L.Type.Kind == TypeKind::Vector && R.Type.Kind == TypeKind::Vector) {
-            if (Op != static_cast<int>(TokenType::tok_equal) && Op != static_cast<int>(TokenType::tok_not_equal)) {
+            if (Op != '+' && Op != '-' && Op != '*' && Op != '/' &&
+                Op != static_cast<int>(TokenType::tok_equal) && 
+                Op != static_cast<int>(TokenType::tok_not_equal)) {
                 std::cerr << "Type error: cannot use vector in operation '" << (char)Op << "'" << std::endl;
                 return TypedValue();
             }
@@ -654,6 +656,46 @@ TypedValue BinaryExprAST::codegen(CodegenContext& context)
                                                                IsEq, llvm::ConstantFP::get(DoubleTy, 1.0), "vecne_cmp"),
                                                            DoubleTy, "booltmp"),
                               TypeKind::Bool);
+    }
+
+    // Vector arithmetic: +, -, *, /
+    if (L.Type.Kind == TypeKind::Vector && R.Type.Kind == TypeKind::Vector &&
+        (Op == '+' || Op == '-' || Op == '*' || Op == '/')) {
+        llvm::Type* DoubleTy = llvm::Type::getDoubleTy(context.TheContext);
+        llvm::Type* Int32Ty = llvm::Type::getInt32Ty(context.TheContext);
+        llvm::Type* VoidPtrTy = llvm::PointerType::get(context.TheContext, 0);
+
+        std::string fnName;
+        switch (Op) {
+            case '+': fnName = "flux_vec_add"; break;
+            case '-': fnName = "flux_vec_sub"; break;
+            case '*': fnName = "flux_vec_mul"; break;
+            case '/': fnName = "flux_vec_div"; break;
+        }
+
+        llvm::Function* VecOpF = context.TheModule->getFunction(fnName);
+        if (!VecOpF) {
+            llvm::FunctionType* FTy = llvm::FunctionType::get(
+                VoidPtrTy, {VoidPtrTy, Int32Ty, VoidPtrTy, Int32Ty}, false);
+            VecOpF = llvm::Function::Create(FTy, llvm::Function::ExternalLinkage, fnName, context.TheModule);
+        }
+
+        llvm::Value* LData = context.Builder.CreateExtractValue(L.Val, 0, "l_vec_ptr");
+        llvm::Value* LLen = context.Builder.CreateExtractValue(L.Val, 1, "l_vec_len");
+        llvm::Value* RData = context.Builder.CreateExtractValue(R.Val, 0, "r_vec_ptr");
+        llvm::Value* RLen = context.Builder.CreateExtractValue(R.Val, 1, "r_vec_len");
+
+        llvm::Value* ResData = context.Builder.CreateCall(VecOpF, {LData, LLen, RData, RLen}, "vec_res");
+        ResData = context.Builder.CreatePointerCast(ResData, llvm::PointerType::get(DoubleTy, 0), "vec_res_dblptr");
+
+        llvm::StructType* VecSTy = llvm::cast<llvm::StructType>(
+            FluxType(TypeKind::Vector).getLLVMType(context.TheContext));
+        llvm::Value* VecVal = llvm::PoisonValue::get(VecSTy);
+        VecVal = context.Builder.CreateInsertValue(VecVal, ResData, 0);
+        VecVal = context.Builder.CreateInsertValue(VecVal, LLen, 1);
+
+        FluxType resType(TypeKind::Vector);
+        return TypedValue(VecVal, resType);
     }
 
     llvm::Value* LV = L.Val;

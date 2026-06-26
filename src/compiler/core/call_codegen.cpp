@@ -510,6 +510,8 @@ TypedValue CallExprAST::codegen(CodegenContext& context)
                 typeName = context.EnumTypes[objVal.Type.EnumTypeId].Name;
             } else if (objVal.Type.Kind == TypeKind::String) {
                 typeName = "String";
+            } else if (objVal.Type.Kind == TypeKind::Vector) {
+                typeName = "Vector";
             }
 
             if (typeName.empty()) {
@@ -1473,7 +1475,8 @@ TypedValue CallExprAST::codegen(CodegenContext& context)
         llvm::Type* ArgExpectedTy =
             (ParamIdx < (unsigned)CalleeF->arg_size()) ? CalleeF->getArg(ParamIdx)->getType() : nullptr;
         if (ArgExpectedTy && ArgExpectedTy->isPointerTy() &&
-            (ArgTVs[i].Type.Kind == TypeKind::Matrix || ArgTVs[i].Type.Kind == TypeKind::ComplexMatrix)) {
+            (ArgTVs[i].Type.Kind == TypeKind::Matrix || ArgTVs[i].Type.Kind == TypeKind::ComplexMatrix ||
+             ArgTVs[i].Type.Kind == TypeKind::Vector)) {
             ArgV = context.Builder.CreateExtractValue(ArgV, 0, "mat_ptr");
         }
 
@@ -1604,7 +1607,8 @@ TypedValue CallExprAST::codegen(CodegenContext& context)
                     }
                 }
             } else if (ExpectedTy->isFloatingPointTy() && ArgV->getType()->isStructTy() &&
-                       (ArgTVs[i].Type.Kind == TypeKind::Matrix || ArgTVs[i].Type.Kind == TypeKind::ComplexMatrix)) {
+                       (ArgTVs[i].Type.Kind == TypeKind::Matrix || ArgTVs[i].Type.Kind == TypeKind::ComplexMatrix ||
+                        ArgTVs[i].Type.Kind == TypeKind::Vector)) {
                 ArgV = context.Builder.CreateExtractValue(ArgV, 0, "mat_ptr");
                 llvm::Type* Int64Ty = llvm::Type::getInt64Ty(context.TheContext);
                 ArgV = context.Builder.CreatePtrToInt(ArgV, Int64Ty, "ptr_to_int");

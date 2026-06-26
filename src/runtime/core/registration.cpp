@@ -85,6 +85,10 @@ extern "C" double flux_string_slice(double s_ptr, double start, double end);
 extern "C" double flux_string_find(double s_ptr, double c);
 extern "C" double flux_parse_number(double s_ptr);
 extern "C" double flux_vec_eq(double* a_data, int a_size, double* b_data, int b_size);
+extern "C" double* flux_vec_add(double* a_data, int a_size, double* b_data, int b_size);
+extern "C" double* flux_vec_sub(double* a_data, int a_size, double* b_data, int b_size);
+extern "C" double* flux_vec_mul(double* a_data, int a_size, double* b_data, int b_size);
+extern "C" double* flux_vec_div(double* a_data, int a_size, double* b_data, int b_size);
 
 // File I/O
 extern "C" double flux_fopen(double filename_ptr, double mode_ptr);
@@ -617,6 +621,12 @@ void registerRuntimeFunctions(FluxJIT& jit)
     jit.registerFunction("flux_double_to_string", (void*)&flux_double_to_string);
     jit.registerFunction("flux_regex_match", (void*)&flux_regex_match);
     jit.registerFunction("flux_regex_replace", (void*)&flux_regex_replace);
+
+    // Vector arithmetic
+    jit.registerFunction("flux_vec_add", (void*)&flux_vec_add);
+    jit.registerFunction("flux_vec_sub", (void*)&flux_vec_sub);
+    jit.registerFunction("flux_vec_mul", (void*)&flux_vec_mul);
+    jit.registerFunction("flux_vec_div", (void*)&flux_vec_div);
 
     // FFT
     jit.registerFunction("fft", (void*)&flux_fft);
