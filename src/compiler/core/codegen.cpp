@@ -1843,7 +1843,13 @@ TypedValue LambdaExprAST::codegen(CodegenContext& context)
     if (OldBB)
         context.Builder.SetInsertPoint(OldBB);
     context.NamedValues = OldNamedValues;
-    return TypedValue(llvm::ConstantFP::get(llvm::Type::getDoubleTy(context.TheContext), 0.0), TypeKind::Double);
+    llvm::Type* Int64Ty = llvm::Type::getInt64Ty(context.TheContext);
+    llvm::Type* DoubleTy = llvm::Type::getDoubleTy(context.TheContext);
+    llvm::Value* fnInt = context.Builder.CreatePtrToInt(LambdaFn, Int64Ty, "lambda_fnptr_int");
+    llvm::Value* fnDouble = context.Builder.CreateBitCast(fnInt, DoubleTy, "lambda_fnptr");
+    FluxType FnTy(TypeKind::Double);
+    FnTy.GenericName = "lambda";
+    return TypedValue(fnDouble, FnTy);
 }
 
 } // namespace Flux
