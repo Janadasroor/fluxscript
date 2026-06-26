@@ -842,7 +842,7 @@ std::unique_ptr<ExprAST> Parser::ParseLambdaExpr()
         return nullptr;
     }
     getNextToken();
-    std::vector<std::string> Args;
+    std::vector<std::pair<std::string, FluxType>> Args;
     if (CurTok != ')') {
         while (true) {
             if (CurTok != static_cast<int>(TokenType::tok_identifier) &&
@@ -852,8 +852,14 @@ std::unique_ptr<ExprAST> Parser::ParseLambdaExpr()
                 ReportError("expected identifier in lambda args");
                 return nullptr;
             }
-            Args.push_back(m_lexer.IdentifierStr);
+            std::string ArgName = m_lexer.IdentifierStr;
             getNextToken();
+            FluxType ArgType(TypeKind::Double);
+            if (CurTok == static_cast<int>(TokenType::tok_colon)) {
+                getNextToken(); // eat :
+                ArgType = parseTypeName(m_activeGenericParams);
+            }
+            Args.push_back({std::move(ArgName), ArgType});
             if (CurTok == ')')
                 break;
             if (CurTok != ',') {
@@ -1740,11 +1746,23 @@ std::unique_ptr<PrototypeAST> Parser::ParsePrototype()
         return nullptr;
     getNextToken();
     std::vector<std::pair<std::string, FluxType>> Args;
-    while (CurTok == static_cast<int>(TokenType::tok_identifier) || CurTok == static_cast<int>(TokenType::tok_inputs) ||
+    while (CurTok == static_cast<int>(TokenType::tok_identifier) ||
+           CurTok == static_cast<int>(TokenType::tok_bitwise_and) ||
+           CurTok == static_cast<int>(TokenType::tok_inputs) ||
            CurTok == static_cast<int>(TokenType::tok_outputs) || CurTok == static_cast<int>(TokenType::tok_dt_var) ||
            CurTok == static_cast<int>(TokenType::tok_state) || CurTok == static_cast<int>(TokenType::tok_ic) ||
            CurTok == static_cast<int>(TokenType::tok_analysis) || CurTok == static_cast<int>(TokenType::tok_ddt) ||
            CurTok == static_cast<int>(TokenType::tok_idt)) {
+        bool isRefArg = false;
+        bool isMutArg = false;
+        if (CurTok == static_cast<int>(TokenType::tok_bitwise_and)) {
+            isRefArg = true;
+            getNextToken(); // eat &
+            if (CurTok == static_cast<int>(TokenType::tok_identifier) && m_lexer.IdentifierStr == "mut") {
+                isMutArg = true;
+                getNextToken(); // eat mut
+            }
+        }
         std::string Name;
         if (CurTok == static_cast<int>(TokenType::tok_identifier))
             Name = m_lexer.IdentifierStr;
@@ -1825,6 +1843,8 @@ std::unique_ptr<PrototypeAST> Parser::ParsePrototype()
                 }
             }
         }
+        if (isRefArg)
+            Type = FluxType::reference(Type, isMutArg);
         Args.push_back({Name, Type});
         if (CurTok == ')')
             break;

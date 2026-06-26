@@ -1323,19 +1323,12 @@ TypedValue AssignExprAST::codegen(CodegenContext& context)
         }
     }
 
-    llvm::Value* storeVal = ValTV.Val;
-    if (shouldPassByPointer(VarFluxTy, context)) {
-        if (!storeVal->getType()->isPointerTy()) {
-            llvm::Value* tempAlloca = context.Builder.CreateAlloca(storeVal->getType(), nullptr, "assign_temp");
-            context.Builder.CreateStore(storeVal, tempAlloca);
-            storeVal = tempAlloca;
-        }
-    }
     // If the variable is a reference type, dereference the pointer before storing
     if (VarFluxTy.Kind == TypeKind::Ref && Variable->getType()->isPointerTy()) {
         auto* allocaInst = llvm::dyn_cast<llvm::AllocaInst>(Variable);
         if (allocaInst && allocaInst->getAllocatedType()->isPointerTy()) {
             llvm::Value* ptr = context.Builder.CreateLoad(allocaInst->getAllocatedType(), Variable, "deref_ptr");
+            llvm::Value* storeVal = ValTV.Val;
             if (VarFluxTy.RefInnerType) {
                 llvm::Type* innerTy = VarFluxTy.RefInnerType->getLLVMType(context.TheContext);
                 if (innerTy && storeVal->getType() != innerTy) {
@@ -1347,6 +1340,14 @@ TypedValue AssignExprAST::codegen(CodegenContext& context)
             }
             context.Builder.CreateStore(storeVal, ptr);
             return ValTV;
+        }
+    }
+    llvm::Value* storeVal = ValTV.Val;
+    if (shouldPassByPointer(VarFluxTy, context)) {
+        if (!storeVal->getType()->isPointerTy()) {
+            llvm::Value* tempAlloca = context.Builder.CreateAlloca(storeVal->getType(), nullptr, "assign_temp");
+            context.Builder.CreateStore(storeVal, tempAlloca);
+            storeVal = tempAlloca;
         }
     }
     context.Builder.CreateStore(storeVal, Variable);
@@ -2028,8 +2029,10 @@ TypedValue LambdaExprAST::codegen(CodegenContext& context)
     std::vector<std::string> varNames;
     collectVarNamesFromExpr(Body.get(), varNames);
 
-    // Build set of lambda args for quick exclusion
-    std::set<std::string> argSet(Args.begin(), Args.end());
+    // Build set of lambda arg names for quick exclusion
+    std::set<std::string> argSet;
+    for (const auto& arg : Args)
+        argSet.insert(arg.first);
 
     // Collect captures: variables referenced in body that exist in outer NamedValues
     Captures.clear();
@@ -2051,8 +2054,10 @@ TypedValue LambdaExprAST::codegen(CodegenContext& context)
     llvm::Type* VoidPtrTy = llvm::PointerType::get(context.TheContext, 0);
 
     if (Captures.empty()) {
-        // --- Non-capturing lambda: existing behavior (double fn ptr) ---
-        std::vector<llvm::Type*> ArgTypes(Args.size(), DoubleTy);
+        // --- Non-capturing lambda ---
+        std::vector<llvm::Type*> ArgTypes;
+        for (size_t i = 0; i < Args.size(); ++i)
+            ArgTypes.push_back(Args[i].second.getLLVMType(context.TheContext));
         llvm::FunctionType* LambdaTy = llvm::FunctionType::get(DoubleTy, ArgTypes, false);
         llvm::Function* LambdaFn =
             llvm::Function::Create(LambdaTy, llvm::Function::InternalLinkage, "lambda", context.TheModule);
@@ -2068,11 +2073,14 @@ TypedValue LambdaExprAST::codegen(CodegenContext& context)
             llvm::IRBuilder<> LambdaBuilder(BB);
             unsigned Idx = 0;
             for (auto& Arg : LambdaFn->args()) {
-                Arg.setName(Args[Idx++]);
+                Arg.setName(Args[Idx].first);
+                llvm::Type* argLLVMTy = Args[Idx].second.getLLVMType(context.TheContext);
                 llvm::AllocaInst* Alloca =
-                    LambdaBuilder.CreateAlloca(DoubleTy, nullptr, Arg.getName());
+                    LambdaBuilder.CreateAlloca(argLLVMTy, nullptr, Arg.getName());
                 LambdaBuilder.CreateStore(&Arg, Alloca);
                 context.NamedValues[std::string(Arg.getName())] = Alloca;
+                context.NamedTypes[std::string(Arg.getName())] = Args[Idx].second;
+                ++Idx;
             }
             context.Builder.SetInsertPoint(BB);
             TypedValue BodyTV = Body->codegen(context);
@@ -2118,10 +2126,10 @@ TypedValue LambdaExprAST::codegen(CodegenContext& context)
     std::string envStructName = "lambda_env." + std::to_string(reinterpret_cast<uintptr_t>(this));
     llvm::StructType* EnvStructTy = llvm::StructType::create(context.TheContext, envFieldTypes, envStructName);
 
-    // 2. Create lambda function signature: double(double %env, double %arg1, ...)
+    // 2. Create lambda function signature: double(double %env, <arg_types>...)
     std::vector<llvm::Type*> ClosureArgTypes = {DoubleTy}; // env ptr as double
     for (size_t i = 0; i < Args.size(); ++i)
-        ClosureArgTypes.push_back(DoubleTy);
+        ClosureArgTypes.push_back(Args[i].second.getLLVMType(context.TheContext));
     llvm::FunctionType* ClosureFnTy = llvm::FunctionType::get(DoubleTy, ClosureArgTypes, false);
     llvm::Function* ClosureFn =
         llvm::Function::Create(ClosureFnTy, llvm::Function::InternalLinkage, "lambda_closure", context.TheModule);
@@ -2146,11 +2154,14 @@ TypedValue LambdaExprAST::codegen(CodegenContext& context)
         // Setup args
         unsigned Idx = 0;
         for (; ArgIt != ClosureFn->arg_end(); ++ArgIt) {
-            ArgIt->setName(Args[Idx++]);
+            ArgIt->setName(Args[Idx].first);
+            llvm::Type* argLLVMTy = Args[Idx].second.getLLVMType(context.TheContext);
             llvm::AllocaInst* Alloca =
-                LambdaBuilder.CreateAlloca(DoubleTy, nullptr, ArgIt->getName());
+                LambdaBuilder.CreateAlloca(argLLVMTy, nullptr, ArgIt->getName());
             LambdaBuilder.CreateStore(&*ArgIt, Alloca);
             context.NamedValues[std::string(ArgIt->getName())] = Alloca;
+            context.NamedTypes[std::string(ArgIt->getName())] = Args[Idx].second;
+            ++Idx;
         }
 
         // Load captured variables from env struct

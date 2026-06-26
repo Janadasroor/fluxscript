@@ -401,19 +401,22 @@ public:
 
 class LambdaExprAST : public ExprAST
 {
-    std::vector<std::string> Args;
+    std::vector<std::pair<std::string, FluxType>> Args;
     std::unique_ptr<ExprAST> Body;
     std::vector<std::string> Captures;
+    FluxType ReturnType;
 
 public:
-    LambdaExprAST(std::vector<std::string> Args, std::unique_ptr<ExprAST> Body)
-        : Args(std::move(Args)), Body(std::move(Body))
+    LambdaExprAST(std::vector<std::pair<std::string, FluxType>> Args, std::unique_ptr<ExprAST> Body,
+                  FluxType RetType = FluxType(TypeKind::Double))
+        : Args(std::move(Args)), Body(std::move(Body)), ReturnType(RetType)
     {
     }
     TypedValue codegen(CodegenContext& context) override;
-    const std::vector<std::string>& getArgs() const { return Args; }
+    const std::vector<std::pair<std::string, FluxType>>& getArgs() const { return Args; }
     const ExprAST* getBody() const { return Body.get(); }
     const std::vector<std::string>& getCaptures() const { return Captures; }
+    const FluxType& getReturnType() const { return ReturnType; }
     void setCaptures(std::vector<std::string> caps) { Captures = std::move(caps); }
     bool containsYield() const override { return Body && Body->containsYield(); }
     bool containsAwait() const override { return Body && Body->containsAwait(); }

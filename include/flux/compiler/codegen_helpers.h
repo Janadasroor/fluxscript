@@ -134,6 +134,9 @@ inline void resolveUserEnumType(FluxType& type, CodegenContext& context)
 
 inline bool shouldPassByPointer(const FluxType& type, CodegenContext& context)
 {
+    // Refs are always passed by pointer
+    if (type.Kind == TypeKind::Ref)
+        return true;
     if (type.Kind != TypeKind::UserStruct && type.Kind != TypeKind::UserEnum)
         return false;
 

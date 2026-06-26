@@ -560,7 +560,11 @@ TypedValue CallExprAST::codegen(CodegenContext& context)
 
             {
                 llvm::Value* selfVal = objVal.Val;
-                if (passSelfByPtr) {
+                unsigned firstArgIdx = isSretCall ? 1 : 0;
+                bool calleeExpectsPtr = calleeFn->arg_size() > firstArgIdx &&
+                                        calleeFn->getArg(firstArgIdx)->getType()->isPointerTy();
+
+                if (passSelfByPtr || calleeExpectsPtr) {
                     if (selfIsVariable && selfAllocaPtr) {
                         selfVal = selfAllocaPtr;
                     } else if (!selfVal->getType()->isPointerTy()) {
@@ -577,7 +581,7 @@ TypedValue CallExprAST::codegen(CodegenContext& context)
                     }
                 }
 
-                unsigned firstArgIdx = isSretCall ? 1 : 0;
+                firstArgIdx = isSretCall ? 1 : 0;
                 if (calleeFn->arg_size() > firstArgIdx &&
                     selfVal->getType() != calleeFn->getArg(firstArgIdx)->getType()) {
                     llvm::Type* firstArgTy = calleeFn->getArg(firstArgIdx)->getType();
@@ -703,6 +707,10 @@ TypedValue CallExprAST::codegen(CodegenContext& context)
                 llvm::Value* result = context.Builder.CreateLoad(sretLLVMTy, sretPtr, "sret_val");
                 return TypedValue(result, retType);
             } else {
+                if (retType.Kind == TypeKind::Void) {
+                    context.Builder.CreateCall(calleeFn, callArgs);
+                    return TypedValue(nullptr, TypeKind::Void);
+                }
                 llvm::Value* result = context.Builder.CreateCall(calleeFn, callArgs, methodName);
                 return TypedValue(result, retType);
             }

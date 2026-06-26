@@ -125,7 +125,7 @@ llvm::Function* PrototypeAST::codegen(CodegenContext& context)
     }
     for (size_t i = 0; i < Args.size(); ++i) {
         // Skip readonly for the self parameter (first arg) to allow mutation
-        if (shouldPassByPointer(Args[i].second, context) && i > 0) {
+        if (shouldPassByPointer(Args[i].second, context) && i > 0 && !Args[i].second.isMutRef()) {
             F->addParamAttr(AttrIdx, llvm::Attribute::get(context.TheContext, llvm::Attribute::ReadOnly));
         }
         AttrIdx++;
@@ -550,8 +550,15 @@ void ImplDeclAST::codegen(CodegenContext& context)
         proto->setName(mangledName);
 
         // Set the first argument (self) to the struct type
+        // Preserve &mut self / &self reference wrapper if parser set one
         if (!proto->getArgs().empty()) {
-            proto->setArgType(0, selfType);
+            FluxType& existingType = proto->getArgs()[0].second;
+            if (existingType.isRef()) {
+                bool isMut = existingType.isMutRef();
+                proto->setArgType(0, FluxType::reference(selfType, isMut));
+            } else {
+                proto->setArgType(0, selfType);
+            }
         }
 
         // Safety net: fix return type if parser couldn't resolve it
