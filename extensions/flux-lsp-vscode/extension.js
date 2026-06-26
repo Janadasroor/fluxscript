@@ -4,7 +4,6 @@ const fs = require('fs');
 const { spawn } = require('child_process');
 
 let client;
-const diagnosticCollection = vscode.languages.createDiagnosticCollection('fluxscript');
 
 function findServerPath(context) {
   const config = vscode.workspace.getConfiguration('fluxscript');
@@ -65,17 +64,15 @@ function runProcess(fluxPath, args) {
 }
 
 function cleanMessage(msg) {
-  // Trailing backslash causes VSCode to merge source label into the message
   return msg.replace(/\\+$/, '').trim();
 }
 
 function parseCheckErrors(stderr) {
   const diagnostics = [];
-  // Match: <flux>:LINE:COL: error: MESSAGE
   const lineColRe = /<flux>:(\d+):(\d+):\s*error:\s*(.*)/gi;
   let match;
   while ((match = lineColRe.exec(stderr)) !== null) {
-    const line = parseInt(match[1], 10) - 1; // 0-indexed
+    const line = parseInt(match[1], 10) - 1;
     const col = parseInt(match[2], 10) - 1;
     const message = cleanMessage(match[3]);
     if (!message) continue;
@@ -83,7 +80,6 @@ function parseCheckErrors(stderr) {
     diagnostics.push(new vscode.Diagnostic(range, message, vscode.DiagnosticSeverity.Error));
   }
 
-  // Match "Parse Error: Error at line N, column N: message"
   if (diagnostics.length === 0) {
     const checkErrRe = /Parse Error:\s*Error at line (\d+),\s*column (\d+):\s*(.*)/i;
     const checkMatch = stderr.match(checkErrRe);
@@ -101,14 +97,8 @@ function parseCheckErrors(stderr) {
 
 async function lintDocument(doc, fluxPath) {
   if (doc.languageId !== 'fluxscript') return;
-
   const filePath = doc.fileName;
-
-  // Save unsaved changes so the compiler reads the latest
-  if (doc.isDirty) {
-    await doc.save();
-  }
-
+  if (doc.isDirty) await doc.save();
   try {
     const { stderr, code } = await runProcess(fluxPath, ['--cache=0', '--emit=parse-only', filePath]);
     if (code === 0) {
@@ -122,167 +112,89 @@ async function lintDocument(doc, fluxPath) {
   }
 }
 
+const diagnosticCollection = vscode.languages.createDiagnosticCollection('fluxscript');
+
 async function activate(context) {
   const serverPath = findServerPath(context);
-
   const outputChannel = vscode.window.createOutputChannel('FluxScript LSP');
   context.subscriptions.push(outputChannel);
   outputChannel.appendLine(`flux-lsp path: ${serverPath}`);
 
-  if (!fs.existsSync(serverPath)) {
-    outputChannel.appendLine('ERROR: flux-lsp binary not found');
-    vscode.window.showErrorMessage(
-      'flux-lsp not found. Build the project first, or set fluxscript.lspPath in settings.'
-    );
-  } else {
+  if (fs.existsSync(serverPath)) {
     outputChannel.appendLine('Starting server...');
-
     const serverOptions = {
       run: { command: serverPath, args: ['--stdio'] },
       debug: { command: serverPath, args: ['--stdio'] },
     };
-
     const clientOptions = {
       documentSelector: [{ scheme: 'file', language: 'fluxscript' }],
       synchronize: { configurationSection: 'fluxscript' },
       outputChannel,
     };
-
     const lsp = require('vscode-languageclient/node');
     client = new lsp.LanguageClient('fluxscript', 'FluxScript LSP', serverOptions, clientOptions);
-
     try {
       await client.start();
       outputChannel.appendLine('FluxScript LSP ready');
     } catch (err) {
       outputChannel.appendLine(`ERROR: ${err.message}`);
-      outputChannel.appendLine(err.stack || '');
     }
   }
 
   context.subscriptions.push(diagnosticCollection);
-
   const fluxPath = findFluxPath(context);
 
-  // --- Lint File command (explicit only — LSP handles real-time diagnostics) ---
-  const lintFileCmd = vscode.commands.registerCommand('fluxscript.lintFile', async () => {
+  // Lint on save
+  context.subscriptions.push(
+    vscode.workspace.onDidSaveTextDocument(async (doc) => {
+      if (!fs.existsSync(fluxPath)) return;
+      const config = vscode.workspace.getConfiguration('fluxscript');
+      if (!config.get('lintOnSave', true)) return;
+      await lintDocument(doc, fluxPath);
+    })
+  );
+
+  // --- Run File ---
+  context.subscriptions.push(vscode.commands.registerCommand('fluxscript.runFile', async () => {
     const editor = vscode.window.activeTextEditor;
-    if (!editor) {
-      vscode.window.showErrorMessage('No active editor');
-      return;
-    }
-
-    if (editor.document.languageId !== 'fluxscript') {
-      vscode.window.showErrorMessage('Not a FluxScript file');
-      return;
-    }
-
+    if (!editor || editor.document.languageId !== 'fluxscript') return;
     if (!fs.existsSync(fluxPath)) {
-      vscode.window.showErrorMessage(
-        'flux binary not found. Build the project first, or set fluxscript.fluxPath in settings.'
-      );
+      vscode.window.showErrorMessage('flux binary not found. Set fluxscript.fluxPath in settings.');
       return;
     }
-
-    await lintDocument(editor.document, fluxPath);
-
-    const diags = diagnosticCollection.get(editor.document.uri);
-    if (!diags || diags.length === 0) {
-      vscode.window.showInformationMessage('FluxScript: No errors found');
-    } else {
-      vscode.window.showErrorMessage(`FluxScript: ${diags.length} error(s) found`);
-    }
-  });
-  context.subscriptions.push(lintFileCmd);
-
-  // --- Run File command ---
-  const runFileCmd = vscode.commands.registerCommand('fluxscript.runFile', async () => {
-    const editor = vscode.window.activeTextEditor;
-    if (!editor) {
-      vscode.window.showErrorMessage('No active editor');
-      return;
-    }
-
-    if (editor.document.languageId !== 'fluxscript') {
-      vscode.window.showErrorMessage('Not a FluxScript file');
-      return;
-    }
-
-    if (!fs.existsSync(fluxPath)) {
-      vscode.window.showErrorMessage(
-        'flux binary not found. Build the project first, or set fluxscript.fluxPath in settings.'
-      );
-      return;
-    }
-
-    const filePath = editor.document.fileName;
     if (editor.document.isDirty) await editor.document.save();
-
     const terminal = vscode.window.createTerminal({ name: 'FluxScript', iconPath: new vscode.ThemeIcon('play') });
     terminal.show();
-    terminal.sendText(`'${fluxPath}' --cache=0 '${filePath}'`);
-  });
-  context.subscriptions.push(runFileCmd);
+    terminal.sendText(`'${fluxPath}' --cache=0 '${editor.document.fileName}'`);
+  }));
 
-  // --- Run Selection command ---
-  const runSelectionCmd = vscode.commands.registerCommand('fluxscript.runSelection', async () => {
+  // --- Run Selection ---
+  context.subscriptions.push(vscode.commands.registerCommand('fluxscript.runSelection', async () => {
     const editor = vscode.window.activeTextEditor;
-    if (!editor) {
-      vscode.window.showErrorMessage('No active editor');
-      return;
-    }
-
-    if (editor.document.languageId !== 'fluxscript') {
-      vscode.window.showErrorMessage('Not a FluxScript file');
-      return;
-    }
-
+    if (!editor || editor.document.languageId !== 'fluxscript') return;
     const selection = editor.selection;
-    if (selection.isEmpty) {
-      vscode.window.showErrorMessage('No text selected');
-      return;
-    }
-
+    if (selection.isEmpty) return;
     if (!fs.existsSync(fluxPath)) {
-      vscode.window.showErrorMessage(
-        'flux binary not found. Build the project first, or set fluxscript.fluxPath in settings.'
-      );
+      vscode.window.showErrorMessage('flux binary not found.');
       return;
     }
-
     const text = editor.document.getText(selection);
     const terminal = vscode.window.createTerminal({ name: 'FluxScript Selection', iconPath: new vscode.ThemeIcon('play') });
     terminal.show();
     const escaped = text.replace(/'/g, "'\\''");
     terminal.sendText(`echo '${escaped}' | '${fluxPath}' --cache=0 -`);
-  });
-  context.subscriptions.push(runSelectionCmd);
+  }));
 
-  // --- Check File command ---
-  const checkFileCmd = vscode.commands.registerCommand('fluxscript.checkFile', async () => {
+  // --- Check File ---
+  context.subscriptions.push(vscode.commands.registerCommand('fluxscript.checkFile', async () => {
     const editor = vscode.window.activeTextEditor;
-    if (!editor) {
-      vscode.window.showErrorMessage('No active editor');
-      return;
-    }
-
-    if (editor.document.languageId !== 'fluxscript') {
-      vscode.window.showErrorMessage('Not a FluxScript file');
-      return;
-    }
-
+    if (!editor || editor.document.languageId !== 'fluxscript') return;
     if (!fs.existsSync(fluxPath)) {
-      vscode.window.showErrorMessage(
-        'flux binary not found. Build the project first, or set fluxscript.fluxPath in settings.'
-      );
+      vscode.window.showErrorMessage('flux binary not found.');
       return;
     }
-
-    const filePath = editor.document.fileName;
     if (editor.document.isDirty) await editor.document.save();
-
-    const { stdout, stderr, code } = await runProcess(fluxPath, ['--cache=0', '--emit=check', filePath]);
-
+    const { stdout, stderr, code } = await runProcess(fluxPath, ['--cache=0', '--emit=check', editor.document.fileName]);
     const channel = vscode.window.createOutputChannel('FluxScript Check');
     channel.clear();
     if (code === 0) {
@@ -292,8 +204,24 @@ async function activate(context) {
       if (stderr.trim()) channel.appendLine(stderr.trim());
     }
     channel.show();
-  });
-  context.subscriptions.push(checkFileCmd);
+  }));
+
+  // --- Lint File ---
+  context.subscriptions.push(vscode.commands.registerCommand('fluxscript.lintFile', async () => {
+    const editor = vscode.window.activeTextEditor;
+    if (!editor || editor.document.languageId !== 'fluxscript') return;
+    if (!fs.existsSync(fluxPath)) {
+      vscode.window.showErrorMessage('flux binary not found.');
+      return;
+    }
+    await lintDocument(editor.document, fluxPath);
+    const diags = diagnosticCollection.get(editor.document.uri);
+    if (!diags || diags.length === 0) {
+      vscode.window.showInformationMessage('FluxScript: No errors found');
+    } else {
+      vscode.window.showErrorMessage(`FluxScript: ${diags.length} error(s) found`);
+    }
+  }));
 }
 
 function deactivate() {
