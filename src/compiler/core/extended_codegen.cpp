@@ -13,6 +13,7 @@
 
 // Extended keyword codegen implementations
 #include "flux/compiler/ast.h"
+#include "flux/compiler/codegen_helpers.h"
 #include <iostream>
 #include <set>
 
@@ -737,10 +738,18 @@ TypedValue MatchExprAST::codegen(CodegenContext& context)
                         auto& structInfo = context.StructTypes[concretePayloadType.StructTypeId];
                         if (structInfo.Fields.size() == 1) {
                             // Single-field struct payload: bind to the field value directly
-                            llvm::Type* fieldTy = concretePayloadLLVMTy->getStructElementType(0);
+                            // Use the FluxType-resolved LLVM type instead of the struct element type,
+                            // because the struct may have been created with a fallback type (e.g., i32
+                            // for an enum field) before the enum's LLVM type was available.
+                            FluxType fieldFluxType = structInfo.Fields[0].second;
+                            resolveUserEnumType(fieldFluxType, context);
+                            resolveUserStructType(fieldFluxType, context);
+                            llvm::Type* fieldTy = fieldFluxType.getLLVMType(context.TheContext);
+                            if (!fieldTy)
+                                fieldTy = concretePayloadLLVMTy->getStructElementType(0);
                             allSharedAllocas[i][armBindings[0]] =
                                 context.Builder.CreateAlloca(fieldTy, nullptr, armBindings[0] + "_alloca");
-                            allSharedTypes[i][armBindings[0]] = structInfo.Fields[0].second;
+                            allSharedTypes[i][armBindings[0]] = fieldFluxType;
                         } else {
                             // Multi-field struct payload: bind to the whole struct for field access
                             allSharedAllocas[i][armBindings[0]] =
@@ -1012,9 +1021,15 @@ TypedValue MatchExprAST::codegen(CodegenContext& context)
                         auto& structInfo = context.StructTypes[concretePayloadType.StructTypeId];
                         if (structInfo.Fields.size() == 1) {
                             // Single-field struct: extract just the field value
+                            // Use FluxType-resolved LLVM type for the load (not struct element type)
+                            FluxType fieldFluxType = structInfo.Fields[0].second;
+                            resolveUserEnumType(fieldFluxType, context);
+                            resolveUserStructType(fieldFluxType, context);
+                            llvm::Type* fieldTy = fieldFluxType.getLLVMType(context.TheContext);
+                            if (!fieldTy)
+                                fieldTy = concretePayloadLLVMTy->getStructElementType(0);
                             llvm::Value* fieldPtr = context.Builder.CreateStructGEP(
                                 concretePayloadLLVMTy, concretePayloadPtr, 0, armBindings[0] + "_field");
-                            llvm::Type* fieldTy = concretePayloadLLVMTy->getStructElementType(0);
                             llvm::Value* val = context.Builder.CreateLoad(fieldTy, fieldPtr, armBindings[0] + "_val");
                             context.Builder.CreateStore(val, sharedAllocas[armBindings[0]]);
                         } else {

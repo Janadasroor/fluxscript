@@ -13,6 +13,8 @@
 
 #include "flux/compiler/compiler_instance.h"
 
+#include "flux/compiler/codegen_helpers.h"
+
 #include <atomic>
 #include <cstdlib>
 #include <mutex>
@@ -568,9 +570,9 @@ bool CompilerInstance::collectImportFunctions(const std::string& moduleName,
             std::vector<std::unique_ptr<StructDeclAST>> anonStructs;
             auto enumDecl = parser.ParseEnumDecl(&anonStructs);
             if (enumDecl) {
+                enumDecl->codegen(context);
                 for (auto& s : anonStructs)
                     s->codegen(context);
-                enumDecl->codegen(context);
             }
         } else if (parser.CurTok == static_cast<int>(TokenType::tok_impl)) {
             auto implDecl = parser.ParseImplDecl();
