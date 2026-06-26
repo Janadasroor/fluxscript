@@ -2055,10 +2055,11 @@ TypedValue LambdaExprAST::codegen(CodegenContext& context)
 
     if (Captures.empty()) {
         // --- Non-capturing lambda ---
+        llvm::Type* retLLVMTy = ReturnType.getLLVMType(context.TheContext);
         std::vector<llvm::Type*> ArgTypes;
         for (size_t i = 0; i < Args.size(); ++i)
             ArgTypes.push_back(Args[i].second.getLLVMType(context.TheContext));
-        llvm::FunctionType* LambdaTy = llvm::FunctionType::get(DoubleTy, ArgTypes, false);
+        llvm::FunctionType* LambdaTy = llvm::FunctionType::get(retLLVMTy, ArgTypes, false);
         llvm::Function* LambdaFn =
             llvm::Function::Create(LambdaTy, llvm::Function::InternalLinkage, "lambda", context.TheModule);
         llvm::BasicBlock* BB = llvm::BasicBlock::Create(context.TheContext, "entry", LambdaFn);
@@ -2084,8 +2085,15 @@ TypedValue LambdaExprAST::codegen(CodegenContext& context)
             }
             context.Builder.SetInsertPoint(BB);
             TypedValue BodyTV = Body->codegen(context);
-            if (BodyTV.Val)
+            if (BodyTV.Val) {
+                if (BodyTV.Val->getType() != retLLVMTy) {
+                    if (retLLVMTy->isDoubleTy() && BodyTV.Val->getType()->isIntegerTy(1))
+                        BodyTV.Val = context.Builder.CreateUIToFP(BodyTV.Val, retLLVMTy, "ret_cast");
+                }
                 context.Builder.CreateRet(BodyTV.Val);
+            } else {
+                context.Builder.CreateRet(llvm::Constant::getNullValue(retLLVMTy));
+            }
         }
         if (OldBB)
             context.Builder.SetInsertPoint(OldBB);
@@ -2126,11 +2134,12 @@ TypedValue LambdaExprAST::codegen(CodegenContext& context)
     std::string envStructName = "lambda_env." + std::to_string(reinterpret_cast<uintptr_t>(this));
     llvm::StructType* EnvStructTy = llvm::StructType::create(context.TheContext, envFieldTypes, envStructName);
 
-    // 2. Create lambda function signature: double(double %env, <arg_types>...)
+    // 2. Create lambda function signature: <ret_type>(double %env, <arg_types>...)
+    llvm::Type* retLLVMTy = ReturnType.getLLVMType(context.TheContext);
     std::vector<llvm::Type*> ClosureArgTypes = {DoubleTy}; // env ptr as double
     for (size_t i = 0; i < Args.size(); ++i)
         ClosureArgTypes.push_back(Args[i].second.getLLVMType(context.TheContext));
-    llvm::FunctionType* ClosureFnTy = llvm::FunctionType::get(DoubleTy, ClosureArgTypes, false);
+    llvm::FunctionType* ClosureFnTy = llvm::FunctionType::get(retLLVMTy, ClosureArgTypes, false);
     llvm::Function* ClosureFn =
         llvm::Function::Create(ClosureFnTy, llvm::Function::InternalLinkage, "lambda_closure", context.TheModule);
 
@@ -2183,8 +2192,15 @@ TypedValue LambdaExprAST::codegen(CodegenContext& context)
 
         context.Builder.SetInsertPoint(BB);
         TypedValue BodyTV = Body->codegen(context);
-        if (BodyTV.Val)
+        if (BodyTV.Val) {
+            if (BodyTV.Val->getType() != retLLVMTy) {
+                if (retLLVMTy->isDoubleTy() && BodyTV.Val->getType()->isIntegerTy(1))
+                    BodyTV.Val = context.Builder.CreateUIToFP(BodyTV.Val, retLLVMTy, "ret_cast");
+            }
             context.Builder.CreateRet(BodyTV.Val);
+        } else {
+            context.Builder.CreateRet(llvm::Constant::getNullValue(retLLVMTy));
+        }
 
         if (OldBB)
             context.Builder.SetInsertPoint(OldBB);

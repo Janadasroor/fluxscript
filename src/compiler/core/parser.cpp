@@ -834,6 +834,44 @@ std::unique_ptr<ExprAST> Parser::ParseLetExpr()
     return std::make_unique<LetExprAST>(IdName, Type, std::move(Init), nullptr);
 }
 
+bool Parser::isTypeNameStart()
+{
+    // Type keyword tokens
+    if (CurTok == static_cast<int>(TokenType::tok_type_matrix) ||
+        CurTok == static_cast<int>(TokenType::tok_type_vector) ||
+        CurTok == static_cast<int>(TokenType::tok_type_float) ||
+        CurTok == static_cast<int>(TokenType::tok_type_int) ||
+        CurTok == static_cast<int>(TokenType::tok_type_bool) ||
+        CurTok == static_cast<int>(TokenType::tok_type_void) ||
+        CurTok == static_cast<int>(TokenType::tok_type_complex) ||
+        CurTok == static_cast<int>(TokenType::tok_type_string) ||
+        CurTok == static_cast<int>(TokenType::tok_type_double))
+        return true;
+    // Identifier: check built-in names, user structs/enums, and generic params
+    if (CurTok == static_cast<int>(TokenType::tok_identifier)) {
+        const std::string& name = m_lexer.IdentifierStr;
+        if (name == "Double" || name == "double" ||
+            name == "Float" || name == "float" ||
+            name == "Int" || name == "int" ||
+            name == "Bool" || name == "bool" ||
+            name == "Void" || name == "void" ||
+            name == "Complex" || name == "complex" ||
+            name == "String" || name == "string" ||
+            name == "Matrix" || name == "matrix" ||
+            name == "Vector" || name == "vector")
+            return true;
+        if (m_knownStructTypeNames.count(name))
+            return true;
+        if (m_knownEnumTypeNames.count(name))
+            return true;
+        for (const auto& gp : m_activeGenericParams) {
+            if (gp == name)
+                return true;
+        }
+    }
+    return false;
+}
+
 std::unique_ptr<ExprAST> Parser::ParseLambdaExpr()
 {
     getNextToken();
@@ -870,13 +908,25 @@ std::unique_ptr<ExprAST> Parser::ParseLambdaExpr()
         }
     }
     getNextToken();
+    FluxType RetType(TypeKind::Double);
     if (CurTok == static_cast<int>(TokenType::tok_arrow)) {
         getNextToken();
+        // Only attempt type annotation if the current token looks like a type
+        // and is followed by '{' (to avoid consuming bare expression tokens).
+        if (isTypeNameStart()) {
+            auto savedLexerState = m_lexer.saveState();
+            FluxType parsedType = parseTypeName(m_activeGenericParams);
+            if (CurTok == static_cast<int>(TokenType::tok_lbrace)) {
+                RetType = std::move(parsedType);
+            } else {
+                m_lexer.restoreState(savedLexerState);
+            }
+        }
     }
     auto Body = ParseExpression();
     if (!Body)
         return nullptr;
-    return std::make_unique<LambdaExprAST>(std::move(Args), std::move(Body));
+    return std::make_unique<LambdaExprAST>(std::move(Args), std::move(Body), RetType);
 }
 
 std::unique_ptr<ExprAST> Parser::ParseUnaryExpr()

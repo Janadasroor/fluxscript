@@ -263,6 +263,8 @@ private:
     // Helper: parse a type name from the current token
     FluxType parseTypeName(const std::vector<std::string>& genericParams = {},
                            const std::vector<LifetimeParam>& lifetimeParams = {});
+    // Check if the current token could begin a type name (without consuming)
+    bool isTypeNameStart();
 
     Lexer m_lexer;
     std::map<int, int> m_binopPrecedence;
