@@ -553,6 +553,26 @@ void ImplDeclAST::codegen(CodegenContext& context)
         if (!proto->getArgs().empty()) {
             proto->setArgType(0, selfType);
         }
+
+        // Safety net: fix return type if parser couldn't resolve it
+        // (class name not yet registered when method was parsed)
+        if (proto->getReturnType().Kind == TypeKind::Double && selfType.Kind == TypeKind::UserStruct) {
+            auto* body = method->getBody();
+            ExprAST* lastExpr = nullptr;
+            if (auto* block = dynamic_cast<BlockExprAST*>(body)) {
+                const auto& stmts = block->getStatements();
+                if (!stmts.empty())
+                    lastExpr = stmts.back().get();
+            } else {
+                lastExpr = body;
+            }
+            if (auto* construct = dynamic_cast<StructConstructExprAST*>(lastExpr)) {
+                if (construct->getStructName() == TypeName) {
+                    proto->setReturnType(selfType);
+                }
+            }
+        }
+
         proto->codegen(context);
 
         // Register method with the UNMANGLED name

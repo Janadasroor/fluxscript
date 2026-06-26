@@ -9,7 +9,7 @@ def main() -> Double {
     assert(cmp("abd","abc")>0.0, "str_cmp_gt");
     var s = slice("hello",0.0,2.0);
     var p = find("hello world","world");
-    assert(p >= 0.0, "str_find");
+    assert(p == 6.0, "str_find");
     1.0
 }
 main()

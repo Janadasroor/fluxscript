@@ -936,6 +936,10 @@ bool Parser::ParseClassDecl(std::unique_ptr<StructDeclAST>* classStruct, std::un
     std::vector<std::pair<std::string, FluxType>> Fields;
     std::vector<std::unique_ptr<FunctionAST>> Methods;
 
+    // Register class name BEFORE parsing methods so method definitions
+    // can use the class name in return type annotations, self param types, etc.
+    m_knownStructTypeNames.insert(Name);
+
     while (CurTok != static_cast<int>(TokenType::tok_rbrace) && CurTok != static_cast<int>(TokenType::tok_eof)) {
         if (CurTok == static_cast<int>(TokenType::tok_def)) {
             auto Method = ParseDefinition();
@@ -973,9 +977,6 @@ bool Parser::ParseClassDecl(std::unique_ptr<StructDeclAST>* classStruct, std::un
         return false;
     }
     getNextToken(); // eat }
-
-    // Register class struct name so parseTypeName can recognize it
-    m_knownStructTypeNames.insert(Name);
 
     // Create the StructDeclAST (fields)
     auto structDecl = std::make_unique<StructDeclAST>(Name, std::move(Fields), ParentName);

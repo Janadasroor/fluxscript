@@ -62,13 +62,13 @@ extern "C" double flux_string_slice(double s_ptr, double start, double end)
     return jit_bitcast<double>(reinterpret_cast<uintptr_t>(g_fileio_pool.back().c_str()));
 }
 
-extern "C" double flux_string_find(double s_ptr, double c)
+extern "C" double flux_string_find(double s_ptr, double substr_ptr)
 {
     auto* s = reinterpret_cast<const char*>(jit_bitcast<uintptr_t>(s_ptr));
-    if (!s)
+    auto* substr = reinterpret_cast<const char*>(jit_bitcast<uintptr_t>(substr_ptr));
+    if (!s || !substr)
         return -1.0;
-    char ch = static_cast<char>(static_cast<int>(c));
-    const char* p = std::strchr(s, ch);
+    const char* p = std::strstr(s, substr);
     if (!p)
         return -1.0;
     return static_cast<double>(p - s);
