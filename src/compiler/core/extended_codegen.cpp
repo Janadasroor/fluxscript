@@ -734,18 +734,12 @@ TypedValue MatchExprAST::codegen(CodegenContext& context)
                     } else if (armBindings.size() == 1 && concretePayloadLLVMTy->isStructTy() &&
                                concretePayloadType.StructTypeId >= 0 &&
                                concretePayloadType.StructTypeId < static_cast<int>(context.StructTypes.size())) {
-                        auto& structInfo = context.StructTypes[concretePayloadType.StructTypeId];
-                        if (structInfo.Fields.size() == 1) {
-                            llvm::Type* fieldTy = concretePayloadLLVMTy->getStructElementType(0);
-                            allSharedAllocas[i][armBindings[0]] =
-                                context.Builder.CreateAlloca(fieldTy, nullptr, armBindings[0] + "_alloca");
-                            allSharedTypes[i][armBindings[0]] = structInfo.Fields[0].second;
-                        } else {
-                            allSharedAllocas[i][armBindings[0]] = context.Builder.CreateAlloca(
-                                concretePayloadLLVMTy, nullptr, armBindings[0] + "_alloca");
-                            allSharedTypes[i][armBindings[0]] = concretePayloadType;
-                        }
+                        // Always alloca with the full struct type so field access via payload.field works
+                        allSharedAllocas[i][armBindings[0]] =
+                            context.Builder.CreateAlloca(concretePayloadLLVMTy, nullptr, armBindings[0] + "_alloca");
+                        allSharedTypes[i][armBindings[0]] = concretePayloadType;
                     } else if (armBindings.size() == 1) {
+                        // Single binding: alloca with the full type so field access works
                         allSharedAllocas[i][armBindings[0]] =
                             context.Builder.CreateAlloca(concretePayloadLLVMTy, nullptr, armBindings[0] + "_alloca");
                         allSharedTypes[i][armBindings[0]] = concretePayloadType;
@@ -1007,18 +1001,11 @@ TypedValue MatchExprAST::codegen(CodegenContext& context)
                                concretePayloadType.StructTypeId >= 0 &&
                                concretePayloadType.StructTypeId < static_cast<int>(context.StructTypes.size())) {
                         auto& structInfo = context.StructTypes[concretePayloadType.StructTypeId];
-                        if (structInfo.Fields.size() == 1) {
-                            llvm::Value* fieldPtr = context.Builder.CreateStructGEP(
-                                concretePayloadLLVMTy, concretePayloadPtr, 0, armBindings[0]);
-                            llvm::Type* fieldTy = concretePayloadLLVMTy->getStructElementType(0);
-                            llvm::Value* FieldVal =
-                                context.Builder.CreateLoad(fieldTy, fieldPtr, armBindings[0] + "_val");
-                            context.Builder.CreateStore(FieldVal, sharedAllocas[armBindings[0]]);
-                        } else {
-                            llvm::Value* val =
-                                context.Builder.CreateLoad(concretePayloadLLVMTy, concretePayloadPtr, "struct_payload");
-                            context.Builder.CreateStore(val, sharedAllocas[armBindings[0]]);
-                        }
+                        // Always load the entire struct payload (not just a single field)
+                        // so that field access via payload.field works correctly
+                        llvm::Value* val =
+                            context.Builder.CreateLoad(concretePayloadLLVMTy, concretePayloadPtr, "struct_payload");
+                        context.Builder.CreateStore(val, sharedAllocas[armBindings[0]]);
                     } else if (armBindings.size() == 1) {
                         llvm::Value* val =
                             context.Builder.CreateLoad(concretePayloadLLVMTy, concretePayloadPtr, "scalar_payload");
