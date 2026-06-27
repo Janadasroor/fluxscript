@@ -184,7 +184,7 @@ TypedValue IndexExprAST::codegen(CodegenContext& context)
 
     TypedValue ArrayTV = Array->codegen(context);
     if (!ArrayTV.Val) {
-        std::cerr << "[FLUX ERROR] Index array expression failed to codegen" << std::endl;
+        std::cerr << "[FLUX ERROR]" << formatLoc(this) << " Index array expression failed to codegen" << std::endl;
         return TypedValue();
     }
 
@@ -195,7 +195,7 @@ TypedValue IndexExprAST::codegen(CodegenContext& context)
 
         TypedValue IdxTV = RowIndex->codegen(context);
         if (!IdxTV.Val) {
-            std::cerr << "[FLUX ERROR] Vector index expression failed to codegen" << std::endl;
+            std::cerr << "[FLUX ERROR]" << formatLoc(this) << " Vector index expression failed to codegen" << std::endl;
             return TypedValue();
         }
         llvm::Value* IdxV = IdxTV.Val;
@@ -279,11 +279,11 @@ TypedValue IndexExprAST::codegen(CodegenContext& context)
         if (hasRowRange || hasColRange) {
             llvm::Value *r0, *r1, *c0, *c1;
             if (!codegenRange(RowIndex, RowsVal, r0, r1)) {
-                std::cerr << "[FLUX ERROR] Matrix slice row range failed to codegen" << std::endl;
+                std::cerr << "[FLUX ERROR]" << formatLoc(this) << " Matrix slice row range failed to codegen" << std::endl;
                 return TypedValue();
             }
             if (!codegenRange(ColIndex ? ColIndex : RowIndex, ColsVal, c0, c1)) {
-                std::cerr << "[FLUX ERROR] Matrix slice column range failed to codegen" << std::endl;
+                std::cerr << "[FLUX ERROR]" << formatLoc(this) << " Matrix slice column range failed to codegen" << std::endl;
                 return TypedValue();
             }
 
@@ -319,7 +319,7 @@ TypedValue IndexExprAST::codegen(CodegenContext& context)
         TypedValue RowTV = RowIndex->codegen(context);
         TypedValue ColTV = ColIndex ? ColIndex->codegen(context) : TypedValue();
         if (!RowTV.Val || !ColTV.Val) {
-            std::cerr << "[FLUX ERROR] Matrix element index expression failed to codegen" << std::endl;
+            std::cerr << "[FLUX ERROR]" << formatLoc(this) << " Matrix element index expression failed to codegen" << std::endl;
             return TypedValue();
         }
 

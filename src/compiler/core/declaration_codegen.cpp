@@ -215,7 +215,7 @@ TypedValue StructConstructExprAST::codegen(CodegenContext& context)
         // Look up generic struct definition
         auto genIt = context.GenericStructs.find(StructName);
         if (genIt == context.GenericStructs.end()) {
-            std::cerr << "Unknown generic struct: " << StructName << std::endl;
+            std::cerr << "[FLUX ERROR]" << formatLoc(this) << " Unknown generic struct: " << StructName << std::endl;
             return TypedValue();
         }
         StructDeclAST* genericStruct = genIt->second;
@@ -223,7 +223,7 @@ TypedValue StructConstructExprAST::codegen(CodegenContext& context)
         const auto& genericFields = genericStruct->getFields();
 
         if (GenericTypeArgs.size() != genericParams.size()) {
-            std::cerr << "Generic struct " << StructName << " expects " << genericParams.size() << " type args, got "
+            std::cerr << "[FLUX ERROR]" << formatLoc(this) << " Generic struct " << StructName << " expects " << genericParams.size() << " type args, got "
                       << GenericTypeArgs.size() << std::endl;
             return TypedValue();
         }
@@ -343,7 +343,7 @@ TypedValue StructConstructExprAST::codegen(CodegenContext& context)
                 }
             }
         } else {
-            std::cerr << "Failed to create struct specialization: " << resolvedName << std::endl;
+            std::cerr << "[FLUX ERROR]" << formatLoc(this) << " Failed to create struct specialization: " << resolvedName << std::endl;
             return TypedValue();
         }
     } else {
@@ -351,7 +351,7 @@ TypedValue StructConstructExprAST::codegen(CodegenContext& context)
         if (typeId < 0) {
             auto it = context.StructTypeIndex.find(StructName);
             if (it == context.StructTypeIndex.end()) {
-                std::cerr << "Unknown struct type: " << StructName << std::endl;
+                std::cerr << "[FLUX ERROR]" << formatLoc(this) << " Unknown struct type: " << StructName << std::endl;
                 return TypedValue();
             }
             typeId = it->second;
@@ -359,14 +359,14 @@ TypedValue StructConstructExprAST::codegen(CodegenContext& context)
     }
 
     if (typeId < 0 || typeId >= static_cast<int>(context.StructTypes.size())) {
-        std::cerr << "Invalid struct type ID: " << typeId << std::endl;
+        std::cerr << "[FLUX ERROR]" << formatLoc(this) << " Invalid struct type ID: " << typeId << std::endl;
         return TypedValue();
     }
 
     auto& structInfo = context.StructTypes[typeId];
     auto* llvmStructTy = structInfo.LLVMType;
     if (!llvmStructTy) {
-        std::cerr << "Struct " << structInfo.Name << " has no LLVM type (id=" << typeId << ")" << std::endl;
+        std::cerr << "[FLUX ERROR]" << formatLoc(this) << " Struct " << structInfo.Name << " has no LLVM type (id=" << typeId << ")" << std::endl;
         return TypedValue();
     }
 
@@ -383,7 +383,7 @@ TypedValue StructConstructExprAST::codegen(CodegenContext& context)
             // Evaluate field value expression
             TypedValue fieldVal = valIt->second->codegen(context);
             if (!fieldVal.Val) {
-                std::cerr << "Failed to codegen field '" << fieldName << "' in struct " << resolvedName << std::endl;
+                std::cerr << "[FLUX ERROR]" << formatLoc(this) << " Failed to codegen field '" << fieldName << "' in struct " << resolvedName << std::endl;
                 return TypedValue();
             }
 
@@ -632,7 +632,7 @@ void ImplDeclAST::codegen(CodegenContext& context)
         // Validate that the trait exists
         auto traitIt = context.TraitIndex.find(TraitName);
         if (traitIt == context.TraitIndex.end()) {
-            llvm::errs() << "error: trait '" << TraitName << "' not found\n";
+            llvm::errs() << "[FLUX ERROR] error: trait '" << TraitName << "' not found\n";
             return;
         }
         // Validate that all trait methods are implemented
@@ -641,7 +641,7 @@ void ImplDeclAST::codegen(CodegenContext& context)
             const auto& traitInfo = context.Traits[traitId];
             for (const auto& sig : traitInfo.Methods) {
                 if (context.TypeMethods[TypeName].find(sig.Name) == context.TypeMethods[TypeName].end()) {
-                    llvm::errs() << "error: missing method '" << sig.Name << "' in implementation of trait '"
+                    llvm::errs() << "[FLUX ERROR] error: missing method '" << sig.Name << "' in implementation of trait '"
                                  << TraitName << "' for type '" << TypeName << "'\n";
                     return;
                 }
@@ -649,7 +649,7 @@ void ImplDeclAST::codegen(CodegenContext& context)
             // Validate that all associated types are bound
             for (const auto& assocType : traitInfo.AssociatedTypes) {
                 if (AssociatedTypeMappings.find(assocType) == AssociatedTypeMappings.end()) {
-                    llvm::errs() << "error: missing associated type '" << assocType << "' in implementation of trait '"
+                    llvm::errs() << "[FLUX ERROR] error: missing associated type '" << assocType << "' in implementation of trait '"
                                  << TraitName << "' for type '" << TypeName << "'\n";
                     return;
                 }
@@ -878,7 +878,7 @@ void TraitDeclAST::codegen(CodegenContext& context)
     // Check that super-traits exist
     for (const auto& st : SuperTraits) {
         if (context.TraitIndex.find(st) == context.TraitIndex.end()) {
-            llvm::errs() << "error: super-trait '" << st << "' not found for trait '" << Name << "'\n";
+            llvm::errs() << "[FLUX ERROR] error: super-trait '" << st << "' not found for trait '" << Name << "'\n";
             return;
         }
     }
@@ -1347,10 +1347,10 @@ llvm::Function* FunctionAST::codegen(CodegenContext& context)
             if (retDims.mass != bodyDims.mass || retDims.length != bodyDims.length || retDims.time != bodyDims.time ||
                 retDims.current != bodyDims.current || retDims.temperature != bodyDims.temperature ||
                 retDims.amount != bodyDims.amount || retDims.luminous != bodyDims.luminous) {
-                llvm::errs() << "[Flux] Unit mismatch in return value: function returns " << retDims.toString()
+                llvm::errs() << "[FLUX ERROR] Unit mismatch in return value: function returns " << retDims.toString()
                              << " but body produces " << bodyDims.toString() << "\n";
                 if (!retDims.isDimensionless()) {
-                    llvm::errs() << "[Flux] error: declared return type dimensions do not match body\n";
+                    llvm::errs() << "[FLUX ERROR] declared return type dimensions do not match body\n";
                     return nullptr;
                 }
             }
@@ -1484,7 +1484,7 @@ llvm::Function* FunctionAST::codegen(CodegenContext& context)
         context.AsyncDispatcherBB = SavedAsyncDisp;
 
         if (llvm::verifyFunction(*TheFunction, &llvm::errs())) {
-            std::cerr << "LLVM IR Verification FAILED for standard function. Dumping IR:" << std::endl;
+            std::cerr << "[FLUX ERROR] LLVM IR Verification FAILED for standard function. Dumping IR:" << std::endl;
             TheFunction->print(llvm::errs());
         }
         if (subprogram)

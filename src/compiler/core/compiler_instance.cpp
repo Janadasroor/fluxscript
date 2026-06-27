@@ -1720,7 +1720,7 @@ bool CompilerInstance::compileParser(Parser& parser, CodegenContext& context,
                 nameToSlot[name] = deduped.size();
                 deduped.push_back(std::move(func));
             } else {
-                std::cerr << "[Flux] Warning: duplicate function '" << name << "' — keeping the last definition\n";
+                std::cerr << "[FLUX WARNING] duplicate function '" << name << "' — keeping the last definition\n";
                 deduped[it->second] = std::move(func);
             }
         }
@@ -2199,14 +2199,14 @@ std::unique_ptr<CompileArtifacts> CompilerInstance::compileToIR(const std::strin
     PreprocessResult ppResult = pp.process(code, m_options.inputName);
     if (!ppResult.success) {
         for (const auto& err : ppResult.errors) {
-            std::cerr << "[Preprocessor Error] " << err << "\n";
+            std::cerr << "[FLUX ERROR] " << err << "\n";
         }
         if (error)
             *error = "Preprocessor failed";
         return nullptr;
     }
     for (const auto& warn : ppResult.warnings) {
-        std::cerr << "[Preprocessor Warning] " << warn << "\n";
+        std::cerr << "[FLUX WARNING] " << warn << "\n";
     }
     std::string processedCode = ppResult.output;
 
@@ -2219,8 +2219,8 @@ std::unique_ptr<CompileArtifacts> CompilerInstance::compileToIR(const std::strin
             auto diags = parser.getErrors();
             if (!diags.empty()) {
                 auto& d = diags.front();
-                *error = "Error at line " + std::to_string(d.line) + ", column " + std::to_string(d.column) + ": " +
-                         d.message;
+                *error = "[FLUX ERROR] at line " + std::to_string(d.line) + ", column " + std::to_string(d.column) +
+                         ": " + d.message;
             } else {
                 *error = compileError;
             }

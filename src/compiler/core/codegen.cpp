@@ -639,7 +639,7 @@ TypedValue VariableExprAST::codegen(CodegenContext& context)
             FnTy.GenericName = trimmedName;
             return TypedValue(fnDouble, FnTy);
         }
-        std::cerr << "Unknown variable name: " << Name << " (trimmed: '" << trimmedName << "')" << std::endl;
+        std::cerr << "[FLUX ERROR]" << formatLoc(this) << " Unknown variable name: " << Name << " (trimmed: '" << trimmedName << "')" << std::endl;
         std::cerr << "  Available variables: ";
         for (const auto& [k, v] : context.NamedValues) {
             std::cerr << "'" << k << "' ";
@@ -1199,12 +1199,12 @@ TypedValue AssignExprAST::codegen(CodegenContext& context)
     }
 
     if (!Variable) {
-        std::cerr << "Unknown variable name or scope error: " << TargetName << std::endl;
+        std::cerr << "[FLUX ERROR]" << formatLoc(this) << " Unknown variable name or scope error: " << TargetName << std::endl;
         return TypedValue();
     }
 
     if (!llvm::isa<llvm::AllocaInst>(Variable)) {
-        std::cerr << "Cannot assign to read-only variable: " << TargetName << std::endl;
+        std::cerr << "[FLUX ERROR]" << formatLoc(this) << " Cannot assign to read-only variable: " << TargetName << std::endl;
         return TypedValue();
     }
 

@@ -49,6 +49,9 @@ inline FluxType typeFromLLVM(llvm::Type* Ty)
         auto* ST = llvm::cast<llvm::StructType>(Ty);
         if (ST->getNumElements() == 3)
             return FluxType(TypeKind::Matrix);
+        if (ST->getNumElements() == 2 && ST->getElementType(0)->isPointerTy() &&
+            ST->getElementType(1)->isIntegerTy(32))
+            return FluxType(TypeKind::Vector);
     }
     if (Ty->isPointerTy())
         return FluxType(TypeKind::String);
@@ -243,6 +246,23 @@ inline bool checkTraitBounds(const std::map<std::string, std::vector<std::string
         }
     }
     return true;
+}
+
+// Format a source location string from AST node for use in error messages.
+// Returns empty string if no location is available.
+inline std::string formatLoc(const ExprAST* ast)
+{
+    if (ast && ast->getLine() > 0) {
+        return " [line " + std::to_string(ast->getLine()) + ", column " + std::to_string(ast->getCol()) + "]";
+    }
+    return "";
+}
+
+inline std::string formatLoc(int line, int col)
+{
+    if (line > 0)
+        return " [line " + std::to_string(line) + ", column " + std::to_string(col) + "]";
+    return "";
 }
 
 // Forward declarations

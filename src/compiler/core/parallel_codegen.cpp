@@ -13,6 +13,7 @@
 
 // Parallel for loop codegen - True multi-threaded JIT execution
 #include "flux/compiler/ast.h"
+#include "flux/compiler/codegen_helpers.h"
 #include "flux/runtime/parallel_runtime.h"
 #include <llvm/IR/BasicBlock.h>
 #include <llvm/IR/Constants.h>
@@ -118,7 +119,7 @@ TypedValue ParallelForExprAST::codegen(CodegenContext& context)
 
     // Finalize body function
     if (llvm::verifyFunction(*BodyFunc, &llvm::errs())) {
-        std::cerr << "[FLUX ERROR] Parallel body function verification failed" << std::endl;
+        std::cerr << "[FLUX ERROR]" << formatLoc(this) << " Parallel body function verification failed" << std::endl;
         BodyFunc->eraseFromParent();
         context.Builder.SetInsertPoint(SavedBB);
         context.Builder.SetCurrentDebugLocation(SavedDebugLoc);

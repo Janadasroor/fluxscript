@@ -264,7 +264,7 @@ TypedValue IfExprAST::codegen(CodegenContext& context)
 {
     TypedValue CondTV = Cond->codegen(context);
     if (!CondTV.Val) {
-        std::cerr << "[FLUX ERROR] If condition sub-expression failed to codegen" << std::endl;
+        std::cerr << "[FLUX ERROR]" << formatLoc(this) << " If condition sub-expression failed to codegen" << std::endl;
         return TypedValue();
     }
 
@@ -287,7 +287,7 @@ TypedValue IfExprAST::codegen(CodegenContext& context)
     }
     TypedValue ThenTV = Then->codegen(context);
     if (!ThenTV.Val && ThenTV.Type.Kind != TypeKind::Void) {
-        std::cerr << "[FLUX ERROR] If-then branch failed to codegen" << std::endl;
+        std::cerr << "[FLUX ERROR]" << formatLoc(this) << " If-then branch failed to codegen" << std::endl;
         return TypedValue();
     }
 
@@ -306,7 +306,7 @@ TypedValue IfExprAST::codegen(CodegenContext& context)
     }
     TypedValue ElseTV = Else->codegen(context);
     if (!ElseTV.Val && ElseTV.Type.Kind != TypeKind::Void) {
-        std::cerr << "[FLUX ERROR] If-else branch failed to codegen" << std::endl;
+        std::cerr << "[FLUX ERROR]" << formatLoc(this) << " If-else branch failed to codegen" << std::endl;
         return TypedValue();
     }
 
@@ -370,7 +370,7 @@ TypedValue ForExprAST::codegen(CodegenContext& context)
         Step ? Step->codegen(context)
              : TypedValue(llvm::ConstantFP::get(llvm::Type::getDoubleTy(context.TheContext), 1.0), TypeKind::Double);
     if (!StartTV.Val || !EndTV.Val || !StepTV.Val) {
-        std::cerr << "[FLUX ERROR] For-loop range sub-expression failed to codegen" << std::endl;
+        std::cerr << "[FLUX ERROR]" << formatLoc(this) << " For-loop range sub-expression failed to codegen" << std::endl;
         return TypedValue();
     }
     auto ensureDouble = [&](TypedValue& TV) {
@@ -408,7 +408,7 @@ TypedValue ForExprAST::codegen(CodegenContext& context)
     }
     TypedValue BodyTV = Body->codegen(context);
     if (!BodyTV.Val) {
-        std::cerr << "[FLUX ERROR] For-loop body failed to codegen" << std::endl;
+        std::cerr << "[FLUX ERROR]" << formatLoc(this) << " For-loop body failed to codegen" << std::endl;
         return TypedValue();
     }
     llvm::Value* CurrentVar =
@@ -448,7 +448,7 @@ TypedValue WhileExprAST::codegen(CodegenContext& context)
     context.Builder.SetInsertPoint(CondBB);
     TypedValue CondTV = Cond->codegen(context);
     if (!CondTV.Val) {
-        std::cerr << "[FLUX ERROR] While condition failed to codegen" << std::endl;
+        std::cerr << "[FLUX ERROR]" << formatLoc(this) << " While condition failed to codegen" << std::endl;
         return TypedValue();
     }
     llvm::Value* CondV = boolCondition(CondTV.Val, context.Builder, context.TheContext);
@@ -463,7 +463,7 @@ TypedValue WhileExprAST::codegen(CodegenContext& context)
     }
     TypedValue BodyTV = Body->codegen(context);
     if (!BodyTV.Val) {
-        std::cerr << "[FLUX ERROR] While body failed to codegen" << std::endl;
+        std::cerr << "[FLUX ERROR]" << formatLoc(this) << " While body failed to codegen" << std::endl;
         return TypedValue();
     }
     if (context.DebugEnabled)

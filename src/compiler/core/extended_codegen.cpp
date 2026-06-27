@@ -160,7 +160,7 @@ TypedValue TryPropagateExprAST::codegen(CodegenContext& context)
 {
     TypedValue InnerTV = Inner->codegen(context);
     if (!InnerTV.Val) {
-        std::cerr << "[FLUX ERROR] `?` inner expression failed to codegen" << std::endl;
+        std::cerr << "[FLUX ERROR]" << formatLoc(this) << " `?` inner expression failed to codegen" << std::endl;
         return TypedValue();
     }
 
@@ -175,13 +175,13 @@ TypedValue TryPropagateExprAST::codegen(CodegenContext& context)
     // Determine the struct shape of the inner value.
     llvm::Type* InnerTy = InnerTV.Val->getType();
     if (!InnerTy->isStructTy()) {
-        std::cerr << "[FLUX ERROR] `?` requires a tagged-union (Result/Option); got non-struct type" << std::endl;
+        std::cerr << "[FLUX ERROR]" << formatLoc(this) << " `?` requires a tagged-union (Result/Option); got non-struct type" << std::endl;
         return InnerTV; // fall through, best-effort
     }
 
     llvm::StructType* STy = llvm::cast<llvm::StructType>(InnerTy);
     if (STy->getNumElements() < 2) {
-        std::cerr << "[FLUX ERROR] `?` requires a tagged-union with tag + payload" << std::endl;
+        std::cerr << "[FLUX ERROR]" << formatLoc(this) << " `?` requires a tagged-union with tag + payload" << std::endl;
         return InnerTV;
     }
 
@@ -234,7 +234,7 @@ TypedValue ThrowExprAST::codegen(CodegenContext& context)
 {
     TypedValue ExTV = Exception->codegen(context);
     if (!ExTV.Val) {
-        std::cerr << "[FLUX ERROR] throw expression sub-expression failed to codegen" << std::endl;
+        std::cerr << "[FLUX ERROR]" << formatLoc(this) << " throw expression sub-expression failed to codegen" << std::endl;
         return TypedValue();
     }
 
@@ -269,7 +269,7 @@ TypedValue AssertExprAST::codegen(CodegenContext& context)
     // Generate condition check
     TypedValue CondTV = Condition->codegen(context);
     if (!CondTV.Val) {
-        std::cerr << "[FLUX ERROR] assert condition failed to codegen" << std::endl;
+        std::cerr << "[FLUX ERROR]" << formatLoc(this) << " assert condition failed to codegen" << std::endl;
         return TypedValue();
     }
 
@@ -319,14 +319,14 @@ TypedValue AssertExprAST::codegen(CodegenContext& context)
 TypedValue YieldExprAST::codegen(CodegenContext& context)
 {
     if (!context.GeneratorStateAlloca) {
-        std::cerr << "[FLUX ERROR] yield used outside of a generator function." << std::endl;
+        std::cerr << "[FLUX ERROR]" << formatLoc(this) << " yield used outside of a generator function." << std::endl;
         return TypedValue();
     }
 
     // 1. Generate value to yield
     TypedValue ValueTV = Value->codegen(context);
     if (!ValueTV.Val) {
-        std::cerr << "[FLUX ERROR] yield value expression failed to codegen" << std::endl;
+        std::cerr << "[FLUX ERROR]" << formatLoc(this) << " yield value expression failed to codegen" << std::endl;
         return TypedValue();
     }
 
@@ -359,7 +359,7 @@ TypedValue YieldExprAST::codegen(CodegenContext& context)
 TypedValue AwaitExprAST::codegen(CodegenContext& context)
 {
     if (!context.AsyncStateAlloca) {
-        std::cerr << "[FLUX ERROR] await used outside of an async function." << std::endl;
+        std::cerr << "[FLUX ERROR]" << formatLoc(this) << " await used outside of an async function." << std::endl;
         return TypedValue();
     }
 
@@ -368,7 +368,7 @@ TypedValue AwaitExprAST::codegen(CodegenContext& context)
     // 1. Generate the awaited expression (e.g., a future)
     TypedValue ValueTV = Value->codegen(context);
     if (!ValueTV.Val) {
-        std::cerr << "[FLUX ERROR] await expression failed to codegen" << std::endl;
+        std::cerr << "[FLUX ERROR]" << formatLoc(this) << " await expression failed to codegen" << std::endl;
         return TypedValue();
     }
 
@@ -413,7 +413,7 @@ TypedValue AwaitExprAST::codegen(CodegenContext& context)
     context.Builder.SetInsertPoint(ResumeBB);
     TypedValue ResumeTV = Value->codegen(context);
     if (!ResumeTV.Val) {
-        std::cerr << "[FLUX ERROR] await resume expression failed to codegen" << std::endl;
+        std::cerr << "[FLUX ERROR]" << formatLoc(this) << " await resume expression failed to codegen" << std::endl;
         return TypedValue();
     }
     context.Builder.CreateStore(ResumeTV.Val, context.AsyncResultAlloca);
@@ -470,7 +470,7 @@ TypedValue CornerExprAST::codegen(CodegenContext& context)
         // Generate case expression
         TypedValue CaseTV = CaseExpr->codegen(context);
         if (!CaseTV.Val) {
-            std::cerr << "[FLUX ERROR] corner case expression failed to codegen" << std::endl;
+            std::cerr << "[FLUX ERROR]" << formatLoc(this) << " corner case expression failed to codegen" << std::endl;
             return TypedValue();
         }
 
@@ -578,7 +578,7 @@ TypedValue MatchExprAST::codegen(CodegenContext& context)
 
     TypedValue MatchValTV = Value->codegen(context);
     if (!MatchValTV.Val) {
-        std::cerr << "[FLUX ERROR] match value expression failed to codegen" << std::endl;
+        std::cerr << "[FLUX ERROR]" << formatLoc(this) << " match value expression failed to codegen" << std::endl;
         return TypedValue();
     }
 
@@ -611,7 +611,7 @@ TypedValue MatchExprAST::codegen(CodegenContext& context)
             }
             for (auto const& variant : enumInfo.Variants) {
                 if (matchedVariants.find(variant) == matchedVariants.end()) {
-                    std::cerr << "[FLUX ERROR] match on enum '" << enumInfo.Name << "' does not cover variant '"
+                    std::cerr << "[FLUX ERROR]" << formatLoc(this) << " match on enum '" << enumInfo.Name << "' does not cover variant '"
                               << variant << "'" << std::endl;
                     return TypedValue();
                 }
@@ -643,7 +643,7 @@ TypedValue MatchExprAST::codegen(CodegenContext& context)
         if (DefaultArm) {
             TypedValue DefaultTV = DefaultArm->codegen(context);
             if (!DefaultTV.Val) {
-                std::cerr << "[FLUX ERROR] match default arm (no-arms path) failed to codegen" << std::endl;
+                std::cerr << "[FLUX ERROR]" << formatLoc(this) << " match default arm (no-arms path) failed to codegen" << std::endl;
                 return TypedValue();
             }
             llvm::Value* DefaultV = DefaultTV.Val;
@@ -847,7 +847,7 @@ TypedValue MatchExprAST::codegen(CodegenContext& context)
                 if (!PatDiscVal) {
                     TypedValue PatternTV = Pattern->codegen(context);
                     if (!PatternTV.Val) {
-                        std::cerr << "[FLUX ERROR] match pattern (payload enum) failed to codegen" << std::endl;
+                        std::cerr << "[FLUX ERROR]" << formatLoc(this) << " match pattern (payload enum) failed to codegen" << std::endl;
                         return TypedValue();
                     }
                     PatDiscVal = PatternTV.Val;
@@ -864,7 +864,7 @@ TypedValue MatchExprAST::codegen(CodegenContext& context)
             } else if (isEnumMatch) {
                 TypedValue PatternTV = Pattern->codegen(context);
                 if (!PatternTV.Val) {
-                    std::cerr << "[FLUX ERROR] match pattern (simple enum) failed to codegen" << std::endl;
+                    std::cerr << "[FLUX ERROR]" << formatLoc(this) << " match pattern (simple enum) failed to codegen" << std::endl;
                     return TypedValue();
                 }
                 llvm::Value* patVal = PatternTV.Val;
@@ -894,7 +894,7 @@ TypedValue MatchExprAST::codegen(CodegenContext& context)
                 } else {
                     TypedValue PatternTV = Pattern->codegen(context);
                     if (!PatternTV.Val) {
-                        std::cerr << "[FLUX ERROR] match pattern (non-enum) failed to codegen" << std::endl;
+                        std::cerr << "[FLUX ERROR]" << formatLoc(this) << " match pattern (non-enum) failed to codegen" << std::endl;
                         return TypedValue();
                     }
 
@@ -1092,7 +1092,7 @@ TypedValue MatchExprAST::codegen(CodegenContext& context)
 
         TypedValue ResultTV = Result->codegen(context);
         if (!ResultTV.Val) {
-            std::cerr << "[FLUX ERROR] match arm result expression failed to codegen" << std::endl;
+            std::cerr << "[FLUX ERROR]" << formatLoc(this) << " match arm result expression failed to codegen" << std::endl;
             return TypedValue();
         }
 
@@ -1138,7 +1138,7 @@ TypedValue MatchExprAST::codegen(CodegenContext& context)
         }
         TypedValue DefaultTV = DefaultArm->codegen(context);
         if (!DefaultTV.Val) {
-            std::cerr << "[FLUX ERROR] match default arm result expression failed to codegen" << std::endl;
+            std::cerr << "[FLUX ERROR]" << formatLoc(this) << " match default arm result expression failed to codegen" << std::endl;
             return TypedValue();
         }
         llvm::Value* DefaultV = DefaultTV.Val;
@@ -1237,7 +1237,7 @@ TypedValue ForeachExprAST::codegen(CodegenContext& context)
     // Default: Vector iteration (existing implementation)
     TypedValue IterableTV = Iterable->codegen(context);
     if (!IterableTV.Val) {
-        std::cerr << "[FLUX ERROR] foreach iterable expression failed to codegen" << std::endl;
+        std::cerr << "[FLUX ERROR]" << formatLoc(this) << " foreach iterable expression failed to codegen" << std::endl;
         return TypedValue();
     }
 
@@ -1322,7 +1322,7 @@ TypedValue RepeatUntilExprAST::codegen(CodegenContext& context)
     context.Builder.SetInsertPoint(BodyBB);
     TypedValue BodyTV = Body->codegen(context);
     if (!BodyTV.Val) {
-        std::cerr << "[FLUX ERROR] repeat-until body expression failed to codegen" << std::endl;
+        std::cerr << "[FLUX ERROR]" << formatLoc(this) << " repeat-until body expression failed to codegen" << std::endl;
         return TypedValue();
     }
     context.Builder.CreateBr(CondBB);
@@ -1332,7 +1332,7 @@ TypedValue RepeatUntilExprAST::codegen(CodegenContext& context)
     context.Builder.SetInsertPoint(CondBB);
     TypedValue CondTV = Condition->codegen(context);
     if (!CondTV.Val) {
-        std::cerr << "[FLUX ERROR] repeat-until condition expression failed to codegen" << std::endl;
+        std::cerr << "[FLUX ERROR]" << formatLoc(this) << " repeat-until condition expression failed to codegen" << std::endl;
         return TypedValue();
     }
 
@@ -1379,7 +1379,7 @@ TypedValue DoWhileExprAST::codegen(CodegenContext& context)
     context.Builder.SetInsertPoint(BodyBB);
     TypedValue BodyTV = Body->codegen(context);
     if (!BodyTV.Val) {
-        std::cerr << "[FLUX ERROR] do-while body expression failed to codegen" << std::endl;
+        std::cerr << "[FLUX ERROR]" << formatLoc(this) << " do-while body expression failed to codegen" << std::endl;
         return TypedValue();
     }
     context.Builder.CreateBr(CondBB);
@@ -1389,7 +1389,7 @@ TypedValue DoWhileExprAST::codegen(CodegenContext& context)
     context.Builder.SetInsertPoint(CondBB);
     TypedValue CondTV = Cond->codegen(context);
     if (!CondTV.Val) {
-        std::cerr << "[FLUX ERROR] do-while condition expression failed to codegen" << std::endl;
+        std::cerr << "[FLUX ERROR]" << formatLoc(this) << " do-while condition expression failed to codegen" << std::endl;
         return TypedValue();
     }
 
