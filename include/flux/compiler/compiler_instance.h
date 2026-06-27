@@ -116,6 +116,11 @@ public:
     std::unique_ptr<CompileArtifacts> compileToIR(const std::string& code, std::string* error = nullptr);
     std::string emitLLVMIR(const std::string& code, std::string* error = nullptr);
 
+    // Run full compilation (parser + codegen) and return collected errors,
+    // even on parse/codegen failure. This is used by the LSP to surface
+    // both parser and codegen diagnostics in the editor.
+    std::vector<LexerDiagnostic> collectAllErrors(const std::string& code);
+
 private:
     std::unique_ptr<CodegenContext> createCodegenContext() const;
     void injectStandardLibrary(CodegenContext& context, std::map<std::string, FluxType>& returnTypes) const;

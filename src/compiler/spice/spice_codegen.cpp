@@ -801,7 +801,7 @@ TypedValue PlotExprAST::codegen(CodegenContext& context)
     // plot(x, y) or plot(y) — first arg is x (optional), last is y
     auto xTV = Args[0]->codegen(context);
     if (!xTV.Val) {
-        std::cerr << "[FLUX ERROR] Plot argument expression failed to codegen" << std::endl;
+        logError(context, "Plot argument expression failed to codegen", this);
         return TypedValue();
     }
     auto yTV = Args.size() > 1 ? Args[1]->codegen(context) : TypedValue();
@@ -809,7 +809,7 @@ TypedValue PlotExprAST::codegen(CodegenContext& context)
     // Verify types
     auto& primaryTV = Args.size() > 1 ? yTV : xTV;
     if (primaryTV.Type.Kind != TypeKind::Matrix) {
-        std::cerr << "[FLUX ERROR] Plot requires matrix argument" << std::endl;
+        logError(context, "Plot requires matrix argument", this);
         context.TheModule = nullptr;
         return TypedValue();
     }
@@ -824,7 +824,7 @@ TypedValue PlotExprAST::codegen(CodegenContext& context)
     if (Args.size() > 1) {
         // xTV = first arg (x), yTV = second arg (y)
         if (xTV.Type.Kind != TypeKind::Matrix || yTV.Type.Kind != TypeKind::Matrix) {
-            std::cerr << "[FLUX ERROR] Plot requires matrix arguments for both x and y" << std::endl;
+            logError(context, "Plot requires matrix arguments for both x and y", this);
             context.TheModule = nullptr;
             return TypedValue();
         }
@@ -892,7 +892,7 @@ TypedValue IfStmtAST::codegen(CodegenContext& context)
     // Generate condition
     TypedValue CondTV = Cond->codegen(context);
     if (!CondTV.Val) {
-        std::cerr << "[FLUX ERROR] If-statement condition failed to codegen" << std::endl;
+        logError(context, "If-statement condition failed to codegen", this);
         return TypedValue();
     }
 
@@ -1032,7 +1032,7 @@ TypedValue ForStmtAST::codegen(CodegenContext& context)
     context.Builder.SetInsertPoint(CondBB);
     TypedValue CondTV = Cond->codegen(context);
     if (!CondTV.Val) {
-        std::cerr << "[FLUX ERROR] For-statement condition failed to codegen" << std::endl;
+        logError(context, "For-statement condition failed to codegen", this);
         return TypedValue();
     }
 
@@ -1093,7 +1093,7 @@ TypedValue WhileStmtAST::codegen(CodegenContext& context)
     context.Builder.SetInsertPoint(CondBB);
     TypedValue CondTV = Cond->codegen(context);
     if (!CondTV.Val) {
-        std::cerr << "[FLUX ERROR] While-statement condition failed to codegen" << std::endl;
+        logError(context, "While-statement condition failed to codegen", this);
         return TypedValue();
     }
 
@@ -1138,7 +1138,7 @@ TypedValue TrainExprAST::codegen(CodegenContext& context)
     TypedValue OutTV = Outputs->codegen(context);
 
     if (!ModelTV.Val || !InTV.Val || !OutTV.Val) {
-        std::cerr << "[FLUX ERROR] Train expression failed to codegen model/inputs/outputs" << std::endl;
+        logError(context, "Train expression failed to codegen model/inputs/outputs", this);
         return TypedValue();
     }
 
@@ -1183,7 +1183,7 @@ TypedValue PredictExprAST::codegen(CodegenContext& context)
     TypedValue InTV = Input->codegen(context);
 
     if (!ModelTV.Val || !InTV.Val) {
-        std::cerr << "[FLUX ERROR] Predict expression failed to codegen model/input" << std::endl;
+        logError(context, "Predict expression failed to codegen model/input", this);
         return TypedValue();
     }
 
@@ -1251,7 +1251,7 @@ TypedValue ThermalBlockAST::codegen(CodegenContext& context)
     TypedValue CapTV = Capacitance->codegen(context);
 
     if (!PowerTV.Val || !ResTV.Val || !CapTV.Val) {
-        std::cerr << "[FLUX ERROR] Thermal block expression failed to codegen" << std::endl;
+        logError(context, "Thermal block expression failed to codegen", this);
         return TypedValue();
     }
 
@@ -1322,7 +1322,7 @@ TypedValue VirtualProbeExprAST::codegen(CodegenContext& context)
 
     TypedValue SigTV = Signal->codegen(context);
     if (!SigTV.Val) {
-        std::cerr << "[FLUX ERROR] Virtual probe signal expression failed to codegen" << std::endl;
+        logError(context, "Virtual probe signal expression failed to codegen", this);
         return TypedValue();
     }
 
@@ -1351,7 +1351,7 @@ TypedValue HotSwapExprAST::codegen(CodegenContext& context)
     TypedValue ModelTV = Model->codegen(context);
 
     if (!NameTV.Val || !ModelTV.Val) {
-        std::cerr << "[FLUX ERROR] Hot-swap subcircuit or model expression failed to codegen" << std::endl;
+        logError(context, "Hot-swap subcircuit or model expression failed to codegen", this);
         return TypedValue();
     }
 

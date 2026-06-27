@@ -29,6 +29,15 @@
 
 namespace Flux {
 
+/// Represents a codegen error with source location, matching the shape of
+/// LexerDiagnostic so both can be consumed uniformly (e.g. by the LSP).
+struct CodegenError
+{
+    int line = 0;
+    int column = 0;
+    std::string message;
+};
+
 class FunctionAST;
 class StructDeclAST;
 class EnumDeclAST;
@@ -197,6 +206,10 @@ public:
 
     // Closure support
     int ClosureStructTypeId = -1; // ID in StructTypes for { fnPtr, envPtr } closure struct
+
+    // Collected codegen errors (line, column, message).
+    // Populated by logError() helpers; consumed by LSP diagnostics.
+    std::vector<CodegenError> Errors;
 
     CodegenContext()
         : OwnedContext(std::make_unique<llvm::LLVMContext>()), TheContext(*OwnedContext), Builder(TheContext)

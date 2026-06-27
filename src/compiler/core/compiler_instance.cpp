@@ -2255,6 +2255,62 @@ std::unique_ptr<CompileArtifacts> CompilerInstance::compileToIR(const std::strin
     return artifacts;
 }
 
+std::vector<LexerDiagnostic> CompilerInstance::collectAllErrors(const std::string& code)
+{
+    auto artifacts = std::make_unique<CompileArtifacts>();
+    artifacts->compileProgress = m_options.progressCallback;
+    artifacts->codegenContext = createCodegenContext();
+
+    // Search paths (same as compileToIR)
+    if (!m_options.inputName.empty() && m_options.inputName != "-" && m_options.inputName != "<stdin>") {
+        std::filesystem::path inputDir = std::filesystem::path(m_options.inputName).parent_path();
+        while (!inputDir.empty() && inputDir != inputDir.parent_path()) {
+            m_moduleLoader.addSearchPath(inputDir);
+            inputDir = inputDir.parent_path();
+        }
+    }
+    if (!m_options.includePath.empty())
+        m_moduleLoader.addSearchPath(m_options.includePath);
+
+    std::filesystem::path stdlibBcDir = std::filesystem::current_path() / "stdlib_bc";
+    if (!std::filesystem::exists(stdlibBcDir))
+        stdlibBcDir = std::filesystem::current_path() / "build" / "stdlib_bc";
+    if (std::filesystem::exists(stdlibBcDir))
+        m_moduleLoader.addSearchPath(stdlibBcDir);
+
+    std::map<std::string, bool> importedModules;
+    std::vector<std::unique_ptr<FunctionAST>> preParsedFunctions;
+    if (m_options.injectStdlib) {
+        injectStandardLibrary(*artifacts->codegenContext, artifacts->functionReturnTypes);
+        std::vector<std::string> stdlibModules = {"math", "trig", "array", "stats", "signal", "string", "cmatrix"};
+        for (const auto& mod : stdlibModules) {
+            std::string importError;
+            collectImportFunctions(mod, preParsedFunctions, *artifacts->codegenContext, artifacts->functionReturnTypes,
+                                   &importError, importedModules);
+        }
+    }
+
+    // Preprocessor
+    Preprocessor pp;
+    PreprocessResult ppResult = pp.process(code, m_options.inputName);
+    std::string processedCode = ppResult.success ? ppResult.output : code;
+
+    // Parse + codegen
+    Parser parser(processedCode);
+    std::string compileError;
+    compileParser(parser, *artifacts->codegenContext, artifacts->functionReturnTypes, compileError,
+                  importedModules, {}, &preParsedFunctions);
+
+    // Collect all diagnostics
+    std::vector<LexerDiagnostic> result;
+    for (auto& err : artifacts->codegenContext->Errors)
+        result.push_back({err.line, err.column, err.message});
+    for (auto& err : parser.getErrors())
+        result.push_back(err);
+
+    return result;
+}
+
 std::string CompilerInstance::emitLLVMIR(const std::string& code, std::string* error)
 {
     auto artifacts = compileToIR(code, error);

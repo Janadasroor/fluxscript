@@ -267,7 +267,7 @@ std::string specializeGenericEnum(const std::string& enumName, const std::vector
 static bool checkNotMoved(const std::string& name, CodegenContext& context)
 {
     if (context.MovedVariables.count(name)) {
-        std::cerr << "[FLUX ERROR] use of moved variable '" << name << "'" << std::endl;
+        logError(context, "use of moved variable '" + name + "'");
         return false;
     }
     return true;
@@ -321,7 +321,7 @@ TypedValue ToFixedExprAST::codegen(CodegenContext& context)
     emitLocation(this, context);
     TypedValue ValTV = Value->codegen(context);
     if (!ValTV.Val) {
-        std::cerr << "[FLUX ERROR] ToFixed value expression failed to codegen" << std::endl;
+        logError(context, "ToFixed value expression failed to codegen", this);
         return TypedValue();
     }
 
@@ -376,7 +376,7 @@ TypedValue PhasorExprAST::codegen(CodegenContext& context)
     // Codegen magnitude and phase
     TypedValue MagTV = Magnitude->codegen(context);
     if (!MagTV.Val) {
-        std::cerr << "[FLUX ERROR] Phasor magnitude expression failed to codegen" << std::endl;
+        logError(context, "Phasor magnitude expression failed to codegen", this);
         return TypedValue();
     }
     llvm::Value* Mag = MagTV.Val;
@@ -385,7 +385,7 @@ TypedValue PhasorExprAST::codegen(CodegenContext& context)
 
     TypedValue PhaseTV = PhaseDeg->codegen(context);
     if (!PhaseTV.Val) {
-        std::cerr << "[FLUX ERROR] Phasor phase expression failed to codegen" << std::endl;
+        logError(context, "Phasor phase expression failed to codegen", this);
         return TypedValue();
     }
     llvm::Value* Phase = PhaseTV.Val;
@@ -458,7 +458,7 @@ TypedValue InterpolatedStringExprAST::codegen(CodegenContext& context)
             // Expression — evaluate and convert to string
             TypedValue ExprTV = part.expr->codegen(context);
             if (!ExprTV.Val) {
-                std::cerr << "[FLUX ERROR] String interpolation sub-expression failed to codegen" << std::endl;
+                logError(context, "String interpolation sub-expression failed to codegen");
                 return TypedValue();
             }
             if (ExprTV.Type.Kind == TypeKind::String) {
@@ -639,7 +639,7 @@ TypedValue VariableExprAST::codegen(CodegenContext& context)
             FnTy.GenericName = trimmedName;
             return TypedValue(fnDouble, FnTy);
         }
-        std::cerr << "[FLUX ERROR]" << formatLoc(this) << " Unknown variable name: " << Name << " (trimmed: '" << trimmedName << "')" << std::endl;
+        logError(context, "Unknown variable name: " + Name + " (trimmed: '" + trimmedName + "')", this);
         std::cerr << "  Available variables: ";
         for (const auto& [k, v] : context.NamedValues) {
             std::cerr << "'" << k << "' ";
@@ -938,12 +938,12 @@ TypedValue AssignExprAST::codegen(CodegenContext& context)
         if (UNARY->getOp() == '*') {
             TypedValue PtrTV = const_cast<ExprAST*>(UNARY->getOperand())->codegen(context);
             if (!PtrTV.Val || !PtrTV.Val->getType()->isPointerTy()) {
-                std::cerr << "[FLUX ERROR] Cannot assign through non-pointer dereference" << std::endl;
+                logError(context, "Cannot assign through non-pointer dereference");
                 return TypedValue();
             }
             TypedValue ValTV = Val->codegen(context);
             if (!ValTV.Val) {
-                std::cerr << "[FLUX ERROR] Dereference assignment value expression failed to codegen" << std::endl;
+                logError(context, "Dereference assignment value expression failed to codegen");
                 return TypedValue();
             }
             llvm::Type* InnerTy = nullptr;
@@ -979,7 +979,7 @@ TypedValue AssignExprAST::codegen(CodegenContext& context)
         auto* rowIdx = const_cast<ExprAST*>(IDX->getRowIndex());
         auto* colIdx = const_cast<ExprAST*>(IDX->getColIndex());
         if (!array || !rowIdx || !colIdx) {
-            std::cerr << "[FLUX ERROR] Matrix assignment row/col index failed to codegen" << std::endl;
+            logError(context, "Matrix assignment row/col index failed to codegen");
             return TypedValue();
         }
         TypedValue ArrayTV = array->codegen(context);
@@ -994,7 +994,7 @@ TypedValue AssignExprAST::codegen(CodegenContext& context)
         TypedValue RowTV = rowIdx->codegen(context);
         TypedValue ColTV = colIdx->codegen(context);
         if (!RowTV.Val || !ColTV.Val) {
-            std::cerr << "[FLUX ERROR] Matrix assignment row/col index expression failed to codegen" << std::endl;
+            logError(context, "Matrix assignment row/col index expression failed to codegen");
             return TypedValue();
         }
         llvm::Value *RowV = RowTV.Val, *ColV = ColTV.Val;
@@ -1010,7 +1010,7 @@ TypedValue AssignExprAST::codegen(CodegenContext& context)
             llvm::Value* CurV = context.Builder.CreateCall(GetF, {MatPtr, RowV, ColV}, "curval");
             TypedValue RHSVal = Val->codegen(context);
             if (!RHSVal.Val) {
-                std::cerr << "[FLUX ERROR] Compound-assign RHS expression failed to codegen" << std::endl;
+                logError(context, "Compound-assign RHS expression failed to codegen");
                 return TypedValue();
             }
             llvm::Value* RHSV = RHSVal.Val;
@@ -1041,7 +1041,7 @@ TypedValue AssignExprAST::codegen(CodegenContext& context)
         } else {
             TypedValue NewValTV = Val->codegen(context);
             if (!NewValTV.Val) {
-                std::cerr << "[FLUX ERROR] Matrix assignment value expression failed to codegen" << std::endl;
+                logError(context, "Matrix assignment value expression failed to codegen");
                 return TypedValue();
             }
             llvm::Value* NewValV = NewValTV.Val;
@@ -1105,8 +1105,7 @@ TypedValue AssignExprAST::codegen(CodegenContext& context)
                                                                                MEM->getMemberName());
                             TypedValue rhsVal = Val->codegen(context);
                             if (!rhsVal.Val) {
-                                std::cerr << "[FLUX ERROR] Struct field assignment value expression failed to codegen"
-                                          << std::endl;
+                                logError(context, "Struct field assignment value expression failed to codegen");
                                 return TypedValue();
                             }
                             // Mark non-Copy source variables as moved on field assignment
@@ -1149,7 +1148,7 @@ TypedValue AssignExprAST::codegen(CodegenContext& context)
         }
         TypedValue NewValTV = Val->codegen(context);
         if (!NewValTV.Val) {
-            std::cerr << "[FLUX ERROR] SPICE set_parameter value expression failed to codegen" << std::endl;
+            logError(context, "SPICE set_parameter value expression failed to codegen");
             return TypedValue();
         }
 
@@ -1175,7 +1174,7 @@ TypedValue AssignExprAST::codegen(CodegenContext& context)
                 // Codegen the value first to know its type
                 TypedValue ValTV = Val->codegen(context);
                 if (!ValTV.Val) {
-                    std::cerr << "[FLUX ERROR] Implicit variable creation failed to codegen initializer" << std::endl;
+                    logError(context, "Implicit variable creation failed to codegen initializer");
                     return TypedValue();
                 }
                 // Mark non-Copy source variables as moved on assignment
@@ -1199,12 +1198,12 @@ TypedValue AssignExprAST::codegen(CodegenContext& context)
     }
 
     if (!Variable) {
-        std::cerr << "[FLUX ERROR]" << formatLoc(this) << " Unknown variable name or scope error: " << TargetName << std::endl;
+        logError(context, "Unknown variable name or scope error: " + TargetName, this);
         return TypedValue();
     }
 
     if (!llvm::isa<llvm::AllocaInst>(Variable)) {
-        std::cerr << "[FLUX ERROR]" << formatLoc(this) << " Cannot assign to read-only variable: " << TargetName << std::endl;
+        logError(context, "Cannot assign to read-only variable: " + TargetName, this);
         return TypedValue();
     }
 
@@ -1222,7 +1221,7 @@ TypedValue AssignExprAST::codegen(CodegenContext& context)
     TypedValue CurrentTV(context.Builder.CreateLoad(VarTy, Variable, "current"), VarFluxTy);
     TypedValue ValTV = Val->codegen(context);
     if (!ValTV.Val) {
-        std::cerr << "[FLUX ERROR] Assignment value expression failed to codegen" << std::endl;
+        logError(context, "Assignment value expression failed to codegen");
         return TypedValue();
     }
 
@@ -1362,7 +1361,7 @@ TypedValue UnaryExprAST::codegen(CodegenContext& context)
 {
     TypedValue OperandTV = Operand->codegen(context);
     if (!OperandTV.Val) {
-        std::cerr << "[FLUX ERROR] Unary operand failed to codegen" << std::endl;
+        logError(context, "Unary operand failed to codegen", this);
         return TypedValue();
     }
 
@@ -1382,7 +1381,7 @@ TypedValue UnaryExprAST::codegen(CodegenContext& context)
         case '+':
             return OperandTV;
         default:
-            std::cerr << "[FLUX ERROR] Unsupported unary operator" << std::endl;
+            logError(context, "Unsupported unary operator", this);
             return TypedValue();
         }
     }
@@ -1538,7 +1537,7 @@ TypedValue UnaryExprAST::codegen(CodegenContext& context)
     case '*': {
         // *expr: dereference — operand must be a Ref type (pointer)
         if (!V->getType()->isPointerTy()) {
-            std::cerr << "[FLUX ERROR] Cannot dereference non-pointer type" << std::endl;
+            logError(context, "Cannot dereference non-pointer type", this);
             return TypedValue();
         }
         FluxType innerType = (OperandTV.Type.Kind == TypeKind::Ref && OperandTV.Type.RefInnerType)
@@ -1546,14 +1545,14 @@ TypedValue UnaryExprAST::codegen(CodegenContext& context)
                                  : TypeKind::Double;
         llvm::Type* InnerLLVMTy = innerType.getLLVMType(context.TheContext);
         if (!InnerLLVMTy) {
-            std::cerr << "[FLUX ERROR] Cannot dereference: unknown inner type" << std::endl;
+            logError(context, "Cannot dereference: unknown inner type", this);
             return TypedValue();
         }
         llvm::Value* Loaded = context.Builder.CreateLoad(InnerLLVMTy, V, "deref");
         return TypedValue(Loaded, innerType);
     }
     default:
-        std::cerr << "[FLUX ERROR] Unsupported unary operator" << std::endl;
+        logError(context, "Unsupported unary operator", this);
         return TypedValue();
     }
 }
@@ -1562,7 +1561,7 @@ TypedValue TransposeExprAST::codegen(CodegenContext& context)
 {
     TypedValue V = Operand->codegen(context);
     if (!V.Val) {
-        std::cerr << "[FLUX ERROR] Transpose operand expression failed to codegen" << std::endl;
+        logError(context, "Transpose operand expression failed to codegen", this);
         return TypedValue();
     }
 
@@ -1597,7 +1596,7 @@ TypedValue LetExprAST::codegen(CodegenContext& context)
 {
     TypedValue InitTV = Init->codegen(context);
     if (!InitTV.Val) {
-        std::cerr << "[FLUX ERROR] Let initializer failed to codegen" << std::endl;
+        logError(context, "Let initializer failed to codegen", this);
         return TypedValue();
     }
 
@@ -1753,7 +1752,7 @@ TypedValue LetExprAST::codegen(CodegenContext& context)
         return InitTV;
     TypedValue BodyTV = Body->codegen(context);
     if (!BodyTV.Val) {
-        std::cerr << "[FLUX ERROR] Let body failed to codegen" << std::endl;
+        logError(context, "Let body failed to codegen", this);
         return TypedValue();
     }
 

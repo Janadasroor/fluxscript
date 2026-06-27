@@ -3,6 +3,7 @@ import mna
 import netlist
 
 def main() {
+  
     var max_comps = 500.0
     var max_nodes = 50.0
 

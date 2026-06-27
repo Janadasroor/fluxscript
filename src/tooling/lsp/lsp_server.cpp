@@ -13,6 +13,7 @@
 
 #include "flux/tooling/lsp_server.h"
 #include "flux/compiler/ast.h"
+#include "flux/compiler/compiler_instance.h"
 #include "flux/compiler/lexer.h"
 #include "flux/compiler/parser.h"
 #include "flux/jit/flux_jit.h"
@@ -578,6 +579,49 @@ std::vector<Diagnostic> LspServer::analyzeDocument(const std::string& uri)
                 msg.pop_back();
             d.message = msg;
             d.source = "fluxscript-compiler";
+            d.range.start = {err.line - 1, err.column - 1};
+            d.range.end = {err.line - 1, err.column};
+            diags.push_back(d);
+        }
+    }
+
+    // Collect codegen diagnostics by running the full compiler pipeline
+    {
+        CompilerOptions opts;
+        opts.injectStdlib = true;
+        opts.inputName = uri;
+        opts.parseOnly = false;
+        CompilerInstance compiler(opts);
+        auto codegenDiags = compiler.collectAllErrors(doc->text);
+        for (auto& err : codegenDiags) {
+            // Skip diagnostics that match an existing parser diagnostic
+            // to avoid double-reporting the same error.
+            bool duplicate = false;
+            for (auto& existing : diags) {
+                if (existing.range.start.line == err.line - 1 &&
+                    existing.range.start.character == err.column - 1 &&
+                    existing.message == err.message) {
+                    duplicate = true;
+                    break;
+                }
+            }
+            if (duplicate)
+                continue;
+
+            Diagnostic d;
+            d.severity = Diagnostic::Error;
+            std::string msg;
+            for (char c : err.message) {
+                if (c == '\n' || c == '\r')
+                    continue;
+                if (static_cast<unsigned char>(c) < 0x20 && c != '\t')
+                    continue;
+                msg += c;
+            }
+            while (!msg.empty() && msg.back() == '\\')
+                msg.pop_back();
+            d.message = msg;
+            d.source = "fluxscript-codegen";
             d.range.start = {err.line - 1, err.column - 1};
             d.range.end = {err.line - 1, err.column};
             diags.push_back(d);

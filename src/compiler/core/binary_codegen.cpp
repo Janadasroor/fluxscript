@@ -57,7 +57,7 @@ TypedValue BinaryExprAST::codegen(CodegenContext& context)
     TypedValue L = LHS->codegen(context);
     TypedValue R = RHS->codegen(context);
     if (!L.Val || !R.Val) {
-        std::cerr << "[FLUX ERROR] Binary operand sub-expression failed to codegen" << std::endl;
+        logError(context, "Binary operand sub-expression failed to codegen");
         return TypedValue();
     }
 
@@ -252,9 +252,7 @@ TypedValue BinaryExprAST::codegen(CodegenContext& context)
             } else if (Op == '-' || Op == '*' || Op == '/' || Op == '<' || Op == '>' ||
                        Op == static_cast<int>(TokenType::tok_less_equal) ||
                        Op == static_cast<int>(TokenType::tok_greater_equal)) {
-                std::cerr << "[FLUX ERROR]" << formatLoc(this)
-                          << " Type error: cannot use string in arithmetic or comparison ('" << (char)Op << "')"
-                          << std::endl;
+                logError(context, "Type error: cannot use string in arithmetic or comparison ('" + std::string(1, (char)Op) + "')", this);
                 return TypedValue();
             }
         }
@@ -267,28 +265,23 @@ TypedValue BinaryExprAST::codegen(CodegenContext& context)
             // Matrix ops handled below
         } else if (L.Type.Kind == TypeKind::UserEnum && R.Type.Kind == TypeKind::UserEnum) {
             if (Op != static_cast<int>(TokenType::tok_equal) && Op != static_cast<int>(TokenType::tok_not_equal)) {
-                std::cerr << "[FLUX ERROR]" << formatLoc(this) << " Type error: cannot use enum in operation '"
-                          << (char)Op << "'" << std::endl;
+                logError(context, "Type error: cannot use enum in operation '" + std::string(1, (char)Op) + "'", this);
                 return TypedValue();
             }
             if (L.Type.EnumTypeId != R.Type.EnumTypeId) {
-                std::cerr << "[FLUX ERROR]" << formatLoc(this) << " Type error: cannot compare different enum types"
-                          << std::endl;
+                logError(context, "Type error: cannot compare different enum types", this);
                 return TypedValue();
             }
         } else if (L.Type.Kind == TypeKind::Vector && R.Type.Kind == TypeKind::Vector) {
             if (Op != '+' && Op != '-' && Op != '*' && Op != '/' &&
                 Op != static_cast<int>(TokenType::tok_equal) && 
                 Op != static_cast<int>(TokenType::tok_not_equal)) {
-                std::cerr << "[FLUX ERROR]" << formatLoc(this) << " Type error: cannot use vector in operation '"
-                          << (char)Op << "'" << std::endl;
+                logError(context, "Type error: cannot use vector in operation '" + std::string(1, (char)Op) + "'", this);
                 return TypedValue();
             }
         } else if (L.Type.Kind != TypeKind::String && R.Type.Kind != TypeKind::String &&
                    (!isNumeric(L.Type.Kind) || !isNumeric(R.Type.Kind))) {
-            std::cerr << "[FLUX ERROR]" << formatLoc(this) << " Type error: invalid operand types for operator '"
-                      << (char)Op << "' (" << static_cast<int>(L.Type.Kind) << " and "
-                      << static_cast<int>(R.Type.Kind) << ")" << std::endl;
+            logError(context, "Type error: invalid operand types for operator '" + std::string(1, (char)Op) + "' (" + std::to_string(static_cast<int>(L.Type.Kind)) + " and " + std::to_string(static_cast<int>(R.Type.Kind)) + ")", this);
             return TypedValue();
         }
     }
@@ -297,8 +290,7 @@ TypedValue BinaryExprAST::codegen(CodegenContext& context)
     UnitDimensions ResDims;
     if (Op == '+' || Op == '-') {
         if (L.Type.Dimensions != R.Type.Dimensions) {
-            std::cerr << "[FLUX ERROR]" << formatLoc(this) << " Unit mismatch error: " << L.Type.Dimensions.toString()
-                      << " and " << R.Type.Dimensions.toString() << " in operation '" << (char)Op << "'" << std::endl;
+            logError(context, "Unit mismatch error: " + L.Type.Dimensions.toString() + " and " + R.Type.Dimensions.toString() + " in operation '" + std::string(1, (char)Op) + "'", this);
             return TypedValue();
         }
         ResDims = L.Type.Dimensions;
@@ -506,8 +498,7 @@ TypedValue BinaryExprAST::codegen(CodegenContext& context)
 
         // Ensure dimensions match for addition/subtraction
         if ((Op == '+' || Op == '-') && L.Type.Dimensions != R.Type.Dimensions) {
-            std::cerr << "[FLUX ERROR] Dimensional mismatch: " << (char)Op << " between incompatible units."
-                      << std::endl;
+            logError(context, "Dimensional mismatch: " + std::string(1, (char)Op) + " between incompatible units.", this);
         }
 
         llvm::Type* DoubleTy = llvm::Type::getDoubleTy(context.TheContext);
