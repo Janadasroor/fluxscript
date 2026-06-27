@@ -36,12 +36,12 @@ TypedValue CallExprAST::codegen(CodegenContext& context)
                 if (!obj->getTypeArgs().empty() && context.GenericEnums.count(enumName)) {
                     std::string mangledEnumName = specializeGenericEnum(enumName, obj->getTypeArgs(), context);
                     if (mangledEnumName.empty()) {
-                        std::cerr << "[FLUX ERROR]" << formatLoc(this) << " Failed to specialize generic enum: " << enumName << std::endl;
+                        logError(context, "Failed to specialize generic enum: " + enumName, this);
                         return TypedValue();
                     }
                     auto specializedEnumIt = context.EnumTypeIndex.find(mangledEnumName);
                     if (specializedEnumIt == context.EnumTypeIndex.end()) {
-                        std::cerr << "[FLUX ERROR]" << formatLoc(this) << " Specialized enum not found: " << mangledEnumName << std::endl;
+                        logError(context, "Specialized enum not found: " + mangledEnumName, this);
                         return TypedValue();
                     }
                     int enumTypeId = specializedEnumIt->second;
@@ -55,9 +55,7 @@ TypedValue CallExprAST::codegen(CodegenContext& context)
                                 if (payloadType.Kind != TypeKind::Void && !Args.empty()) {
                                     llvm::StructType* taggedTy = enumInfo.LLVMType;
                                     if (!taggedTy) {
-                                        std::cerr
-                                            << "[FLUX ERROR]" << formatLoc(this) << " Specialized enum tagged union has no LLVM struct type"
-                                            << std::endl;
+                                        logError(context, "Specialized enum tagged union has no LLVM struct type", this);
                                         return TypedValue();
                                     }
                                     llvm::Value* structPtr = context.Builder.CreateAlloca(
@@ -72,17 +70,13 @@ TypedValue CallExprAST::codegen(CodegenContext& context)
                                         resolveUserStructType(payloadType, context);
                                         int anonStructId = payloadType.StructTypeId;
                                         if (anonStructId < 0) {
-                                            std::cerr
-                                                << "[FLUX ERROR]" << formatLoc(this) << " Anonymous struct type ID is invalid for enum payload"
-                                                << std::endl;
+                                            logError(context, "Anonymous struct type ID is invalid for enum payload", this);
                                             return TypedValue();
                                         }
                                         auto& anonInfo = context.StructTypes[anonStructId];
                                         llvm::Type* anonTy = anonInfo.LLVMType;
                                         if (!anonTy) {
-                                            std::cerr
-                                                << "[FLUX ERROR]" << formatLoc(this) << " Anonymous struct has no LLVM type for enum payload"
-                                                << std::endl;
+                                            logError(context, "Anonymous struct has no LLVM type for enum payload", this);
                                             return TypedValue();
                                         }
                                         if (Args.size() == 1) {
@@ -97,9 +91,7 @@ TypedValue CallExprAST::codegen(CodegenContext& context)
                                             for (size_t ai = 0; ai < Args.size() && ai < anonInfo.Fields.size(); ++ai) {
                                                 TypedValue fv = Args[ai]->codegen(context);
                                                 if (!fv.Val) {
-                                                    std::cerr << "[FLUX ERROR]" << formatLoc(this) << " Anonymous struct field expression "
-                                                                  "failed to codegen"
-                                                               << std::endl;
+                                                    logError(context, "Anonymous struct field expression failed to codegen", this);
                                                     return TypedValue();
                                                 }
                                                 llvm::Value* fptr = context.Builder.CreateStructGEP(
@@ -112,8 +104,7 @@ TypedValue CallExprAST::codegen(CodegenContext& context)
                                     } else {
                                         TypedValue argTV = Args[0]->codegen(context);
                                         if (!argTV.Val) {
-                                            std::cerr << "[FLUX ERROR]" << formatLoc(this) << " Direct enum payload expression failed to codegen"
-                                                       << std::endl;
+                                            logError(context, "Direct enum payload expression failed to codegen", this);
                                             return TypedValue();
                                         }
                                         payloadVal = argTV.Val;
@@ -204,8 +195,7 @@ TypedValue CallExprAST::codegen(CodegenContext& context)
                                     // Create the tagged union struct
                                     llvm::StructType* taggedTy = enumInfo.LLVMType;
                                     if (!taggedTy) {
-                                        std::cerr << "[FLUX ERROR]" << formatLoc(this) << " Enum variant tagged union has no LLVM struct type"
-                                                  << std::endl;
+                                        logError(context, "Enum variant tagged union has no LLVM struct type", this);
                                         return TypedValue();
                                     }
                                     llvm::Value* structPtr =
@@ -220,17 +210,13 @@ TypedValue CallExprAST::codegen(CodegenContext& context)
                                         resolveUserStructType(payloadType, context);
                                         int anonStructId = payloadType.StructTypeId;
                                         if (anonStructId < 0) {
-                                            std::cerr
-                                                << "[FLUX ERROR]" << formatLoc(this) << " Anonymous struct type ID is invalid for enum payload"
-                                                << std::endl;
+                                            logError(context, "Anonymous struct type ID is invalid for enum payload", this);
                                             return TypedValue();
                                         }
                                         auto& anonInfo = context.StructTypes[anonStructId];
                                         llvm::Type* anonTy = anonInfo.LLVMType;
                                         if (!anonTy) {
-                                            std::cerr
-                                                << "[FLUX ERROR]" << formatLoc(this) << " Anonymous struct has no LLVM type for enum payload"
-                                                << std::endl;
+                                            logError(context, "Anonymous struct has no LLVM type for enum payload", this);
                                             return TypedValue();
                                         }
 
@@ -250,9 +236,7 @@ TypedValue CallExprAST::codegen(CodegenContext& context)
                                             for (size_t ai = 0; ai < Args.size() && ai < anonInfo.Fields.size(); ++ai) {
                                                 TypedValue fv = Args[ai]->codegen(context);
                                                 if (!fv.Val) {
-                                                    std::cerr << "[FLUX ERROR]" << formatLoc(this) << " Anonymous struct field expression "
-                                                                  "failed to codegen"
-                                                               << std::endl;
+                                                    logError(context, "Anonymous struct field expression failed to codegen", this);
                                                     return TypedValue();
                                                 }
                                                 llvm::Value* fptr = context.Builder.CreateStructGEP(
@@ -265,8 +249,7 @@ TypedValue CallExprAST::codegen(CodegenContext& context)
                                     } else {
                                         TypedValue argTV = Args[0]->codegen(context);
                                         if (!argTV.Val) {
-                                            std::cerr << "[FLUX ERROR]" << formatLoc(this) << " Direct enum payload expression failed to codegen"
-                                                       << std::endl;
+                                            logError(context, "Direct enum payload expression failed to codegen", this);
                                             return TypedValue();
                                         }
                                         payloadVal = argTV.Val;
@@ -394,7 +377,7 @@ TypedValue CallExprAST::codegen(CodegenContext& context)
                     for (auto& Arg : Args) {
                         TypedValue argVal = Arg->codegen(context);
                         if (!argVal.Val) {
-                            std::cerr << "[FLUX ERROR]" << formatLoc(this) << " Module call argument failed to codegen" << std::endl;
+                            logError(context, "Module call argument failed to codegen", this);
                             return TypedValue();
                         }
                         callArgs.push_back(argVal.Val);
@@ -411,7 +394,7 @@ TypedValue CallExprAST::codegen(CodegenContext& context)
             }
             TypedValue objVal = member->getObject()->codegen(context);
             if (!objVal.Val) {
-                std::cerr << "[FLUX ERROR]" << formatLoc(this) << " Method call: object expression failed to codegen" << std::endl;
+                logError(context, "Method call: object expression failed to codegen", this);
                 return TypedValue();
             }
             passSelfByPtr = shouldPassByPointer(objVal.Type, context);
@@ -515,27 +498,26 @@ TypedValue CallExprAST::codegen(CodegenContext& context)
             }
 
             if (typeName.empty()) {
-                std::cerr << "[FLUX ERROR]" << formatLoc(this) << " Cannot dispatch method on value with no type name" << std::endl;
+                logError(context, "Cannot dispatch method on value with no type name", this);
                 return TypedValue();
             }
 
             const std::string& methodName = member->getMemberName();
             auto typeIt = context.TypeMethods.find(typeName);
             if (typeIt == context.TypeMethods.end()) {
-                std::cerr << "[FLUX ERROR]" << formatLoc(this) << " No methods registered for type '" << typeName << "'" << std::endl;
+                logError(context, "No methods registered for type '" + typeName + "'", this);
                 return TypedValue();
             }
 
             auto methodIt = typeIt->second.find(methodName);
             if (methodIt == typeIt->second.end()) {
-                std::cerr << "[FLUX ERROR]" << formatLoc(this) << " No method '" << methodName << "' on type '" << typeName << "'" << std::endl;
+                logError(context, "No method '" + methodName + "' on type '" + typeName + "'", this);
                 return TypedValue();
             }
 
             llvm::Function* calleeFn = methodIt->second;
             if (!calleeFn) {
-                std::cerr << "[FLUX ERROR]" << formatLoc(this) << " Method '" << methodName << "' on type '" << typeName << "' has no codegen function"
-                          << std::endl;
+                logError(context, "Method '" + methodName + "' on type '" + typeName + "' has no codegen function", this);
                 return TypedValue();
             }
 
@@ -600,7 +582,7 @@ TypedValue CallExprAST::codegen(CodegenContext& context)
             for (auto& Arg : Args) {
                 TypedValue argVal = Arg->codegen(context);
                 if (!argVal.Val) {
-                    std::cerr << "[FLUX ERROR]" << formatLoc(this) << " Method call argument expression failed to codegen" << std::endl;
+                    logError(context, "Method call argument expression failed to codegen", this);
                     return TypedValue();
                 }
                 // Mark non-Copy variable arguments as moved
@@ -798,7 +780,7 @@ TypedValue CallExprAST::codegen(CodegenContext& context)
     // Handle print_sep(a, b, sep) — print a and b separated by sep
     if (Name == "print_sep") {
         if (Args.size() != 3) {
-            std::cerr << "[FLUX ERROR]" << formatLoc(this) << " print_sep expects exactly 3 arguments: print_sep(a, b, separator)\n";
+            logError(context, "print_sep expects exactly 3 arguments: print_sep(a, b, separator)", this);
             return TypedValue();
         }
         TypedValue ArgA = Args[0]->codegen(context);
@@ -830,7 +812,7 @@ TypedValue CallExprAST::codegen(CodegenContext& context)
     // Handle print_end(x, end) — print x followed by custom end string
     if (Name == "print_end") {
         if (Args.size() != 2) {
-            std::cerr << "[FLUX ERROR]" << formatLoc(this) << " print_end expects exactly 2 arguments: print_end(value, end_string)\n";
+            logError(context, "print_end expects exactly 2 arguments: print_end(value, end_string)", this);
             return TypedValue();
         }
         TypedValue ArgX = Args[0]->codegen(context);
@@ -854,7 +836,7 @@ TypedValue CallExprAST::codegen(CodegenContext& context)
     if (Args.size() == 1) {
         TypedValue Arg = Args[0]->codegen(context);
         if (!Arg.Val) {
-            std::cerr << "[FLUX ERROR]" << formatLoc(this) << " Call argument expression failed to codegen" << std::endl;
+            logError(context, "Call argument expression failed to codegen", this);
             return TypedValue();
         }
 
@@ -1117,8 +1099,7 @@ TypedValue CallExprAST::codegen(CodegenContext& context)
 
             if (hasGenericTypeArgs()) {
                 if (GenericTypeArgs.size() != genericParams.size()) {
-                    std::cerr << "[FLUX ERROR]" << formatLoc(this) << " Expected " << genericParams.size() << " type arguments for generic function '"
-                              << Name << "', got " << GenericTypeArgs.size() << "\n";
+                    logError(context, "Expected " + std::to_string(genericParams.size()) + " type arguments for generic function '" + Name + "', got " + std::to_string(GenericTypeArgs.size()), this);
                     return TypedValue();
                 }
                 for (size_t i = 0; i < genericParams.size(); ++i)
@@ -1151,8 +1132,7 @@ TypedValue CallExprAST::codegen(CodegenContext& context)
             if (!typeMap.empty()) {
                 // Check trait bounds on generic parameters
                 if (!checkTraitBounds(genericFunc->getProto()->getGenericParamBounds(), typeMap, context)) {
-                    std::cerr << "[FLUX ERROR]" << formatLoc(this) << " Trait bounds check failed for generic function '" << Name << "'"
-                              << std::endl;
+                    logError(context, "Trait bounds check failed for generic function '" + Name + "'", this);
                     return TypedValue();
                 }
 
@@ -1233,9 +1213,7 @@ TypedValue CallExprAST::codegen(CodegenContext& context)
                 if (!CalleeF && !context.CompiledSpecializations.count(specializedName)) {
                     static constexpr size_t MAX_MONOMORPHIZATIONS = 1024;
                     if (context.CompiledSpecializations.size() >= MAX_MONOMORPHIZATIONS) {
-                        std::cerr << "[FLUX ERROR]" << formatLoc(this) << " Maximum number of generic specializations (" << MAX_MONOMORPHIZATIONS
-                                  << ") exceeded. "
-                                  << "This may indicate a code bloat attack or excessive generic usage." << std::endl;
+                        logError(context, "Maximum number of generic specializations (" + std::to_string(MAX_MONOMORPHIZATIONS) + ") exceeded. This may indicate a code bloat attack or excessive generic usage.", this);
                         return TypedValue();
                     }
                     context.CompiledSpecializations.insert(specializedName);
@@ -1335,8 +1313,7 @@ TypedValue CallExprAST::codegen(CodegenContext& context)
             if (!CalleeF) {
                 // Check excluded symbols
                 if (context.ExcludedSymbols.count(Name)) {
-                    std::cerr << "[FLUX ERROR]" << formatLoc(this) << " '" << Name << "' was not imported. "
-                              << "Use a non-selective import or add it to the import list.\n";
+                    logError(context, "'" + Name + "' was not imported. Use a non-selective import or add it to the import list.", this);
                     return TypedValue();
                 }
                 // Check for registered extern function types
@@ -1383,7 +1360,7 @@ TypedValue CallExprAST::codegen(CodegenContext& context)
     }
 
     if (!CalleeF) {
-        std::cerr << "[FLUX ERROR]" << formatLoc(this) << " No callee function resolved for call to '" << Name << "'" << std::endl;
+        logError(context, "No callee function resolved for call to '" + Name + "'", this);
         return TypedValue();
     }
 
@@ -1475,7 +1452,7 @@ TypedValue CallExprAST::codegen(CodegenContext& context)
                 ArgsV.push_back(RetSpace);
             }
         } else if ((int)CalleeF->arg_size() != expectedArgs) {
-            std::cerr << "[FLUX ERROR]" << formatLoc(this) << " Callee argument count mismatch" << std::endl;
+            logError(context, "Callee argument count mismatch", this);
             return TypedValue();
         }
     }
@@ -1483,7 +1460,7 @@ TypedValue CallExprAST::codegen(CodegenContext& context)
     for (unsigned i = 0, e = Args.size(); i != e; ++i) {
         llvm::Value* ArgV = ArgTVs[i].Val;
         if (!ArgV) {
-            std::cerr << "[FLUX ERROR]" << formatLoc(this) << " Call argument value is null" << std::endl;
+            logError(context, "Call argument value is null", this);
             return TypedValue();
         }
 

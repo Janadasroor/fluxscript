@@ -119,7 +119,7 @@ TypedValue ParallelForExprAST::codegen(CodegenContext& context)
 
     // Finalize body function
     if (llvm::verifyFunction(*BodyFunc, &llvm::errs())) {
-        std::cerr << "[FLUX ERROR]" << formatLoc(this) << " Parallel body function verification failed" << std::endl;
+        logError(context, "Parallel body function verification failed", this);
         BodyFunc->eraseFromParent();
         context.Builder.SetInsertPoint(SavedBB);
         context.Builder.SetCurrentDebugLocation(SavedDebugLoc);

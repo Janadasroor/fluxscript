@@ -15,6 +15,7 @@
 #define FLUX_COMPILER_CODEGEN_HELPERS_H
 
 #include "flux/compiler/ast.h"
+#include "flux/compiler/codegen_context.h"
 #include <iostream>
 
 namespace Flux {
@@ -263,6 +264,22 @@ inline std::string formatLoc(int line, int col)
     if (line > 0)
         return " [line " + std::to_string(line) + ", column " + std::to_string(col) + "]";
     return "";
+}
+
+// Log a codegen error, storing structured (line, col, message) in context.Errors
+// and printing it to stderr for CLI backward compatibility.
+inline void logError(CodegenContext& context, const std::string& message, const ExprAST* ast = nullptr)
+{
+    int line = 0, col = 0;
+    if (ast) {
+        line = ast->getLine();
+        col = ast->getCol();
+    }
+    context.Errors.push_back({line, col, message});
+    if (line > 0 && col > 0)
+        std::cerr << "[FLUX ERROR]" << formatLoc(line, col) << " " << message << std::endl;
+    else
+        std::cerr << "[FLUX ERROR] " << message << std::endl;
 }
 
 // Forward declarations

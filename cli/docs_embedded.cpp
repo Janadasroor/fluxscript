@@ -5441,6 +5441,71 @@ main()
 )MARKDOWN";
 }
 
+static std::string renderMarkdownLine(const std::string& line) {
+    std::string s = line;
+    // Strip trailing whitespace
+    while (!s.empty() && (s.back() == ' ' || s.back() == '\r'))
+        s.pop_back();
+
+    // Table separator lines: |---|---|
+    if (!s.empty() && s[0] == '|') {
+        bool allDash = true;
+        for (char c : s) {
+            if (c != '|' && c != '-' && c != ' ') {
+                allDash = false;
+                break;
+            }
+        }
+        if (allDash && s.find('-') != std::string::npos)
+            return "";
+    }
+
+    // Table rows: | col | col |
+    if (s.size() >= 2 && s[0] == '|' && s.back() == '|') {
+        std::string out;
+        bool inCell = true; // leading | means we're inside first cell
+        for (size_t i = 1; i + 1 < s.size(); ++i) {
+            if (s[i] == '|') {
+                if (inCell) {
+                    while (!out.empty() && out.back() == ' ')
+                        out.pop_back();
+                    out += "  ";
+                }
+                inCell = !inCell;
+            } else if (inCell) {
+                out += s[i];
+            }
+        }
+        while (!out.empty() && out.back() == ' ')
+            out.pop_back();
+        return out;
+    }
+
+    // Strip inline code backticks: `code` -> code
+    std::string out;
+    bool inCode = false;
+    for (char c : s) {
+        if (c == '`') {
+            inCode = !inCode;
+        } else {
+            out += c;
+        }
+    }
+
+    // Strip bold markers: **text** -> text
+    std::string final;
+    size_t pos = 0;
+    while (pos < out.size()) {
+        if (pos + 1 < out.size() && out[pos] == '*' && out[pos + 1] == '*') {
+            pos += 2;
+        } else {
+            final += out[pos];
+            pos++;
+        }
+    }
+    return final;
+}
+
 std::string searchDocs(const std::string& keyword) {
     std::string text = getDocsText();
     std::istringstream stream(text);
@@ -5457,7 +5522,7 @@ std::string searchDocs(const std::string& keyword) {
             matches.push_back({lineNum, line});
         }
     }
-    if (matches.empty()) return "No results found for: " + keyword + "\\n";
+    if (matches.empty()) return "No results found for: " + keyword + "\n";
     stream.clear(); stream.seekg(0);
     std::vector<std::string> allLines;
     while (std::getline(stream, line)) allLines.push_back(line);
@@ -5466,12 +5531,15 @@ std::string searchDocs(const std::string& keyword) {
         int start = std::max(0, num - 3);
         int end = std::min((int)allLines.size(), num + 2);
         for (int i = start; i < end; i++) {
-            std::string prefix = (i == num - 1) ? "> " : "  ";
-            result += prefix + std::to_string(i + 1) + ": " + allLines[i] + "\\n";
+            std::string rendered = renderMarkdownLine(allLines[i]);
+            if (rendered.empty() && i != num - 1)
+                continue;
+            std::string prefix = (i == num - 1) ? ">> " : "   ";
+            result += prefix + std::to_string(i + 1) + ":  " + rendered + "\n";
         }
-        result += "---\\n";
+        result += "---\n";
     }
-    result += std::to_string(matches.size()) + " match(es) found.\\n";
+    result += std::to_string(matches.size()) + " match(es) found.\n";
     return result;
 }
 

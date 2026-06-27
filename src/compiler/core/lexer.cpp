@@ -351,8 +351,31 @@ int Lexer::gettok()
 
         // Check for f-string: f"..." syntax
         if (IdentifierStr == "f" && m_lastChar == '"') {
-            // Re-lex as f-string
-            return gettok(); // Will re-enter and hit the '"' branch with f-string logic
+            // Handle f-string inline — m_lastChar is already '"'
+            advance();           // consume opening quote
+            StringVal = "";
+            while (m_lastChar != '"' && m_lastChar != EOF && m_lastChar != '\n') {
+                if (m_lastChar == '\\') {
+                    advance();
+                    switch (m_lastChar) {
+                    case 'n': StringVal += '\n'; break;
+                    case 't': StringVal += '\t'; break;
+                    case 'r': StringVal += '\r'; break;
+                    case '\\': StringVal += '\\'; break;
+                    case '"': StringVal += '"'; break;
+                    default: StringVal += m_lastChar; break;
+                    }
+                } else {
+                    StringVal += m_lastChar;
+                }
+                advance();
+            }
+            if (m_lastChar == '"') {
+                advance(); // consume closing quote
+            } else {
+                reportError("unterminated f-string literal");
+            }
+            return static_cast<int>(TokenType::tok_fstring);
         }
 
         if (IdentifierStr == "def")

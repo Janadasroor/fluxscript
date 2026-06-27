@@ -256,8 +256,37 @@ std::unique_ptr<ExprAST> Parser::ParseStringExpr()
 
 std::unique_ptr<ExprAST> Parser::ParseFStringExpr()
 {
-    // F-strings are syntactic sugar for "${...}" interpolation
-    // The lexer already stored the content in StringVal
+    // F-strings use {expr} for interpolation (not ${expr})
+    // Convert {expr} → ${expr} in StringVal so ParseStringExpr handles it
+    std::string& raw = m_lexer.StringVal;
+    std::string converted;
+    converted.reserve(raw.size());
+    size_t i = 0;
+    while (i < raw.size()) {
+        if (raw[i] == '{') {
+            // Skip {{ (escaped literal brace)
+            if (i + 1 < raw.size() && raw[i + 1] == '{') {
+                converted += '{';
+                i += 2;
+                continue;
+            }
+            converted += "${";
+            i++;
+        } else if (raw[i] == '}') {
+            // Skip }} (escaped literal brace)
+            if (i + 1 < raw.size() && raw[i + 1] == '}') {
+                converted += '}';
+                i += 2;
+                continue;
+            }
+            converted += '}';
+            i++;
+        } else {
+            converted += raw[i];
+            i++;
+        }
+    }
+    raw = std::move(converted);
     return ParseStringExpr();
 }
 
@@ -845,7 +874,8 @@ bool Parser::isTypeNameStart()
         CurTok == static_cast<int>(TokenType::tok_type_void) ||
         CurTok == static_cast<int>(TokenType::tok_type_complex) ||
         CurTok == static_cast<int>(TokenType::tok_type_string) ||
-        CurTok == static_cast<int>(TokenType::tok_type_double))
+        CurTok == static_cast<int>(TokenType::tok_type_double) ||
+        CurTok == static_cast<int>(TokenType::tok_fn))
         return true;
     // Identifier: check built-in names, user structs/enums, and generic params
     if (CurTok == static_cast<int>(TokenType::tok_identifier)) {
@@ -1854,6 +1884,28 @@ std::unique_ptr<PrototypeAST> Parser::ParsePrototype()
                 // parseTypeName already consumed the type name, so don't eat again
             } else if (CurTok == static_cast<int>(TokenType::tok_bitwise_and)) {
                 Type = parseTypeName(m_activeGenericParams, LifetimeParamsList);
+            } else if (CurTok == static_cast<int>(TokenType::tok_fn)) {
+                // fn(T1, T2) -> RetType as a type annotation (function type)
+                // FluxScript erases function types to Double at the LLVM level,
+                // so just skip over the full fn(...) -> ... signature.
+                getNextToken(); // eat fn
+                if (CurTok == '(') {
+                    getNextToken(); // eat (
+                    int depth = 1;
+                    while (CurTok != static_cast<int>(TokenType::tok_end) && depth > 0) {
+                        if (CurTok == '(') depth++;
+                        else if (CurTok == ')') depth--;
+                        if (depth > 0) getNextToken();
+                    }
+                    if (CurTok == ')') getNextToken(); // eat )
+                }
+                if (CurTok == static_cast<int>(TokenType::tok_arrow)) {
+                    getNextToken(); // eat ->
+                    // Skip return type name
+                    if (isTypeNameStart())
+                        parseTypeName(m_activeGenericParams);
+                }
+                Type = FluxType(TypeKind::Double); // function types erased to Double
             } else {
                 Type = FluxType::fromToken(CurTok);
                 // Check for unit type names (e.g., Voltage, Current)
