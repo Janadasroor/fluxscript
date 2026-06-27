@@ -900,6 +900,71 @@ void TraitDeclAST::codegen(CodegenContext& context)
     context.TraitIndex[Name] = static_cast<int>(context.Traits.size()) - 1;
 }
 
+// ---------------------------------------------------------------------------
+// Recursive pre-computation of closure captures for nested def trees.
+// Walks the local function tree, computing captures for each function
+// against the full visible scope. Transitive captures are propagated
+// upward so intermediate functions thread variables that grandchildren
+// need from grandparent scopes.
+// ---------------------------------------------------------------------------
+static void computeCapturesRecursive(const std::set<std::string>& thisVarSet,
+                                     const std::vector<std::unique_ptr<FunctionAST>>& localFunctions,
+                                     std::map<std::string, std::vector<std::string>>& nestedCaptures)
+{
+    for (const auto& F : localFunctions) {
+        // Collect variable names referenced in F's body
+        std::vector<std::string> fVarNames;
+        collectVarNamesFromExpr(F->getBody(), fVarNames);
+
+        // Build F's arg set
+        std::set<std::string> fArgSet;
+        for (const auto& arg : F->getProto()->getArgs())
+            fArgSet.insert(arg.first);
+
+        // Compute F's direct captures against thisVarSet
+        std::set<std::string> fCapturesSet;
+        for (const auto& vn : fVarNames) {
+            if (fArgSet.count(vn)) continue;
+            if (thisVarSet.count(vn))
+                fCapturesSet.insert(vn);
+        }
+
+        // Build F's own declared scope (body vars + params only, NOT inherited)
+        std::set<std::string> fOwnScope;
+        for (const auto& vn : fVarNames)
+            fOwnScope.insert(vn);
+        for (const auto& arg : F->getProto()->getArgs())
+            fOwnScope.insert(arg.first);
+
+        // Build F's full visible scope = thisVarSet + F's own scope
+        std::set<std::string> fVarSet = thisVarSet;
+        fVarSet.insert(fOwnScope.begin(), fOwnScope.end());
+
+        // Recursively compute captures for F's own local functions
+        computeCapturesRecursive(fVarSet, F->LocalFunctions, nestedCaptures);
+
+        // Check F's local functions for transitive captures:
+        // if a child captures a variable visible to us but not in F's
+        // own declared scope, F must transitively capture it to thread
+        // it through to the child.
+        for (const auto& G : F->LocalFunctions) {
+            auto childIt = nestedCaptures.find(G->getProto()->getName());
+            if (childIt != nestedCaptures.end()) {
+                for (const auto& cap : childIt->second) {
+                    if (thisVarSet.count(cap) && !fOwnScope.count(cap))
+                        fCapturesSet.insert(cap);
+                }
+            }
+        }
+
+        // Store F's captures (direct + transitive)
+        if (!fCapturesSet.empty()) {
+            std::vector<std::string> fCaptures(fCapturesSet.begin(), fCapturesSet.end());
+            nestedCaptures[F->getProto()->getName()] = fCaptures;
+        }
+    }
+}
+
 llvm::Function* FunctionAST::codegen(CodegenContext& context)
 {
     // Debug: std::cerr << "[CODEGEN] " << Proto->getName() << " isAsync=" << Proto->isAsync() << " isGenerator=" <<
@@ -1239,33 +1304,16 @@ llvm::Function* FunctionAST::codegen(CodegenContext& context)
         context.Builder.SetInsertPoint(context.AwaitResumeTargets[0]);
     }
 
-    // Pre-compute captures for local functions using AST analysis
+    // Pre-compute captures for local functions using recursive AST analysis.
     // This runs BEFORE body codegen, so we use AST names, not NamedValues/LLVM values.
-    for (auto& F : LocalFunctions) {
+    // Recursively walks the entire local function tree for multi-level capture support.
+    {
         std::vector<std::string> parentVarNames;
         collectVarNamesFromExpr(Body.get(), parentVarNames);
         for (const auto& arg : Proto->getArgs())
             parentVarNames.push_back(arg.first);
         std::set<std::string> parentVarSet(parentVarNames.begin(), parentVarNames.end());
-
-        std::vector<std::string> localVarNames;
-        collectVarNamesFromExpr(F->getBody(), localVarNames);
-
-        std::set<std::string> argSet;
-        for (const auto& arg : F->getProto()->getArgs())
-            argSet.insert(arg.first);
-
-        std::vector<std::string> captures;
-        for (const auto& vn : localVarNames) {
-            if (argSet.count(vn)) continue;
-            if (parentVarSet.count(vn))
-                captures.push_back(vn);
-        }
-        std::sort(captures.begin(), captures.end());
-        captures.erase(std::unique(captures.begin(), captures.end()), captures.end());
-
-        if (!captures.empty())
-            context.NestedFunctionCaptures[F->getProto()->getName()] = captures;
+        computeCapturesRecursive(parentVarSet, LocalFunctions, context.NestedFunctionCaptures);
     }
 
     // Codegen local function definitions
