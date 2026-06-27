@@ -651,11 +651,128 @@ TypedValue BinaryExprAST::codegen(CodegenContext& context)
                     llvm::Value* PayloadL = context.Builder.CreateExtractValue(L.Val, {1}, "enum_payload_l");
                     llvm::Value* PayloadR = context.Builder.CreateExtractValue(R.Val, {1}, "enum_payload_r");
                     llvm::Value* PayloadEq = nullptr;
-                    if (PayloadL->getType()->isIntegerTy()) {
+
+                    // Check if any variant has a boxed (heap-allocated) payload
+                    bool hasBoxed = false;
+                    for (size_t bi = 0; bi < enumInfo.VariantPayloads.size(); ++bi) {
+                        if (bi < enumInfo.VariantIsBoxed.size() && enumInfo.VariantIsBoxed[bi]) {
+                            hasBoxed = true;
+                            break;
+                        }
+                    }
+
+                    if (hasBoxed) {
+                        // Boxed variants exist and union slot is pointer type.
+                        // Generate per-variant comparison using an alloca + switch.
+                        // Each variant block computes the comparison for that variant's
+                        // payload (dereferencing heap ptr for boxed, raw bytes for non-boxed)
+                        // and stores the result to a shared alloca.
+                        llvm::LLVMContext& Ctx = context.TheContext;
+                        llvm::IntegerType* I32Ty = llvm::Type::getInt32Ty(Ctx);
+                        llvm::IntegerType* I64Ty = llvm::Type::getInt64Ty(Ctx);
+                        llvm::Type* PtrTy = llvm::PointerType::get(Ctx, 0);
+                        llvm::Type* I8PtrTy = PtrTy;
+
+                        llvm::Type* enumTy = L.Val->getType();
+                        llvm::Value* enumAllocaL = context.Builder.CreateAlloca(enumTy, nullptr, "enum_box_l");
+                        llvm::Value* enumAllocaR = context.Builder.CreateAlloca(enumTy, nullptr, "enum_box_r");
+                        context.Builder.CreateStore(L.Val, enumAllocaL);
+                        context.Builder.CreateStore(R.Val, enumAllocaR);
+                        llvm::Value* unionSlotPtrL = context.Builder.CreateStructGEP(enumTy, enumAllocaL, 1, "u_slot_l");
+                        llvm::Value* unionSlotPtrR = context.Builder.CreateStructGEP(enumTy, enumAllocaR, 1, "u_slot_r");
+
+                        llvm::Function* MemCmpF = context.TheModule->getFunction("memcmp");
+                        if (!MemCmpF) {
+                            llvm::FunctionType* MCT = llvm::FunctionType::get(
+                                llvm::Type::getInt32Ty(Ctx), {I8PtrTy, I8PtrTy, I64Ty}, false);
+                            MemCmpF = llvm::Function::Create(MCT, llvm::Function::ExternalLinkage, "memcmp",
+                                                             context.TheModule);
+                        }
+
+                        // Alloca for the result (default = true: non-matching tags handled by TagEq)
+                        llvm::Value* resultAlloca = context.Builder.CreateAlloca(
+                            llvm::Type::getInt1Ty(Ctx), nullptr, "boxed_eq_res");
+                        context.Builder.CreateStore(llvm::ConstantInt::get(llvm::Type::getInt1Ty(Ctx), 1), resultAlloca);
+
+                        llvm::Function* F = context.Builder.GetInsertBlock()->getParent();
+                        llvm::BasicBlock* compBB = llvm::BasicBlock::Create(Ctx, "enum_box_cmp", F);
+                        llvm::BasicBlock* mergeBB = llvm::BasicBlock::Create(Ctx, "enum_box_merge", F);
+
+                        context.Builder.CreateCondBr(TagEq, compBB, mergeBB);
+
+                        // compBB: switch on tag to compare each variant's payload
+                        context.Builder.SetInsertPoint(compBB);
+
+                        std::vector<int> payloadVariants;
+                        for (size_t vi = 0; vi < enumInfo.VariantPayloads.size(); ++vi) {
+                            if (enumInfo.VariantPayloads[vi].Kind != TypeKind::Void)
+                                payloadVariants.push_back(static_cast<int>(vi));
+                        }
+
+                        llvm::BasicBlock* defaultPayloadBB = llvm::BasicBlock::Create(Ctx, "enum_box_default", F);
+                        // defaultPayloadBB: no payload variant matched, result is already true
+                        context.Builder.SetInsertPoint(defaultPayloadBB);
+                        context.Builder.CreateBr(mergeBB);
+
+                        // compBB: switch on tag to dispatch to per-variant comparison
+                        context.Builder.SetInsertPoint(compBB);
+                        llvm::SwitchInst* sw = context.Builder.CreateSwitch(
+                            TagL, defaultPayloadBB,
+                            static_cast<unsigned>(payloadVariants.size()));
+
+                        for (int vi : payloadVariants) {
+                            llvm::BasicBlock* varBB = llvm::BasicBlock::Create(
+                                Ctx, "enum_var_" + std::to_string(vi), F);
+                            sw->addCase(llvm::ConstantInt::get(I32Ty, static_cast<uint64_t>(vi)), varBB);
+                            context.Builder.SetInsertPoint(varBB);
+
+                            bool isBoxed = (vi < static_cast<int>(enumInfo.VariantIsBoxed.size()) &&
+                                            enumInfo.VariantIsBoxed[vi]);
+                            FluxType& actualPayloadType = const_cast<FluxType&>(enumInfo.VariantPayloads[vi]);
+                            resolveUserStructType(actualPayloadType, context);
+                            resolveUserEnumType(actualPayloadType, context);
+                            llvm::Type* actualPayloadTy = actualPayloadType.getLLVMType(Ctx);
+                            uint64_t payloadSize = context.TheModule->getDataLayout().getTypeStoreSize(actualPayloadTy);
+
+                            llvm::Value* dataPtrL = nullptr;
+                            llvm::Value* dataPtrR = nullptr;
+
+                            if (isBoxed) {
+                                llvm::Value* heapPtrL = context.Builder.CreateLoad(PtrTy, unionSlotPtrL, "heap_l");
+                                llvm::Value* heapPtrR = context.Builder.CreateLoad(PtrTy, unionSlotPtrR, "heap_r");
+                                dataPtrL = context.Builder.CreatePointerCast(heapPtrL, I8PtrTy, "hdata_l");
+                                dataPtrR = context.Builder.CreatePointerCast(heapPtrR, I8PtrTy, "hdata_r");
+                            } else {
+                                llvm::Value* rawL = context.Builder.CreateLoad(actualPayloadTy, unionSlotPtrL, "raw_l");
+                                llvm::Value* rawR = context.Builder.CreateLoad(actualPayloadTy, unionSlotPtrR, "raw_r");
+                                llvm::Value* tmpAllocaL = context.Builder.CreateAlloca(actualPayloadTy, nullptr, "tmp_l");
+                                llvm::Value* tmpAllocaR = context.Builder.CreateAlloca(actualPayloadTy, nullptr, "tmp_r");
+                                context.Builder.CreateStore(rawL, tmpAllocaL);
+                                context.Builder.CreateStore(rawR, tmpAllocaR);
+                                dataPtrL = context.Builder.CreatePointerCast(tmpAllocaL, I8PtrTy, "nhl");
+                                dataPtrR = context.Builder.CreatePointerCast(tmpAllocaR, I8PtrTy, "nhr");
+                            }
+
+                            llvm::Value* sizeVal = llvm::ConstantInt::get(I64Ty, payloadSize);
+                            llvm::Value* cmpRes = context.Builder.CreateCall(
+                                MemCmpF, {dataPtrL, dataPtrR, sizeVal}, "memcmp_var");
+                            llvm::Value* varEq = context.Builder.CreateICmpEQ(
+                                cmpRes, llvm::ConstantInt::get(I32Ty, 0), "var_eq_" + std::to_string(vi));
+                            context.Builder.CreateStore(varEq, resultAlloca);
+                            context.Builder.CreateBr(mergeBB);
+                        }
+
+                        context.Builder.SetInsertPoint(mergeBB);
+                        PayloadEq = context.Builder.CreateLoad(
+                            llvm::Type::getInt1Ty(Ctx), resultAlloca, "boxed_payload_eq");
+                    } else if (PayloadL->getType()->isIntegerTy()) {
+
+                    } else if (PayloadL->getType()->isIntegerTy()) {
                         PayloadEq = context.Builder.CreateICmpEQ(PayloadL, PayloadR, "enum_payload_eq");
                     } else if (PayloadL->getType()->isFloatingPointTy()) {
                         PayloadEq = context.Builder.CreateFCmpOEQ(PayloadL, PayloadR, "enum_payload_eq");
                     } else if (PayloadL->getType()->isPointerTy()) {
+                        // Pointer type in union slot but no boxed variants — compare addresses
                         PayloadEq = context.Builder.CreateICmpEQ(
                             context.Builder.CreatePtrToInt(PayloadL, llvm::Type::getInt64Ty(context.TheContext), "pl"),
                             context.Builder.CreatePtrToInt(PayloadR, llvm::Type::getInt64Ty(context.TheContext), "pr"),
