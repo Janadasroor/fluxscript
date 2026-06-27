@@ -709,6 +709,9 @@ TypedValue MemberExprAST::codegen(CodegenContext& context)
                                     context.Builder.CreateAlloca(taggedTy, nullptr, MemberName + "_enum");
                                 llvm::Value* tagPtr = context.Builder.CreateStructGEP(taggedTy, structPtr, 0, "tag");
                                 context.Builder.CreateStore(disc, tagPtr);
+                                // Zero-initialize payload slot for payload-less variants
+                                llvm::Value* payloadPtr = context.Builder.CreateStructGEP(taggedTy, structPtr, 1, "payload");
+                                context.Builder.CreateStore(llvm::Constant::getNullValue(taggedTy->getElementType(1)), payloadPtr);
                                 llvm::Value* loaded = context.Builder.CreateLoad(taggedTy, structPtr, MemberName);
                                 return TypedValue(loaded, FluxType::userEnum(enumTypeId, taggedTy));
                             }
@@ -1833,7 +1836,7 @@ TypedValue LetExprAST::codegen(CodegenContext& context)
 
 // Recursively collect VariableExprAST names from an expression tree.
 // Used for closure capture detection.
-static void collectVarNamesFromExpr(const ExprAST* Expr, std::vector<std::string>& names)
+void collectVarNamesFromExpr(const ExprAST* Expr, std::vector<std::string>& names)
 {
     if (!Expr) return;
 
@@ -1866,6 +1869,7 @@ static void collectVarNamesFromExpr(const ExprAST* Expr, std::vector<std::string
         return;
     }
     if (auto* LE = dynamic_cast<const LetExprAST*>(Expr)) {
+        names.push_back(LE->getVarName());
         collectVarNamesFromExpr(LE->getInit(), names);
         collectVarNamesFromExpr(LE->getBody(), names);
         return;

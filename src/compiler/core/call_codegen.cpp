@@ -1413,6 +1413,13 @@ TypedValue CallExprAST::codegen(CodegenContext& context)
         if (isSretCall)
             expectedArgs += 1;
 
+        // Include captured variable params for nested def closure calls
+        {
+            auto capIt = context.NestedFunctionCaptures.find(Callee);
+            if (capIt != context.NestedFunctionCaptures.end())
+                expectedArgs += (int)capIt->second.size();
+        }
+
         if (needsAsyncState && (int)CalleeF->arg_size() == expectedArgs) {
             // Async function call: allocate temp state on stack
             llvm::Type* Int32Ty = llvm::Type::getInt32Ty(context.TheContext);
@@ -1624,6 +1631,36 @@ TypedValue CallExprAST::codegen(CodegenContext& context)
             }
         }
         ArgsV.push_back(ArgV);
+    }
+
+    // Append capture values for nested def closure calls
+    {
+        auto capIt = context.NestedFunctionCaptures.find(Callee);
+        if (capIt != context.NestedFunctionCaptures.end()) {
+            for (const auto& cap : capIt->second) {
+                auto nvIt = context.NamedValues.find(cap);
+                if (nvIt != context.NamedValues.end()) {
+                    if (auto* allocaI = llvm::dyn_cast<llvm::AllocaInst>(nvIt->second)) {
+                        llvm::Type* allocatedTy = allocaI->getAllocatedType();
+                        auto ntIt = context.NamedTypes.find(cap);
+                        bool passByPtr = false;
+                        if (ntIt != context.NamedTypes.end()) {
+                            FluxType capFluxTy = ntIt->second;
+                            resolveUserStructType(capFluxTy, context);
+                            resolveUserEnumType(capFluxTy, context);
+                            passByPtr = shouldPassByPointer(capFluxTy, context);
+                        }
+                        if (passByPtr) {
+                            llvm::Type* VoidPtrTy = llvm::PointerType::get(context.TheContext, 0);
+                            ArgsV.push_back(context.Builder.CreatePointerCast(allocaI, VoidPtrTy, "cap_" + cap));
+                        } else {
+                            llvm::Value* loaded = context.Builder.CreateLoad(allocatedTy, allocaI, "cap_" + cap);
+                            ArgsV.push_back(loaded);
+                        }
+                    }
+                }
+            }
+        }
     }
     auto extRetIt = context.ExternFuncTypes.find(Callee);
     bool isMatRet =

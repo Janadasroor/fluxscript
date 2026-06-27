@@ -136,6 +136,7 @@ class FunctionAST
 public:
     std::vector<std::unique_ptr<EnumDeclAST>> LocalEnums;
     std::vector<std::unique_ptr<StructDeclAST>> LocalAnonStructs;
+    std::vector<std::unique_ptr<FunctionAST>> LocalFunctions;
 
     FunctionAST(std::unique_ptr<PrototypeAST> Proto, std::unique_ptr<ExprAST> Body)
         : Proto(std::move(Proto)), Body(std::move(Body))
@@ -146,6 +147,9 @@ public:
     PrototypeAST* getProto() const { return Proto.get(); }
     const ExprAST* getBody() const { return Body.get(); }
     ExprAST* getBody() { return Body.get(); }
+
+    // Variables captured from the enclosing scope (closure capture)
+    std::vector<std::string> Captures;
 };
 
 // ============================================================================

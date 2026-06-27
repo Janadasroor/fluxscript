@@ -629,6 +629,82 @@ TypedValue BinaryExprAST::codegen(CodegenContext& context)
         }
     }
 
+    // Enum equality / inequality
+    if (L.Type.Kind == TypeKind::UserEnum && R.Type.Kind == TypeKind::UserEnum &&
+        (Op == static_cast<int>(TokenType::tok_equal) || Op == static_cast<int>(TokenType::tok_not_equal))) {
+        llvm::Type* DoubleTy = llvm::Type::getDoubleTy(context.TheContext);
+        llvm::Value* IsEq = nullptr;
+        if (L.Type.EnumTypeId >= 0 && L.Type.EnumTypeId < static_cast<int>(context.EnumTypes.size())) {
+            auto& enumInfo = context.EnumTypes[L.Type.EnumTypeId];
+            if (enumInfo.LLVMType) {
+                llvm::Value* TagL = context.Builder.CreateExtractValue(L.Val, {0}, "enum_tag_l");
+                llvm::Value* TagR = context.Builder.CreateExtractValue(R.Val, {0}, "enum_tag_r");
+                llvm::Value* TagEq = context.Builder.CreateICmpEQ(TagL, TagR, "enum_tag_eq");
+                // Check if any variant has a payload
+                bool anyPayload = false;
+                for (auto& pt : enumInfo.VariantPayloads) {
+                    if (pt.Kind != TypeKind::Void) { anyPayload = true; break; }
+                }
+                if (!anyPayload) {
+                    IsEq = TagEq;
+                } else {
+                    llvm::Value* PayloadL = context.Builder.CreateExtractValue(L.Val, {1}, "enum_payload_l");
+                    llvm::Value* PayloadR = context.Builder.CreateExtractValue(R.Val, {1}, "enum_payload_r");
+                    llvm::Value* PayloadEq = nullptr;
+                    if (PayloadL->getType()->isIntegerTy()) {
+                        PayloadEq = context.Builder.CreateICmpEQ(PayloadL, PayloadR, "enum_payload_eq");
+                    } else if (PayloadL->getType()->isFloatingPointTy()) {
+                        PayloadEq = context.Builder.CreateFCmpOEQ(PayloadL, PayloadR, "enum_payload_eq");
+                    } else if (PayloadL->getType()->isPointerTy()) {
+                        PayloadEq = context.Builder.CreateICmpEQ(
+                            context.Builder.CreatePtrToInt(PayloadL, llvm::Type::getInt64Ty(context.TheContext), "pl"),
+                            context.Builder.CreatePtrToInt(PayloadR, llvm::Type::getInt64Ty(context.TheContext), "pr"),
+                            "enum_payload_eq_ptr");
+                    } else {
+                        // Struct/array payload: use memcmp
+                        llvm::Type* Int8PtrTy = llvm::PointerType::get(context.TheContext, 0);
+                        llvm::Value* AllocaL = context.Builder.CreateAlloca(PayloadL->getType(), nullptr, "pl_s");
+                        llvm::Value* AllocaR = context.Builder.CreateAlloca(PayloadR->getType(), nullptr, "pr_s");
+                        context.Builder.CreateStore(PayloadL, AllocaL);
+                        context.Builder.CreateStore(PayloadR, AllocaR);
+                        uint64_t typeSize = context.TheModule->getDataLayout().getTypeStoreSize(PayloadL->getType());
+                        llvm::Function* MemCmpF = context.TheModule->getFunction("memcmp");
+                        if (!MemCmpF) {
+                            llvm::FunctionType* MCT = llvm::FunctionType::get(
+                                llvm::Type::getInt32Ty(context.TheContext),
+                                {Int8PtrTy, Int8PtrTy, llvm::Type::getInt64Ty(context.TheContext)}, false);
+                            MemCmpF = llvm::Function::Create(MCT, llvm::Function::ExternalLinkage, "memcmp",
+                                                             context.TheModule);
+                        }
+                        llvm::Value* BCastL = context.Builder.CreatePointerCast(AllocaL, Int8PtrTy, "pl_bc");
+                        llvm::Value* BCastR = context.Builder.CreatePointerCast(AllocaR, Int8PtrTy, "pr_bc");
+                        llvm::Value* Size = llvm::ConstantInt::get(llvm::Type::getInt64Ty(context.TheContext), typeSize);
+                        llvm::Value* CmpRes = context.Builder.CreateCall(MemCmpF, {BCastL, BCastR, Size}, "memcmp_res");
+                        PayloadEq = context.Builder.CreateICmpEQ(
+                            CmpRes, llvm::ConstantInt::get(llvm::Type::getInt32Ty(context.TheContext), 0),
+                            "enum_payload_eq");
+                    }
+                    IsEq = context.Builder.CreateAnd(TagEq, PayloadEq, "enum_eq");
+                }
+            }
+        }
+        if (!IsEq) {
+            llvm::Value* SimpleTagL = L.Val->getType()->isStructTy()
+                ? context.Builder.CreateExtractValue(L.Val, {0}, "enum_tag_l")
+                : L.Val;
+            llvm::Value* SimpleTagR = R.Val->getType()->isStructTy()
+                ? context.Builder.CreateExtractValue(R.Val, {0}, "enum_tag_r")
+                : R.Val;
+            IsEq = context.Builder.CreateICmpEQ(SimpleTagL, SimpleTagR, "enum_eq_simple");
+        }
+        if (Op == static_cast<int>(TokenType::tok_equal))
+            return TypedValue(context.Builder.CreateUIToFP(IsEq, DoubleTy, "booltmp"), TypeKind::Bool);
+        else {
+            llvm::Value* IsNe = context.Builder.CreateNot(IsEq, "enum_ne");
+            return TypedValue(context.Builder.CreateUIToFP(IsNe, DoubleTy, "booltmp"), TypeKind::Bool);
+        }
+    }
+
     // Vector equality / inequality
     if (L.Type.Kind == TypeKind::Vector && R.Type.Kind == TypeKind::Vector &&
         (Op == static_cast<int>(TokenType::tok_equal) || Op == static_cast<int>(TokenType::tok_not_equal))) {

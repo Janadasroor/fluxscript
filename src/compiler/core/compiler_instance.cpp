@@ -2039,6 +2039,10 @@ bool CompilerInstance::compileParser(Parser& parser, CodegenContext& context,
             if (importedNames.count(func->getProto()->getName())) {
                 LF->setLinkage(llvm::GlobalValue::InternalLinkage);
             }
+            // Clear NamedValues between functions to prevent stale entries
+            // from leaking into capture analysis of subsequent functions
+            context.NamedValues.clear();
+            context.NamedTypes.clear();
             if (progCb && !progCb("Generating code", fi + 1, numFunctions))
                 return false;
         }

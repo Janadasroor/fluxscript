@@ -18,6 +18,8 @@
 #include "flux/runtime/units.h"
 #include <iostream>
 #include <llvm/IR/Verifier.h>
+#include <algorithm>
+#include <set>
 #include <string>
 
 namespace Flux {
@@ -958,6 +960,80 @@ llvm::Function* FunctionAST::codegen(CodegenContext& context)
     if (!TheFunction)
         return nullptr;
 
+    // Capture analysis for nested def closure capture
+    // First check for pre-computed captures from parent scope (AST-based analysis)
+    Captures.clear();
+    auto precompIt = context.NestedFunctionCaptures.find(Proto->getName());
+    if (precompIt != context.NestedFunctionCaptures.end()) {
+        Captures = precompIt->second;
+    } else if (!context.NamedValues.empty()) {
+        // Fallback: detect captures from current NamedValues (works for local functions
+        // that are not directly pre-computed, e.g., nested inside another local function)
+        std::vector<std::string> varNames;
+        collectVarNamesFromExpr(Body.get(), varNames);
+        if (!varNames.empty()) {
+            std::set<std::string> argSet;
+            for (const auto& arg : Proto->getArgs())
+                argSet.insert(arg.first);
+            for (const auto& vn : varNames) {
+                if (argSet.count(vn)) continue;
+                if (context.NamedValues.count(vn))
+                    Captures.push_back(vn);
+            }
+            std::sort(Captures.begin(), Captures.end());
+            Captures.erase(std::unique(Captures.begin(), Captures.end()), Captures.end());
+        }
+    }
+
+    if (!Captures.empty()) {
+        context.NestedFunctionCaptures[Proto->getName()] = Captures;
+        std::string fnName = TheFunction->getName().str();
+        TheFunction->eraseFromParent();
+        llvm::Type* VoidPtrTy = llvm::PointerType::get(context.TheContext, 0);
+        llvm::Type* DoubleTy = llvm::Type::getDoubleTy(context.TheContext);
+        std::vector<llvm::Type*> ArgTypes;
+        if (useSRet)
+            ArgTypes.push_back(VoidPtrTy);
+        if (isGenerator)
+            ArgTypes.push_back(VoidPtrTy);
+        if (isAsync)
+            ArgTypes.push_back(VoidPtrTy);
+        for (auto& Arg : Proto->getArgs()) {
+            FluxType resolved = Arg.second;
+            resolveUserStructType(resolved, context);
+            resolveUserEnumType(resolved, context);
+            if (shouldPassByPointer(resolved, context))
+                ArgTypes.push_back(VoidPtrTy);
+            else if (resolved.Kind == TypeKind::String)
+                ArgTypes.push_back(DoubleTy);
+            else
+                ArgTypes.push_back(resolved.getLLVMType(context.TheContext));
+        }
+        for (const auto& cap : Captures) {
+            auto ntIt = context.NamedTypes.find(cap);
+            FluxType capType = (ntIt != context.NamedTypes.end()) ? ntIt->second : FluxType(TypeKind::Double);
+            resolveUserStructType(capType, context);
+            resolveUserEnumType(capType, context);
+            if (shouldPassByPointer(capType, context))
+                ArgTypes.push_back(VoidPtrTy);
+            else
+                ArgTypes.push_back(capType.getLLVMType(context.TheContext));
+        }
+        llvm::Type* RetTy = useSRet ? llvm::Type::getVoidTy(context.TheContext)
+                                    : Proto->getReturnType().getLLVMType(context.TheContext);
+        llvm::FunctionType* FT = llvm::FunctionType::get(RetTy, ArgTypes, false);
+        TheFunction = llvm::Function::Create(FT, llvm::Function::ExternalLinkage, fnName, context.TheModule);
+        TheFunction->addFnAttr("stackrealign");
+        if (useSRet) {
+            llvm::Type* sretTy = Proto->getReturnType().getLLVMType(context.TheContext);
+            if (Proto->getReturnType().Kind == TypeKind::Matrix ||
+                Proto->getReturnType().Kind == TypeKind::ComplexMatrix)
+                sretTy = FluxType(TypeKind::Matrix).getLLVMType(context.TheContext);
+            TheFunction->addParamAttr(0, llvm::Attribute::getWithStructRetType(context.TheContext, sretTy));
+            TheFunction->addParamAttr(0, llvm::Attribute::get(context.TheContext, llvm::Attribute::NoAlias));
+        }
+    }
+
     context.FuncReturnTypes[Proto->getName()] = Proto->getReturnType();
 
     llvm::DISubprogram* subprogram = nullptr;
@@ -1083,6 +1159,8 @@ llvm::Function* FunctionAST::codegen(CodegenContext& context)
     const bool isUpdateLike = Proto->getName() == "update" || (Proto->getName().rfind("update_", 0) == 0);
 
     for (; ArgIt != TheFunction->arg_end(); ++ArgIt) {
+        if (Idx >= ArgTypes.size())
+            break;
         // Resolve type on a mutable copy first to get the correct LLVM type
         FluxType argType = ArgTypes[Idx].second;
         resolveUserStructType(argType, context);
@@ -1128,6 +1206,31 @@ llvm::Function* FunctionAST::codegen(CodegenContext& context)
         Idx++;
     }
 
+    // Set up capture param allocas for nested def closure capture
+    if (!Captures.empty()) {
+        auto CapIt = TheFunction->arg_begin();
+        unsigned skipCapture = 0;
+        if (useSRet) skipCapture++;
+        if (isGenerator) skipCapture++;
+        if (isAsync) skipCapture++;
+        skipCapture += Proto->getArgs().size();
+        for (unsigned i = 0; i < skipCapture; i++) ++CapIt;
+        for (const auto& cap : Captures) {
+            if (CapIt == TheFunction->arg_end()) break;
+            llvm::Value* ArgVal = &(*CapIt);
+            auto ntIt = context.NamedTypes.find(cap);
+            FluxType capType = (ntIt != context.NamedTypes.end()) ? ntIt->second : FluxType(TypeKind::Double);
+            resolveUserStructType(capType, context);
+            resolveUserEnumType(capType, context);
+            llvm::Type* capLLVMTy = capType.getLLVMType(context.TheContext);
+            llvm::AllocaInst* Alloca = context.Builder.CreateAlloca(capLLVMTy, nullptr, "__capture_" + cap);
+            context.Builder.CreateStore(ArgVal, Alloca);
+            context.NamedValues[cap] = Alloca;
+            context.NamedTypes[cap] = capType;
+            ++CapIt;
+        }
+    }
+
     if (isGenerator) {
         context.Builder.SetInsertPoint(context.YieldTargets[0]);
     }
@@ -1136,6 +1239,50 @@ llvm::Function* FunctionAST::codegen(CodegenContext& context)
         context.Builder.SetInsertPoint(context.AwaitResumeTargets[0]);
     }
 
+    // Pre-compute captures for local functions using AST analysis
+    // This runs BEFORE body codegen, so we use AST names, not NamedValues/LLVM values.
+    for (auto& F : LocalFunctions) {
+        std::vector<std::string> parentVarNames;
+        collectVarNamesFromExpr(Body.get(), parentVarNames);
+        for (const auto& arg : Proto->getArgs())
+            parentVarNames.push_back(arg.first);
+        std::set<std::string> parentVarSet(parentVarNames.begin(), parentVarNames.end());
+
+        std::vector<std::string> localVarNames;
+        collectVarNamesFromExpr(F->getBody(), localVarNames);
+
+        std::set<std::string> argSet;
+        for (const auto& arg : F->getProto()->getArgs())
+            argSet.insert(arg.first);
+
+        std::vector<std::string> captures;
+        for (const auto& vn : localVarNames) {
+            if (argSet.count(vn)) continue;
+            if (parentVarSet.count(vn))
+                captures.push_back(vn);
+        }
+        std::sort(captures.begin(), captures.end());
+        captures.erase(std::unique(captures.begin(), captures.end()), captures.end());
+
+        if (!captures.empty())
+            context.NestedFunctionCaptures[F->getProto()->getName()] = captures;
+    }
+
+    // Codegen local function definitions
+    for (auto& F : LocalFunctions) {
+        auto SavedNamedValues = context.NamedValues;
+        auto SavedNamedTypes = context.NamedTypes;
+        auto SavedLexicalBlocks = context.LexicalBlocks;
+        llvm::BasicBlock* SavedInsertBB = context.Builder.GetInsertBlock();
+        auto SavedDebugLoc = context.Builder.getCurrentDebugLocation();
+        F->codegen(context);
+        context.NamedValues = std::move(SavedNamedValues);
+        context.NamedTypes = std::move(SavedNamedTypes);
+        context.LexicalBlocks = std::move(SavedLexicalBlocks);
+        if (SavedInsertBB)
+            context.Builder.SetInsertPoint(SavedInsertBB);
+        context.Builder.SetCurrentDebugLocation(SavedDebugLoc);
+    }
     // Codegen local enum and anonymous struct declarations
     for (auto& S : LocalAnonStructs)
         S->codegen(context);

@@ -291,14 +291,18 @@ private:
     // Transferred to FunctionAST after the body is parsed.
     std::vector<std::unique_ptr<EnumDeclAST>> m_localEnumDecls;
     std::vector<std::unique_ptr<StructDeclAST>> m_localAnonStructs;
+    // Local function definitions collected during function body parsing.
+    std::vector<std::unique_ptr<FunctionAST>> m_localFunctions;
 
 public:
     std::vector<std::unique_ptr<EnumDeclAST>> takeLocalEnumDecls() { return std::move(m_localEnumDecls); }
     std::vector<std::unique_ptr<StructDeclAST>> takeLocalAnonStructs() { return std::move(m_localAnonStructs); }
+    std::vector<std::unique_ptr<FunctionAST>> takeLocalFunctions() { return std::move(m_localFunctions); }
     void clearLocalDecls()
     {
         m_localEnumDecls.clear();
         m_localAnonStructs.clear();
+        m_localFunctions.clear();
     }
 };
 

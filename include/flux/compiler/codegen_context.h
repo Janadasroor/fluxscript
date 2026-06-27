@@ -192,6 +192,9 @@ public:
     // Method dispatch: type name -> { method name -> Function }
     std::map<std::string, std::map<std::string, llvm::Function*>> TypeMethods;
 
+    // Maps nested def function names to their captured variable names
+    std::map<std::string, std::vector<std::string>> NestedFunctionCaptures;
+
     // Closure support
     int ClosureStructTypeId = -1; // ID in StructTypes for { fnPtr, envPtr } closure struct
 

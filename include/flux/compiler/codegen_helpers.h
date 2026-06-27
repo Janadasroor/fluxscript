@@ -19,6 +19,9 @@
 
 namespace Flux {
 
+// Collect all variable names referenced in an expression tree
+void collectVarNamesFromExpr(const ExprAST* Expr, std::vector<std::string>& names);
+
 inline bool isComplexType(TypedValue V)
 {
     return V.Type.Kind == TypeKind::Complex;

@@ -1232,6 +1232,28 @@ std::unique_ptr<ExprAST> Parser::ParsePrimary()
         break;
     }
 
+    // Local function definition (nested def)
+    case static_cast<int>(TokenType::tok_def): {
+        auto savedEnums = std::move(m_localEnumDecls);
+        auto savedAnonStructs = std::move(m_localAnonStructs);
+        auto savedGenericParams = std::move(m_activeGenericParams);
+        auto savedFunctions = std::move(m_localFunctions);
+
+        if (auto Func = ParseDefinition()) {
+            m_localFunctions.push_back(std::move(Func));
+        }
+
+        for (auto& f : savedFunctions)
+            m_localFunctions.push_back(std::move(f));
+        savedFunctions.clear();
+
+        m_localEnumDecls = std::move(savedEnums);
+        m_localAnonStructs = std::move(savedAnonStructs);
+        m_activeGenericParams = std::move(savedGenericParams);
+        Res = std::make_unique<NumberExprAST>(0.0);
+        break;
+    }
+
     // Advanced control flow
     case static_cast<int>(TokenType::tok_switch):
         Res = ParseSwitchExpr();
@@ -2015,6 +2037,7 @@ std::unique_ptr<FunctionAST> Parser::ParseDefinition()
         auto Func = std::make_unique<FunctionAST>(std::move(Proto), std::move(Body));
         Func->LocalEnums = takeLocalEnumDecls();
         Func->LocalAnonStructs = takeLocalAnonStructs();
+        Func->LocalFunctions = takeLocalFunctions();
         return Func;
     }
     return nullptr;
