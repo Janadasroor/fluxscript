@@ -178,7 +178,7 @@ jobs:
         if: steps.cache-llvm.outputs.cache-hit != 'true'
         shell: pwsh
         run: |
-          curl -L -o llvm.tar.xz https://github.com/llvm/llvm-project/releases/download/llvmorg-21.1.0/clang+llvm-21.1.0-x86_64-pc-windows-msvc.tar.xz
+          curl -L --retry 3 --retry-delay 5 -o llvm.tar.xz https://github.com/llvm/llvm-project/releases/download/llvmorg-21.1.0/clang+llvm-21.1.0-x86_64-pc-windows-msvc.tar.xz
           & "C:\Program Files\7-Zip\7z.exe" x llvm.tar.xz -y | Out-Null
           & "C:\Program Files\7-Zip\7z.exe" x llvm.tar -ollvm-windows -y | Out-Null
 
@@ -210,7 +210,14 @@ jobs:
         if: steps.cache-eigen.outputs.cache-hit != 'true'
         shell: pwsh
         run: |
-          curl -L -o eigen.zip https://gitlab.com/libeigen/eigen/-/archive/3.4.0/eigen-3.4.0.zip
+          $attempt = 0
+          do {
+            $attempt++
+            curl -L --retry 3 --retry-delay 5 -o eigen.zip https://gitlab.com/libeigen/eigen/-/archive/3.4.0/eigen-3.4.0.zip
+            $ok = $LASTEXITCODE -eq 0 -and (Get-Item eigen.zip).Length -gt 1000000
+            if (-not $ok) { Write-Host "Eigen download attempt $attempt failed; retrying..." }
+          } while (-not $ok -and $attempt -lt 5)
+          if (-not $ok) { exit 1 }
           New-Item -ItemType Directory -Force -Path third_party | Out-Null
           & "C:\Program Files\7-Zip\7z.exe" x eigen.zip -othird_party -y
 
