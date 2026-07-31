@@ -718,52 +718,57 @@ int main(int argc, char** argv)
                             if (currentCode.find("import ") != std::string::npos) {
                                 // Skip silently
                             } else {
-                                // Write code to temp file and compile
-                                const std::filesystem::path tmpFile =
-                                    std::filesystem::temp_directory_path() /
-                                    ("flux_validate_" + std::to_string(blockNum) + ".flux");
-                                {
-                                    std::ofstream ofs(tmpFile, std::ios::trunc);
-                                    if (!ofs) {
-                                        failed++;
-                                        std::cerr << "FAIL example #" << blockNum
-                                                  << ": could not write temp file\n";
-                                        continue;
-                                    }
-                                    ofs << currentCode;
-                                }
-                                // Try compile-only (parse + codegen)
-                                Flux::CompilerOptions opts;
-                                opts.inputName = tmpFile.string();
-                                opts.moduleName = "validate_" + std::to_string(blockNum);
-                                opts.optimizationLevel = Flux::OptimizationLevel::O0;
-                                Flux::CompilerInstance compiler(opts);
-                                std::string error;
-                                std::ifstream ifs(tmpFile);
-                                std::string code((std::istreambuf_iterator<char>(ifs)), std::istreambuf_iterator<char>());
-                                std::unique_ptr<Flux::CompileArtifacts> artifacts;
+                                std::cerr << "Validating example #" << blockNum << "..." << std::endl;
                                 try {
-                                    artifacts = compiler.compileToIR(code, &error);
-                                } catch (const std::exception& ex) {
-                                    error = std::string("uncaught exception: ") + ex.what();
-                                } catch (...) {
-                                    error = "uncaught unknown exception";
-                                }
-                                if (artifacts) {
-                                    passed++;
-                                } else {
-                                    failed++;
-                                    std::cerr << "FAIL example #" << blockNum << ": " << error << "\n";
-                                    std::istringstream cs(currentCode);
-                                    std::string cl;
-                                    int clNum = 0;
-                                    while (std::getline(cs, cl) && clNum < 3) {
-                                        std::cerr << "  " << cl << "\n";
-                                        clNum++;
+                                    // Write code to temp file and compile
+                                    const std::filesystem::path tmpFile =
+                                        std::filesystem::temp_directory_path() /
+                                        ("flux_validate_" + std::to_string(blockNum) + ".flux");
+                                    {
+                                        std::ofstream ofs(tmpFile, std::ios::trunc);
+                                        if (!ofs) {
+                                            failed++;
+                                            std::cerr << "FAIL example #" << blockNum
+                                                      << ": could not write temp file\n";
+                                            continue;
+                                        }
+                                        ofs << currentCode;
                                     }
-                                    std::cerr << "\n";
+                                    // Try compile-only (parse + codegen)
+                                    Flux::CompilerOptions opts;
+                                    opts.inputName = tmpFile.string();
+                                    opts.moduleName = "validate_" + std::to_string(blockNum);
+                                    opts.optimizationLevel = Flux::OptimizationLevel::O0;
+                                    Flux::CompilerInstance compiler(opts);
+                                    std::string error;
+                                    std::ifstream ifs(tmpFile);
+                                    std::string code((std::istreambuf_iterator<char>(ifs)), std::istreambuf_iterator<char>());
+                                    std::unique_ptr<Flux::CompileArtifacts> artifacts =
+                                        compiler.compileToIR(code, &error);
+                                    if (artifacts) {
+                                        passed++;
+                                    } else {
+                                        failed++;
+                                        std::cerr << "FAIL example #" << blockNum << ": " << error << "\n";
+                                        std::istringstream cs(currentCode);
+                                        std::string cl;
+                                        int clNum = 0;
+                                        while (std::getline(cs, cl) && clNum < 3) {
+                                            std::cerr << "  " << cl << "\n";
+                                            clNum++;
+                                        }
+                                        std::cerr << "\n";
+                                    }
+                                    std::filesystem::remove(tmpFile);
+                                } catch (const std::exception& ex) {
+                                    failed++;
+                                    std::cerr << "FAIL example #" << blockNum
+                                              << ": uncaught exception: " << ex.what() << "\n";
+                                } catch (...) {
+                                    failed++;
+                                    std::cerr << "FAIL example #" << blockNum
+                                              << ": uncaught unknown exception\n";
                                 }
-                                std::filesystem::remove(tmpFile);
                             }
                         }
                         currentCode.clear();
