@@ -1264,10 +1264,14 @@ std::unique_ptr<ExprAST> Parser::ParsePrimary()
 
     // Local function definition (nested def)
     case static_cast<int>(TokenType::tok_def): {
-        auto savedEnums = std::move(m_localEnumDecls);
-        auto savedAnonStructs = std::move(m_localAnonStructs);
-        auto savedGenericParams = std::move(m_activeGenericParams);
-        auto savedFunctions = std::move(m_localFunctions);
+        std::vector<std::unique_ptr<EnumDeclAST>> savedEnums;
+        std::vector<std::unique_ptr<StructDeclAST>> savedAnonStructs;
+        std::vector<std::unique_ptr<FunctionAST>> savedFunctions;
+        std::vector<std::string> savedGenericParams;
+        savedEnums.swap(m_localEnumDecls);
+        savedAnonStructs.swap(m_localAnonStructs);
+        savedGenericParams.swap(m_activeGenericParams);
+        savedFunctions.swap(m_localFunctions);
 
         if (auto Func = ParseDefinition()) {
             m_localFunctions.push_back(std::move(Func));

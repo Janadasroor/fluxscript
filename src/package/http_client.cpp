@@ -160,7 +160,11 @@ Response Client::request(const std::string& method, const std::string& url, cons
     curl_easy_setopt(curl, CURLOPT_MAXREDIRS, 10L);
 
     // Restrict protocols to HTTP/HTTPS only (prevent file://, gopher://, etc.)
+#if LIBCURL_VERSION_NUM >= 0x075500 // CURLOPT_PROTOCOLS_STR requires libcurl >= 7.85.0
     curl_easy_setopt(curl, CURLOPT_PROTOCOLS_STR, "http,https");
+#else
+    curl_easy_setopt(curl, CURLOPT_PROTOCOLS, CURLPROTO_HTTP | CURLPROTO_HTTPS);
+#endif
 
     // SSL verification
     curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 1L);
@@ -224,7 +228,11 @@ bool Client::downloadFile(const std::string& url, const std::string& destPath,
     curl_easy_setopt(curl, CURLOPT_TIMEOUT, m_timeout);
     curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
     curl_easy_setopt(curl, CURLOPT_MAXREDIRS, 10L);
+#if LIBCURL_VERSION_NUM >= 0x075500 // CURLOPT_PROTOCOLS_STR requires libcurl >= 7.85.0
     curl_easy_setopt(curl, CURLOPT_PROTOCOLS_STR, "http,https");
+#else
+    curl_easy_setopt(curl, CURLOPT_PROTOCOLS, CURLPROTO_HTTP | CURLPROTO_HTTPS);
+#endif
 
     // Progress callback
     if (callback) {
