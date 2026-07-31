@@ -719,14 +719,22 @@ int main(int argc, char** argv)
                                 // Skip silently
                             } else {
                                 // Write code to temp file and compile
-                                std::string tmpFile = "/tmp/flux_validate_" + std::to_string(blockNum) + ".flux";
+                                const std::filesystem::path tmpFile =
+                                    std::filesystem::temp_directory_path() /
+                                    ("flux_validate_" + std::to_string(blockNum) + ".flux");
                                 {
-                                    std::ofstream ofs(tmpFile);
+                                    std::ofstream ofs(tmpFile, std::ios::trunc);
+                                    if (!ofs) {
+                                        failed++;
+                                        std::cerr << "FAIL example #" << blockNum
+                                                  << ": could not write temp file\n";
+                                        continue;
+                                    }
                                     ofs << currentCode;
                                 }
                                 // Try compile-only (parse + codegen)
                                 Flux::CompilerOptions opts;
-                                opts.inputName = tmpFile;
+                                opts.inputName = tmpFile.string();
                                 opts.moduleName = "validate_" + std::to_string(blockNum);
                                 opts.optimizationLevel = Flux::OptimizationLevel::O0;
                                 Flux::CompilerInstance compiler(opts);
