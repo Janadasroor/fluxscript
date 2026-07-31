@@ -10,7 +10,7 @@ namespace Flux {
 namespace Docs {
 
 const char* getDocsText() {
-    return R"MARKDOWN(
+    return R"MD0(
 # FluxScript Documentation
 
 A JIT-compiled scripting language for circuit simulation with compile-time SI unit analysis.
@@ -623,7 +623,8 @@ class Box[T] {
 def main() -> Double { 0.0 }
 ```
 
-Generic parameters are parsed between the class name and the opening brace. At instantiation, the concrete type is supplied in brackets:
+Generic parameters are parsed between the class name and the opening brace. At instantiation, the concre)MD0" \
+        R"MD1(te type is supplied in brackets:
 
 ```flux
 let b = Box[Double] { content: 42.0 }
@@ -1205,7 +1206,8 @@ Variants with multiple fields bind each field positionally:
 ```flux
 enum Maybe3 {
     One { a: Double },
-    Two { a: Double, b: Double },
+    Two { a: Double, b: Double })MD1" \
+        R"MD2(,
     Three { a: Double, b: Double, c: Double }
 }
 def maybe3_sum(m: Maybe3) -> Double {
@@ -1852,7 +1854,8 @@ def deep_generic(x: Double) -> Double {
     let b = identity[Double](a + 1.0)
     let c = identity[Double](b + 2.0)
     let d = identity[Double](c + 3.0)
-    let e = identity[Double](d + 4.0)
+    let e = ident)MD2" \
+        R"MD3(ity[Double](d + 4.0)
     e
 }
 
@@ -2482,7 +2485,8 @@ def main() -> Double {
 
     assert(b1.val == 1.0, "b1 wrong")
     assert(b2.val.val == 2.0, "b2 wrong")
-    assert(b3.val.val.val == 3.0, "b3 wrong")
+    assert(b3.val.val.)MD3" \
+        R"MD4(val == 3.0, "b3 wrong")
 
     let p1 = Pair[Double, Double] { left: 10.0, right: 20.0 }
     let p2 = Pair[Pair[Double, Double], Double] { left: p1, right: 30.0 }
@@ -3121,7 +3125,8 @@ perm(5.0, 2.0)   # → 20.0
 
 ### `reflect(v, n)` → `Double`
 
-Reflect vector `v` about normal `n`. Returns `v - 2 * dot(v, n) * n`.
+Reflect vector `v` about normal `n`. Returns `v - 2 * dot(v, n) *)MD4" \
+        R"MD5( n`.
 
 ```
 reflect(1.0, 1.0)   # → -1.0
@@ -3895,7 +3900,8 @@ enum Component {
     Vdc { n_plus: Double, n_minus: Double, v_val: Double }
     Idc { n_plus: Double, n_minus: Double, i_val: Double }
     Vac { n_plus: Double, n_minus: Double, dc_val: Double, ac_mag: Double, ac_freq: Double, ac_phase: Double }
-    Iac { n_plus: Double, n_minus: Double, dc_val: Double, ac_mag: Double, ac_freq: Double, ac_phase: Double }
+    Iac { n_plus: Double, n_minus: Double, dc_val: Doubl)MD5" \
+        R"MD6(e, ac_mag: Double, ac_freq: Double, ac_phase: Double }
     Vpulse { n_plus: Double, n_minus: Double, per: Double, v1: Double, v2: Double, td: Double, tr: Double, tfall: Double, pw: Double }
     Vsin { n_plus: Double, n_minus: Double, voff: Double, vamp: Double, freq: Double, phase: Double }
     E { n_op: Double, n_on: Double, n_ip: Double, n_in: Double, gain: Double }    # VCVS
@@ -4419,7 +4425,8 @@ def main() -> Double {
 
 struct Vec3 { x: Double, y: Double, z: Double }
 def make_vec3(x: Double, y: Double, z: Double) -> Vec3 {
-    Vec3 { x: x, y: y, z: z }
+    Vec3 )MD6" \
+        R"MD7({ x: x, y: y, z: z }
 }
 
 main()
@@ -5063,7 +5070,8 @@ def main() -> var {
 main()
 ```
 
-**What it does:** Simulates 3ms of a 1kHz sine wave through a diode. The diode half-wave rectifies the signal, and the RC filter smooths the output. The capacitor voltage should settle between 0 and 5V.
+**What it does:** Simulates 3ms of a 1kHz sine wave through a diode. The diode half-wave rectifies the signal, and the RC filter smooths the output. Th)MD7" \
+        R"MD8(e capacitor voltage should settle between 0 and 5V.
 
 ---
 
@@ -5438,7 +5446,7 @@ main()
 | Matrix operations | Example 27 |
 | MNA stamping | Example 28 |
 | ~Copy annotation | Example 29 |
-)MARKDOWN";
+)MD8";
 }
 
 static std::string renderMarkdownLine(const std::string& line) {

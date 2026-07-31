@@ -10,7 +10,7 @@ namespace Flux {
 namespace Examples {
 
 const char* getExamplesText() {
-    return R"MARKDOWN(# FluxScript Examples
+    return R"MD0(# FluxScript Examples
 
 Curated examples demonstrating FluxScript features. Each example is self-contained and can be run with `flux run example.flux`.
 
@@ -765,7 +765,8 @@ def main() {
     # DC analysis
     var sol = mna_dc_solve(c)
     var v1 = mna_get_node_voltage(sol, 1.0)
-    var v2 = mna_get_node_voltage(sol, 2.0)
+    var v2 = mna_get_node_voltage(sol, 2.0)MD0" \
+        R"MD1()
     println("=== Voltage Divider with Bypass Cap ===")
     println("V1 (source) = " + str(v1) + " V")
     println("V2 (output) = " + str(v2) + " V")
@@ -832,7 +833,7 @@ double_it(21.0)
 | Async | `async def name() { await expr }` |
 | Try/Catch | `try { ... } catch (e) { ... }` |
 | Error prop | `result?` (early return on Err) |
-)MARKDOWN";
+)MD1";
 }
 
 std::string searchExamples(const std::string& keyword) {
