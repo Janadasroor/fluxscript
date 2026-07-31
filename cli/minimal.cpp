@@ -741,7 +741,14 @@ int main(int argc, char** argv)
                                 std::string error;
                                 std::ifstream ifs(tmpFile);
                                 std::string code((std::istreambuf_iterator<char>(ifs)), std::istreambuf_iterator<char>());
-                                auto artifacts = compiler.compileToIR(code, &error);
+                                std::unique_ptr<Flux::CompileArtifacts> artifacts;
+                                try {
+                                    artifacts = compiler.compileToIR(code, &error);
+                                } catch (const std::exception& ex) {
+                                    error = std::string("uncaught exception: ") + ex.what();
+                                } catch (...) {
+                                    error = "uncaught unknown exception";
+                                }
                                 if (artifacts) {
                                     passed++;
                                 } else {
