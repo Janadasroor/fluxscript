@@ -1274,6 +1274,7 @@ std::unique_ptr<ExprAST> Parser::ParsePrimary()
         savedFunctions.swap(m_localFunctions);
 
         if (auto Func = ParseDefinition()) {
+            m_localFunctions = std::vector<std::unique_ptr<FunctionAST>>{};
             m_localFunctions.push_back(std::move(Func));
         }
 
