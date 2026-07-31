@@ -434,6 +434,10 @@ target_include_directories(FluxScript PUBLIC
 # Main CLI (replaces the old Qt-based flux)
 add_executable(flux cli/minimal.cpp cli/docs_embedded.cpp cli/examples_embedded.cpp)
 target_link_libraries(flux PRIVATE FluxScript)
+if(MSVC)
+    # LLVM codegen recursion can overflow the default 1MB Windows stack (0xC0000005)
+    target_link_options(flux PRIVATE /STACK:8388608)
+endif()
 
 # Build stdlib bitcode cache for faster subsequent compilations
 set(STDLIB_SOURCE_DIR "${CMAKE_SOURCE_DIR}/stdlib")

@@ -741,8 +741,11 @@ int main(int argc, char** argv)
                                     opts.optimizationLevel = Flux::OptimizationLevel::O0;
                                     Flux::CompilerInstance compiler(opts);
                                     std::string error;
-                                    std::ifstream ifs(tmpFile);
-                                    std::string code((std::istreambuf_iterator<char>(ifs)), std::istreambuf_iterator<char>());
+                                    std::string code;
+                                    {
+                                        std::ifstream ifs(tmpFile);
+                                        code.assign((std::istreambuf_iterator<char>(ifs)), std::istreambuf_iterator<char>());
+                                    }
                                     std::unique_ptr<Flux::CompileArtifacts> artifacts =
                                         compiler.compileToIR(code, &error);
                                     if (artifacts) {
@@ -759,7 +762,8 @@ int main(int argc, char** argv)
                                         }
                                         std::cerr << "\n";
                                     }
-                                    std::filesystem::remove(tmpFile);
+                                    std::error_code ec;
+                                    std::filesystem::remove(tmpFile, ec);
                                 } catch (const std::exception& ex) {
                                     failed++;
                                     std::cerr << "FAIL example #" << blockNum
