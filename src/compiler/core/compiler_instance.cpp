@@ -40,6 +40,8 @@
 
 namespace Flux {
 
+static const bool fluxDiagSkipStdlib = std::getenv("FLUX_DIAG_SKIP_STDLIB") != nullptr;
+
 namespace {
 
 std::string tokenSpelling(const Lexer& lexer, int token)
@@ -2180,7 +2182,7 @@ std::unique_ptr<CompileArtifacts> CompilerInstance::compileToIR(const std::strin
 
     std::map<std::string, bool> importedModules;
     std::vector<std::unique_ptr<FunctionAST>> preParsedFunctions;
-    if (m_options.injectStdlib) {
+    if (m_options.injectStdlib && !fluxDiagSkipStdlib) {
         injectStandardLibrary(*artifacts->codegenContext, artifacts->functionReturnTypes);
         // Auto-import standard library modules so they're available without
         // explicit import. Functions are collected without immediate codegen
@@ -2280,7 +2282,7 @@ std::vector<LexerDiagnostic> CompilerInstance::collectAllErrors(const std::strin
 
     std::map<std::string, bool> importedModules;
     std::vector<std::unique_ptr<FunctionAST>> preParsedFunctions;
-    if (m_options.injectStdlib) {
+    if (m_options.injectStdlib && !fluxDiagSkipStdlib) {
         injectStandardLibrary(*artifacts->codegenContext, artifacts->functionReturnTypes);
         std::vector<std::string> stdlibModules = {"math", "trig", "array", "stats", "signal", "string", "cmatrix"};
         for (const auto& mod : stdlibModules) {

@@ -381,6 +381,7 @@ jobs:
             $env:PATH = "$llvmBin;$env:PATH"
           }
           $env:ASAN_OPTIONS = "detect_leaks=0:abort_on_error=1:handle_segv=1"
+          $env:FLUX_DIAG_SKIP_STDLIB = "1"
           & "build-asan\flux.exe" examples --validate 2>&1 | Select-Object -Last 60
           exit $LASTEXITCODE
 

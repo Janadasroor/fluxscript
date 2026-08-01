@@ -34,3 +34,5 @@ progress.md
 llvm.sh
 debug/
 examples/fluxqt/build/
+/build-asan/
+/build-debug/
