@@ -59,8 +59,8 @@ jobs:
                 -DClang_DIR=/usr/lib/llvm-21/lib/cmake/clang \
                 -DLLD_DIR=/usr/lib/llvm-21/lib/cmake/lld \
                 -DFLUX_BUILD_TESTS=ON &&
-              ninja -C build -j\$(nproc) &&
-              cd build && ctest --output-on-failure -R 'flux-test' -E 'all-features|waveform-extraction|tiered-jit|module-system' -j\$(nproc) || true
+              ninja -C build &&
+              cd build && ctest --output-on-failure -R 'flux-test' -E 'all-features|waveform-extraction|tiered-jit|module-system' || true
             "
 
       - name: Package (tag only)
@@ -334,7 +334,7 @@ jobs:
             -DLLVM_DIR="${{ github.workspace }}/llvm-android/lib/cmake/llvm" \
             -DEIGEN3_INCLUDE_DIR="${{ github.workspace }}/third_party" \
             -DFLUX_VIO_MATRIXC_LIB_DIR=""
-          cmake --build build -j$(nproc)
+          cmake --build build
 
       - name: Package
         if: startsWith(github.ref, 'refs/tags/v')
@@ -414,7 +414,7 @@ jobs:
             -DLLVM_DIR="${{ github.workspace }}/llvm-android/lib/cmake/llvm" \
             -DEIGEN3_INCLUDE_DIR="${{ github.workspace }}/third_party" \
             -DFLUX_VIO_MATRIXC_LIB_DIR=""
-          cmake --build build -j$(nproc)
+          cmake --build build
 
       - name: Package
         if: startsWith(github.ref, 'refs/tags/v')

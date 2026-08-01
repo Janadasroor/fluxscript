@@ -42,4 +42,4 @@ jobs:
             -DClang_DIR=/usr/lib/llvm-21/lib/cmake/clang \
             -DLLD_DIR=/usr/lib/llvm-21/lib/cmake/lld \
             -DCMAKE_CXX_FLAGS="-Werror"
-          cmake --build build -j$(nproc) 2>&1
+          cmake --build build 2>&1
