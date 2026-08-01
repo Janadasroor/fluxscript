@@ -357,29 +357,7 @@ jobs:
           $llvmRoot = (Get-ChildItem -Path llvm-windows -Recurse -Filter "LLVMConfig.cmake" | Select-Object -First 1).DirectoryName.Parent.Parent.Parent.FullName
           $inc = Join-Path $llvmRoot 'include'
           $lib = Join-Path $llvmRoot 'lib'
-          @'
-#include <llvm/IR/ConstantFP.h>
-#include <llvm/IR/LLVMContext.h>
-#include <llvm/IR/Module.h>
-#include <llvm/IR/Type.h>
-#include <cstdio>
-int main()
-{
-    const double vals[] = {0.0, 1.0, 0.5, 2.5, 3.14159, 2.71828, 1e-9, 1e9, -0.0, 12345.678};
-    for (int i = 0; i < 200; ++i)
-    {
-        llvm::LLVMContext ctx;
-        llvm::Module mod("repro", ctx);
-        llvm::Type* dbl = llvm::Type::getDoubleTy(ctx);
-        for (int j = 0; j < 50; ++j)
-            llvm::ConstantFP::get(dbl, vals[(i + j) % 10]);
-        // destroy context -> ~LLVMContextImpl -> FPConstants::clear()
-    }
-    std::printf("repro OK\n");
-    return 0;
-}
-'@ | Out-File -Encoding ascii repro.cpp
-          cl /nologo /EHsc /std:c++17 /I "$inc" repro.cpp /link /LIBPATH:"$lib" LLVMCore.lib LLVMSupport.lib /OUT:repro.exe
+          cl /nologo /EHsc /std:c++17 /I "$inc" ci\repro_fpconstants.cpp /link /LIBPATH:"$lib" LLVMCore.lib LLVMSupport.lib /OUT:repro.exe
           if ($LASTEXITCODE -ne 0) { Write-Host "repro compile FAILED"; exit 1 }
           .\repro.exe
           if ($LASTEXITCODE -ne 0) { Write-Host "repro CRASHED (LLVM prebuilt bug)"; exit 1 }
