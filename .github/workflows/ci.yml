@@ -354,7 +354,7 @@ jobs:
           # via ConstantFP::get (populating the FPConstants DenseMap), then
           # destroy the context (clearing the map). If this crashes, the bug
           # is in the prebuilt LLVM libs; if not, it is in flux's usage.
-          $llvmRoot = (Get-ChildItem -Path llvm-windows -Recurse -Filter "LLVMConfig.cmake" | Select-Object -First 1).DirectoryName.Parent.Parent.Parent.FullName
+          $llvmRoot = (Resolve-Path (Join-Path $env:LLVM_DIR '..\..\..')).Path
           $inc = Join-Path $llvmRoot 'include'
           $lib = Join-Path $llvmRoot 'lib'
           cl /nologo /EHsc /std:c++17 /I "$inc" ci\repro_fpconstants.cpp /link /LIBPATH:"$lib" LLVMCore.lib LLVMSupport.lib /OUT:repro.exe
