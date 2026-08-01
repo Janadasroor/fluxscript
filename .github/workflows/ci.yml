@@ -354,14 +354,11 @@ jobs:
           # via ConstantFP::get (populating the FPConstants DenseMap), then
           # destroy the context (clearing the map). If this crashes, the bug
           # is in the prebuilt LLVM libs; if not, it is in flux's usage.
-          Write-Host "LLVM_DIR=$env:LLVM_DIR"
-          $inc = (Get-ChildItem -Path llvm-windows -Recurse -Filter "ConstantFP.h" -ErrorAction SilentlyContinue | Where-Object { $_.FullName -match '\\include\\llvm\\IR\\ConstantFP\.h$' } | Select-Object -First 1).DirectoryName.Parent.Parent.Parent.FullName
-          $lib = (Get-ChildItem -Path llvm-windows -Recurse -Filter "LLVMCore.lib" -ErrorAction SilentlyContinue | Select-Object -First 1).DirectoryName
-          Write-Host "inc=$inc"
-          Write-Host "lib=$lib"
-          cl /nologo /EHsc /std:c++17 /I "$inc" ci\repro_fpconstants.cpp /link /LIBPATH:"$lib" LLVMCore.lib LLVMSupport.lib /OUT:repro.exe
+          cmake -B repro-build -S ci\repro -G Ninja -DCMAKE_BUILD_TYPE=Release -DLLVM_DIR="$env:LLVM_DIR"
+          if ($LASTEXITCODE -ne 0) { Write-Host "repro cmake configure FAILED"; exit 1 }
+          ninja -C repro-build
           if ($LASTEXITCODE -ne 0) { Write-Host "repro compile FAILED"; exit 1 }
-          .\repro.exe
+          .\repro-build\repro.exe
           if ($LASTEXITCODE -ne 0) { Write-Host "repro CRASHED (LLVM prebuilt bug)"; exit 1 }
           Write-Host "repro passed (not an LLVM prebuilt issue)"
 
