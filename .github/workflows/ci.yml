@@ -353,7 +353,7 @@ jobs:
         shell: pwsh
         run: |
           $env:LLVM_SYMBOLIZER_PATH = Join-Path $env:LLVM_DIR '..\..\..\bin\llvm-symbolizer.exe'
-          ninja -C build-asan flux.exe 2>&1 | Tee-Object -FilePath build-asan\ninja.log | Select-Object -Last 60
+          ninja -C build-asan flux.exe 2>&1 | Tee-Object -FilePath build-asan\ninja.log
           exit $LASTEXITCODE
 
       - name: Validate examples under ASan
