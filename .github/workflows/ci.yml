@@ -347,13 +347,13 @@ jobs:
         uses: ilammy/msvc-dev-cmd@v1
 
       - name: Build (configure) with ASan
-        run: cmake -B build-asan -G Ninja -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_FLAGS="/fsanitize=address" -DCMAKE_EXE_LINKER_FLAGS="/fsanitize=address" -DLLVM_DIR="$env:LLVM_DIR" -DEIGEN3_INCLUDE_DIR="${{ github.workspace }}\third_party\eigen-3.4.0"
+        run: cmake -B build-asan -G Ninja -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_FLAGS="/DWIN32 /D_WINDOWS /W3 /GR /EHsc /fsanitize=address" -DCMAKE_EXE_LINKER_FLAGS="/fsanitize=address" -DLLVM_DIR="$env:LLVM_DIR" -DEIGEN3_INCLUDE_DIR="${{ github.workspace }}\third_party\eigen-3.4.0"
 
       - name: Build flux.exe only
         shell: pwsh
         run: |
           $env:LLVM_SYMBOLIZER_PATH = Join-Path $env:LLVM_DIR '..\..\..\bin\llvm-symbolizer.exe'
-          ninja -C build-asan flux.exe 2>&1 | Select-Object -Last 40
+          ninja -C build-asan flux.exe 2>&1 | Tee-Object -FilePath build-asan\ninja.log | Select-Object -Last 60
           exit $LASTEXITCODE
 
       - name: Validate examples under ASan
