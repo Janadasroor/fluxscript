@@ -229,7 +229,7 @@ jobs:
         uses: ilammy/msvc-dev-cmd@v1
 
       - name: Build (configure)
-        run: cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded -DLLVM_DIR="$env:LLVM_DIR" -DEIGEN3_INCLUDE_DIR="${{ github.workspace }}\third_party\eigen-3.4.0" -DFLUX_BUILD_TESTS=ON
+        run: cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DLLVM_DIR="$env:LLVM_DIR" -DEIGEN3_INCLUDE_DIR="${{ github.workspace }}\third_party\eigen-3.4.0" -DFLUX_BUILD_TESTS=ON
 
       - name: Enable full page heap for flux.exe
         shell: pwsh
@@ -345,6 +345,45 @@ jobs:
 
       - name: Setup MSVC dev command prompt
         uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Minimal LLVM-only repro of FPConstants teardown
+        shell: pwsh
+        run: |
+          # Decisive isolation: exercise ONLY the prebuilt LLVM (no flux code).
+          # Mimics validate: create an LLVMContext, register double constants
+          # via ConstantFP::get (populating the FPConstants DenseMap), then
+          # destroy the context (clearing the map). If this crashes, the bug
+          # is in the prebuilt LLVM libs; if not, it is in flux's usage.
+          $llvmRoot = (Get-ChildItem -Path llvm-windows -Recurse -Filter "LLVMConfig.cmake" | Select-Object -First 1).DirectoryName.Parent.Parent.Parent.FullName
+          $inc = Join-Path $llvmRoot 'include'
+          $lib = Join-Path $llvmRoot 'lib'
+          @'
+#include <llvm/IR/ConstantFP.h>
+#include <llvm/IR/LLVMContext.h>
+#include <llvm/IR/Module.h>
+#include <llvm/IR/Type.h>
+#include <cstdio>
+int main()
+{
+    const double vals[] = {0.0, 1.0, 0.5, 2.5, 3.14159, 2.71828, 1e-9, 1e9, -0.0, 12345.678};
+    for (int i = 0; i < 200; ++i)
+    {
+        llvm::LLVMContext ctx;
+        llvm::Module mod("repro", ctx);
+        llvm::Type* dbl = llvm::Type::getDoubleTy(ctx);
+        for (int j = 0; j < 50; ++j)
+            llvm::ConstantFP::get(dbl, vals[(i + j) % 10]);
+        // destroy context -> ~LLVMContextImpl -> FPConstants::clear()
+    }
+    std::printf("repro OK\n");
+    return 0;
+}
+'@ | Out-File -Encoding ascii repro.cpp
+          cl /nologo /EHsc /std:c++17 /I "$inc" repro.cpp /link /LIBPATH:"$lib" LLVMCore.lib LLVMSupport.lib /OUT:repro.exe
+          if ($LASTEXITCODE -ne 0) { Write-Host "repro compile FAILED"; exit 1 }
+          .\repro.exe
+          if ($LASTEXITCODE -ne 0) { Write-Host "repro CRASHED (LLVM prebuilt bug)"; exit 1 }
+          Write-Host "repro passed (not an LLVM prebuilt issue)"
 
       - name: Build (configure) with ASan
         run: cmake -B build-asan -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_CXX_FLAGS="/DWIN32 /D_WINDOWS /W3 /GR /EHsc /fsanitize=address" -DCMAKE_EXE_LINKER_FLAGS="/fsanitize=address" -DLLVM_DIR="$env:LLVM_DIR" -DEIGEN3_INCLUDE_DIR="${{ github.workspace }}\third_party\eigen-3.4.0"
