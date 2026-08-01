@@ -288,6 +288,87 @@ jobs:
           files: fluxscript-windows-x86_64.zip
 
   # ------------------------------------------------------------------
+  # Windows x86_64 ASan (diagnose validate_examples heap corruption)
+  # ------------------------------------------------------------------
+  windows-asan:
+    if: github.event_name != 'workflow_dispatch' || inputs['windows']
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache LLVM
+        id: cache-llvm
+        uses: actions/cache@v4
+        with:
+          path: llvm-windows
+          key: llvm-windows-21.1.7-v1
+
+      - name: Download & extract LLVM
+        if: steps.cache-llvm.outputs.cache-hit != 'true'
+        shell: pwsh
+        run: |
+          curl -L --retry 3 --retry-delay 5 -o llvm.tar.xz https://github.com/llvm/llvm-project/releases/download/llvmorg-21.1.7/clang+llvm-21.1.7-x86_64-pc-windows-msvc.tar.xz
+          & "C:\Program Files\7-Zip\7z.exe" x llvm.tar.xz -y | Out-Null
+          & "C:\Program Files\7-Zip\7z.exe" x llvm.tar -ollvm-windows -y | Out-Null
+
+      - name: Set LLVM_DIR
+        shell: pwsh
+        run: |
+          $cfg = Get-ChildItem -Path llvm-windows -Recurse -Filter "LLVMConfig.cmake" | Select-Object -First 1
+          echo "LLVM_DIR=$($cfg.DirectoryName)" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      - name: Bridge DIA SDK
+        shell: pwsh
+        run: |
+          $dia2019 = "C:\Program Files (x86)\Microsoft Visual Studio\2019\Professional\DIA SDK\lib\amd64"
+          $dia2022 = "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\DIA SDK\lib\amd64"
+          if (-not (Test-Path "$dia2019\diaguids.lib") -and (Test-Path "$dia2022\diaguids.lib")) {
+            New-Item -ItemType Directory -Force -Path $dia2019 | Out-Null
+            Copy-Item "$dia2022\*" $dia2019 -Force | Out-Null
+            echo "Bridged DIA SDK from VS 2022 to VS 2019 path"
+          }
+
+      - name: Cache Eigen
+        id: cache-eigen
+        uses: actions/cache@v4
+        with:
+          path: third_party/eigen-3.4.0
+          key: eigen-3.4.0-win-v1
+
+      - name: Download Eigen
+        if: steps.cache-eigen.outputs.cache-hit != 'true'
+        shell: pwsh
+        run: |
+          curl -L --retry 3 --retry-delay 5 -o eigen.zip https://gitlab.com/libeigen/eigen/-/archive/3.4.0/eigen-3.4.0.zip
+          New-Item -ItemType Directory -Force -Path third_party | Out-Null
+          & "C:\Program Files\7-Zip\7z.exe" x eigen.zip -othird_party -y
+
+      - name: Setup MSVC dev command prompt
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Build (configure) with ASan
+        run: cmake -B build-asan -G Ninja -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_FLAGS="/fsanitize=address" -DCMAKE_EXE_LINKER_FLAGS="/fsanitize=address" -DLLVM_DIR="$env:LLVM_DIR" -DEIGEN3_INCLUDE_DIR="${{ github.workspace }}\third_party\eigen-3.4.0"
+
+      - name: Build flux.exe only
+        shell: pwsh
+        run: |
+          $env:LLVM_SYMBOLIZER_PATH = Join-Path $env:LLVM_DIR '..\..\..\bin\llvm-symbolizer.exe'
+          ninja -C build-asan flux.exe 2>&1 | Select-Object -Last 40
+          exit $LASTEXITCODE
+
+      - name: Validate examples under ASan
+        shell: pwsh
+        run: |
+          $llvmDll = Get-ChildItem -Path llvm-windows -Recurse -Filter "LLVM*.dll" | Select-Object -First 1
+          if ($llvmDll) {
+            $llvmBin = $llvmDll.DirectoryName
+            $env:PATH = "$llvmBin;$env:PATH"
+          }
+          $env:ASAN_OPTIONS = "detect_leaks=0:abort_on_error=1:handle_segv=1"
+          & "build-asan\flux.exe" examples --validate 2>&1 | Select-Object -Last 60
+          exit $LASTEXITCODE
+
+  # ------------------------------------------------------------------
   # Android arm64
   # ------------------------------------------------------------------
   android-arm64:
