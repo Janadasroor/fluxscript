@@ -10,7 +10,7 @@
 // is inside the prebuilt LLVM libs. If it passes, the bug is in flux's usage.
 #include <cstdio>
 
-#include <llvm/IR/ConstantFP.h>
+#include <llvm/IR/Constants.h>
 #include <llvm/IR/LLVMContext.h>
 #include <llvm/IR/Module.h>
 #include <llvm/IR/Type.h>
