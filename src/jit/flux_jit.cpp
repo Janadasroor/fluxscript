@@ -917,14 +917,30 @@ void* FluxJIT::getPointerToFunction(const std::string& Name)
     if (needsLookup) {
         if (!m_lljit)
             return nullptr;
+
+        // Try main JITDylib first
         auto ExprSymbol = m_lljit->lookup(Name);
+
+        // Fallback: try dlsym from process symbol table
         if (!ExprSymbol) {
+            void* sym = llvm::sys::DynamicLibrary::SearchForAddressOfSymbol(Name);
+            if (sym) {
+                ptr = sym;
+                std::lock_guard<std::mutex> lock(m_fnMapMutex);
+                m_functionPtrs[Name] = ptr;
+            }
+        }
+
+        if (!ptr && ExprSymbol) {
+            ptr = reinterpret_cast<void*>(ExprSymbol->getValue());
+            std::lock_guard<std::mutex> lock(m_fnMapMutex);
+            m_functionPtrs[Name] = ptr;
+        }
+
+        if (!ptr) {
             logError(ExprSymbol.takeError(), "getPointerToFunction lookup failed for " + Name);
             return nullptr;
         }
-        ptr = reinterpret_cast<void*>(ExprSymbol->getValue());
-        std::lock_guard<std::mutex> lock(m_fnMapMutex);
-        m_functionPtrs[Name] = ptr;
     }
 
     // Count this lookup for profiling and auto-promote if threshold exceeded
@@ -1001,8 +1017,15 @@ bool FluxJIT::isPromoted(const std::string& Name) const
 
 void FluxJIT::registerFunction(const std::string& Name, void* FuncPtr)
 {
+    
     if (!m_lljit || !m_runtimeDylib)
         return;
+
+    // Store in function pointer cache for direct lookup
+    {
+        std::lock_guard<std::mutex> lock(m_fnMapMutex);
+        m_functionPtrs[Name] = FuncPtr;
+    }
 
     // Register in the JITDylib for ORC internal symbol resolution.
     auto& ES = m_lljit->getExecutionSession();
@@ -1010,17 +1033,14 @@ void FluxJIT::registerFunction(const std::string& Name, void* FuncPtr)
     llvm::orc::SymbolMap symMap;
     symMap[internedName] = {llvm::orc::ExecutorAddr::fromPtr(FuncPtr), llvm::JITSymbolFlags::Exported};
 
+    // Register in runtime JITDylib
     (void)m_runtimeDylib->define(
         llvm::orc::absoluteSymbols(llvm::orc::SymbolMap({{internedName, symMap[internedName]}})));
 
+    // Also register in main JITDylib for direct lookup
     auto& mainJD = m_lljit->getMainJITDylib();
-    if (auto Err = mainJD.define(llvm::orc::absoluteSymbols(std::move(symMap)))) {
-        llvm::handleAllErrors(std::move(Err), [](const llvm::ErrorInfoBase& EI) {
-            std::string msg = EI.message();
-            if (msg.find("duplicate definition") == std::string::npos)
-                llvm::errs() << "JIT symbol error: " << msg << "\n";
-        });
-    }
+    auto mainSymMap = symMap; // copy before move
+    (void)mainJD.define(llvm::orc::absoluteSymbols(std::move(symMap)));
 
     // Also add to the global process symbol table so the fallback
     // DynamicLibrarySearchGenerator can find it via dlsym.

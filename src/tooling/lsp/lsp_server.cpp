@@ -13,6 +13,7 @@
 
 #include "flux/tooling/lsp_server.h"
 #include "flux/compiler/ast.h"
+#include <unistd.h>
 #include "flux/compiler/compiler_instance.h"
 #include "flux/compiler/lexer.h"
 #include "flux/compiler/parser.h"
@@ -25,6 +26,30 @@
 
 namespace Flux {
 namespace Tooling {
+
+static std::string unescapeJsonString(const std::string& s) {
+    std::string result;
+    for (size_t i = 0; i < s.size(); ++i) {
+        if (s[i] == '\\' && i + 1 < s.size()) {
+            i++;
+            switch (s[i]) {
+            case '"':  result += '"';  break;
+            case '\\': result += '\\'; break;
+            case '/':  result += '/';  break;
+            case 'n':  result += '\n'; break;
+            case 'r':  result += '\r'; break;
+            case 't':  result += '\t'; break;
+            default:
+                result += '\\';
+                result += s[i];
+                break;
+            }
+        } else {
+            result += s[i];
+        }
+    }
+    return result;
+}
 
 // ============================================================================
 // TextDocument Utilities
@@ -210,30 +235,54 @@ std::string LspServer::processRequest(const std::string& jsonRequest)
 
 int LspServer::run()
 {
-    std::string line;
+    // Use raw POSIX I/O for reliable pipe communication
+    // (C++ streams buffer internally and may not flush to pipes correctly)
+    char headerBuf[4096];
+    int headerPos = 0;
     int contentLength = 0;
 
-    while (std::getline(std::cin, line)) {
-        // Strip CR if present
-        if (!line.empty() && line.back() == '\r')
-            line.pop_back();
+    while (true) {
+        // Read one byte at a time to find header boundaries
+        char ch;
+        ssize_t n = read(STDIN_FILENO, &ch, 1);
+        if (n <= 0) break; // EOF or error
 
-        if (line.empty()) {
-            // End of headers, read content
-            if (contentLength <= 0)
-                continue;
+        if (ch == '\n') {
+            // End of a header line
+            headerBuf[headerPos] = '\0';
+            std::string line(headerBuf, headerPos);
 
-            std::string content(contentLength, '\0');
-            std::cin.read(&content[0], contentLength);
+            // Strip CR
+            if (!line.empty() && line.back() == '\r')
+                line.pop_back();
 
-            std::string response = processRequest(content);
-            if (!response.empty()) {
-                std::cout << "Content-Length: " << response.size() << "\r\n\r\n" << response;
-                std::cout.flush();
+            headerPos = 0;
+
+            if (line.empty()) {
+                // End of headers, read body
+                if (contentLength <= 0) continue;
+
+                std::string content(contentLength, '\0');
+                int totalRead = 0;
+                while (totalRead < contentLength) {
+                    ssize_t r = read(STDIN_FILENO, &content[totalRead], contentLength - totalRead);
+                    if (r <= 0) break;
+                    totalRead += r;
+                }
+
+                std::string response = processRequest(content);
+                if (!response.empty()) {
+                    std::string frame = "Content-Length: " + std::to_string(response.size()) + "\r\n\r\n" + response;
+                    ::write(STDOUT_FILENO, frame.data(), frame.size());
+                }
+                contentLength = 0;
+            } else if (line.find("Content-Length:") == 0) {
+                contentLength = std::stoi(line.substr(15));
             }
-            contentLength = 0;
-        } else if (line.find("Content-Length:") == 0) {
-            contentLength = std::stoi(line.substr(15));
+        } else {
+            // Accumulate header character
+            if (headerPos < (int)sizeof(headerBuf) - 1)
+                headerBuf[headerPos++] = ch;
         }
     }
     return 0;
@@ -827,9 +876,10 @@ std::string LspServer::handleTextDocumentDidChange(const std::string& params)
         }
 
         // Apply incremental change
+        std::string unescapedReplacement = unescapeJsonString(replacement);
         size_t startOffset = it->second.positionToOffset({startLine, startChar});
         size_t endOffset = it->second.positionToOffset({endLine, endChar});
-        it->second.text.replace(startOffset, endOffset - startOffset, replacement);
+        it->second.text.replace(startOffset, endOffset - startOffset, unescapedReplacement);
         it->second.version = version;
     } else {
         // Full text replacement (mode 1 fallback)
@@ -845,7 +895,8 @@ std::string LspServer::handleTextDocumentDidChange(const std::string& params)
                 text += params[quoteEnd];
                 quoteEnd++;
             }
-            changeDocument(uri, version, text);
+            std::string unescapedText = unescapeJsonString(text);
+            changeDocument(uri, version, unescapedText);
         }
     }
     return "";

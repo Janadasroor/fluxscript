@@ -1317,6 +1317,13 @@ TypedValue CallExprAST::codegen(CodegenContext& context)
                     return TypedValue();
                 }
                 // Check for registered extern function types
+                if (context.ExternFuncTypes.find(Callee) == context.ExternFuncTypes.end()) {
+                    if (Callee.rfind("flux_qt_", 0) == 0 || Callee == "viora_flux_print" || Callee.rfind("flux_state_", 0) == 0) {
+                        std::vector<FluxType> argTypes(Args.size(), FluxType(TypeKind::Double));
+                        context.ExternFuncTypes[Callee] = {FluxType(TypeKind::Double), std::move(argTypes)};
+                        context.FuncReturnTypes[Callee] = FluxType(TypeKind::Double);
+                    }
+                }
                 auto extIt = context.ExternFuncTypes.find(Callee);
                 if (extIt != context.ExternFuncTypes.end()) {
                     const auto& extRetType = extIt->second.first;

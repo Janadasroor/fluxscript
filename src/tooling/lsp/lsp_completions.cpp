@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <fstream>
 #include <sstream>
+#include <iostream>
 #include <string>
 #include <vector>
 
@@ -317,6 +318,10 @@ HoverContent LspServer::getHover(const std::string& uri, Position pos)
         return result;
 
     std::string word = doc->getWordAtPosition(pos);
+    std::cerr << "getHover pos=" << pos.line << "," << pos.character
+              << " docTextSize=" << doc->text.size()
+              << " offset=" << doc->positionToOffset(pos)
+              << " word='" << word << "'" << std::endl;
     if (word.empty())
         return result;
 

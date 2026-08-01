@@ -78,6 +78,7 @@ void JITEngine::initialize()
 
 void JITEngine::registerFunction(const std::string& name, void* funcPtr)
 {
+    
     if (m_jit)
         m_jit->registerFunction(name, funcPtr);
 }
