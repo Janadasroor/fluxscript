@@ -172,13 +172,13 @@ jobs:
         uses: actions/cache@v4
         with:
           path: llvm-windows
-          key: llvm-windows-21.1.7-v1
+          key: llvm-windows-21.1.8-v1
 
       - name: Download & extract LLVM
         if: steps.cache-llvm.outputs.cache-hit != 'true'
         shell: pwsh
         run: |
-          curl -L --retry 3 --retry-delay 5 -o llvm.tar.xz https://github.com/llvm/llvm-project/releases/download/llvmorg-21.1.7/clang+llvm-21.1.7-x86_64-pc-windows-msvc.tar.xz
+          curl -L --retry 3 --retry-delay 5 -o llvm.tar.xz https://github.com/llvm/llvm-project/releases/download/llvmorg-21.1.8/clang+llvm-21.1.8-x86_64-pc-windows-msvc.tar.xz
           & "C:\Program Files\7-Zip\7z.exe" x llvm.tar.xz -y | Out-Null
           & "C:\Program Files\7-Zip\7z.exe" x llvm.tar -ollvm-windows -y | Out-Null
 
@@ -301,13 +301,13 @@ jobs:
         uses: actions/cache@v4
         with:
           path: llvm-windows
-          key: llvm-windows-21.1.7-v1
+          key: llvm-windows-21.1.8-v1
 
       - name: Download & extract LLVM
         if: steps.cache-llvm.outputs.cache-hit != 'true'
         shell: pwsh
         run: |
-          curl -L --retry 3 --retry-delay 5 -o llvm.tar.xz https://github.com/llvm/llvm-project/releases/download/llvmorg-21.1.7/clang+llvm-21.1.7-x86_64-pc-windows-msvc.tar.xz
+          curl -L --retry 3 --retry-delay 5 -o llvm.tar.xz https://github.com/llvm/llvm-project/releases/download/llvmorg-21.1.8/clang+llvm-21.1.8-x86_64-pc-windows-msvc.tar.xz
           & "C:\Program Files\7-Zip\7z.exe" x llvm.tar.xz -y | Out-Null
           & "C:\Program Files\7-Zip\7z.exe" x llvm.tar -ollvm-windows -y | Out-Null
 
