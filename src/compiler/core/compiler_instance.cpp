@@ -681,6 +681,10 @@ std::unique_ptr<ParsedAST> CompilerInstance::parse(const std::string& code, std:
     auto ast = std::make_unique<ParsedAST>();
     Parser parser(code);
 
+    // All top-level statements share a single anonymous block (see
+    // compileParser() for why splitting across declarations was wrong).
+    std::vector<std::unique_ptr<ExprAST>> topLevelExprs;
+
     while (parser.CurTok != static_cast<int>(TokenType::tok_eof)) {
         if (parser.CurTok == static_cast<int>(TokenType::tok_rbrace)) {
             parser.getNextToken();
@@ -748,8 +752,10 @@ std::unique_ptr<ParsedAST> CompilerInstance::parse(const std::string& code, std:
         } else if (parser.CurTok == static_cast<int>(TokenType::tok_semicolon)) {
             parser.getNextToken();
         } else {
-            // Collect expressions into anonymous function
-            std::vector<std::unique_ptr<ExprAST>> Exprs;
+            // Collect expressions into the single shared anonymous block so
+            // top-level statements around def/struct/enum declarations share
+            // one scope (previously each segment became its own __anon_expr
+            // function, hiding variables across declaration boundaries).
             while (parser.CurTok != static_cast<int>(TokenType::tok_eof) &&
                    parser.CurTok != static_cast<int>(TokenType::tok_async) &&
                    parser.CurTok != static_cast<int>(TokenType::tok_def) &&
@@ -772,33 +778,34 @@ std::unique_ptr<ParsedAST> CompilerInstance::parse(const std::string& code, std:
                 }
 
                 if (auto E = parser.ParseExpression()) {
-                    Exprs.push_back(std::move(E));
+                    topLevelExprs.push_back(std::move(E));
                 } else {
                     break;
                 }
-            }
-
-            if (!Exprs.empty()) {
-                auto Block = std::make_unique<BlockExprAST>(std::move(Exprs));
-                FluxType RetType(TypeKind::Double);
-                const auto& stmts = Block->getStatements();
-                if (!stmts.empty()) {
-                    auto* lastExpr = stmts.back().get();
-                    if (dynamic_cast<MatrixExprAST*>(lastExpr))
-                        RetType = FluxType(TypeKind::Matrix);
-                    else if (dynamic_cast<VectorExprAST*>(lastExpr))
-                        RetType = FluxType(TypeKind::Vector);
-                    else if (dynamic_cast<ComplexExprAST*>(lastExpr))
-                        RetType = FluxType(TypeKind::Complex);
-                }
-                auto Proto = std::make_unique<PrototypeAST>("__anon_expr",
-                                                            std::vector<std::pair<std::string, FluxType>>(), RetType);
-                ast->functions.push_back(std::make_unique<FunctionAST>(std::move(Proto), std::move(Block)));
             }
         }
 
         if (parser.hasError())
             break;
+    }
+
+    // Emit ONE anonymous function containing all top-level statements.
+    if (!topLevelExprs.empty()) {
+        auto Block = std::make_unique<BlockExprAST>(std::move(topLevelExprs));
+        FluxType RetType(TypeKind::Double);
+        const auto& stmts = Block->getStatements();
+        if (!stmts.empty()) {
+            auto* lastExpr = stmts.back().get();
+            if (dynamic_cast<MatrixExprAST*>(lastExpr))
+                RetType = FluxType(TypeKind::Matrix);
+            else if (dynamic_cast<VectorExprAST*>(lastExpr))
+                RetType = FluxType(TypeKind::Vector);
+            else if (dynamic_cast<ComplexExprAST*>(lastExpr))
+                RetType = FluxType(TypeKind::Complex);
+        }
+        auto Proto = std::make_unique<PrototypeAST>("__anon_expr",
+                                                    std::vector<std::pair<std::string, FluxType>>(), RetType);
+        ast->functions.push_back(std::make_unique<FunctionAST>(std::move(Proto), std::move(Block)));
     }
 
     if (error && parser.hasError())
@@ -1414,6 +1421,14 @@ bool CompilerInstance::compileParser(Parser& parser, CodegenContext& context,
     std::vector<std::unique_ptr<EnumDeclAST>> enums;
     std::vector<std::unique_ptr<ImplDeclAST>> impls;
 
+    // All top-level statements are accumulated into a SINGLE anonymous
+    // function so they share one scope. Previously each segment around a
+    // def/struct/enum declaration became its own anon_expr function, which
+    // (a) hid variables declared before a declaration from statements after
+    // it, and (b) meant only the last segment ever executed (the JIT resolves
+    // callFunction("__anon_expr") to a single name).
+    std::vector<std::unique_ptr<ExprAST>> topLevelExprs;
+
     while (parser.CurTok != static_cast<int>(TokenType::tok_eof)) {
         if (parser.CurTok == static_cast<int>(TokenType::tok_rbrace)) {
             parser.getNextToken();
@@ -1497,8 +1512,8 @@ bool CompilerInstance::compileParser(Parser& parser, CodegenContext& context,
         } else if (parser.CurTok == static_cast<int>(TokenType::tok_eof)) {
             break;
         } else {
-            // Collect consecutive expressions into a single anonymous function
-            std::vector<std::unique_ptr<ExprAST>> Exprs;
+            // Collect consecutive top-level statements into the single shared
+            // anonymous block (continues across def/struct/enum declarations).
             while (parser.CurTok != static_cast<int>(TokenType::tok_eof) &&
                    parser.CurTok != static_cast<int>(TokenType::tok_async) &&
                    parser.CurTok != static_cast<int>(TokenType::tok_def) &&
@@ -1519,36 +1534,37 @@ bool CompilerInstance::compileParser(Parser& parser, CodegenContext& context,
                 }
 
                 if (auto E = parser.ParseExpression()) {
-                    Exprs.push_back(std::move(E));
+                    topLevelExprs.push_back(std::move(E));
                 } else {
                     parser.SkipToSynchronizationPoint();
                 }
             }
-
-            if (!Exprs.empty()) {
-                auto Block = std::make_unique<BlockExprAST>(std::move(Exprs));
-                FluxType RetType(TypeKind::Double);
-                const auto& stmts = Block->getStatements();
-                if (!stmts.empty()) {
-                    auto* lastExpr = stmts.back().get();
-                    if (dynamic_cast<MatrixExprAST*>(lastExpr))
-                        RetType = FluxType(TypeKind::Matrix);
-                    else if (dynamic_cast<VectorExprAST*>(lastExpr))
-                        RetType = FluxType(TypeKind::Vector);
-                    else if (dynamic_cast<ComplexExprAST*>(lastExpr))
-                        RetType = FluxType(TypeKind::Complex);
-                }
-                static unsigned anonCounter = 0;
-                std::string anonName = "__anon_expr";
-                if (!m_options.moduleName.empty() && m_options.moduleName != "Flux Module") {
-                    anonName = m_options.moduleName + "_anon_expr";
-                }
-                anonName += "_" + std::to_string(anonCounter++);
-                auto Proto =
-                    std::make_unique<PrototypeAST>(anonName, std::vector<std::pair<std::string, FluxType>>(), RetType);
-                functions.push_back(std::make_unique<FunctionAST>(std::move(Proto), std::move(Block)));
-            }
         }
+    }
+
+    // Emit ONE anonymous function containing all top-level statements.
+    if (!topLevelExprs.empty()) {
+        auto Block = std::make_unique<BlockExprAST>(std::move(topLevelExprs));
+        FluxType RetType(TypeKind::Double);
+        const auto& stmts = Block->getStatements();
+        if (!stmts.empty()) {
+            auto* lastExpr = stmts.back().get();
+            if (dynamic_cast<MatrixExprAST*>(lastExpr))
+                RetType = FluxType(TypeKind::Matrix);
+            else if (dynamic_cast<VectorExprAST*>(lastExpr))
+                RetType = FluxType(TypeKind::Vector);
+            else if (dynamic_cast<ComplexExprAST*>(lastExpr))
+                RetType = FluxType(TypeKind::Complex);
+        }
+        static unsigned anonCounter = 0;
+        std::string anonName = "__anon_expr";
+        if (!m_options.moduleName.empty() && m_options.moduleName != "Flux Module") {
+            anonName = m_options.moduleName + "_anon_expr";
+        }
+        anonName += "_" + std::to_string(anonCounter++);
+        auto Proto =
+            std::make_unique<PrototypeAST>(anonName, std::vector<std::pair<std::string, FluxType>>(), RetType);
+        functions.push_back(std::make_unique<FunctionAST>(std::move(Proto), std::move(Block)));
     }
 
     // --- Inject built-in generic enums (Result, Option) and synthetic payload structs ---
