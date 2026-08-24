@@ -178,7 +178,10 @@ std::unique_ptr<llvm::TargetMachine> createTargetMachine(const OptimizationLevel
 #endif
 
     return std::unique_ptr<llvm::TargetMachine>(
-#if LLVM_VERSION_MAJOR >= 17
+#if LLVM_VERSION_MAJOR >= 21
+        target->createTargetMachine(llvm::Triple(triple), llvm::sys::getHostCPUName().str(), features, options,
+                                    relocModel, std::nullopt, codegenLevel));
+#elif LLVM_VERSION_MAJOR >= 17
         target->createTargetMachine(triple, llvm::sys::getHostCPUName().str(), features, options,
                                     relocModel, std::nullopt, codegenLevel));
 #else
