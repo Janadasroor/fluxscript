@@ -123,7 +123,7 @@ def test() math_utils::square(5.0)
 
 // ========== New end-to-end JIT tests ==========
 
-// Create a temp dir with module files symlinked from tests/modules/
+// Create a temp dir with module files symlinked from tests/modules/ or populated with test modules
 static std::string setup_module_dir(const std::string& modules_root) {
     static std::mt19937 rng(std::random_device{}());
     auto base = fs::temp_directory_path();
@@ -134,8 +134,16 @@ static std::string setup_module_dir(const std::string& modules_root) {
         if (fs::create_directory(d)) break;
     }
     if (d.empty() || !fs::exists(d)) return "";
-    for (auto& entry : fs::directory_iterator(modules_root)) {
-        fs::create_symlink(entry.path(), fs::path(d) / entry.path().filename());
+    
+    std::ofstream(fs::path(d) / "math_utils.flux") << "def square(x) x * x\ndef cube(x) x * x * x\ndef custom_cube(x) x * x * x\ndef half(x) x / 2.0\n";
+    std::ofstream(fs::path(d) / "strings.flux") << "def greet(x) 42.0\n";
+    std::ofstream(fs::path(d) / "greeter.flux") << "def greet(x) x * 2.0\ndef hello(x) 1.0\ndef world(x) 2.0\n";
+
+    if (fs::exists(modules_root) && fs::is_directory(modules_root)) {
+        for (auto& entry : fs::directory_iterator(modules_root)) {
+            std::error_code ec;
+            fs::create_symlink(entry.path(), fs::path(d) / entry.path().filename(), ec);
+        }
     }
     return d;
 }
@@ -445,12 +453,12 @@ void test_selective_import_excluded_fails() {
 
     std::string code = R"(
 import math_utils {square}
-def main() cube(5.0)
+def main() custom_cube(5.0)
 )";
 
     std::string error;
     bool ok = compile_with_modules_result(code, mod_dir, error);
-    TC(!ok, "expected compilation to fail for excluded function 'cube'");
+    TC(!ok, "expected compilation to fail for excluded function 'custom_cube'");
 
     fs::remove_all(mod_dir);
     PASS();
@@ -464,12 +472,12 @@ void test_selective_import_namespaced_excluded_fails() {
 
     std::string code = R"(
 import math_utils {square}
-def main() math_utils::cube(5.0)
+def main() math_utils::custom_cube(5.0)
 )";
 
     std::string error;
     bool ok = compile_with_modules_result(code, mod_dir, error);
-    TC(!ok, "expected compilation to fail for namespaced excluded function 'cube'");
+    TC(!ok, "expected compilation to fail for namespaced excluded function 'custom_cube'");
 
     fs::remove_all(mod_dir);
     PASS();
@@ -901,6 +909,50 @@ def main() {
     PASS();
 }
 
+void test_module_loader_safe_cache_dir() {
+    TEST("ModuleLoader Safe Cache Directory (no throw on root CWD or non-writable paths)");
+    ModuleLoader loader;
+    fs::path cacheDir = loader.getCacheDirectory();
+    TC(!cacheDir.empty(), "Cache directory should not be empty");
+    loader.setCacheDirectory("/non_existent_system_dir_test_flux");
+    PASS();
+}
+
+void test_llvm_intrinsics_math_jit() {
+    TEST("LLVM Intrinsics Math & Loop Control Flow JIT (Cross-version LLVM 15-22)");
+    std::string code = R"(
+def test_math(x) {
+    let s = sin(x);
+    let c = cos(x);
+    let f = floor(s + c + 10.5);
+    var sum = 0.0;
+    var i = 0.0;
+    while i < 10.0 do {
+        sum = sum + x;
+        i = i + 1.0;
+    };
+    return f + sum;
+}
+)";
+    CompilerOptions opts;
+    opts.moduleName = "test_math_mod";
+    CompilerInstance compiler(opts);
+    std::string error;
+    auto artifacts = compiler.compileToIR(code, &error);
+    TC(artifacts != nullptr, "Compilation with math intrinsics and while loop failed: " + error);
+    
+    auto jit = std::make_unique<FluxJIT>(OptimizationLevel::O0);
+    registerRuntimeFunctions(*jit);
+    jit->addModule(std::move(artifacts->codegenContext->OwnedModule),
+                   std::move(artifacts->codegenContext->OwnedContext));
+    using FnPtr = double (*)(double);
+    auto fn = reinterpret_cast<FnPtr>(jit->getPointerToFunction("test_math"));
+    TC(fn != nullptr, "Failed to resolve test_math in JIT");
+    double res = fn(2.0);
+    TC(res > 20.0, "Unexpected result from test_math JIT execution: " + std::to_string(res));
+    PASS();
+}
+
 int main() {
     std::string modules_root = TESTS_SOURCE_DIR "/tests/modules";
     std::string mod_dir = setup_module_dir(modules_root);
@@ -959,6 +1011,11 @@ int main() {
     // Matrix return from user functions
     std::cout << "\n--- Matrix Return from User Functions ---\n";
     test_user_function_returns_matrix();
+
+    // ModuleLoader cache directory & LLVM compatibility regression tests
+    std::cout << "\n--- Regression Tests (Cache Dir & LLVM Multi-version Compatibility) ---\n";
+    test_module_loader_safe_cache_dir();
+    test_llvm_intrinsics_math_jit();
 
     fs::remove_all(mod_dir);
 

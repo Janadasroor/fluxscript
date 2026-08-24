@@ -68,13 +68,15 @@ find_package(CURL QUIET)
 find_package(Threads REQUIRED)
 
 # Find ngspice for circuit simulation
-if(FLUX_VIO_MATRIXC_LIB_DIR)
-    message(STATUS "Using VioMATRIXC libngspice from: ${FLUX_VIO_MATRIXC_LIB_DIR}")
-    set(NGSPICE_LIBRARY "${FLUX_VIO_MATRIXC_LIB_DIR}/libngspice.so.0" CACHE FILEPATH "VioMATRIXC ngspice library" FORCE)
-    set(NGSPICE_INCLUDE_DIR "${FLUX_VIO_MATRIXC_LIB_DIR}/../../../src/include" CACHE PATH "VioMATRIXC ngspice include dir" FORCE)
-else()
-    find_path(NGSPICE_INCLUDE_DIR ngspice/sharedspice.h /usr/include /usr/local/include)
-    find_library(NGSPICE_LIBRARY ngspice /usr/lib/x86_64-linux-gnu /usr/lib /usr/local/lib)
+if(NOT NGSPICE_INCLUDE_DIR OR NOT NGSPICE_LIBRARY)
+    if(FLUX_VIO_MATRIXC_LIB_DIR)
+        message(STATUS "Using VioMATRIXC libngspice from: ${FLUX_VIO_MATRIXC_LIB_DIR}")
+        set(NGSPICE_LIBRARY "${FLUX_VIO_MATRIXC_LIB_DIR}/libngspice.so.0" CACHE FILEPATH "VioMATRIXC ngspice library" FORCE)
+        set(NGSPICE_INCLUDE_DIR "${FLUX_VIO_MATRIXC_LIB_DIR}/../include" CACHE PATH "VioMATRIXC ngspice include dir" FORCE)
+    else()
+        find_path(NGSPICE_INCLUDE_DIR ngspice/sharedspice.h /usr/include /usr/local/include)
+        find_library(NGSPICE_LIBRARY ngspice /usr/lib/x86_64-linux-gnu /usr/lib /usr/local/lib)
+    endif()
 endif()
 
 if(NGSPICE_INCLUDE_DIR AND NGSPICE_LIBRARY)
@@ -535,7 +537,11 @@ target_link_libraries(flux-monte-carlo PRIVATE FluxScript)
 function(add_test_executable target_name source_file)
     add_executable(${target_name} ${CMAKE_CURRENT_SOURCE_DIR}/${source_file})
     target_link_libraries(${target_name} PRIVATE FluxScript)
-    target_compile_definitions(${target_name} PRIVATE TESTS_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
+    target_compile_definitions(${target_name} PRIVATE TESTS_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/..")
+    set_target_properties(${target_name} PROPERTIES
+        BUILD_RPATH "${CMAKE_BINARY_DIR}/FluxScript;${CMAKE_CURRENT_BINARY_DIR}"
+        INSTALL_RPATH "${CMAKE_BINARY_DIR}/FluxScript;${CMAKE_CURRENT_BINARY_DIR}"
+    )
 endfunction()
 
 # Helper function to register test with CTest

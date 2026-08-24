@@ -81,11 +81,21 @@ ModuleLoader::ModuleLoader()
     if (cacheDir) {
         m_cacheDirectory = std::filesystem::path(cacheDir) / "flux";
     } else {
-        m_cacheDirectory = std::filesystem::current_path() / ".flux_cache";
+        const char* homeDir = std::getenv("HOME");
+        if (!homeDir) {
+            homeDir = std::getenv("USERPROFILE");
+        }
+        if (homeDir) {
+            m_cacheDirectory = std::filesystem::path(homeDir) / ".cache" / "flux";
+        } else {
+            std::error_code ec;
+            m_cacheDirectory = std::filesystem::temp_directory_path(ec) / "flux_cache";
+        }
     }
 
     // Create cache directory if it doesn't exist
-    std::filesystem::create_directories(m_cacheDirectory);
+    std::error_code ec;
+    std::filesystem::create_directories(m_cacheDirectory, ec);
 }
 
 ModuleLoader::~ModuleLoader()
@@ -589,7 +599,8 @@ void ModuleLoader::loadStandardLibrary(std::string* error)
 void ModuleLoader::setCacheDirectory(const std::filesystem::path& path)
 {
     m_cacheDirectory = path;
-    std::filesystem::create_directories(m_cacheDirectory);
+    std::error_code ec;
+    std::filesystem::create_directories(m_cacheDirectory, ec);
 }
 
 void ModuleLoader::clearCache()

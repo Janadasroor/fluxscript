@@ -11,6 +11,7 @@
 #include <queue>
 #include <shared_mutex>
 #include <thread>
+#include <unordered_map>
 #include <vector>
 
 namespace Flux {

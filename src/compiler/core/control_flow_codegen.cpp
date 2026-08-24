@@ -419,7 +419,11 @@ TypedValue ForExprAST::codegen(CodegenContext& context)
         context.LexicalBlocks.pop_back();
     llvm::Value* EndCond = context.Builder.CreateFCmpOLT(NextVar, EndTV.Val, "loopcond");
     context.Builder.CreateCondBr(EndCond, LoopBB, AfterBB);
+#if LLVM_VERSION_MAJOR >= 16
     TheFunction->insert(TheFunction->end(), AfterBB);
+#else
+    TheFunction->getBasicBlockList().push_back(AfterBB);
+#endif
     context.Builder.SetInsertPoint(AfterBB);
 
     // Restore break/continue targets
@@ -453,7 +457,11 @@ TypedValue WhileExprAST::codegen(CodegenContext& context)
     }
     llvm::Value* CondV = boolCondition(CondTV.Val, context.Builder, context.TheContext);
     context.Builder.CreateCondBr(CondV, BodyBB, AfterBB);
+#if LLVM_VERSION_MAJOR >= 16
     TheFunction->insert(TheFunction->end(), BodyBB);
+#else
+    TheFunction->getBasicBlockList().push_back(BodyBB);
+#endif
     context.Builder.SetInsertPoint(BodyBB);
     if (context.DebugEnabled) {
         llvm::DIScope* parentScope =
@@ -469,7 +477,11 @@ TypedValue WhileExprAST::codegen(CodegenContext& context)
     if (context.DebugEnabled)
         context.LexicalBlocks.pop_back();
     context.Builder.CreateBr(CondBB);
+#if LLVM_VERSION_MAJOR >= 16
     TheFunction->insert(TheFunction->end(), AfterBB);
+#else
+    TheFunction->getBasicBlockList().push_back(AfterBB);
+#endif
     context.Builder.SetInsertPoint(AfterBB);
 
     // Restore break/continue targets

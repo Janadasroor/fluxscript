@@ -651,7 +651,11 @@ TypedValue MatchExprAST::codegen(CodegenContext& context)
             context.Builder.CreateStore(DefaultV, ResultAlloc);
         }
         context.Builder.CreateBr(MergeBB);
+#if LLVM_VERSION_MAJOR >= 16
         TheFunction->insert(TheFunction->end(), MergeBB);
+#else
+        TheFunction->getBasicBlockList().push_back(MergeBB);
+#endif
         context.Builder.SetInsertPoint(MergeBB);
         llvm::Value* ResultVal = context.Builder.CreateLoad(ResultTy, ResultAlloc, "match_result_val");
         return TypedValue(ResultVal, TypeKind::Double);
@@ -1150,7 +1154,11 @@ TypedValue MatchExprAST::codegen(CodegenContext& context)
     }
 
     // Insert merge block and load result
+#if LLVM_VERSION_MAJOR >= 16
     TheFunction->insert(TheFunction->end(), MergeBB);
+#else
+    TheFunction->getBasicBlockList().push_back(MergeBB);
+#endif
     context.Builder.SetInsertPoint(MergeBB);
     llvm::Value* ResultVal = context.Builder.CreateLoad(ResultTy, ResultAlloc, "match_result_val");
     return TypedValue(ResultVal, TypeKind::Double);
@@ -1288,7 +1296,11 @@ TypedValue ForeachExprAST::codegen(CodegenContext& context)
     context.Builder.CreateCondBr(ContinueCond, LoopBB, AfterBB);
 
     // Continue after loop
+#if LLVM_VERSION_MAJOR >= 16
     TheFunction->insert(TheFunction->end(), AfterBB);
+#else
+    TheFunction->getBasicBlockList().push_back(AfterBB);
+#endif
     context.Builder.SetInsertPoint(AfterBB);
 
     // Restore variable
@@ -1327,7 +1339,11 @@ TypedValue RepeatUntilExprAST::codegen(CodegenContext& context)
     context.Builder.CreateBr(CondBB);
 
     // Condition
+#if LLVM_VERSION_MAJOR >= 16
     TheFunction->insert(TheFunction->end(), CondBB);
+#else
+    TheFunction->getBasicBlockList().push_back(CondBB);
+#endif
     context.Builder.SetInsertPoint(CondBB);
     TypedValue CondTV = Condition->codegen(context);
     if (!CondTV.Val) {
@@ -1346,7 +1362,11 @@ TypedValue RepeatUntilExprAST::codegen(CodegenContext& context)
     context.Builder.CreateCondBr(IsDone, AfterBB, BodyBB);
 
     // After
+#if LLVM_VERSION_MAJOR >= 16
     TheFunction->insert(TheFunction->end(), AfterBB);
+#else
+    TheFunction->getBasicBlockList().push_back(AfterBB);
+#endif
     context.Builder.SetInsertPoint(AfterBB);
 
     // Restore break/continue targets
@@ -1384,7 +1404,11 @@ TypedValue DoWhileExprAST::codegen(CodegenContext& context)
     context.Builder.CreateBr(CondBB);
 
     // Condition
+#if LLVM_VERSION_MAJOR >= 16
     TheFunction->insert(TheFunction->end(), CondBB);
+#else
+    TheFunction->getBasicBlockList().push_back(CondBB);
+#endif
     context.Builder.SetInsertPoint(CondBB);
     TypedValue CondTV = Cond->codegen(context);
     if (!CondTV.Val) {
@@ -1402,7 +1426,11 @@ TypedValue DoWhileExprAST::codegen(CodegenContext& context)
     context.Builder.CreateCondBr(CondBool, BodyBB, AfterBB);
 
     // After
+#if LLVM_VERSION_MAJOR >= 16
     TheFunction->insert(TheFunction->end(), AfterBB);
+#else
+    TheFunction->getBasicBlockList().push_back(AfterBB);
+#endif
     context.Builder.SetInsertPoint(AfterBB);
 
     // Restore break/continue targets

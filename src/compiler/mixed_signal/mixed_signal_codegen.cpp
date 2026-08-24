@@ -238,7 +238,11 @@ TypedValue TriggeredExprAST::codegen(CodegenContext& context)
     context.Builder.CreateBr(MergeBB);
 
     // Merge block
+#if LLVM_VERSION_MAJOR >= 16
     TheFunction->insert(TheFunction->end(), MergeBB);
+#else
+    TheFunction->getBasicBlockList().push_back(MergeBB);
+#endif
     context.Builder.SetInsertPoint(MergeBB);
 
     llvm::PHINode* PHI = context.Builder.CreatePHI(DoubleTy, 2, "triggered_result");

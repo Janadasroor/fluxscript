@@ -36,7 +36,11 @@
 #include <llvm/Support/SHA256.h>
 #include <llvm/Support/TargetSelect.h>
 #include <llvm/Target/TargetMachine.h>
+#if __has_include(<llvm/TargetParser/Host.h>)
 #include <llvm/TargetParser/Host.h>
+#else
+#include <llvm/Support/Host.h>
+#endif
 
 #include "flux/jit_engine.h"
 
@@ -123,6 +127,7 @@ std::unique_ptr<llvm::TargetMachine> createTargetMachine(const OptimizationLevel
     }
 
     llvm::TargetOptions options;
+#if LLVM_VERSION_MAJOR >= 18
     llvm::CodeGenOptLevel codegenLevel = llvm::CodeGenOptLevel::Default;
     switch (level) {
     case OptimizationLevel::O0:
@@ -138,18 +143,48 @@ std::unique_ptr<llvm::TargetMachine> createTargetMachine(const OptimizationLevel
         codegenLevel = llvm::CodeGenOptLevel::Aggressive;
         break;
     }
+#else
+    llvm::CodeGenOpt::Level codegenLevel = llvm::CodeGenOpt::Default;
+    switch (level) {
+    case OptimizationLevel::O0:
+        codegenLevel = llvm::CodeGenOpt::None;
+        break;
+    case OptimizationLevel::O1:
+        codegenLevel = llvm::CodeGenOpt::Less;
+        break;
+    case OptimizationLevel::O2:
+        codegenLevel = llvm::CodeGenOpt::Default;
+        break;
+    case OptimizationLevel::O3:
+        codegenLevel = llvm::CodeGenOpt::Aggressive;
+        break;
+    }
+#endif
 
     auto relocModel = pic ? llvm::Reloc::PIC_ : llvm::Reloc::Static;
 
     // Build features string from actual host features (respects kernel-disabled
     // features like AVX-512, which the CPU name alone would incorrectly enable).
     std::string features;
+#if LLVM_VERSION_MAJOR >= 19
     for (const auto& f : llvm::sys::getHostCPUFeatures())
         features += (f.second ? "+" : "-") + f.first().str() + ",";
+#else
+    llvm::StringMap<bool> hostFeatures;
+    if (llvm::sys::getHostCPUFeatures(hostFeatures)) {
+        for (const auto& f : hostFeatures)
+            features += (f.second ? "+" : "-") + f.first().str() + ",";
+    }
+#endif
 
     return std::unique_ptr<llvm::TargetMachine>(
-        target->createTargetMachine(llvm::Triple(triple), llvm::sys::getHostCPUName().str(), features, options,
+#if LLVM_VERSION_MAJOR >= 17
+        target->createTargetMachine(triple, llvm::sys::getHostCPUName().str(), features, options,
                                     relocModel, std::nullopt, codegenLevel));
+#else
+        target->createTargetMachine(triple, llvm::sys::getHostCPUName().str(), features, options,
+                                    relocModel, llvm::None, codegenLevel));
+#endif
 }
 
 bool writeBufferToFile(llvm::MemoryBuffer& buffer, const std::string& outputPath, std::string* error)
@@ -289,13 +324,17 @@ bool emitObjectBuffer(CompileArtifacts& artifacts, OptimizationLevel optimizatio
         return false;
 
     auto& module = *artifacts.codegenContext->TheModule;
-    module.setTargetTriple(llvm::Triple(llvm::sys::getProcessTriple()));
+    module.setTargetTriple(llvm::sys::getProcessTriple());
     module.setDataLayout(targetMachine->createDataLayout());
 
     llvm::SmallVector<char, 0> objectBytes;
     llvm::raw_svector_ostream objectStream(objectBytes);
     llvm::legacy::PassManager passManager;
+#if LLVM_VERSION_MAJOR >= 18
     if (targetMachine->addPassesToEmitFile(passManager, objectStream, nullptr, llvm::CodeGenFileType::ObjectFile)) {
+#else
+    if (targetMachine->addPassesToEmitFile(passManager, objectStream, nullptr, llvm::CGFT_ObjectFile)) {
+#endif
         if (error)
             *error = "Target machine could not emit an object file.";
         return false;

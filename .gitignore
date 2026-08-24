@@ -1,5 +1,6 @@
 *.flux
 !tests/flux/*.flux
+!tests/modules/*.flux
 !stdlib/*.flux
 !tests/integration/tests/*.flux
 !examples/fullcircuit/**/*.flux

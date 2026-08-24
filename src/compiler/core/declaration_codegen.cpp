@@ -1410,7 +1410,11 @@ llvm::Function* FunctionAST::codegen(CodegenContext& context)
         }
 
         // Generate Return Block
+#if LLVM_VERSION_MAJOR >= 16
         TheFunction->insert(TheFunction->end(), ReturnBB);
+#else
+        TheFunction->getBasicBlockList().push_back(ReturnBB);
+#endif
         context.Builder.SetInsertPoint(ReturnBB);
         if (RetValAlloca) {
             if (useSRet) {

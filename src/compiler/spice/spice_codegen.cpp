@@ -186,7 +186,11 @@ TypedValue UpdateFuncAST::codegen(CodegenContext& context)
     }
 
     // Generate Return Block
+#if LLVM_VERSION_MAJOR >= 16
     TheFunction->insert(TheFunction->end(), ReturnBB);
+#else
+    TheFunction->getBasicBlockList().push_back(ReturnBB);
+#endif
     context.Builder.SetInsertPoint(ReturnBB);
     llvm::Value* FinalRetVal = context.Builder.CreateLoad(RetTy, RetValAlloca, "ret_final");
     context.Builder.CreateRet(FinalRetVal);
@@ -949,7 +953,11 @@ TypedValue IfStmtAST::codegen(CodegenContext& context)
     }
 
     // Continue at merge
+#if LLVM_VERSION_MAJOR >= 16
     TheFunction->insert(TheFunction->end(), MergeBB);
+#else
+    TheFunction->getBasicBlockList().push_back(MergeBB);
+#endif
     context.Builder.SetInsertPoint(MergeBB);
 
     // PHI node to merge values from reachable paths

@@ -397,8 +397,13 @@ TypedValue PhasorExprAST::codegen(CodegenContext& context)
     llvm::Value* PhaseRad = context.Builder.CreateFMul(Phase, Deg2Rad, "phase_rad");
 
     // Get cos and sin intrinsics
+#if LLVM_VERSION_MAJOR >= 17
     llvm::Function* CosF = llvm::Intrinsic::getOrInsertDeclaration(context.TheModule, llvm::Intrinsic::cos, {DoubleTy});
     llvm::Function* SinF = llvm::Intrinsic::getOrInsertDeclaration(context.TheModule, llvm::Intrinsic::sin, {DoubleTy});
+#else
+    llvm::Function* CosF = llvm::Intrinsic::getDeclaration(context.TheModule, llvm::Intrinsic::cos, {DoubleTy});
+    llvm::Function* SinF = llvm::Intrinsic::getDeclaration(context.TheModule, llvm::Intrinsic::sin, {DoubleTy});
+#endif
 
     llvm::Value* CosVal = context.Builder.CreateCall(CosF, {PhaseRad}, "cos_phase");
     llvm::Value* SinVal = context.Builder.CreateCall(SinF, {PhaseRad}, "sin_phase");

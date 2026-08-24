@@ -952,26 +952,46 @@ TypedValue CallExprAST::codegen(CodegenContext& context)
             }
         } else if (Arg.Type.Kind == TypeKind::Double) {
             if (Name == "abs") {
+#if LLVM_VERSION_MAJOR >= 17
                 llvm::Function* FabsF = llvm::Intrinsic::getOrInsertDeclaration(
                     context.TheModule, llvm::Intrinsic::fabs, {llvm::Type::getDoubleTy(context.TheContext)});
+#else
+                llvm::Function* FabsF = llvm::Intrinsic::getDeclaration(
+                    context.TheModule, llvm::Intrinsic::fabs, {llvm::Type::getDoubleTy(context.TheContext)});
+#endif
                 return TypedValue(context.Builder.CreateCall(FabsF, {Arg.Val}, "abstmp"),
                                   FluxType(TypeKind::Double, Arg.Type.Dimensions));
             }
             if (Name == "floor") {
+#if LLVM_VERSION_MAJOR >= 17
                 llvm::Function* FloorF = llvm::Intrinsic::getOrInsertDeclaration(
                     context.TheModule, llvm::Intrinsic::floor, {llvm::Type::getDoubleTy(context.TheContext)});
+#else
+                llvm::Function* FloorF = llvm::Intrinsic::getDeclaration(
+                    context.TheModule, llvm::Intrinsic::floor, {llvm::Type::getDoubleTy(context.TheContext)});
+#endif
                 return TypedValue(context.Builder.CreateCall(FloorF, {Arg.Val}, "floortmp"),
                                   FluxType(TypeKind::Double, Arg.Type.Dimensions));
             }
             if (Name == "ceil") {
+#if LLVM_VERSION_MAJOR >= 17
                 llvm::Function* CeilF = llvm::Intrinsic::getOrInsertDeclaration(
                     context.TheModule, llvm::Intrinsic::ceil, {llvm::Type::getDoubleTy(context.TheContext)});
+#else
+                llvm::Function* CeilF = llvm::Intrinsic::getDeclaration(
+                    context.TheModule, llvm::Intrinsic::ceil, {llvm::Type::getDoubleTy(context.TheContext)});
+#endif
                 return TypedValue(context.Builder.CreateCall(CeilF, {Arg.Val}, "ceiltmp"),
                                   FluxType(TypeKind::Double, Arg.Type.Dimensions));
             }
             if (Name == "round") {
+#if LLVM_VERSION_MAJOR >= 17
                 llvm::Function* RoundF = llvm::Intrinsic::getOrInsertDeclaration(
                     context.TheModule, llvm::Intrinsic::round, {llvm::Type::getDoubleTy(context.TheContext)});
+#else
+                llvm::Function* RoundF = llvm::Intrinsic::getDeclaration(
+                    context.TheModule, llvm::Intrinsic::round, {llvm::Type::getDoubleTy(context.TheContext)});
+#endif
                 return TypedValue(context.Builder.CreateCall(RoundF, {Arg.Val}, "roundtmp"),
                                   FluxType(TypeKind::Double, Arg.Type.Dimensions));
             }
@@ -986,7 +1006,7 @@ TypedValue CallExprAST::codegen(CodegenContext& context)
     //    generated call-site can have misaligned stack, crashing after ~100K+
     //    calls. Calling libm via the regular C ABI (extern symbol lookup)
     //    guarantees correct 16-byte stack alignment.
-    if (Args.size() == 1) {
+    if (Args.size() == 1 && (Name == "sqrt" || Name == "sin" || Name == "cos" || Name == "exp" || Name == "log" || Name == "ln" || Name == "log10")) {
         TypedValue Arg0 = Args[0]->codegen(context);
         if (Arg0.Val && Arg0.Type.Kind == TypeKind::Double) {
             llvm::Function* F = context.TheModule->getFunction(Name);
@@ -1255,7 +1275,11 @@ TypedValue CallExprAST::codegen(CodegenContext& context)
                         if (ST->isStructTy() && ST->getNumElements() == 2 &&
                             ST->getElementType(0)->isDoubleTy() &&
                             ST->getElementType(1)->isDoubleTy() &&
+#if LLVM_VERSION_MAJOR >= 17
                             ST->getName().starts_with("__closure")) {
+#else
+                            ST->getName().startswith("__closure")) {
+#endif
                             // Closure call: extract fn and env doubles, call fn(env, args...)
                             llvm::Value* closureVal = context.Builder.CreateLoad(ST, localVar, "closure_val");
                             llvm::Value* fnDouble = context.Builder.CreateExtractValue(closureVal, 0, "closure_fn");
@@ -1312,8 +1336,9 @@ TypedValue CallExprAST::codegen(CodegenContext& context)
             }
             if (!CalleeF) {
                 // Check excluded symbols
-                if (context.ExcludedSymbols.count(Name)) {
-                    logError(context, "'" + Name + "' was not imported. Use a non-selective import or add it to the import list.", this);
+                std::string baseName = (sepPos != std::string::npos) ? Callee.substr(sepPos + 2) : Callee;
+                if (context.ExcludedSymbols.count(Callee) || context.ExcludedSymbols.count(baseName)) {
+                    logError(context, "'" + baseName + "' was not imported. Use a non-selective import or add it to the import list.", this);
                     return TypedValue();
                 }
                 // Check for registered extern function types

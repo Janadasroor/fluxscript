@@ -154,6 +154,7 @@ public:
     void loadStandardLibrary(std::string* error = nullptr);
 
     void setCacheDirectory(const std::filesystem::path& path);
+    const std::filesystem::path& getCacheDirectory() const { return m_cacheDirectory; }
     void clearCache();
 
 private:

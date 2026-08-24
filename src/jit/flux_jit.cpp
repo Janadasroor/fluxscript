@@ -25,7 +25,11 @@ extern "C" void println_string(const char*);
 #include "llvm/Support/TargetSelect.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Target/TargetMachine.h"
+#if __has_include("llvm/TargetParser/Host.h")
 #include "llvm/TargetParser/Host.h"
+#else
+#include "llvm/Support/Host.h"
+#endif
 
 #include "llvm/Bitcode/BitcodeReader.h"
 #include "llvm/Bitcode/BitcodeWriter.h"
@@ -391,7 +395,11 @@ FluxJIT::FluxJIT(OptimizationLevel optLevel) : m_dataLayout(""), m_optLevel(optL
     // Use O2 (Default) code gen level to force greedy register allocator,
     // avoiding dynamic stack spills in loop bodies (fast allocator at O0 may
     // generate lea -N(%rsp),%rsp inside loops, causing stack overflow).
+#if LLVM_VERSION_MAJOR >= 18
     JTMB->setCodeGenOptLevel(llvm::CodeGenOptLevel::Default);
+#else
+    JTMB->setCodeGenOptLevel(llvm::CodeGenOpt::Default);
+#endif
     JTMB->setCodeModel(llvm::CodeModel::Small);
     JTMB->setRelocationModel(llvm::Reloc::PIC_);
 
@@ -440,7 +448,11 @@ void FluxJIT::registerComplexHelpers()
 
     auto registerSym = [&](const std::string& name, void* ptr) {
         llvm::orc::SymbolMap sym;
+#if LLVM_VERSION_MAJOR >= 17
         sym[m_lljit->mangleAndIntern(name)] = {llvm::orc::ExecutorAddr::fromPtr(ptr), llvm::JITSymbolFlags::Exported};
+#else
+        sym[m_lljit->mangleAndIntern(name)] = llvm::JITEvaluatedSymbol(llvm::orc::ExecutorAddr::fromPtr(ptr).getValue(), llvm::JITSymbolFlags::Exported);
+#endif
         (void)m_runtimeDylib->define(llvm::orc::absoluteSymbols(std::move(sym)));
     };
 
@@ -457,7 +469,11 @@ void FluxJIT::registerMathHelpers()
 
     auto registerSym = [&](const std::string& name, void* ptr) {
         llvm::orc::SymbolMap sym;
+#if LLVM_VERSION_MAJOR >= 17
         sym[m_lljit->mangleAndIntern(name)] = {llvm::orc::ExecutorAddr::fromPtr(ptr), llvm::JITSymbolFlags::Exported};
+#else
+        sym[m_lljit->mangleAndIntern(name)] = llvm::JITEvaluatedSymbol(llvm::orc::ExecutorAddr::fromPtr(ptr).getValue(), llvm::JITSymbolFlags::Exported);
+#endif
         (void)m_runtimeDylib->define(llvm::orc::absoluteSymbols(std::move(sym)));
     };
 
@@ -479,6 +495,7 @@ void FluxJIT::setOptimizationLevel(OptimizationLevel level)
     // Update the target machine's codegen opt level to match.
     // This affects lazy compilation in ORC and standalone AOT codegen.
     if (m_targetMachine) {
+#if LLVM_VERSION_MAJOR >= 18
         llvm::CodeGenOptLevel cgLevel = llvm::CodeGenOptLevel::Default;
         switch (level) {
         case OptimizationLevel::O0:
@@ -494,6 +511,23 @@ void FluxJIT::setOptimizationLevel(OptimizationLevel level)
             cgLevel = llvm::CodeGenOptLevel::Aggressive;
             break;
         }
+#else
+        llvm::CodeGenOpt::Level cgLevel = llvm::CodeGenOpt::Default;
+        switch (level) {
+        case OptimizationLevel::O0:
+            cgLevel = llvm::CodeGenOpt::None;
+            break;
+        case OptimizationLevel::O1:
+            cgLevel = llvm::CodeGenOpt::Less;
+            break;
+        case OptimizationLevel::O2:
+            cgLevel = llvm::CodeGenOpt::Default;
+            break;
+        case OptimizationLevel::O3:
+            cgLevel = llvm::CodeGenOpt::Aggressive;
+            break;
+        }
+#endif
         m_targetMachine->setOptLevel(cgLevel);
     }
 }
@@ -591,11 +625,7 @@ void FluxJIT::optimizeModule(llvm::Module* M, OptimizationLevel level)
 
     // If TCO is enabled, add a tail-call-elimination pass explicitly
     if (m_tcoOptions.enableTailCallElimination) {
-#if LLVM_VERSION_MAJOR >= 17
         MPM.addPass(llvm::createModuleToFunctionPassAdaptor(llvm::TailCallElimPass()));
-#else
-        MPM.addPass(llvm::createModuleToFunctionPassAdaptor(llvm::createTailCallEliminationPass()));
-#endif
     }
 
     MPM.run(*M, MAM);
@@ -606,7 +636,7 @@ void FluxJIT::prepareModule(llvm::Module& M)
     if (!m_lljit)
         return;
     M.setDataLayout(m_dataLayout);
-    M.setTargetTriple(llvm::Triple(m_targetTriple));
+    M.setTargetTriple(m_targetTriple);
     M.setCodeModel(llvm::CodeModel::Small);
     M.setPICLevel(llvm::PICLevel::SmallPIC);
 }
@@ -1031,7 +1061,11 @@ void FluxJIT::registerFunction(const std::string& Name, void* FuncPtr)
     auto& ES = m_lljit->getExecutionSession();
     auto internedName = m_lljit->mangleAndIntern(Name);
     llvm::orc::SymbolMap symMap;
+#if LLVM_VERSION_MAJOR >= 17
     symMap[internedName] = {llvm::orc::ExecutorAddr::fromPtr(FuncPtr), llvm::JITSymbolFlags::Exported};
+#else
+    symMap[internedName] = llvm::JITEvaluatedSymbol(llvm::orc::ExecutorAddr::fromPtr(FuncPtr).getValue(), llvm::JITSymbolFlags::Exported);
+#endif
 
     // Register in runtime JITDylib
     (void)m_runtimeDylib->define(
