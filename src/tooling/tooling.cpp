@@ -324,7 +324,11 @@ bool emitObjectBuffer(CompileArtifacts& artifacts, OptimizationLevel optimizatio
         return false;
 
     auto& module = *artifacts.codegenContext->TheModule;
+#if LLVM_VERSION_MAJOR >= 21
+    module.setTargetTriple(llvm::Triple(llvm::sys::getProcessTriple()));
+#else
     module.setTargetTriple(llvm::sys::getProcessTriple());
+#endif
     module.setDataLayout(targetMachine->createDataLayout());
 
     llvm::SmallVector<char, 0> objectBytes;

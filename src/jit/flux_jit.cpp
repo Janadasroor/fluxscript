@@ -636,7 +636,11 @@ void FluxJIT::prepareModule(llvm::Module& M)
     if (!m_lljit)
         return;
     M.setDataLayout(m_dataLayout);
+#if LLVM_VERSION_MAJOR >= 21
+    M.setTargetTriple(llvm::Triple(m_targetTriple));
+#else
     M.setTargetTriple(m_targetTriple);
+#endif
     M.setCodeModel(llvm::CodeModel::Small);
     M.setPICLevel(llvm::PICLevel::SmallPIC);
 }
