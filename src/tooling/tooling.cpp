@@ -119,7 +119,11 @@ std::unique_ptr<llvm::TargetMachine> createTargetMachine(const OptimizationLevel
 
     const std::string triple = llvm::sys::getProcessTriple();
     std::string lookupError;
+#if LLVM_VERSION_MAJOR >= 23
+    const llvm::Target* target = llvm::TargetRegistry::lookupTarget(llvm::Triple(triple), lookupError);
+#else
     const llvm::Target* target = llvm::TargetRegistry::lookupTarget(triple, lookupError);
+#endif
     if (!target) {
         if (error)
             *error = lookupError;
