@@ -13,6 +13,7 @@
 
 // Symbolic AST code generation - Full Implementation
 // Implements symbolic math compilation to LLVM IR via SymbolicEngine runtime
+#include "flux/compiler/codegen_helpers.h"
 #include "flux/compiler/symbolic_ast.h"
 #include "flux/runtime/symbolic_engine.h"
 #include <iostream>
